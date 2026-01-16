@@ -122,6 +122,12 @@ spec:
                 secretKeyRef:
                   key: "password"
                   name: mem0-api-key
+            - name: POSTGRES_JDBC_URL
+              value: ""
+            - name: POSTGRES_USER
+              value: ""
+            - name: POSTGRES_PASSWORD
+              value: ""
             - name: "GIPHY_API_KEY"
               valueFrom:
                 secretKeyRef:
@@ -222,3 +228,31 @@ spec:
     - hosts:
         - bluebubbles-chatgpt-agent
   ingressClassName: tailscale
+---
+apiVersion: "acid.zalan.do/v1"
+kind: postgresql
+metadata:
+  name: bb-chatgpt-agent-db
+spec:
+  teamId: "bb-chatgpt-agent"
+  enableMasterLoadBalancer: true
+  volume:
+    size: 50Gi
+    storageClass: freenas-iscsi-csi-3646
+  numberOfInstances: 1
+  users:
+    bb_chatgpt_agent_admin:
+      - superuser
+      - createdb
+  databases:
+    bb_chatgpt_agent: bb_chatgpt_agent_admin
+  postgresql:
+    version: "16"
+    parameters:
+      ssl: 'off'
+  patroni:
+    pg_hba:
+      - local all all trust
+      - host all all 0.0.0.0/0 md5
+      - host all all ::0/0 md5
+---
