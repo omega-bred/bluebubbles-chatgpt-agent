@@ -32,10 +32,10 @@ spec:
 apiVersion: onepassword.com/v1
 kind: OnePasswordItem
 metadata:
-  name: openai-imagegen-key-wallart #this name will also be used for naming the generated kubernetes secret
+  name: openai-bluebubbles-chatgpt-agent-api-key #this name will also be used for naming the generated kubernetes secret
   namespace: bluebubbles-chatgpt-agent
 spec:
-  itemPath: "vaults/Kubernetes/items/openai-imagegen-key-wallart"
+  itemPath: "vaults/Kubernetes/items/openai-bluebubbles-chatgpt-agent-api-key"
 ---
 apiVersion: onepassword.com/v1
 kind: OnePasswordItem
@@ -99,7 +99,7 @@ spec:
               valueFrom:
                 secretKeyRef:
                   key: "password"
-                  name: openai-imagegen-key-wallart
+                  name: openai-bluebubbles-chatgpt-agent-api-key
             - name: "BLUEBUBBLES_PASSWORD"
               valueFrom:
                 secretKeyRef:
