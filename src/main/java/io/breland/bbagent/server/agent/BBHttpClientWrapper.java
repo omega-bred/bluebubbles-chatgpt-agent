@@ -4,10 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import io.breland.bbagent.generated.bluebubblesclient.ApiClient;
-import io.breland.bbagent.generated.bluebubblesclient.api.V1AttachmentApi;
-import io.breland.bbagent.generated.bluebubblesclient.api.V1ChatApi;
-import io.breland.bbagent.generated.bluebubblesclient.api.V1ContactApi;
-import io.breland.bbagent.generated.bluebubblesclient.api.V1MessageApi;
+import io.breland.bbagent.generated.bluebubblesclient.api.*;
 import io.breland.bbagent.generated.bluebubblesclient.model.*;
 import java.io.IOException;
 import java.nio.channels.AsynchronousFileChannel;
@@ -43,6 +40,7 @@ public class BBHttpClientWrapper {
   private final V1MessageApi messageApi;
   private final V1AttachmentApi attachmentApi;
   private final V1ChatApi chatApi;
+  private final V1OtherApi otherApi;
 
   private final String password;
 
@@ -60,6 +58,7 @@ public class BBHttpClientWrapper {
     this.contactApi = new V1ContactApi(apiClient);
     this.attachmentApi = new V1AttachmentApi(apiClient);
     this.chatApi = new V1ChatApi(apiClient);
+    this.otherApi = new V1OtherApi(apiClient);
   }
 
   BBHttpClientWrapper(String password, V1MessageApi messageApi, V1ContactApi contactApi) {
@@ -68,6 +67,7 @@ public class BBHttpClientWrapper {
     this.contactApi = contactApi;
     this.attachmentApi = new V1AttachmentApi(new ApiClient());
     this.chatApi = new V1ChatApi(new ApiClient());
+    this.otherApi = new V1OtherApi(new ApiClient());
   }
 
   public record AttachmentData(String filename, byte[] bytes) {}
@@ -391,5 +391,15 @@ public class BBHttpClientWrapper {
             .block(API_TIMEOUT);
     assert response != null;
     return response.getData();
+  }
+
+  public boolean ping() {
+    try {
+      this.otherApi.apiV1PingGet(password).block(API_TIMEOUT);
+      return true;
+    } catch (Exception e) {
+      log.warn("Failed to ping", e);
+      return false;
+    }
   }
 }
