@@ -76,8 +76,8 @@ spec:
       app: bluebubbles-chatgpt-agent
   strategy:
     rollingUpdate:
-      maxSurge: 0
-      maxUnavailable: 100%
+      maxSurge: 1
+      maxUnavailable: 0
     type: RollingUpdate
   template:
     metadata:
