@@ -176,8 +176,10 @@ public class BBMessageAgent {
                           if (!msg.getGuid().equals(message.messageGuid())) {
                             if (!msg.getIsFromMe()) {
                               stateToHydrate.setLastProcessedMessageGuid(msg.getGuid());
-                              stateToHydrate.setLastProcessedMessageFingerprint(
-                                  IncomingMessage.create(msg).computeMessageFingerprint());
+                              if (msg.getHandle() != null && msg.getHandle().getAddress() != null) {
+                                stateToHydrate.setLastProcessedMessageFingerprint(
+                                    IncomingMessage.create(msg).computeMessageFingerprint());
+                              }
                             }
                             stateToHydrate.addTurn(turn);
                           }

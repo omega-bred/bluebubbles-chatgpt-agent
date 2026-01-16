@@ -56,6 +56,7 @@ public class SendTextAgentTool implements ToolProvider {
                             "fireworks",
                             "happy_birthday",
                             "heart",
+                            "love",
                             "lasers",
                             "shooting_star",
                             "sparkles",
@@ -117,7 +118,7 @@ public class SendTextAgentTool implements ToolProvider {
                       case "echo" -> "com.apple.messages.effect.CKEchoEffect";
                       case "fireworks" -> "com.apple.messages.effect.CKFireworksEffect";
                       case "happy_birthday" -> "com.apple.messages.effect.CKHappyBirthdayEffect";
-                      case "heart" -> "com.apple.messages.effect.CKHeartEffect";
+                      case "heart", "love" -> "com.apple.messages.effect.CKHeartEffect";
                       case "lasers" -> "com.apple.messages.effect.CKLasersEffect";
                       case "shooting_star" -> "com.apple.messages.effect.CKShootingStarEffect";
                       case "sparkles" -> "com.apple.messages.effect.CKSparklesEffect";
