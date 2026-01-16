@@ -46,6 +46,7 @@ public class BBMessageAgent {
   private static final int MAX_TOOL_LOOPS = 50;
   private static final int MAX_IMAGE_ATTACHMENTS = 4;
   private static final int MAX_FILE_ATTACHMENTS = 4;
+  private static final int MAX_GENERATED_IMAGES = 1;
   public static final String IMESSAGE_SERVICE = "iMessage";
 
   public enum AssistantResponsiveness {
@@ -505,6 +506,9 @@ public class BBMessageAgent {
       String filename = "generated-" + (id != null ? id : UUID.randomUUID()) + ".png";
       log.info("Generated image for {}: {}", id, filename);
       images.add(new GeneratedImage(bytes, filename));
+      if (images.size() >= MAX_GENERATED_IMAGES) {
+        break;
+      }
     }
     return images;
   }
@@ -740,6 +744,7 @@ public class BBMessageAgent {
                 + "When sending a text, you may optionally apply an iMessage effect via the effect parameter, but use effects sparingly (e.g. happy_birthday for birthday wishes). "
                 + "Use available tools for tasks like calendars or lookups when asked. "
                 + "Use web_search for current info or external lookups when relevant. "
+                + "If the user requests an image and has attached images, use those images as starting references for image generation. "
                 + "If the user asks the assistant to be more or less responsive (especially in group chats), call "
                 + AssistantResponsivenessAgentTool.TOOL_NAME
                 + " to update the setting. "
@@ -1022,20 +1027,6 @@ public class BBMessageAgent {
     registerTool(new ListColorsAgentTool(gcalClient).getTool());
     registerTool(new GetCurrentTimeAgentTool(gcalClient).getTool());
   }
-
-  //  public void registerTool(
-  //      String name,
-  //      String description,
-  //      Map<String, Object> schema,
-  //      java.util.function.BiFunction<IncomingMessage, JsonNode, String> handler) {
-  //    registerTool(
-  //        new AgentTool(
-  //            name,
-  //            description,
-  //            jsonSchema(schema),
-  //            false,
-  //            (context, args) -> handler.apply(context.message(), args)));
-  //  }
 
   private void registerTool(AgentTool tool) {
     tools.put(tool.name(), tool);
