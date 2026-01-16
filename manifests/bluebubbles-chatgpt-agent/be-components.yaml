@@ -123,11 +123,17 @@ spec:
                   key: "password"
                   name: mem0-api-key
             - name: POSTGRES_JDBC_URL
-              value: ""
+              value: "jdbc:postgresql://bb-chatgpt-agent-db.bb-chatgpt-agent.svc.cluster.local:5432/bb_chatgpt_agent"
             - name: POSTGRES_USER
-              value: ""
+              valueFrom:
+                secretKeyRef:
+                  name: bb-chatgpt-agent-admin.bb-chatgpt-agent-db.credentials.postgresql.acid.zalan.do
+                  key: username
             - name: POSTGRES_PASSWORD
-              value: ""
+              valueFrom:
+                secretKeyRef:
+                  name: bb-chatgpt-agent-admin.bb-chatgpt-agent-db.credentials.postgresql.acid.zalan.do
+                  key: password
             - name: "GIPHY_API_KEY"
               valueFrom:
                 secretKeyRef:
