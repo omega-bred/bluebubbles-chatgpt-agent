@@ -701,7 +701,7 @@ public class BBMessageAgent {
           case LESS_RESPONSIVE ->
               "Responsiveness: less responsive. Assume "
                   + NO_RESPONSE_TEXT
-                  + " unless explicitly addressed, and avoid jumping into group chat unless asked. No reacting unless directly asked. Don't engage in casual conversation, only reply to direct asks to you only. Do not assume a message was meant for you unless you're directly address by name.";
+                  + " unless explicitly addressed, and avoid jumping into group chat unless asked. No reacting unless directly asked. Don't engage in casual conversation, only reply to direct asks to you only. Do not assume a message was meant for you unless you're directly addressed by name.";
           case MORE_RESPONSIVE ->
               "Responsiveness: more responsive. Act like an active participant, reply when helpful, and use reactions more freely. ";
           case DEFAULT -> "";
@@ -782,7 +782,7 @@ public class BBMessageAgent {
                 + ". If the account is not linked, call "
                 + ManageAccountsAgentTool.TOOL_NAME
                 + " to get an auth_url and have the user complete the OAuth flow in their browser. "
-                + "If multiple calendar accounts are linked, pass account_key to the calendar tools to pick the right account. "
+                + "If multiple calendar accounts are linked, pass account_key to the calendar tools to pick the right account; ask if ambiguous. "
                 + "When the user shares information about themselves, or information that is helpful to remember "
                 + "use the "
                 + MemorySaveAgentTool.TOOL_NAME
@@ -800,7 +800,7 @@ public class BBMessageAgent {
                 + ". "
                 + "If no reply is needed, output exactly "
                 + NO_RESPONSE_TEXT
-                + "."
+                + ". "
                 + "If the incoming message starts with 'Reacted ', 'Loved ', 'Liked ', 'Disliked ', 'Questioned ', 'Emphasized ', 'Laughed at ' - reply "
                 + NO_RESPONSE_TEXT
                 + " unless the reaction directly answers a question you (the assistant) asked or implies the user needs clarification. These are just reactions to your prior message and do not necessarily indicate a response is needed. Use your best judgement but err on the side of being less verbose and not responding by using "

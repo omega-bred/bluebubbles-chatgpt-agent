@@ -16,7 +16,7 @@ public class AssistantNameAgentTool implements ToolProvider {
   public AgentTool getTool() {
     return new AgentTool(
         TOOL_NAME,
-        "Store, set, or forget a user's name for global use across chats. Only store a name after the user explicitly agrees.",
+        "Store, set, or forget a user's name for global use across chats. Only store a name after the user explicitly agrees and mention you will use it across any chats the user is present in.",
         jsonSchema(
             Map.of(
                 "type",
