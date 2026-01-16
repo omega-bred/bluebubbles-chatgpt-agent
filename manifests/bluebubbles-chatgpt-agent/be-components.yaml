@@ -111,7 +111,7 @@ spec:
                   key: "password"
                   name: mem0-api-key
             - name: POSTGRES_JDBC_URL
-              value: "jdbc:postgresql://bb-chatgpt-agent-db.bb-chatgpt-agent.svc.cluster.local:5432/bb_chatgpt_agent"
+              value: "jdbc:postgresql://bb-chatgpt-agent-db.bluebubbles-chatgpt-agent.svc.cluster.local:5432/bb_chatgpt_agent"
             - name: POSTGRES_USER
               valueFrom:
                 secretKeyRef:
