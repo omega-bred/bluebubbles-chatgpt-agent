@@ -1,0 +1,75 @@
+openapi: 3.1.0
+info:
+  title: BlueBubbles ChatGPT Agent OpenAPI spec
+  description: Agent that bridges ChatGPT and iMessage
+  version: 0.0.1
+servers:
+  - url: http://localhost:8080
+tags:
+  - name: ping
+    description: endpoints related to ping
+  - name: bluebubbles
+    description: BlueBubbles webhook endpoints
+paths:
+
+  /api/v1/bluebubbles/messageReceived.message:
+    post:
+      operationId: bluebubblesMessageReceived
+      tags:
+        - bluebubbles
+      summary: BlueBubbles message webhook
+      description: Receives BlueBubbles message webhook payloads
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BlueBubblesMessageReceivedRequest'
+      responses:
+        '200':
+          description: Message processed
+          content:
+            application/json:
+              schema:
+                type: object
+  /api/v1/ping/get.ping:
+    get:
+      operationId: ping
+      tags:
+        - ping
+      summary: Pings the server to see if it is alive
+      description: Pings the server and replies with some information about the server if it is alive
+      responses:
+        '200':    # status code
+          description: A JSON object about the server
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PingResponse"
+
+
+components:
+  schemas:
+    BlueBubblesMessageReceivedRequest:
+      type: object
+      additionalProperties: true
+    ErrorModel:
+      type: object
+      required:
+        - message
+        - code
+      properties:
+        message:
+          type: string
+        code:
+          type: integer
+          minimum: 100
+          maximum: 600
+    PingResponse:
+      type: object
+      properties:
+        reply:
+          type: string
+        timestamp:
+          type: string
+          format: date-time

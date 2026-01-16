@@ -1,0 +1,9 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: bluebubbles-chatgpt-agent
+resources:
+- be-components.yaml
+images:
+- name: registry.breland.io/omega-bred/bluebubbles-chatgpt-agent
+  newName: registry.breland.io/omega-bred/bluebubbles-chatgpt-agent
+  newTag: bd61f28d7fef95789f6780c8719e56821a6fe972-129

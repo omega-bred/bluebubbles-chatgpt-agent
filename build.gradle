@@ -1,0 +1,403 @@
+import org.openapitools.generator.gradle.plugin.tasks.GenerateTask
+
+import java.nio.file.Files
+
+plugins {
+	id 'java'
+	id 'org.springframework.boot' version '3.4.4'
+	id 'io.spring.dependency-management' version '1.1.7'
+	id 'org.openapi.generator' version '7.8.0'
+	id 'com.diffplug.spotless' version '7.0.3'
+    id "org.flywaydb.flyway" version "10.20.1"
+}
+
+var grp = 'io.breland.bbagent'
+
+// Provide secrets from 1Password to forked JVMs (tests, bootRun)
+// Strategy per secret:
+// 1) If env VAR is present (local or CI), use it
+// 2) If not present and NOT CI, try to read from 1Password via `op read <ref>`
+// 3) Otherwise, let Spring fall back to defaults in application.properties
+//
+// To add more secrets, extend `opSecretMappings` below:
+//   "op://vault/item/field" : "SYS_PROPERTY_NAME"
+// The property name is also used as the environment variable name.
+
+def isCi = System.getenv('CI') != null
+
+def opSecretMappings = [
+    // Example: "op://MyVault/my-item/password": "MY_SERVICE_PASSWORD",
+    "op://Kubernetes/openai-imagegen-key-wallart/password": "OPENAI_API_KEY",
+    "op://Kubernetes/BlueBubbles/password": "BLUEBUBBLES_PASSWORD",
+    "op://Kubernetes/mem0-api-key/password": "MEM0_API_KEY",
+    "op://Kubernetes/mem0-api-key/project-id": "MEM0_PROJECT_ID",
+    "op://Kubernetes/mem0-api-key/org-id": "MEM0_ORG_ID",
+    "op://Kubernetes/giphy-api-key/password": "GIPHY_API_KEY",
+]
+
+def resolveSecret = { String propName, String opRef ->
+    def fromEnv = System.getenv(propName)
+    if (fromEnv && fromEnv.trim()) {
+        println "🔑 Using ${propName} from environment${isCi ? ' (CI)' : ''}"
+        return fromEnv.trim()
+    }
+    if (isCi) {
+        println "ℹ️ CI detected and no ${propName} in env; will rely on application fallback"
+        return null
+    }
+    try {
+        def cmd = "op read ${opRef}"
+        def proc = ["bash", "-c", cmd].execute()
+        def out = new StringBuffer()
+        def err = new StringBuffer()
+        proc.consumeProcessOutput(out, err)
+        proc.waitFor()
+        def value = out.toString().trim()
+        if (proc.exitValue() == 0 && value) {
+            println "🔑 Loaded ${propName} from 1Password (${opRef})"
+            return value
+        } else {
+            println "⚠️ Failed to read ${propName} from 1Password (${opRef}); exit=${proc.exitValue()} stderr=${err.toString().trim()}"
+            return null
+        }
+    } catch (Exception e) {
+        println "⚠️ Could not load ${propName} from 1Password: ${e.message}"
+        return null
+    }
+}
+
+def resolveAllSecrets = {
+    def result = [:]
+    opSecretMappings.each { opRef, propName ->
+        def v = resolveSecret(propName, opRef)
+        if (v) {
+            result[propName] = v
+        } else {
+            // log a gentle note so users know fallback will apply
+            println "ℹ️ No value available for ${propName}; application may use its configured default"
+        }
+    }
+    return result
+}
+
+// Inject into all Test tasks
+tasks.withType(Test).configureEach {
+    def secrets = resolveAllSecrets()
+    if (!secrets.isEmpty()) {
+        secrets.each { propName, value ->
+            // make available to Spring via both system properties and env var
+            systemProperty propName, value
+            environment propName, value
+            println "🔑 ${propName} injected into test task ${name}"
+        }
+    }
+}
+
+// Also inject into bootRun (local app run)
+tasks.matching { it.name == 'bootRun' }.configureEach {
+    def secrets = resolveAllSecrets()
+    if (!secrets.isEmpty()) {
+        secrets.each { propName, value ->
+            systemProperty propName, value
+            environment propName, value
+            println "🔑 ${propName} injected into bootRun"
+        }
+    }
+}
+
+group = grp
+version = '0.0.1-SNAPSHOT'
+
+springBoot {
+	mainClass = grp + ".server.BBChatGptAgentApplication"
+}
+
+def npmPath = ['bash', 'zsh']
+        .collect { shell ->
+            try {
+                def proc = ["${shell}", "-c", "which npm"].execute()
+                def output = proc.text.trim()
+                proc.waitFor()
+                return (proc.exitValue() == 0 && output) ? output : null
+            } catch (ignored) {
+                null
+            }
+        }
+        .find { it } ?: '/Users/breland/.nvm/versions/node/v24.6.0/bin/npm'
+
+java {
+	toolchain {
+		languageVersion = JavaLanguageVersion.of(
+				(findProperty("javaVersion") ?: "24") as int
+		)
+	}
+}
+
+configurations {
+	compileOnly {
+		extendsFrom annotationProcessor
+	}
+}
+
+repositories {
+	mavenCentral()
+}
+
+
+configurations.all {
+	exclude group: 'ch.qos.logback', module: 'logback-classic'
+	exclude group: 'org.apache.logging.log4j', module: 'log4j-to-slf4j'
+}
+
+
+dependencies {
+	implementation 'org.springframework.boot:spring-boot-starter-actuator'
+	implementation 'org.springframework.boot:spring-boot-starter-data-neo4j'
+	implementation 'org.springframework.boot:spring-boot-starter-validation'
+	implementation 'org.springframework.boot:spring-boot-starter-web'
+
+	// Persistence (PostgreSQL in prod)
+//    implementation "org.flywaydb:flyway-core:10.20.1"
+//    runtimeOnly 'org.flywaydb:flyway-database-postgresql:10.20.1'
+//    implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
+//    implementation 'org.postgresql:postgresql'
+//    implementation 'org.mapstruct:mapstruct:1.6.2'
+//    annotationProcessor 'org.mapstruct:mapstruct-processor:1.6.2'
+//    implementation 'io.hypersistence:hypersistence-utils-hibernate-63:3.7.3'
+//
+
+
+    implementation 'de.codecentric:spring-boot-admin-starter-client:3.5.1'
+
+//	implementation("org.springframework.boot:spring-boot-starter-security")
+//	implementation("org.springframework.boot:spring-boot-starter-oauth2-resource-server")
+//	implementation 'com.juliusyolo:endpoint-security-clerk-spring-boot-starter:1.0.2-RELEASE'
+//	implementation 'com.clerk:backend-api:3.1.0'
+
+
+	implementation("org.apache.httpcomponents.client5:httpclient5:5.5")
+
+
+    // lombok
+	compileOnly 'org.projectlombok:lombok:1.18.38'
+	annotationProcessor 'org.projectlombok:lombok:1.18.38'
+	implementation platform('org.apache.logging.log4j:log4j-bom:2.24.0')
+    implementation platform("org.springframework.ai:spring-ai-bom:1.1.2")
+
+    runtimeOnly 'org.apache.logging.log4j:log4j-slf4j2-impl'
+
+
+	// OpenAPI deps
+	implementation 'io.swagger.core.v3:swagger-models:2.2.22'
+	implementation 'io.swagger.core.v3:swagger-annotations:2.2.22'
+	implementation 'jakarta.validation:jakarta.validation-api:3.1.0'
+	implementation 'jakarta.annotation:jakarta.annotation-api:3.0.0'
+	implementation 'org.openapitools:jackson-databind-nullable:0.2.6'
+    implementation "org.springframework.boot:spring-boot-starter-webflux"
+
+
+    implementation 'com.spotify:completable-futures:0.3.1'
+
+    // Google Calendar
+    implementation 'com.google.api-client:google-api-client:2.6.0'
+    implementation 'com.google.oauth-client:google-oauth-client-jetty:1.36.0'
+    implementation 'com.google.http-client:google-http-client-jackson2:1.43.3'
+    implementation 'com.google.apis:google-api-services-calendar:v3-rev20251207-2.0.0'
+
+
+    implementation("com.openai:openai-java-spring-boot-starter:4.14.0")
+
+    implementation 'io.micrometer:micrometer-core'
+    runtimeOnly 'io.micrometer:micrometer-registry-influx'
+	annotationProcessor 'org.springframework.boot:spring-boot-configuration-processor'
+    testImplementation 'org.springframework.boot:spring-boot-starter-test'
+    testImplementation 'org.springframework.security:spring-security-test'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+
+    // generated java client
+    implementation "org.springframework:spring-webflux:6.2.7"
+    implementation "jakarta.annotation:jakarta.annotation-api:3.0.0"
+    implementation 'joda-time:joda-time:2.14.0'
+    implementation "com.fasterxml.jackson.datatype:jackson-datatype-jsr310"
+}
+
+tasks.named('test') {
+	useJUnitPlatform()
+}
+
+openApiGenerate {
+	generatorName = 'spring'
+	inputSpec = "$rootDir/src/main/resources/openapi.yaml" // Path to your OpenAPI spec file
+	outputDir = "$buildDir/generated"
+	apiPackage = grp + ".generated.api"
+	modelPackage = grp + ".generated.model"
+	configOptions = [
+			dateLibrary: 'java8',
+			useSpringBoot3: 'true',
+			useJakartaEe: 'true',
+			generateBuilders: 'true',
+			useTags: 'true',
+			enumPropertyNaming: 'original'
+	]
+}
+
+tasks.register('openApiGenerateTypescriptClient', GenerateTask) {
+	generatorName = 'typescript-axios'
+	inputSpec = "${projectDir}/src/main/resources/openapi.yaml"
+	outputDir = "$buildDir/typescript-client-generated"
+	configOptions = [
+			npmName    : "@bluebubbles-chatgpt-agent/backend-client",
+			useTags    : "true",
+			supportsES6: "true"
+	]
+}
+
+tasks.register('openApiGenerateJavaClientBlueBubbles', GenerateTask) {
+    generatorName = 'java'
+    inputSpec = "${projectDir}/src/main/resources/bluebubbles.yaml"
+    outputDir = "$buildDir/java-client-generated-bluebubbles"
+    apiPackage =  "${grp}.generated.bluebubblesclient.api"
+    modelPackage = "${grp}.generated.bluebubblesclient.model"
+
+    configOptions = [
+            dateLibrary: "java8-localdatetime",
+            library: "webclient", // or "okhttp-gson", "jersey2", etc
+            artifactId: 'bluebubbles-client',
+            groupId: "${grp}",
+            jakarta: 'true',
+            useJakartaEe: 'true',
+            serializationLibrary: 'jackson',
+            enumPropertyNaming: 'original',
+            generateBuilders: 'true',
+
+    ]
+
+    typeMappings = [
+            'OffsetDateTime': 'java.time.OffsetDateTime'
+    ]
+    importMappings = [
+            'OffsetDateTime': 'java.time.OffsetDateTime'
+    ]
+}
+
+
+tasks.register('openApiGenerateJavaClient', GenerateTask) {
+	generatorName = 'java'
+	inputSpec = "${projectDir}/src/main/resources/openapi.yaml"
+	outputDir = "$buildDir/java-client-generated"
+	apiPackage =  "${grp}.generated.client.api"
+	modelPackage = "${grp}.generated.client.model"
+	configOptions = [
+			dateLibrary: "java8",
+			library: "webclient", // or "okhttp-gson", "jersey2", etc
+			artifactId: 'bluebubbles-chatgpt-agent-client',
+			groupId: "${grp}",
+			jakarta: 'true',
+			useJakartaEe: 'true',
+			serializationLibrary: 'jackson',
+			enumPropertyNaming: 'original',
+            generateBuilders: 'true'
+	]
+}
+
+
+sourceSets {
+	main {
+		java {
+			srcDir "$buildDir/generated/src/main/java"
+            srcDir "$buildDir/java-client-generated-bluebubbles/src/main/java"
+		}
+	}
+	test {
+		java {
+			// ❯❯ include the freshly-generated client classes
+			srcDir "$buildDir/java-client-generated/src/main/java"
+		}
+	}
+}
+
+// --- npm install ------------------------------------------------------------
+tasks.register('npmInstallClient', Exec) {
+	dependsOn tasks.openApiGenerateTypescriptClient
+	workingDir "$buildDir/typescript-client-generated"
+	commandLine npmPath, "install"
+
+	// give Gradle something to track
+	inputs.file("$buildDir/typescript-client-generated/package.json")
+	outputs.dir("$buildDir/typescript-client-generated/node_modules")
+}
+
+// --- npm run build (creates dist) -------------------------------------------
+tasks.register('npmBuildClient', Exec) {
+	dependsOn tasks.npmInstallClient
+	workingDir "$buildDir/typescript-client-generated"
+	commandLine npmPath, "run", "build"
+
+	// declare what this produces
+	outputs.dir("$buildDir/typescript-client-generated/dist/esm")
+}
+
+// --- copy the JS into Spring’s static resources -----------------------------
+tasks.register('copyGeneratedClient', Copy) {
+        dependsOn tasks.npmBuildClient          // make sure dist exists first
+
+        // use a Provider from the layout API so evaluation happens after npmBuildClient
+        from(layout.buildDirectory.dir("typescript-client-generated/dist/esm"))
+        into("src/main/resources/static/client")
+
+        include '**/*.js'
+        include '**/*.d.ts'
+}
+
+tasks.register('copyClientToFrontend', Copy) {
+        dependsOn tasks.npmBuildClient
+        from(layout.buildDirectory.dir("typescript-client-generated/dist/esm"))
+        into("frontend/src/client")
+        include '**/*.js'
+        include '**/*.d.ts'
+}
+
+// --- frontend React app ----------------------------------------------------
+tasks.register('npmInstallFrontend', Exec) {
+        workingDir "${projectDir}/frontend"
+        commandLine npmPath, "install"
+        inputs.file("${projectDir}/frontend/package.json")
+        outputs.dir("${projectDir}/frontend/node_modules")
+}
+
+tasks.register('npmBuildFrontend', Exec) {
+        dependsOn tasks.npmInstallFrontend
+        dependsOn tasks.copyClientToFrontend
+        workingDir "${projectDir}/frontend"
+        commandLine npmPath, "run", "build"
+        outputs.dir("${projectDir}/frontend/dist")
+}
+
+tasks.register('copyFrontend', Copy) {
+        dependsOn tasks.npmBuildFrontend
+        from("${projectDir}/frontend/dist")
+        into("src/main/resources/static")
+}
+
+tasks.named('processResources') {
+        dependsOn tasks.named('copyGeneratedClient')
+        dependsOn tasks.named('copyFrontend')
+}
+
+compileJava.dependsOn tasks.openApiGenerate
+compileJava.dependsOn tasks.openApiGenerateJavaClient
+compileJava.dependsOn tasks.openApiGenerateJavaClientBlueBubbles
+
+spotless {
+    java {
+        // Only format source files to avoid scanning build outputs and generated code
+        target 'src/**/*.java'
+        googleJavaFormat()
+    }
+}
+
+// Ensure Spotless tasks run after tasks that write into the source tree to avoid implicit dependency issues
+tasks.matching { it.name.startsWith('spotless') }.configureEach {
+        mustRunAfter tasks.named('copyGeneratedClient')
+        mustRunAfter tasks.named('copyFrontend')
+}

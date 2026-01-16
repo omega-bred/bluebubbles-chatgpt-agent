@@ -1,0 +1,210 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: bluebubbles-chatgpt-agent
+  labels:
+    pod-security.kubernetes.io/enforce: baseline
+---
+apiVersion: onepassword.com/v1
+kind: OnePasswordItem
+metadata:
+  name: giphy-api-key #this name will also be used for naming the generated kubernetes secret
+  namespace: bluebubbles-chatgpt-agent
+spec:
+  itemPath: "vaults/Kubernetes/items/giphy-api-key"
+---
+apiVersion: onepassword.com/v1
+kind: OnePasswordItem
+metadata:
+  name: mem0-api-key #this name will also be used for naming the generated kubernetes secret
+  namespace: bluebubbles-chatgpt-agent
+spec:
+  itemPath: "vaults/Kubernetes/items/mem0-api-key"
+---
+apiVersion: onepassword.com/v1
+kind: OnePasswordItem
+metadata:
+  name: bluebubbles #this name will also be used for naming the generated kubernetes secret
+  namespace: bluebubbles-chatgpt-agent
+spec:
+  itemPath: "vaults/Kubernetes/items/BlueBubbles"
+---
+apiVersion: onepassword.com/v1
+kind: OnePasswordItem
+metadata:
+  name: openai-imagegen-key-wallart #this name will also be used for naming the generated kubernetes secret
+  namespace: bluebubbles-chatgpt-agent
+spec:
+  itemPath: "vaults/Kubernetes/items/openai-imagegen-key-wallart"
+---
+apiVersion: onepassword.com/v1
+kind: OnePasswordItem
+metadata:
+  name: bluebubbles-chatgpt-agent-influx-token #this name will also be used for naming the generated kubernetes secret
+  namespace: bluebubbles-chatgpt-agent
+spec:
+  itemPath: "vaults/Kubernetes/items/bluebubbles-chatgpt-agent-influx-token"
+---
+apiVersion: onepassword.com/v1
+kind: OnePasswordItem
+metadata:
+  name: gcal-mcp-server #this name will also be used for naming the generated kubernetes secret
+  namespace: bluebubbles-chatgpt-agent
+spec:
+  itemPath: "vaults/Kubernetes/items/gcal-mcp-server"
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: bluebubbles-chatgpt-agent-data
+  namespace: bluebubbles-chatgpt-agent
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 5Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app: bluebubbles-chatgpt-agent
+  name: bluebubbles-chatgpt-agent
+spec:
+  progressDeadlineSeconds: 600
+  replicas: 1
+  revisionHistoryLimit: 5
+  selector:
+    matchLabels:
+      app: bluebubbles-chatgpt-agent
+  strategy:
+    rollingUpdate:
+      maxSurge: 0
+      maxUnavailable: 100%
+    type: RollingUpdate
+  template:
+    metadata:
+      labels:
+        app: bluebubbles-chatgpt-agent
+    spec:
+      containers:
+        - name: bluebubbles-chatgpt-agent
+          env:
+            - name: SPRING_PROFILES_ACTIVE
+              value: "prod"
+            - name: INFLUX_DB_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  key: password
+                  name: bluebubbles-chatgpt-agent-influx-token
+
+            - name: "OPENAI_API_KEY"
+              valueFrom:
+                secretKeyRef:
+                  key: "password"
+                  name: openai-imagegen-key-wallart
+            - name: "BLUEBUBBLES_PASSWORD"
+              valueFrom:
+                secretKeyRef:
+                  key: "password"
+                  name: bluebubbles
+            - name: "MEM0_API_KEY"
+              valueFrom:
+                secretKeyRef:
+                  key: "password"
+                  name: mem0-api-key
+            - name: "GIPHY_API_KEY"
+              valueFrom:
+                secretKeyRef:
+                  key: "password"
+                  name: giphy-api-key
+            - name: "GCAL_TOKEN_DIR"
+              value: "/mnt/data"
+            - name: "GCAL_OAUTH_CLIENT_SECRET_PATH"
+              value: "/var/run/secrets/gcal/client_secret_552753055766-eivrmha37oibvonnmb3ju9hdvu7ade1v.apps.googleusercontent.com.json"
+
+          image: registry.breland.io/omega-bred/bluebubbles-chatgpt-agent:latest
+          imagePullPolicy: Always
+          securityContext:
+            privileged: false
+          ports:
+            - containerPort: 8080
+              protocol: TCP
+          readinessProbe:
+            tcpSocket:
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 30
+          livenessProbe:
+            tcpSocket:
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 30
+          resources:
+            limits:
+              cpu: 2048m
+              memory: 2048Mi
+            requests:
+              cpu: 512m
+              memory: 512Mi
+          terminationMessagePath: /dev/termination-log
+          terminationMessagePolicy: File
+          volumeMounts:
+            - name: bluebubbles-chatgpt-agent-data
+              mountPath: /mnt/data
+            - name: gcal-client-secret
+              mountPath: /var/run/secrets/gcal
+              readOnly: true
+      dnsPolicy: ClusterFirst
+      restartPolicy: Always
+      schedulerName: default-scheduler
+      securityContext: {}
+      terminationGracePeriodSeconds: 30
+      volumes:
+        - name: bluebubbles-chatgpt-agent-data
+          persistentVolumeClaim:
+            claimName: bluebubbles-chatgpt-agent-data
+        - name: gcal-client-secret
+          secret:
+            secretName: gcal-mcp-server
+#      nodeSelector:
+#        topology.kubernetes.io/zone: "3646"
+---
+kind: Service
+apiVersion: v1
+metadata:
+  name: bluebubbles-chatgpt-agent
+  labels:
+    app: bluebubbles-chatgpt-agent
+spec:
+  ports:
+    - name: http
+      protocol: TCP
+      port: 80
+      targetPort: 8080
+  selector:
+    app: bluebubbles-chatgpt-agent
+  type: LoadBalancer
+  sessionAffinity: None
+  externalTrafficPolicy: Cluster
+  ipFamilies:
+    - IPv4
+  ipFamilyPolicy: SingleStack
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  labels:
+    app: bluebubbles-chatgpt-agent
+  name: bluebubbles-chatgpt-agent
+spec:
+  defaultBackend:
+    service:
+      name: bluebubbles-chatgpt-agent
+      port:
+        number: 80
+  tls:
+    - hosts:
+        - bluebubbles-chatgpt-agent
+  ingressClassName: tailscale
