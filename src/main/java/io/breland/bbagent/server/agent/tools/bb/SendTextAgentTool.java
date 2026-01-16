@@ -22,7 +22,7 @@ public class SendTextAgentTool implements ToolProvider {
   public AgentTool getTool() {
     return new AgentTool(
         TOOL_NAME,
-        "Send a text reply via iMessage.",
+        "Send a text reply via iMessage. You may optionally apply an iMessage effect sparingly (e.g. happy_birthday for birthday wishes).",
         jsonSchema(
             Map.of(
                 "type",
@@ -34,11 +34,34 @@ public class SendTextAgentTool implements ToolProvider {
                     "message",
                     Map.of("type", "string"),
                     "selectedMessageGuid",
-                    Map.of("type", "string"),
+                    Map.of(
+                        "type",
+                        "string",
+                        "description",
+                        "If it makes it more clear - you can pass the messageGuid you're replying to"),
+                    "effect",
+                    Map.of(
+                        "type",
+                        "string",
+                        "description",
+                        "Optional iMessage effect to use sparingly. Example: happy_birthday.",
+                        "enum",
+                        List.of(
+                            "slam",
+                            "gentle",
+                            "invisible",
+                            "loud",
+                            "confetti",
+                            "echo",
+                            "fireworks",
+                            "happy_birthday",
+                            "heart",
+                            "lasers",
+                            "shooting_star",
+                            "sparkles",
+                            "spotlight")),
                     "partIndex",
-                    Map.of("type", "integer", "minimum", 0),
-                    "method",
-                    Map.of("type", "string", "enum", List.of("apple-script", "private-api"))),
+                    Map.of("type", "integer", "minimum", 0)),
                 "required",
                 List.of("chatGuid", "message"))),
         false,
@@ -58,18 +81,58 @@ public class SendTextAgentTool implements ToolProvider {
               .ifPresent(request::selectedMessageGuid);
 
           Optional.of(args)
+              .map(a -> a.get("effect"))
+              .filter(Predicate.not(JsonNode::isNull))
+              .filter(JsonNode::isTextual)
+              .map(JsonNode::asText)
+              .map(
+                  effectName -> {
+                    // https://docs.rs/imessage-database/latest/imessage_database/message_types/expressives/enum.Expressive.html
+                    // com.apple.MobileSMS.expressivesend.gentle
+                    // com.apple.MobileSMS.expressivesend.impact
+                    // com.apple.MobileSMS.expressivesend.invisibleink
+                    // com.apple.MobileSMS.expressivesend.loud
+                    // com.apple.messages.effect.CKConfettiEffect
+                    // com.apple.messages.effect.CKEchoEffect
+                    // com.apple.messages.effect.CKFireworksEffect
+                    // com.apple.messages.effect.CKHappyBirthdayEffect
+                    // com.apple.messages.effect.CKHeartEffect
+                    // com.apple.messages.effect.CKLasersEffect
+                    // com.apple.messages.effect.CKShootingStarEffect
+                    // com.apple.messages.effect.CKSparklesEffect
+                    // com.apple.messages.effect.CKSpotlightEffect
+                    String normalized =
+                        effectName
+                            .trim()
+                            .toLowerCase(Locale.ROOT)
+                            .replace("-", "_")
+                            .replace(" ", "_");
+                    return switch (normalized) {
+                      case "slam", "impact" -> "com.apple.MobileSMS.expressivesend.impact";
+                      case "gentle" -> "com.apple.MobileSMS.expressivesend.gentle";
+                      case "invisible", "invisible_ink" ->
+                          "com.apple.MobileSMS.expressivesend.invisibleink";
+                      case "loud" -> "com.apple.MobileSMS.expressivesend.loud";
+                      case "confetti" -> "com.apple.messages.effect.CKConfettiEffect";
+                      case "echo" -> "com.apple.messages.effect.CKEchoEffect";
+                      case "fireworks" -> "com.apple.messages.effect.CKFireworksEffect";
+                      case "happy_birthday" -> "com.apple.messages.effect.CKHappyBirthdayEffect";
+                      case "heart" -> "com.apple.messages.effect.CKHeartEffect";
+                      case "lasers" -> "com.apple.messages.effect.CKLasersEffect";
+                      case "shooting_star" -> "com.apple.messages.effect.CKShootingStarEffect";
+                      case "sparkles" -> "com.apple.messages.effect.CKSparklesEffect";
+                      case "spotlight" -> "com.apple.messages.effect.CKSpotlightEffect";
+                      default -> null;
+                    };
+                  })
+              .ifPresent(request::effectId);
+
+          Optional.of(args)
               .map(a -> a.get("partIndex"))
               .filter(Predicate.not(JsonNode::isNull))
               .filter(JsonNode::isNumber)
               .map(JsonNode::asInt)
               .ifPresent(request::partIndex);
-
-          Optional.of(args)
-              .map(a -> a.get("method"))
-              .filter(Predicate.not(JsonNode::isNull))
-              .filter(JsonNode::isTextual)
-              .map(JsonNode::asText)
-              .ifPresent(request::method);
 
           bbHttpClientWrapper.sendTextDirect(request);
           context.recordAssistantTurn(message);

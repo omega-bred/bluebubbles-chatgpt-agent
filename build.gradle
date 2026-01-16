@@ -33,6 +33,7 @@ def opSecretMappings = [
     "op://Kubernetes/mem0-api-key/project-id": "MEM0_PROJECT_ID",
     "op://Kubernetes/mem0-api-key/org-id": "MEM0_ORG_ID",
     "op://Kubernetes/giphy-api-key/password": "GIPHY_API_KEY",
+    "op://Kubernetes/gcal-oauth-state-secret/password": "GCAL_OAUTH_STATE_SECRET",
 ]
 
 def resolveSecret = { String propName, String opRef ->
@@ -203,6 +204,8 @@ dependencies {
     implementation 'com.google.oauth-client:google-oauth-client-jetty:1.36.0'
     implementation 'com.google.http-client:google-http-client-jackson2:1.43.3'
     implementation 'com.google.apis:google-api-services-calendar:v3-rev20251207-2.0.0'
+
+    implementation 'com.auth0:java-jwt:4.5.0'
 
 
     implementation("com.openai:openai-java-spring-boot-starter:4.14.0")

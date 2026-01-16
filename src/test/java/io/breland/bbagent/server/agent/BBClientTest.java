@@ -8,13 +8,11 @@ import io.breland.bbagent.generated.bluebubblesclient.model.Message;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.UUID;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 
 @SpringBootTest()
-@Disabled
 public class BBClientTest {
 
   @Autowired public BBHttpClientWrapper bbHttpClientWrapper;
@@ -59,7 +57,7 @@ public class BBClientTest {
 
   @Test
   public void testGetMessage() {
-    Message msg = bbHttpClientWrapper.getMessage("8D7D7D09-DD10-425F-9B72-8EF322ECA49D");
+    Message msg = bbHttpClientWrapper.getMessage("6415C258-CAF7-45B1-99F6-1ED174764021");
     assertNotNull(msg);
   }
 

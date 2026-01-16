@@ -19,7 +19,7 @@ public class ManageAccountsAgentTool extends GcalToolSupport implements ToolProv
   public AgentTool getTool() {
     return new AgentTool(
         TOOL_NAME,
-        "Manage Google Calendar accounts (auth URL, exchange code, list, revoke). Use this tool to find out if a calendar/account is already linked and other account management things.",
+        "Manage Google Calendar accounts (auth URL, list, revoke). Use this tool to find out if a calendar/account is already linked and other account management operations.",
         jsonSchema(
             Map.of(
                 "type",
@@ -27,12 +27,7 @@ public class ManageAccountsAgentTool extends GcalToolSupport implements ToolProv
                 "properties",
                 Map.of(
                     "action",
-                        Map.of(
-                            "type",
-                            "string",
-                            "enum",
-                            List.of("list", "auth_url", "exchange_code", "revoke")),
-                    "code", Map.of("type", "string")),
+                    Map.of("type", "string", "enum", List.of("list", "auth_url", "revoke"))),
                 "required",
                 List.of("action"))),
         false,
@@ -56,7 +51,13 @@ public class ManageAccountsAgentTool extends GcalToolSupport implements ToolProv
                 return gcalClient.mapper().writeValueAsString(response);
               }
               case "auth_url" -> {
-                String url = gcalClient.getAuthUrl(accountKey);
+                String chatGuid = context.message() != null ? context.message().chatGuid() : null;
+                String messageGuid =
+                    context.message() != null ? context.message().messageGuid() : null;
+                if (chatGuid == null || chatGuid.isBlank()) {
+                  return "missing chat";
+                }
+                String url = gcalClient.getAuthUrl(accountKey, chatGuid, messageGuid);
                 if (url == null) {
                   return "not configured";
                 }
@@ -64,14 +65,6 @@ public class ManageAccountsAgentTool extends GcalToolSupport implements ToolProv
                 response.put("auth_url", url);
                 response.put("account_key", accountKey);
                 return gcalClient.mapper().writeValueAsString(response);
-              }
-              case "exchange_code" -> {
-                String code = getOptionalText(args, "code");
-                if (code == null || code.isBlank()) {
-                  return "missing code";
-                }
-                boolean success = gcalClient.exchangeCode(accountKey, code);
-                return success ? "linked" : "failed";
               }
               case "revoke" -> {
                 boolean success = gcalClient.revokeAccount(accountKey);

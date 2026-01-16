@@ -1,5 +1,10 @@
 package io.breland.bbagent.server.agent.tools.gcal;
 
+import com.auth0.jwt.JWT;
+import com.auth0.jwt.JWTVerifier;
+import com.auth0.jwt.algorithms.Algorithm;
+import com.auth0.jwt.exceptions.JWTVerificationException;
+import com.auth0.jwt.interfaces.DecodedJWT;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.google.api.client.auth.oauth2.Credential;
 import com.google.api.client.auth.oauth2.TokenResponse;
@@ -19,6 +24,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -35,21 +41,28 @@ import org.springframework.stereotype.Component;
 public class GcalClient {
   private static final JsonFactory JSON_FACTORY = JacksonFactory.getDefaultInstance();
   private static final Collection<String> SCOPES = List.of(CalendarScopes.CALENDAR);
+  private static final Duration OAUTH_STATE_TTL = Duration.ofMinutes(10);
 
   private final ObjectMapper objectMapper = new ObjectMapper();
   private final String clientSecretPath;
   private final String tokenDirectory;
   private final String redirectUri;
   private final String applicationName;
+  private final String stateSecret;
+  private final Algorithm stateAlgorithm;
 
   public GcalClient(
       @Value("${gcal.oauth.client_secret_path:}") String clientSecretPath,
       @Value("${gcal.oauth.token_dir:/mnt/data}") String tokenDirectory,
       @Value("${gcal.oauth.redirect_uri:}") String redirectUri,
+      @Value("${gcal.oauth.state_secret:}") String stateSecret,
       @Value("${gcal.application_name:newsies}") String applicationName) {
     this.clientSecretPath = clientSecretPath;
     this.tokenDirectory = tokenDirectory;
     this.redirectUri = redirectUri;
+    this.stateSecret = stateSecret;
+    this.stateAlgorithm =
+        stateSecret == null || stateSecret.isBlank() ? null : Algorithm.HMAC256(stateSecret);
     this.applicationName = applicationName;
     ensureTokenDir();
   }
@@ -60,12 +73,16 @@ public class GcalClient {
         && Files.exists(Paths.get(clientSecretPath));
   }
 
-  public String getAuthUrl(String accountKey) {
+  public String getAuthUrl(String accountKey, String chatGuid, String messageGuid) {
     if (!isConfigured()) {
       return null;
     }
+    String state = createOauthState(accountKey, chatGuid, messageGuid);
+    if (state == null) {
+      return null;
+    }
     GoogleAuthorizationCodeFlow flow = buildFlow(accountKey);
-    return flow.newAuthorizationUrl().setRedirectUri(redirectUri).build();
+    return flow.newAuthorizationUrl().setRedirectUri(redirectUri).setState(state).build();
   }
 
   public boolean exchangeCode(String accountKey, String code) {
@@ -179,6 +196,26 @@ public class GcalClient {
     return objectMapper;
   }
 
+  public Optional<OauthState> parseOauthState(String state) {
+    if (state == null || state.isBlank() || stateAlgorithm == null) {
+      return Optional.empty();
+    }
+    try {
+      JWTVerifier verifier = JWT.require(stateAlgorithm).build();
+      DecodedJWT jwt = verifier.verify(state);
+      String accountKey = jwt.getClaim("account_key").asString();
+      String chatGuid = jwt.getClaim("chat_guid").asString();
+      String messageGuid = jwt.getClaim("message_guid").asString();
+      if (accountKey == null || accountKey.isBlank() || chatGuid == null || chatGuid.isBlank()) {
+        return Optional.empty();
+      }
+      return Optional.of(new OauthState(accountKey, chatGuid, messageGuid));
+    } catch (JWTVerificationException e) {
+      log.warn("Failed to parse OAuth state", e);
+      return Optional.empty();
+    }
+  }
+
   private Credential getCredential(String accountKey) throws IOException {
     if (!isConfigured()) {
       throw new IOException("Google Calendar client not configured");
@@ -237,4 +274,28 @@ public class GcalClient {
       log.warn("Failed to store account key", e);
     }
   }
+
+  private String createOauthState(String accountKey, String chatGuid, String messageGuid) {
+    if (stateAlgorithm == null) {
+      return null;
+    }
+    if (accountKey == null || accountKey.isBlank() || chatGuid == null || chatGuid.isBlank()) {
+      return null;
+    }
+    try {
+      Instant now = Instant.now();
+      return JWT.create()
+          .withIssuedAt(Date.from(now))
+          .withExpiresAt(Date.from(now.plus(OAUTH_STATE_TTL)))
+          .withClaim("account_key", accountKey)
+          .withClaim("chat_guid", chatGuid)
+          .withClaim("message_guid", messageGuid)
+          .sign(stateAlgorithm);
+    } catch (Exception e) {
+      log.warn("Failed to build OAuth state", e);
+      return null;
+    }
+  }
+
+  public record OauthState(String accountKey, String chatGuid, String messageGuid) {}
 }

@@ -735,6 +735,7 @@ public class BBMessageAgent {
                 + " or "
                 + SendReactionAgentTool.TOOL_NAME
                 + " when you specifically need those actions; plain text is fine otherwise. "
+                + "When sending a text, you may optionally apply an iMessage effect via the effect parameter, but use effects sparingly (e.g. happy_birthday for birthday wishes). "
                 + "Use available tools for tasks like calendars or lookups when asked. "
                 + "Use web_search for current info or external lookups when relevant. "
                 + "If the user asks the assistant to be more or less responsive (especially in group chats), call "
@@ -778,7 +779,7 @@ public class BBMessageAgent {
                 + GetCurrentTimeAgentTool.TOOL_NAME
                 + ". If the account is not linked, call "
                 + ManageAccountsAgentTool.TOOL_NAME
-                + " to get an auth_url and then exchange_code. "
+                + " to get an auth_url and have the user complete the OAuth flow in their browser. "
                 + "When the user shares information about themselves, or information that is helpful to remember "
                 + "use the "
                 + MemorySaveAgentTool.TOOL_NAME

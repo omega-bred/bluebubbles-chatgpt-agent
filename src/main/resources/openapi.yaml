@@ -10,6 +10,8 @@ tags:
     description: endpoints related to ping
   - name: bluebubbles
     description: BlueBubbles webhook endpoints
+  - name: gcal
+    description: Google Calendar OAuth endpoints
 paths:
 
   /api/v1/bluebubbles/messageReceived.message:
@@ -46,6 +48,45 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/PingResponse"
+  /api/v1/gcal/completeOauth.gcal:
+    get:
+      operationId: gcalCompleteOauth
+      tags:
+        - gcal
+      summary: Completes Google Calendar OAuth flow
+      description: Handles the OAuth redirect from Google and exchanges the code for tokens.
+      parameters:
+        - name: code
+          in: query
+          description: OAuth authorization code from Google
+          required: true
+          schema:
+            type: string
+        - name: state
+          in: query
+          description: Account key used to associate the OAuth session
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: OAuth completed
+          content:
+            text/html:
+              schema:
+                type: string
+        '400':
+          description: Missing or invalid parameters
+          content:
+            text/html:
+              schema:
+                type: string
+        '500':
+          description: OAuth exchange failed
+          content:
+            text/html:
+              schema:
+                type: string
 
 
 components:
