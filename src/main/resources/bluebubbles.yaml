@@ -176,7 +176,9 @@ paths:
         '200':
           description: Successful response
           content:
-            application/json: {}
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponse_IcloudAccount'
   /api/v1/icloud/findmy/friends:
     get:
       tags:
@@ -3461,6 +3463,73 @@ components:
           example: Success
         data:
           $ref: '#/components/schemas/Message'
+
+    ApiResponse_IcloudAccount:
+      type: object
+      additionalProperties: false
+      required: [ status, message, data ]
+      properties:
+        status:
+          type: integer
+          format: int32
+          example: 200
+        message:
+          type: string
+          example: Successfully fetched account info!
+        data:
+          $ref: '#/components/schemas/IcloudAccountInfo'
+
+    IcloudAlias:
+      type: object
+      additionalProperties: false
+      required: [ Alias, Status, IsUserVisible ]
+      properties:
+        Alias:
+          type: string
+          example: john.doe@icloud.com
+        Status:
+          type: integer
+          format: int32
+          example: 3
+        IsUserVisible:
+          type: boolean
+          example: true
+
+    IcloudAccountInfo:
+      type: object
+      additionalProperties: false
+      required:
+        - account_name
+        - vetted_aliases
+        - aliases
+        - sms_forwarding_enabled
+        - apple_id
+        - sms_forwarding_capable
+        - login_status_message
+      properties:
+        account_name:
+          type: string
+          example: John Doe
+        vetted_aliases:
+          type: array
+          items:
+            $ref: '#/components/schemas/IcloudAlias'
+        aliases:
+          type: array
+          items:
+            $ref: '#/components/schemas/IcloudAlias'
+        sms_forwarding_enabled:
+          type: boolean
+          example: false
+        apple_id:
+          type: string
+          example: john.doe@icloud.com
+        sms_forwarding_capable:
+          type: boolean
+          example: false
+        login_status_message:
+          type: string
+          example: Connected
       
     Message:
       type: object

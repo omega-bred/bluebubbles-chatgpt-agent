@@ -46,6 +46,12 @@ public class BBClientTest {
   }
 
   @Test
+  public void testGetAccount() {
+    var account = bbHttpClientWrapper.getAccount();
+    System.out.println(account.toString());
+  }
+
+  @Test
   public void testGetMessages() {
     List<ApiV1ChatChatGuidMessageGet200ResponseDataInner> messagesInChat =
         bbHttpClientWrapper.getMessagesInChat("iMessage;+;chat293505621450166166");

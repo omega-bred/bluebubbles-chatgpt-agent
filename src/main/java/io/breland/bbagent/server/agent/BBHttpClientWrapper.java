@@ -41,6 +41,7 @@ public class BBHttpClientWrapper {
   private final V1AttachmentApi attachmentApi;
   private final V1ChatApi chatApi;
   private final V1OtherApi otherApi;
+  private final V1ICloudApi icloudApi;
 
   private final String password;
 
@@ -59,6 +60,7 @@ public class BBHttpClientWrapper {
     this.attachmentApi = new V1AttachmentApi(apiClient);
     this.chatApi = new V1ChatApi(apiClient);
     this.otherApi = new V1OtherApi(apiClient);
+    this.icloudApi = new V1ICloudApi(apiClient);
   }
 
   BBHttpClientWrapper(String password, V1MessageApi messageApi, V1ContactApi contactApi) {
@@ -68,6 +70,7 @@ public class BBHttpClientWrapper {
     this.attachmentApi = new V1AttachmentApi(new ApiClient());
     this.chatApi = new V1ChatApi(new ApiClient());
     this.otherApi = new V1OtherApi(new ApiClient());
+    this.icloudApi = new V1ICloudApi(new ApiClient());
   }
 
   public record AttachmentData(String filename, byte[] bytes) {}
@@ -401,5 +404,17 @@ public class BBHttpClientWrapper {
       log.warn("Failed to ping", e);
       return false;
     }
+  }
+
+  public IcloudAccountInfo getAccount() {
+    ApiResponseIcloudAccount account =
+        this.icloudApi.apiV1IcloudAccountGet(password).block(API_TIMEOUT);
+    assert account != null;
+    assert account.getStatus() != null;
+    assert account.getStatus() == 200;
+    assert account.getMessage() != null;
+    assert account.getMessage().toLowerCase().contains("success");
+    assert account.getData() != null;
+    return account.getData();
   }
 }
