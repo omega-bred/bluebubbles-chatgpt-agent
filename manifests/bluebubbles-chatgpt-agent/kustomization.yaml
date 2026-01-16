@@ -6,4 +6,4 @@ resources:
 images:
 - name: registry.breland.io/omega-bred/bluebubbles-chatgpt-agent
   newName: registry.breland.io/omega-bred/bluebubbles-chatgpt-agent
-  newTag: b901c5315f6096dfec4e426807668ae36affbee1-14
+  newTag: 95d4858500f9810342696357cec85f841941b8b1-15
