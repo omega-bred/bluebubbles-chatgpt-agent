@@ -25,6 +25,9 @@ import io.breland.bbagent.server.agent.tools.giphy.GiphyClient;
 import io.breland.bbagent.server.agent.tools.memory.Mem0Client;
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+import java.util.concurrent.ConcurrentHashMap;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mockito;
@@ -48,7 +51,13 @@ class BBMessageAgentTest {
     BBHttpClientWrapper bbHttpClientWrapper = new BBHttpClientWrapper("pw", messageApi, contactApi);
 
     BBMessageAgent agent =
-        new BBMessageAgent(openAIClient, bbHttpClientWrapper, mem0Client, gcalClient, giphyClient);
+        new BBMessageAgent(
+            openAIClient,
+            bbHttpClientWrapper,
+            mem0Client,
+            gcalClient,
+            giphyClient,
+            new InMemoryAgentSettingsStore());
 
     Response first =
         responseWithFunctionCall(
@@ -108,5 +117,43 @@ class BBMessageAgentTest {
         .tools(List.of())
         .topP(1.0)
         .build();
+  }
+
+  private static class InMemoryAgentSettingsStore implements AgentSettingsStore {
+    private final Map<String, BBMessageAgent.AssistantResponsiveness> responsivenessByChat =
+        new ConcurrentHashMap<>();
+    private final Map<String, String> globalNames = new ConcurrentHashMap<>();
+
+    @Override
+    public Optional<BBMessageAgent.AssistantResponsiveness> findAssistantResponsiveness(
+        String chatGuid) {
+      return Optional.ofNullable(responsivenessByChat.get(chatGuid));
+    }
+
+    @Override
+    public void saveAssistantResponsiveness(
+        String chatGuid, BBMessageAgent.AssistantResponsiveness value) {
+      responsivenessByChat.put(chatGuid, value);
+    }
+
+    @Override
+    public void deleteAssistantResponsiveness(String chatGuid) {
+      responsivenessByChat.remove(chatGuid);
+    }
+
+    @Override
+    public Optional<String> findGlobalName(String sender) {
+      return Optional.ofNullable(globalNames.get(sender));
+    }
+
+    @Override
+    public void saveGlobalName(String sender, String name) {
+      globalNames.put(sender, name);
+    }
+
+    @Override
+    public void deleteGlobalName(String sender) {
+      globalNames.remove(sender);
+    }
   }
 }

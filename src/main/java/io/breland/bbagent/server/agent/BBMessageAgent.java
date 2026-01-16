@@ -73,11 +73,7 @@ public class BBMessageAgent {
 
   private final ObjectMapper objectMapper = new ObjectMapper().registerModule(new JavaTimeModule());
   @Getter private final Map<String, ConversationState> conversations = new ConcurrentHashMap<>();
-  // TODO: persist
-  private final Map<String, AssistantResponsiveness> assistantResponsivenessByChat =
-      new ConcurrentHashMap<>();
-  // TODO: persist
-  private final Map<String, String> globalNamesBySender = new ConcurrentHashMap<>();
+  private final AgentSettingsStore agentSettingsStore;
   private final Map<String, AgentTool> tools = new ConcurrentHashMap<>();
 
   private OpenAIClient openAIClient;
@@ -99,11 +95,13 @@ public class BBMessageAgent {
       BBHttpClientWrapper bbHttpClientWrapper,
       Mem0Client mem0Client,
       GcalClient gcalClient,
-      GiphyClient giphyClient) {
+      GiphyClient giphyClient,
+      AgentSettingsStore agentSettingsStore) {
     this.bbHttpClientWrapper = bbHttpClientWrapper;
     this.mem0Client = mem0Client;
     this.gcalClient = gcalClient;
     this.giphyClient = giphyClient;
+    this.agentSettingsStore = agentSettingsStore;
     registerBuiltInTools();
   }
 
@@ -112,12 +110,14 @@ public class BBMessageAgent {
       BBHttpClientWrapper bbHttpClientWrapper,
       Mem0Client mem0Client,
       GcalClient gcalClient,
-      GiphyClient giphyClient) {
+      GiphyClient giphyClient,
+      AgentSettingsStore agentSettingsStore) {
     this.openAIClient = openAIClient;
     this.bbHttpClientWrapper = bbHttpClientWrapper;
     this.mem0Client = mem0Client;
     this.gcalClient = gcalClient;
     this.giphyClient = giphyClient;
+    this.agentSettingsStore = agentSettingsStore;
     registerBuiltInTools();
   }
 
@@ -1044,7 +1044,9 @@ public class BBMessageAgent {
     if (chatGuid == null || chatGuid.isBlank()) {
       return AssistantResponsiveness.DEFAULT;
     }
-    return assistantResponsivenessByChat.getOrDefault(chatGuid, AssistantResponsiveness.DEFAULT);
+    return agentSettingsStore
+        .findAssistantResponsiveness(chatGuid)
+        .orElse(AssistantResponsiveness.DEFAULT);
   }
 
   public void setAssistantResponsiveness(String chatGuid, AssistantResponsiveness responsiveness) {
@@ -1052,31 +1054,31 @@ public class BBMessageAgent {
       return;
     }
     if (responsiveness == AssistantResponsiveness.DEFAULT) {
-      assistantResponsivenessByChat.remove(chatGuid);
+      agentSettingsStore.deleteAssistantResponsiveness(chatGuid);
       return;
     }
-    assistantResponsivenessByChat.put(chatGuid, responsiveness);
+    agentSettingsStore.saveAssistantResponsiveness(chatGuid, responsiveness);
   }
 
   public String getGlobalNameForSender(String sender) {
     if (sender == null || sender.isBlank()) {
       return null;
     }
-    return globalNamesBySender.get(sender);
+    return agentSettingsStore.findGlobalName(sender).orElse(null);
   }
 
   public void setGlobalNameForSender(String sender, String name) {
     if (sender == null || sender.isBlank() || name == null || name.isBlank()) {
       return;
     }
-    globalNamesBySender.put(sender, name.trim());
+    agentSettingsStore.saveGlobalName(sender, name);
   }
 
   public void removeGlobalNameForSender(String sender) {
     if (sender == null || sender.isBlank()) {
       return;
     }
-    globalNamesBySender.remove(sender);
+    agentSettingsStore.deleteGlobalName(sender);
   }
 
   public static FunctionTool.Parameters jsonSchema(Map<String, Object> schema) {
