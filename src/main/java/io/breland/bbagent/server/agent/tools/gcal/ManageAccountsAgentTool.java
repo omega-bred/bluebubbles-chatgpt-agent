@@ -19,7 +19,7 @@ public class ManageAccountsAgentTool extends GcalToolSupport implements ToolProv
   public AgentTool getTool() {
     return new AgentTool(
         TOOL_NAME,
-        "Manage Google Calendar accounts (auth URL, list, revoke). Use this tool to find out if a calendar/account is already linked and other account management operations.",
+        "Manage Google Calendar accounts (auth URL, list, revoke). Use this tool to find out if a calendar/account is already linked and other account management operations. Use account_key to target a specific linked account.",
         jsonSchema(
             Map.of(
                 "type",
@@ -27,7 +27,9 @@ public class ManageAccountsAgentTool extends GcalToolSupport implements ToolProv
                 "properties",
                 Map.of(
                     "action",
-                    Map.of("type", "string", "enum", List.of("list", "auth_url", "revoke"))),
+                    Map.of("type", "string", "enum", List.of("list", "auth_url", "revoke")),
+                    "account_key",
+                    Map.of("type", "string")),
                 "required",
                 List.of("action"))),
         false,
@@ -39,10 +41,6 @@ public class ManageAccountsAgentTool extends GcalToolSupport implements ToolProv
           if (action == null || action.isBlank()) {
             return "missing action";
           }
-          String accountKey = resolveAccountKey(context);
-          if (accountKey == null || accountKey.isBlank()) {
-            return "no account";
-          }
           try {
             switch (action) {
               case "list" -> {
@@ -51,6 +49,14 @@ public class ManageAccountsAgentTool extends GcalToolSupport implements ToolProv
                 return gcalClient.mapper().writeValueAsString(response);
               }
               case "auth_url" -> {
+                String requestedAccountKey = getOptionalText(args, "account_key");
+                String accountKey =
+                    requestedAccountKey != null && !requestedAccountKey.isBlank()
+                        ? requestedAccountKey
+                        : resolveAccountKey(context);
+                if (accountKey == null || accountKey.isBlank()) {
+                  return "no account";
+                }
                 String chatGuid = context.message() != null ? context.message().chatGuid() : null;
                 String messageGuid =
                     context.message() != null ? context.message().messageGuid() : null;
@@ -67,6 +73,14 @@ public class ManageAccountsAgentTool extends GcalToolSupport implements ToolProv
                 return gcalClient.mapper().writeValueAsString(response);
               }
               case "revoke" -> {
+                String requestedAccountKey = getOptionalText(args, "account_key");
+                String accountKey =
+                    requestedAccountKey != null && !requestedAccountKey.isBlank()
+                        ? requestedAccountKey
+                        : resolveAccountKey(context);
+                if (accountKey == null || accountKey.isBlank()) {
+                  return "no account";
+                }
                 boolean success = gcalClient.revokeAccount(accountKey);
                 return success ? "revoked" : "not found";
               }

@@ -782,6 +782,7 @@ public class BBMessageAgent {
                 + ". If the account is not linked, call "
                 + ManageAccountsAgentTool.TOOL_NAME
                 + " to get an auth_url and have the user complete the OAuth flow in their browser. "
+                + "If multiple calendar accounts are linked, pass account_key to the calendar tools to pick the right account. "
                 + "When the user shares information about themselves, or information that is helpful to remember "
                 + "use the "
                 + MemorySaveAgentTool.TOOL_NAME

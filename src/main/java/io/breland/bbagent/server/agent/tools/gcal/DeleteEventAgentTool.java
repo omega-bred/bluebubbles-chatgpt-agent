@@ -26,6 +26,7 @@ public class DeleteEventAgentTool extends GcalToolSupport implements ToolProvide
                 "object",
                 "properties",
                 Map.of(
+                    "account_key", Map.of("type", "string"),
                     "calendar_id", Map.of("type", "string"),
                     "event_id", Map.of("type", "string")),
                 "required",
@@ -35,7 +36,7 @@ public class DeleteEventAgentTool extends GcalToolSupport implements ToolProvide
           if (!gcalClient.isConfigured()) {
             return "not configured";
           }
-          String accountKey = resolveAccountKey(context);
+          String accountKey = resolveAccountKey(context, args);
           if (accountKey == null || accountKey.isBlank()) {
             return "no account";
           }

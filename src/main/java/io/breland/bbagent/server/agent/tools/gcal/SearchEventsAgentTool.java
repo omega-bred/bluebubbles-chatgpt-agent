@@ -32,6 +32,7 @@ public class SearchEventsAgentTool extends GcalToolSupport implements ToolProvid
                 "object",
                 "properties",
                 Map.of(
+                    "account_key", Map.of("type", "string"),
                     "calendar_id", Map.of("type", "string"),
                     "query", Map.of("type", "string"),
                     "time_min", Map.of("type", "string"),
@@ -43,7 +44,7 @@ public class SearchEventsAgentTool extends GcalToolSupport implements ToolProvid
           if (!gcalClient.isConfigured()) {
             return "not configured";
           }
-          String accountKey = resolveAccountKey(context);
+          String accountKey = resolveAccountKey(context, args);
           if (accountKey == null || accountKey.isBlank()) {
             return "no account";
           }

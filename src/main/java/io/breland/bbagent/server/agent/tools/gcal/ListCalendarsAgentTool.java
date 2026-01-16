@@ -22,14 +22,16 @@ public class ListCalendarsAgentTool extends GcalToolSupport implements ToolProvi
   public AgentTool getTool() {
     return new AgentTool(
         TOOL_NAME,
-        "List calendars available for the current account. Use this to map a calendar name to a calendar_id when other tools take the calendar_id parameter. Always search for calendar names to calendar_id or listing the associated calendars using this tool",
-        jsonSchema(Map.of("type", "object", "properties", Map.of())),
+        "List calendars available for the current account. Use this to map a calendar name to a calendar_id when other tools take the calendar_id parameter. Always search for calendar names to calendar_id or listing the associated calendars using this tool. Use account_key when multiple accounts are linked.",
+        jsonSchema(
+            Map.of(
+                "type", "object", "properties", Map.of("account_key", Map.of("type", "string")))),
         false,
         (context, args) -> {
           if (!gcalClient.isConfigured()) {
             return "not configured";
           }
-          String accountKey = resolveAccountKey(context);
+          String accountKey = resolveAccountKey(context, args);
           if (accountKey == null || accountKey.isBlank()) {
             return "no account";
           }

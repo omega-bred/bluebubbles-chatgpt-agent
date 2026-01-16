@@ -26,7 +26,9 @@ public class GetEventAgentTool extends GcalToolSupport implements ToolProvider {
                 "object",
                 "properties",
                 Map.of(
-                    "calendar_id", Map.of("type", "string"), "event_id", Map.of("type", "string")),
+                    "account_key", Map.of("type", "string"),
+                    "calendar_id", Map.of("type", "string"),
+                    "event_id", Map.of("type", "string")),
                 "required",
                 java.util.List.of("event_id"))),
         false,
@@ -34,7 +36,7 @@ public class GetEventAgentTool extends GcalToolSupport implements ToolProvider {
           if (!gcalClient.isConfigured()) {
             return "not configured";
           }
-          String accountKey = resolveAccountKey(context);
+          String accountKey = resolveAccountKey(context, args);
           if (accountKey == null || accountKey.isBlank()) {
             return "no account";
           }

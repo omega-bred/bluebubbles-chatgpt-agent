@@ -61,18 +61,6 @@ metadata:
 spec:
   itemPath: "vaults/Kubernetes/items/gcal-oauth-state-secret"
 ---
-apiVersion: v1
-kind: PersistentVolumeClaim
-metadata:
-  name: bluebubbles-chatgpt-agent-data
-  namespace: bluebubbles-chatgpt-agent
-spec:
-  accessModes:
-    - ReadWriteOnce
-  resources:
-    requests:
-      storage: 5Gi
----
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -139,8 +127,6 @@ spec:
                 secretKeyRef:
                   key: "password"
                   name: giphy-api-key
-            - name: "GCAL_TOKEN_DIR"
-              value: "/mnt/data"
             - name: "GCAL_OAUTH_CLIENT_SECRET_PATH"
               value: "/var/run/secrets/gcal/client_secret_552753055766-0fnkjtl0ug4i39hhrr0q9jk49648akra.apps.googleusercontent.com.json"
             - name: GCAL_OAUTH_REDIRECT_URI
@@ -177,8 +163,6 @@ spec:
           terminationMessagePath: /dev/termination-log
           terminationMessagePolicy: File
           volumeMounts:
-            - name: bluebubbles-chatgpt-agent-data
-              mountPath: /mnt/data
             - name: gcal-client-secret
               mountPath: /var/run/secrets/gcal
               readOnly: true
@@ -188,9 +172,6 @@ spec:
       securityContext: {}
       terminationGracePeriodSeconds: 30
       volumes:
-        - name: bluebubbles-chatgpt-agent-data
-          persistentVolumeClaim:
-            claimName: bluebubbles-chatgpt-agent-data
         - name: gcal-client-secret
           secret:
             secretName: gcal-mcp-server

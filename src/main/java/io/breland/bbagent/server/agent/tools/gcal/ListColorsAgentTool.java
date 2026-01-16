@@ -19,13 +19,15 @@ public class ListColorsAgentTool extends GcalToolSupport implements ToolProvider
     return new AgentTool(
         TOOL_NAME,
         "List available calendar colors.",
-        jsonSchema(Map.of("type", "object", "properties", Map.of())),
+        jsonSchema(
+            Map.of(
+                "type", "object", "properties", Map.of("account_key", Map.of("type", "string")))),
         false,
         (context, args) -> {
           if (!gcalClient.isConfigured()) {
             return "not configured";
           }
-          String accountKey = resolveAccountKey(context);
+          String accountKey = resolveAccountKey(context, args);
           if (accountKey == null || accountKey.isBlank()) {
             return "no account";
           }

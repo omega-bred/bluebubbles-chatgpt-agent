@@ -33,6 +33,7 @@ public class GetFreebusyAgentTool extends GcalToolSupport implements ToolProvide
                 "object",
                 "properties",
                 Map.of(
+                    "account_key", Map.of("type", "string"),
                     "time_min", Map.of("type", "string"),
                     "time_max", Map.of("type", "string"),
                     "timezone", Map.of("type", "string"),
@@ -44,7 +45,7 @@ public class GetFreebusyAgentTool extends GcalToolSupport implements ToolProvide
           if (!gcalClient.isConfigured()) {
             return "not configured";
           }
-          String accountKey = resolveAccountKey(context);
+          String accountKey = resolveAccountKey(context, args);
           if (accountKey == null || accountKey.isBlank()) {
             return "no account";
           }

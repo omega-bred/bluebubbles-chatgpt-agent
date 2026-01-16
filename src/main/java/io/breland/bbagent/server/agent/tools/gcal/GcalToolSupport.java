@@ -18,6 +18,15 @@ public class GcalToolSupport {
     return AgentTool.resolveUserIdOrGroupChatId(context.message());
   }
 
+  protected String resolveAccountKey(
+      ToolContext context, com.fasterxml.jackson.databind.JsonNode args) {
+    String accountKey = getOptionalText(args, "account_key");
+    if (accountKey != null && !accountKey.isBlank()) {
+      return accountKey;
+    }
+    return resolveAccountKey(context);
+  }
+
   protected String resolveCalendarId(com.fasterxml.jackson.databind.JsonNode args) {
     String calendarId = getOptionalText(args, "calendar_id");
     if (calendarId != null && !calendarId.isBlank()) {

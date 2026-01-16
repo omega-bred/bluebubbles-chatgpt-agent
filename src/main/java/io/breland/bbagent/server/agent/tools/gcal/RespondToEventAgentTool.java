@@ -29,6 +29,7 @@ public class RespondToEventAgentTool extends GcalToolSupport implements ToolProv
                 "object",
                 "properties",
                 Map.of(
+                    "account_key", Map.of("type", "string"),
                     "calendar_id", Map.of("type", "string"),
                     "event_id", Map.of("type", "string"),
                     "attendee_email", Map.of("type", "string"),
@@ -45,7 +46,7 @@ public class RespondToEventAgentTool extends GcalToolSupport implements ToolProv
           if (!gcalClient.isConfigured()) {
             return "not configured";
           }
-          String accountKey = resolveAccountKey(context);
+          String accountKey = resolveAccountKey(context, args);
           if (accountKey == null || accountKey.isBlank()) {
             return "no account";
           }
