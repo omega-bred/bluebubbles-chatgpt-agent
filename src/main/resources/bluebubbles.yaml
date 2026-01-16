@@ -984,7 +984,7 @@ paths:
                       groupPhotoGuid: 1CFB7180-2BBD-439C-8EA3-E67BACD9F075
                       hasBeenAutoSpamReported: true
                       LSMD: "2026-01-15T00:03:04.227Z"
-                  lastAddressedHandle: breland@bdawg.org
+                  lastAddressedHandle: user@example.com
   /api/v1/chat/count:
     get:
       tags:
@@ -3895,7 +3895,7 @@ components:
             $ref: '#/components/schemas/ChatProperties'
         lastAddressedHandle:
           type: string
-          example: breland@bdawg.org
+          example: user@example.com
     
     ChatProperties:
       type: object

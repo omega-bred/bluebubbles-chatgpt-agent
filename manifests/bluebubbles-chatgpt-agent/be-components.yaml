@@ -94,12 +94,15 @@ spec:
                 secretKeyRef:
                   key: password
                   name: bluebubbles-chatgpt-agent-influx-token
-
+            - name: INFLUX_DB_URI
+              value: "https://influxdb-1.taild1b69.ts.net"
             - name: "OPENAI_API_KEY"
               valueFrom:
                 secretKeyRef:
                   key: "password"
                   name: openai-bluebubbles-chatgpt-agent-api-key
+            - name: "BLUEBUBBLES_PATH"
+              value: "http://mac-mini-775.taild1b69.ts.net:1234"
             - name: "BLUEBUBBLES_PASSWORD"
               valueFrom:
                 secretKeyRef:
