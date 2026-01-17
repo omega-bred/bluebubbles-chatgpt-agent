@@ -20,11 +20,9 @@ public class GcalToolSupport {
 
   protected String resolveAccountKey(
       ToolContext context, com.fasterxml.jackson.databind.JsonNode args) {
-    String accountKey = getOptionalText(args, "account_key");
-    if (accountKey != null && !accountKey.isBlank()) {
-      return accountKey;
-    }
-    return resolveAccountKey(context);
+    String accountAlias = getOptionalText(args, "account_key");
+    String accountBase = resolveAccountKey(context);
+    return gcalClient.scopeAccountKey(accountBase, accountAlias);
   }
 
   protected String resolveCalendarId(com.fasterxml.jackson.databind.JsonNode args) {

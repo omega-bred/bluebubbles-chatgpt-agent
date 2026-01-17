@@ -45,6 +45,7 @@ public class GcalClient {
   private static final Collection<String> SCOPES = List.of(CalendarScopes.CALENDAR);
   private static final Duration OAUTH_STATE_TTL = Duration.ofMinutes(10);
   private static final String STORE_ID = StoredCredential.DEFAULT_DATA_STORE_ID;
+  private static final String ACCOUNT_DELIM = "::";
 
   private final ObjectMapper objectMapper = new ObjectMapper();
   private final String clientSecretPath;
@@ -115,6 +116,46 @@ public class GcalClient {
 
   public List<String> listAccounts() {
     return credentialRepository.findAllAccountKeysByStoreId(STORE_ID);
+  }
+
+  public List<String> listAccountsFor(String accountBase) {
+    if (accountBase == null || accountBase.isBlank()) {
+      return List.of();
+    }
+    List<String> accounts = listAccounts();
+    if (accounts.isEmpty()) {
+      return List.of();
+    }
+    List<String> result = new ArrayList<>();
+    for (String key : accounts) {
+      if (key == null || key.isBlank()) {
+        continue;
+      }
+      if (key.equals(accountBase)) {
+        result.add("default");
+        continue;
+      }
+      if (key.startsWith(accountBase + ACCOUNT_DELIM)) {
+        result.add(key.substring((accountBase + ACCOUNT_DELIM).length()));
+      }
+    }
+    return result;
+  }
+
+  public String scopeAccountKey(String accountBase, String accountAlias) {
+    if (accountAlias == null || accountAlias.isBlank()) {
+      return accountBase;
+    }
+    if (accountAlias.contains(ACCOUNT_DELIM)) {
+      return accountAlias;
+    }
+    if ("default".equalsIgnoreCase(accountAlias)) {
+      return accountBase;
+    }
+    if (accountBase == null || accountBase.isBlank()) {
+      return accountAlias;
+    }
+    return accountBase + ACCOUNT_DELIM + accountAlias;
   }
 
   public boolean revokeAccount(String accountKey) {

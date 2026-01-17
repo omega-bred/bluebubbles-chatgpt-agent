@@ -44,19 +44,21 @@ public class ManageAccountsAgentTool extends GcalToolSupport implements ToolProv
           try {
             switch (action) {
               case "list" -> {
+                String accountBase = resolveAccountKey(context);
+                if (accountBase == null || accountBase.isBlank()) {
+                  return "no account";
+                }
                 Map<String, Object> response = new LinkedHashMap<>();
-                response.put("accounts", gcalClient.listAccounts());
+                response.put("accounts", gcalClient.listAccountsFor(accountBase));
                 return gcalClient.mapper().writeValueAsString(response);
               }
               case "auth_url" -> {
-                String requestedAccountKey = getOptionalText(args, "account_key");
-                String accountKey =
-                    requestedAccountKey != null && !requestedAccountKey.isBlank()
-                        ? requestedAccountKey
-                        : resolveAccountKey(context);
-                if (accountKey == null || accountKey.isBlank()) {
+                String accountBase = resolveAccountKey(context);
+                if (accountBase == null || accountBase.isBlank()) {
                   return "no account";
                 }
+                String requestedAccountKey = getOptionalText(args, "account_key");
+                String accountKey = gcalClient.scopeAccountKey(accountBase, requestedAccountKey);
                 String chatGuid = context.message() != null ? context.message().chatGuid() : null;
                 String messageGuid =
                     context.message() != null ? context.message().messageGuid() : null;
@@ -69,18 +71,20 @@ public class ManageAccountsAgentTool extends GcalToolSupport implements ToolProv
                 }
                 Map<String, Object> response = new LinkedHashMap<>();
                 response.put("auth_url", url);
-                response.put("account_key", accountKey);
+                response.put(
+                    "account_key",
+                    requestedAccountKey != null && !requestedAccountKey.isBlank()
+                        ? requestedAccountKey
+                        : "default");
                 return gcalClient.mapper().writeValueAsString(response);
               }
               case "revoke" -> {
-                String requestedAccountKey = getOptionalText(args, "account_key");
-                String accountKey =
-                    requestedAccountKey != null && !requestedAccountKey.isBlank()
-                        ? requestedAccountKey
-                        : resolveAccountKey(context);
-                if (accountKey == null || accountKey.isBlank()) {
+                String accountBase = resolveAccountKey(context);
+                if (accountBase == null || accountBase.isBlank()) {
                   return "no account";
                 }
+                String requestedAccountKey = getOptionalText(args, "account_key");
+                String accountKey = gcalClient.scopeAccountKey(accountBase, requestedAccountKey);
                 boolean success = gcalClient.revokeAccount(accountKey);
                 return success ? "revoked" : "not found";
               }
