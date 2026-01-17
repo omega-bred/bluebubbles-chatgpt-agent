@@ -102,7 +102,10 @@ spec:
                   key: "password"
                   name: openai-bluebubbles-chatgpt-agent-api-key
             - name: "BLUEBUBBLES_PATH"
-              value: "http://mac-mini-775.taild1b69.ts.net:1234"
+              valueFrom:
+                secretKeyRef:
+                  key: "host"
+                  name: bluebubbles
             - name: "BLUEBUBBLES_PASSWORD"
               valueFrom:
                 secretKeyRef:

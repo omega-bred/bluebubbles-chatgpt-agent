@@ -264,9 +264,7 @@ public class BBMessageAgent {
       }
       List<ResponseInputItem> toolContinuation = new ArrayList<>(inputItems);
       log.debug(toolContinuation.toString());
-      for (ResponseFunctionToolCall toolCall : toolCalls) {
-        toolContinuation.add(ResponseInputItem.ofFunctionCall(toolCall));
-      }
+      toolContinuation.addAll(extractToolContextItems(response));
       toolContinuation.addAll(executeToolCalls(toolCalls, message));
       response = createResponse(toolContinuation, message);
       inputItems = toolContinuation;
@@ -372,6 +370,22 @@ public class BBMessageAgent {
       }
     }
     return calls;
+  }
+
+  private List<ResponseInputItem> extractToolContextItems(Response response) {
+    if (response == null || response.output() == null) {
+      return List.of();
+    }
+    List<ResponseInputItem> items = new ArrayList<>();
+    for (ResponseOutputItem item : response.output()) {
+      if (item.reasoning().isPresent()) {
+        items.add(ResponseInputItem.ofReasoning(item.reasoning().get()));
+      }
+      if (item.functionCall().isPresent()) {
+        items.add(ResponseInputItem.ofFunctionCall(item.functionCall().get()));
+      }
+    }
+    return items;
   }
 
   private List<ResponseInputItem> executeToolCalls(

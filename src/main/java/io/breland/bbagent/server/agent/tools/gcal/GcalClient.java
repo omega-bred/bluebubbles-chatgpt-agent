@@ -22,6 +22,7 @@ import io.breland.bbagent.server.agent.persistence.GcalCredentialRepository;
 import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.InputStreamReader;
+import java.io.StringReader;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Paths;
@@ -47,6 +48,7 @@ public class GcalClient {
 
   private final ObjectMapper objectMapper = new ObjectMapper();
   private final String clientSecretPath;
+  private final String clientSecret;
   private final String redirectUri;
   private final String applicationName;
   private final Algorithm stateAlgorithm;
@@ -54,11 +56,13 @@ public class GcalClient {
 
   public GcalClient(
       @Value("${gcal.oauth.client_secret_path:}") String clientSecretPath,
+      @Value("${gcal.oauth.client_secret:}") String clientSecret,
       @Value("${gcal.oauth.redirect_uri:}") String redirectUri,
       @Value("${gcal.oauth.state_secret:}") String stateSecret,
-      @Value("${gcal.application_name:newsies}") String applicationName,
+      @Value("${gcal.application_name:iMessage + ChatGPT}") String applicationName,
       GcalCredentialRepository credentialRepository) {
     this.clientSecretPath = clientSecretPath;
+    this.clientSecret = clientSecret;
     this.redirectUri = redirectUri;
     this.stateAlgorithm =
         stateSecret == null || stateSecret.isBlank() ? null : Algorithm.HMAC256(stateSecret);
@@ -67,9 +71,18 @@ public class GcalClient {
   }
 
   public boolean isConfigured() {
-    return clientSecretPath != null
-        && !clientSecretPath.isBlank()
-        && Files.exists(Paths.get(clientSecretPath));
+    boolean configuredPath =
+        clientSecretPath != null
+            && !clientSecretPath.isBlank()
+            && Files.exists(Paths.get(clientSecretPath));
+    boolean directSecretConfigured = clientSecret != null && !clientSecret.isBlank();
+    boolean configured = configuredPath || directSecretConfigured;
+    if (!configured) {
+      log.warn(
+          "Gcal client is not configured, no direct secret, path does not exist: {}",
+          clientSecretPath);
+    }
+    return configured;
   }
 
   public String getAuthUrl(String accountKey, String chatGuid, String messageGuid) {
@@ -193,20 +206,42 @@ public class GcalClient {
   }
 
   private GoogleAuthorizationCodeFlow buildFlow(String accountKey) {
-    try (FileInputStream input = new FileInputStream(clientSecretPath)) {
-      GoogleClientSecrets clientSecrets =
-          GoogleClientSecrets.load(
-              JSON_FACTORY, new InputStreamReader(input, StandardCharsets.UTF_8));
-      DataStoreFactory dataStoreFactory =
-          new PostgresCredentialDataStoreFactory(credentialRepository);
-      return new GoogleAuthorizationCodeFlow.Builder(
-              GoogleNetHttpTransport.newTrustedTransport(), JSON_FACTORY, clientSecrets, SCOPES)
-          .setDataStoreFactory(dataStoreFactory)
-          .setAccessType("offline")
-          .build();
-    } catch (Exception e) {
-      throw new IllegalStateException("Failed to load Google client secrets", e);
+    if (clientSecretPath != null
+        && !clientSecretPath.isBlank()
+        && Files.exists(Paths.get(clientSecretPath))) {
+      try (FileInputStream input = new FileInputStream(clientSecretPath)) {
+        GoogleClientSecrets clientSecrets =
+            GoogleClientSecrets.load(
+                JSON_FACTORY, new InputStreamReader(input, StandardCharsets.UTF_8));
+        DataStoreFactory dataStoreFactory =
+            new PostgresCredentialDataStoreFactory(credentialRepository);
+        return new GoogleAuthorizationCodeFlow.Builder(
+                GoogleNetHttpTransport.newTrustedTransport(), JSON_FACTORY, clientSecrets, SCOPES)
+            .setDataStoreFactory(dataStoreFactory)
+            .setAccessType("offline")
+            .build();
+      } catch (Exception e) {
+        log.error("Failed to load Google client secrets via path", e);
+        throw new IllegalStateException("Failed to load Google client secrets", e);
+      }
+    } else if (clientSecret != null && !clientSecret.isBlank()) {
+      try {
+        GoogleClientSecrets clientSecrets =
+            GoogleClientSecrets.load(JSON_FACTORY, new StringReader(clientSecret));
+        DataStoreFactory dataStoreFactory =
+            new PostgresCredentialDataStoreFactory(credentialRepository);
+        return new GoogleAuthorizationCodeFlow.Builder(
+                GoogleNetHttpTransport.newTrustedTransport(), JSON_FACTORY, clientSecrets, SCOPES)
+            .setDataStoreFactory(dataStoreFactory)
+            .setAccessType("offline")
+            .build();
+      } catch (Exception e) {
+        log.error("Failed to load Google client secrets via direct", e);
+        throw new IllegalStateException("Failed to load Google client secrets", e);
+      }
     }
+    log.warn("Failed to load Google client secrets");
+    throw new IllegalStateException("Failed to load Google client secrets");
   }
 
   private String createOauthState(String accountKey, String chatGuid, String messageGuid) {

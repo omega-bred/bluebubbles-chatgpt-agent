@@ -29,11 +29,13 @@ def opSecretMappings = [
     // Example: "op://MyVault/my-item/password": "MY_SERVICE_PASSWORD",
     "op://Kubernetes/openai-imagegen-key-wallart/password": "OPENAI_API_KEY",
     "op://Kubernetes/BlueBubbles/password": "BLUEBUBBLES_PASSWORD",
+    "op://Kubernetes/BlueBubbles/host": "BLUEBUBBLES_PATH",
     "op://Kubernetes/mem0-api-key/password": "MEM0_API_KEY",
     "op://Kubernetes/mem0-api-key/project-id": "MEM0_PROJECT_ID",
     "op://Kubernetes/mem0-api-key/org-id": "MEM0_ORG_ID",
     "op://Kubernetes/giphy-api-key/password": "GIPHY_API_KEY",
     "op://Kubernetes/gcal-oauth-state-secret/password": "GCAL_OAUTH_STATE_SECRET",
+    "op://Kubernetes/gcal-mcp-server/client_secret_552753055766-0fnkjtl0ug4i39hhrr0q9jk49648akra.apps.googleusercontent.com.json": "GCAL_OAUTH_CLIENT_CREDENTIALS_JSON_TEXT"
 ]
 
 def resolveSecret = { String propName, String opRef ->
