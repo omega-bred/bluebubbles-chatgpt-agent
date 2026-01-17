@@ -1,10 +1,10 @@
 package io.breland.bbagent.server.agent.tools.gcal;
 
-import static io.breland.bbagent.server.agent.BBMessageAgent.getOptionalText;
-import static io.breland.bbagent.server.agent.BBMessageAgent.jsonSchema;
+import static io.breland.bbagent.server.agent.tools.JsonSchemaUtilities.jsonSchema;
 
 import io.breland.bbagent.server.agent.tools.AgentTool;
 import io.breland.bbagent.server.agent.tools.ToolProvider;
+import io.swagger.v3.oas.annotations.media.Schema;
 import java.time.ZoneId;
 import java.time.ZonedDateTime;
 import java.util.LinkedHashMap;
@@ -12,6 +12,10 @@ import java.util.Map;
 
 public class GetCurrentTimeAgentTool extends GcalToolSupport implements ToolProvider {
   public static final String TOOL_NAME = "get_current_time";
+
+  @Schema(description = "Get the current time in a specified timezone.")
+  public record GetCurrentTimeRequest(
+      @Schema(description = "IANA timezone ID (e.g. America/New_York).") String timezone) {}
 
   public GetCurrentTimeAgentTool(GcalClient gcalClient) {
     super(gcalClient);
@@ -21,11 +25,12 @@ public class GetCurrentTimeAgentTool extends GcalToolSupport implements ToolProv
     return new AgentTool(
         TOOL_NAME,
         "Get the current time in a specified timezone.",
-        jsonSchema(
-            Map.of("type", "object", "properties", Map.of("timezone", Map.of("type", "string")))),
+        jsonSchema(GetCurrentTimeRequest.class),
         false,
         (context, args) -> {
-          String timezone = getOptionalText(args, "timezone");
+          GetCurrentTimeRequest request =
+              context.getMapper().convertValue(args, GetCurrentTimeRequest.class);
+          String timezone = request.timezone();
           ZoneId zone;
           try {
             zone =

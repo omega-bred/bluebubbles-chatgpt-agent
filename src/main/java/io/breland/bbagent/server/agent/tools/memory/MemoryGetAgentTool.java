@@ -1,12 +1,13 @@
 package io.breland.bbagent.server.agent.tools.memory;
 
-import static io.breland.bbagent.server.agent.BBMessageAgent.jsonSchema;
+import static io.breland.bbagent.server.agent.tools.JsonSchemaUtilities.jsonSchema;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import io.breland.bbagent.server.agent.IncomingMessage;
 import io.breland.bbagent.server.agent.tools.AgentTool;
 import io.breland.bbagent.server.agent.tools.ToolProvider;
+import io.swagger.v3.oas.annotations.media.Schema;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -18,6 +19,10 @@ public class MemoryGetAgentTool implements ToolProvider {
   private final ObjectMapper objectMapper = new ObjectMapper().registerModule(new JavaTimeModule());
   private final Mem0Client mem0Client;
 
+  @Schema(description = "Query memory for the current user or conversation.")
+  public record MemoryGetRequest(
+      @Schema(description = "Query text to search memories.") String query) {}
+
   public MemoryGetAgentTool(Mem0Client mem0Client) {
     this.mem0Client = mem0Client;
   }
@@ -26,8 +31,7 @@ public class MemoryGetAgentTool implements ToolProvider {
     return new AgentTool(
         TOOL_NAME,
         "Query memory for the current user or conversation. Use it any time the user asks a question or when memory might answer their question or if personal details or prior context might enhance your ability to answer. The memory accepts a natural language query. Use this tool to try and resolve inputs for other tools that rely on personal details or preferences (examples are things like names, relationships, location, user preferences, etc). ",
-        jsonSchema(
-            Map.of("type", "object", "properties", Map.of("query", Map.of("type", "string")))),
+        jsonSchema(MemoryGetRequest.class),
         false,
         (context, args) -> {
           IncomingMessage message = context.message();
@@ -39,8 +43,11 @@ public class MemoryGetAgentTool implements ToolProvider {
             return "not configured";
           }
 
-          String query =
-              args != null && args.has("query") ? args.get("query").textValue() : message.text();
+          MemoryGetRequest request = context.getMapper().convertValue(args, MemoryGetRequest.class);
+          String query = request.query();
+          if (query == null || query.isBlank()) {
+            query = message.text();
+          }
           if (query == null || query.isBlank()) {
             query = "What do you know about me?";
           }

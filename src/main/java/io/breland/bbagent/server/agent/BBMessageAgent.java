@@ -1,18 +1,15 @@
 package io.breland.bbagent.server.agent;
 
-import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import com.openai.client.OpenAIClient;
 import com.openai.client.okhttp.OpenAIOkHttpClient;
-import com.openai.core.JsonValue;
 import com.openai.models.ChatModel;
 import com.openai.models.Reasoning;
 import com.openai.models.ReasoningEffort;
 import com.openai.models.responses.*;
 import io.breland.bbagent.generated.bluebubblesclient.model.ApiV1MessageTextPostRequest;
-import io.breland.bbagent.server.agent.tools.*;
 import io.breland.bbagent.server.agent.tools.AgentTool;
 import io.breland.bbagent.server.agent.tools.ToolContext;
 import io.breland.bbagent.server.agent.tools.assistant.AssistantNameAgentTool;
@@ -28,9 +25,6 @@ import io.breland.bbagent.server.agent.tools.gcal.*;
 import io.breland.bbagent.server.agent.tools.giphy.GiphyClient;
 import io.breland.bbagent.server.agent.tools.giphy.SendGiphyAgentTool;
 import io.breland.bbagent.server.agent.tools.memory.*;
-import io.swagger.v3.core.converter.ModelConverters;
-import io.swagger.v3.core.converter.ResolvedSchema;
-import io.swagger.v3.core.util.Json;
 import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
 import java.net.URL;
@@ -1230,48 +1224,5 @@ public class BBMessageAgent {
       return;
     }
     agentSettingsStore.deleteGlobalName(sender);
-  }
-
-  public static FunctionTool.Parameters jsonSchema(Map<String, Object> schema) {
-    Map<String, Object> normalized = new LinkedHashMap<>(schema);
-    normalized.putIfAbsent("additionalProperties", false);
-    if (!normalized.containsKey("required")) {
-      Object propertiesObj = normalized.get("properties");
-      if (propertiesObj instanceof Map<?, ?> propertiesMap) {
-        List<String> required = new ArrayList<>();
-        for (Object key : propertiesMap.keySet()) {
-          required.add(String.valueOf(key));
-        }
-        normalized.put("required", required);
-      }
-    }
-    FunctionTool.Parameters.Builder builder = FunctionTool.Parameters.builder();
-    for (Map.Entry<String, Object> entry : normalized.entrySet()) {
-      builder.putAdditionalProperty(entry.getKey(), JsonValue.from(entry.getValue()));
-    }
-    return builder.build();
-  }
-
-  public static FunctionTool.Parameters jsonSchema(Class<?> schemaClass) {
-    ResolvedSchema resolved = ModelConverters.getInstance().readAllAsResolvedSchema(schemaClass);
-    Map<String, Object> schema =
-        Json.mapper().convertValue(resolved.schema, new TypeReference<Map<String, Object>>() {});
-    return jsonSchema(schema);
-  }
-
-  public static String getRequired(JsonNode args, String field) {
-    JsonNode value = args.get(field);
-    if (value == null || value.isNull()) {
-      throw new IllegalArgumentException("Missing field: " + field);
-    }
-    return value.asText();
-  }
-
-  public static String getOptionalText(JsonNode args, String field) {
-    JsonNode value = args.get(field);
-    if (value == null || value.isNull()) {
-      return null;
-    }
-    return value.asText();
   }
 }

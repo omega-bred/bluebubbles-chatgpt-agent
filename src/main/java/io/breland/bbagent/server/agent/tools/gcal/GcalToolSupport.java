@@ -1,7 +1,6 @@
 package io.breland.bbagent.server.agent.tools.gcal;
 
-import static io.breland.bbagent.server.agent.BBMessageAgent.getOptionalText;
-
+import com.fasterxml.jackson.databind.JsonNode;
 import io.breland.bbagent.server.agent.tools.ToolContext;
 import java.time.ZoneId;
 import java.util.Optional;
@@ -13,6 +12,14 @@ public class GcalToolSupport {
     this.gcalClient = gcalClient;
   }
 
+  public static String getOptionalText(JsonNode args, String field) {
+    JsonNode value = args.get(field);
+    if (value == null || value.isNull()) {
+      return null;
+    }
+    return value.asText();
+  }
+
   protected String resolveAccountKey(
       ToolContext context, com.fasterxml.jackson.databind.JsonNode args) {
     String accountId = getOptionalText(args, "account_key");
@@ -20,7 +27,12 @@ public class GcalToolSupport {
     return gcalClient.scopeAccountKey(accountBase, accountId);
   }
 
-  protected String resolveAccountBase(ToolContext context) {
+  protected String resolveAccountKey(ToolContext context, String accountId) {
+    String accountBase = resolveAccountBase(context);
+    return gcalClient.scopeAccountKey(accountBase, accountId);
+  }
+
+  protected String resolveAccountBase(JsonNode context) {
     if (context == null || context.message() == null) {
       return null;
     }
@@ -38,8 +50,15 @@ public class GcalToolSupport {
     return null;
   }
 
-  protected String resolveCalendarId(com.fasterxml.jackson.databind.JsonNode args) {
+  protected ZoneId resolveCalendarId(com.fasterxml.jackson.databind.JsonNode args) {
     String calendarId = getOptionalText(args, "calendar_id");
+    if (calendarId != null && !calendarId.isBlank()) {
+      return calendarId;
+    }
+    return "primary";
+  }
+
+  protected String resolveCalendarId(String calendarId) {
     if (calendarId != null && !calendarId.isBlank()) {
       return calendarId;
     }
@@ -48,6 +67,17 @@ public class GcalToolSupport {
 
   protected ZoneId resolveZone(com.fasterxml.jackson.databind.JsonNode args) {
     String timezone = getOptionalText(args, "timezone");
+    if (timezone == null || timezone.isBlank()) {
+      return ZoneId.systemDefault();
+    }
+    try {
+      return ZoneId.of(timezone);
+    } catch (Exception e) {
+      return ZoneId.systemDefault();
+    }
+  }
+
+  protected ZoneId resolveZone(String timezone) {
     if (timezone == null || timezone.isBlank()) {
       return ZoneId.systemDefault();
     }

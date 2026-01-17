@@ -1,11 +1,11 @@
 package io.breland.bbagent.server.agent.tools.memory;
 
-import static io.breland.bbagent.server.agent.BBMessageAgent.getOptionalText;
-import static io.breland.bbagent.server.agent.BBMessageAgent.jsonSchema;
+import static io.breland.bbagent.server.agent.tools.JsonSchemaUtilities.jsonSchema;
 
 import io.breland.bbagent.server.agent.IncomingMessage;
 import io.breland.bbagent.server.agent.tools.AgentTool;
 import io.breland.bbagent.server.agent.tools.ToolProvider;
+import io.swagger.v3.oas.annotations.media.Schema;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
@@ -13,6 +13,11 @@ public class MemorySaveAgentTool implements ToolProvider {
 
   public static final String TOOL_NAME = "memory_save";
   private final Mem0Client mem0Client;
+
+  @Schema(description = "Save a memory for the current user or conversation.")
+  public record MemorySaveRequest(
+      @Schema(description = "Memory text to store.", requiredMode = Schema.RequiredMode.REQUIRED)
+          String memory) {}
 
   public MemorySaveAgentTool(Mem0Client mem0Client) {
     this.mem0Client = mem0Client;
@@ -22,8 +27,7 @@ public class MemorySaveAgentTool implements ToolProvider {
     return new AgentTool(
         TOOL_NAME,
         "Save memories about the current user or conversation. Any time you discover useful information about a user - you should persist it with this tool. Information like the user's name, preferences, or general tone/vibe are appropriate to store here.",
-        jsonSchema(
-            Map.of("type", "object", "properties", Map.of("memory", Map.of("type", "string")))),
+        jsonSchema(MemorySaveRequest.class),
         false,
         (context, args) -> {
           IncomingMessage message = context.message();
@@ -34,7 +38,9 @@ public class MemorySaveAgentTool implements ToolProvider {
           if (!mem0Client.isConfigured()) {
             return "not configured";
           }
-          String memory = getOptionalText(args, "memory");
+          MemorySaveRequest request =
+              context.getMapper().convertValue(args, MemorySaveRequest.class);
+          String memory = request.memory();
           if (memory == null || memory.isBlank()) {
             return "no memory";
           }

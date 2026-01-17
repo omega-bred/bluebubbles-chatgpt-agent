@@ -1,9 +1,8 @@
 package io.breland.bbagent.server.agent.tools.gcal;
 
-import static io.breland.bbagent.server.agent.BBMessageAgent.getOptionalText;
-import static io.breland.bbagent.server.agent.BBMessageAgent.getRequired;
-import static io.breland.bbagent.server.agent.BBMessageAgent.jsonSchema;
+import static io.breland.bbagent.server.agent.tools.JsonSchemaUtilities.jsonSchema;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
 import com.google.api.client.util.DateTime;
 import com.google.api.services.calendar.Calendar;
 import com.google.api.services.calendar.model.Event;
@@ -11,13 +10,29 @@ import com.google.api.services.calendar.model.EventAttendee;
 import com.google.api.services.calendar.model.EventDateTime;
 import io.breland.bbagent.server.agent.tools.AgentTool;
 import io.breland.bbagent.server.agent.tools.ToolProvider;
+import io.swagger.v3.oas.annotations.media.Schema;
 import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
 
 public class CreateEventAgentTool extends GcalToolSupport implements ToolProvider {
   public static final String TOOL_NAME = "create_event";
+
+  @Schema(description = "Create a calendar event.")
+  public record CreateEventRequest(
+      @Schema(description = "Account key to use.") @JsonProperty("account_key") String accountKey,
+      @Schema(description = "Calendar ID to create the event in.") @JsonProperty("calendar_id")
+          String calendarId,
+      @Schema(description = "Event summary/title.", requiredMode = Schema.RequiredMode.REQUIRED)
+          String summary,
+      @Schema(description = "Event description.") String description,
+      @Schema(description = "Event location.") String location,
+      @Schema(description = "Event start time.", requiredMode = Schema.RequiredMode.REQUIRED)
+          String start,
+      @Schema(description = "Event end time.", requiredMode = Schema.RequiredMode.REQUIRED)
+          String end,
+      @Schema(description = "Timezone to interpret date/time strings.") String timezone,
+      @Schema(description = "Attendee email addresses.") List<String> attendees) {}
 
   public CreateEventAgentTool(GcalClient gcalClient) {
     super(gcalClient);
@@ -27,36 +42,28 @@ public class CreateEventAgentTool extends GcalToolSupport implements ToolProvide
     return new AgentTool(
         TOOL_NAME,
         "Create a calendar event.",
-        jsonSchema(
-            Map.of(
-                "type",
-                "object",
-                "properties",
-                Map.of(
-                    "account_key", Map.of("type", "string"),
-                    "calendar_id", Map.of("type", "string"),
-                    "summary", Map.of("type", "string"),
-                    "description", Map.of("type", "string"),
-                    "location", Map.of("type", "string"),
-                    "start", Map.of("type", "string"),
-                    "end", Map.of("type", "string"),
-                    "timezone", Map.of("type", "string"),
-                    "attendees", Map.of("type", "array", "items", Map.of("type", "string"))),
-                "required",
-                List.of("summary", "start", "end"))),
+        jsonSchema(CreateEventRequest.class),
         false,
         (context, args) -> {
           if (!gcalClient.isConfigured()) {
             return "not configured";
           }
-          String accountKey = resolveAccountKey(context, args);
+          CreateEventRequest request =
+              context.getMapper().convertValue(args, CreateEventRequest.class);
+          String accountKey = resolveAccountKey(context, request.accountKey());
           if (accountKey == null || accountKey.isBlank()) {
             return "no account";
           }
-          String calendarId = resolveCalendarId(args);
-          ZoneId zone = resolveZone(args);
-          String startText = getRequired(args, "start");
-          String endText = getRequired(args, "end");
+          String calendarId = resolveCalendarId(request.calendarId());
+          ZoneId zone = resolveZone(request.timezone());
+          String startText = request.start();
+          String endText = request.end();
+          if (startText == null || startText.isBlank()) {
+            return "missing start";
+          }
+          if (endText == null || endText.isBlank()) {
+            return "missing end";
+          }
           DateTime start = gcalClient.parseDateTime(startText, zone);
           DateTime end = gcalClient.parseDateTime(endText, zone);
           if (start == null || end == null) {
@@ -65,18 +72,22 @@ public class CreateEventAgentTool extends GcalToolSupport implements ToolProvide
           try {
             Calendar client = gcalClient.getCalendarService(accountKey);
             Event event = new Event();
-            event.setSummary(getRequired(args, "summary"));
-            String description = getOptionalText(args, "description");
+            String summary = request.summary();
+            if (summary == null || summary.isBlank()) {
+              return "missing summary";
+            }
+            event.setSummary(summary);
+            String description = request.description();
             if (description != null && !description.isBlank()) {
               event.setDescription(description);
             }
-            String location = getOptionalText(args, "location");
+            String location = request.location();
             if (location != null && !location.isBlank()) {
               event.setLocation(location);
             }
             EventDateTime startTime = new EventDateTime().setDateTime(start);
             EventDateTime endTime = new EventDateTime().setDateTime(end);
-            String timezone = getOptionalText(args, "timezone");
+            String timezone = request.timezone();
             if (timezone != null && !timezone.isBlank()) {
               startTime.setTimeZone(timezone);
               endTime.setTimeZone(timezone);
@@ -84,11 +95,12 @@ public class CreateEventAgentTool extends GcalToolSupport implements ToolProvide
             event.setStart(startTime);
             event.setEnd(endTime);
 
-            if (args.has("attendees") && args.get("attendees").isArray()) {
+            List<String> attendeeEmails = request.attendees();
+            if (attendeeEmails != null && !attendeeEmails.isEmpty()) {
               List<EventAttendee> attendees = new ArrayList<>();
-              for (var node : args.get("attendees")) {
-                if (node != null && node.isTextual()) {
-                  attendees.add(new EventAttendee().setEmail(node.asText()));
+              for (String email : attendeeEmails) {
+                if (email != null && !email.isBlank()) {
+                  attendees.add(new EventAttendee().setEmail(email));
                 }
               }
               if (!attendees.isEmpty()) {

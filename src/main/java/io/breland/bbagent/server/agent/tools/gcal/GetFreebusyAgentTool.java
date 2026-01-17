@@ -1,9 +1,8 @@
 package io.breland.bbagent.server.agent.tools.gcal;
 
-import static io.breland.bbagent.server.agent.BBMessageAgent.getOptionalText;
-import static io.breland.bbagent.server.agent.BBMessageAgent.getRequired;
-import static io.breland.bbagent.server.agent.BBMessageAgent.jsonSchema;
+import static io.breland.bbagent.server.agent.tools.JsonSchemaUtilities.jsonSchema;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
 import com.google.api.client.util.DateTime;
 import com.google.api.services.calendar.Calendar;
 import com.google.api.services.calendar.model.FreeBusyRequest;
@@ -11,13 +10,26 @@ import com.google.api.services.calendar.model.FreeBusyRequestItem;
 import com.google.api.services.calendar.model.FreeBusyResponse;
 import io.breland.bbagent.server.agent.tools.AgentTool;
 import io.breland.bbagent.server.agent.tools.ToolProvider;
+import io.swagger.v3.oas.annotations.media.Schema;
 import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
 
 public class GetFreebusyAgentTool extends GcalToolSupport implements ToolProvider {
   public static final String TOOL_NAME = "get_freebusy";
+
+  @Schema(description = "Get free/busy information for calendars.")
+  public record GetFreebusyRequest(
+      @Schema(description = "Account key to use.") @JsonProperty("account_key") String accountKey,
+      @Schema(description = "Start of the time range.", requiredMode = Schema.RequiredMode.REQUIRED)
+          @JsonProperty("time_min")
+          String timeMin,
+      @Schema(description = "End of the time range.", requiredMode = Schema.RequiredMode.REQUIRED)
+          @JsonProperty("time_max")
+          String timeMax,
+      @Schema(description = "Timezone to interpret date/time strings.") String timezone,
+      @Schema(description = "Calendar IDs to check.", requiredMode = Schema.RequiredMode.REQUIRED)
+          List<String> calendars) {}
 
   public GetFreebusyAgentTool(GcalClient gcalClient) {
     super(gcalClient);
@@ -27,41 +39,40 @@ public class GetFreebusyAgentTool extends GcalToolSupport implements ToolProvide
     return new AgentTool(
         TOOL_NAME,
         "Get free/busy information for calendars.",
-        jsonSchema(
-            Map.of(
-                "type",
-                "object",
-                "properties",
-                Map.of(
-                    "account_key", Map.of("type", "string"),
-                    "time_min", Map.of("type", "string"),
-                    "time_max", Map.of("type", "string"),
-                    "timezone", Map.of("type", "string"),
-                    "calendars", Map.of("type", "array", "items", Map.of("type", "string"))),
-                "required",
-                List.of("time_min", "time_max", "calendars"))),
+        jsonSchema(GetFreebusyRequest.class),
         false,
         (context, args) -> {
           if (!gcalClient.isConfigured()) {
             return "not configured";
           }
-          String accountKey = resolveAccountKey(context, args);
+          GetFreebusyRequest request =
+              context.getMapper().convertValue(args, GetFreebusyRequest.class);
+          String accountKey = resolveAccountKey(context, request.accountKey());
           if (accountKey == null || accountKey.isBlank()) {
             return "no account";
           }
-          ZoneId zone = resolveZone(args);
-          DateTime min = gcalClient.parseDateTime(getRequired(args, "time_min"), zone);
-          DateTime max = gcalClient.parseDateTime(getRequired(args, "time_max"), zone);
+          ZoneId zone = resolveZone(request.timezone());
+          String timeMinText = request.timeMin();
+          String timeMaxText = request.timeMax();
+          if (timeMinText == null || timeMinText.isBlank()) {
+            return "missing time_min";
+          }
+          if (timeMaxText == null || timeMaxText.isBlank()) {
+            return "missing time_max";
+          }
+          DateTime min = gcalClient.parseDateTime(timeMinText, zone);
+          DateTime max = gcalClient.parseDateTime(timeMaxText, zone);
           if (min == null || max == null) {
             return "invalid time";
           }
-          if (!args.has("calendars") || !args.get("calendars").isArray()) {
+          List<String> calendarIds = request.calendars();
+          if (calendarIds == null || calendarIds.isEmpty()) {
             return "missing calendars";
           }
           List<FreeBusyRequestItem> items = new ArrayList<>();
-          for (var node : args.get("calendars")) {
-            if (node != null && node.isTextual()) {
-              items.add(new FreeBusyRequestItem().setId(node.asText()));
+          for (String calendarId : calendarIds) {
+            if (calendarId != null && !calendarId.isBlank()) {
+              items.add(new FreeBusyRequestItem().setId(calendarId));
             }
           }
           if (items.isEmpty()) {
@@ -69,15 +80,15 @@ public class GetFreebusyAgentTool extends GcalToolSupport implements ToolProvide
           }
           try {
             Calendar client = gcalClient.getCalendarService(accountKey);
-            FreeBusyRequest request = new FreeBusyRequest();
-            request.setTimeMin(min);
-            request.setTimeMax(max);
-            request.setItems(items);
-            String timezone = getOptionalText(args, "timezone");
+            FreeBusyRequest gRequest = new FreeBusyRequest();
+            gRequest.setTimeMin(min);
+            gRequest.setTimeMax(max);
+            gRequest.setItems(items);
+            String timezone = request.timezone();
             if (timezone != null && !timezone.isBlank()) {
-              request.setTimeZone(timezone);
+              gRequest.setTimeZone(timezone);
             }
-            FreeBusyResponse response = client.freebusy().query(request).execute();
+            FreeBusyResponse response = client.freebusy().query(gRequest).execute();
             return gcalClient.mapper().writeValueAsString(response);
           } catch (Exception e) {
             return "error: " + e.getMessage();

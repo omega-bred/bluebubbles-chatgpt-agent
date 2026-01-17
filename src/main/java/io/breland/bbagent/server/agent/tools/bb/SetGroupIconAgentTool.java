@@ -1,7 +1,6 @@
 package io.breland.bbagent.server.agent.tools.bb;
 
-import static io.breland.bbagent.server.agent.BBMessageAgent.getRequired;
-import static io.breland.bbagent.server.agent.BBMessageAgent.jsonSchema;
+import static io.breland.bbagent.server.agent.tools.JsonSchemaUtilities.jsonSchema;
 
 import com.openai.client.OpenAIClient;
 import com.openai.models.images.Image;
@@ -12,6 +11,7 @@ import io.breland.bbagent.server.agent.BBHttpClientWrapper;
 import io.breland.bbagent.server.agent.IncomingMessage;
 import io.breland.bbagent.server.agent.tools.AgentTool;
 import io.breland.bbagent.server.agent.tools.ToolProvider;
+import io.swagger.v3.oas.annotations.media.Schema;
 import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
 import java.net.URL;
@@ -19,7 +19,6 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Base64;
 import java.util.List;
-import java.util.Map;
 import java.util.Optional;
 import java.util.function.Supplier;
 
@@ -27,6 +26,13 @@ public class SetGroupIconAgentTool implements ToolProvider {
   public static final String TOOL_NAME = "set_group_icon";
   private final BBHttpClientWrapper bbHttpClientWrapper;
   private final Supplier<OpenAIClient> openAiSupplier;
+
+  @Schema(description = "Generate an image from a prompt and set it as the group icon.")
+  public record SetGroupIconRequest(
+      @Schema(
+              description = "Prompt to generate the icon image.",
+              requiredMode = Schema.RequiredMode.REQUIRED)
+          String prompt) {}
 
   public SetGroupIconAgentTool(
       BBHttpClientWrapper bbHttpClientWrapper, Supplier<OpenAIClient> openAiSupplier) {
@@ -38,14 +44,7 @@ public class SetGroupIconAgentTool implements ToolProvider {
     return new AgentTool(
         TOOL_NAME,
         "Generate an image from a prompt and set it as the current group icon.",
-        jsonSchema(
-            Map.of(
-                "type",
-                "object",
-                "properties",
-                Map.of("prompt", Map.of("type", "string")),
-                "required",
-                List.of("prompt"))),
+        jsonSchema(SetGroupIconRequest.class),
         false,
         (context, args) -> {
           IncomingMessage message = context.message();
@@ -55,7 +54,12 @@ public class SetGroupIconAgentTool implements ToolProvider {
           if (!AgentTool.isGroupMessage(message)) {
             return "not group";
           }
-          String prompt = getRequired(args, "prompt");
+          SetGroupIconRequest request =
+              context.getMapper().convertValue(args, SetGroupIconRequest.class);
+          String prompt = request.prompt();
+          if (prompt == null || prompt.isBlank()) {
+            return "missing prompt";
+          }
           Optional<byte[]> imageBytes = generateImageBytes(prompt);
           if (imageBytes.isEmpty()) {
             return "no image";

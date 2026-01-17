@@ -1,6 +1,6 @@
 package io.breland.bbagent.server.agent.tools.assistant;
 
-import static io.breland.bbagent.server.agent.BBMessageAgent.jsonSchema;
+import static io.breland.bbagent.server.agent.tools.JsonSchemaUtilities.jsonSchema;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
 import io.breland.bbagent.server.agent.BBMessageAgent;

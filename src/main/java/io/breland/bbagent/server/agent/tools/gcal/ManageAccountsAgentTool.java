@@ -1,16 +1,35 @@
 package io.breland.bbagent.server.agent.tools.gcal;
 
-import static io.breland.bbagent.server.agent.BBMessageAgent.getOptionalText;
-import static io.breland.bbagent.server.agent.BBMessageAgent.jsonSchema;
+import static io.breland.bbagent.server.agent.tools.JsonSchemaUtilities.jsonSchema;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
 import io.breland.bbagent.server.agent.tools.AgentTool;
 import io.breland.bbagent.server.agent.tools.ToolProvider;
+import io.swagger.v3.oas.annotations.media.Schema;
 import java.util.LinkedHashMap;
-import java.util.List;
 import java.util.Map;
 
 public class ManageAccountsAgentTool extends GcalToolSupport implements ToolProvider {
   public static final String TOOL_NAME = "manage_accounts";
+
+  @Schema(description = "Manage Google Calendar account links.")
+  public record ManageAccountsRequest(
+      @Schema(
+              description = "Action to perform.",
+              allowableValues = {"list", "auth_url", "revoke"},
+              requiredMode = Schema.RequiredMode.REQUIRED)
+          Action action,
+      @Schema(description = "Account key for revoke operations.") @JsonProperty("account_key")
+          String accountKey) {}
+
+  public enum Action {
+    @JsonProperty("list")
+    LIST,
+    @JsonProperty("auth_url")
+    AUTH_URL,
+    @JsonProperty("revoke")
+    REVOKE
+  }
 
   public ManageAccountsAgentTool(GcalClient gcalClient) {
     super(gcalClient);
@@ -20,30 +39,20 @@ public class ManageAccountsAgentTool extends GcalToolSupport implements ToolProv
     return new AgentTool(
         TOOL_NAME,
         "Manage Google Calendar accounts (auth URL, list, revoke). Use this tool to find out if a calendar/account is already linked and other account management operations. Use account_key to target a specific linked account. Always use this tool to make a new account link URL - never re-use an existing URL.",
-        jsonSchema(
-            Map.of(
-                "type",
-                "object",
-                "properties",
-                Map.of(
-                    "action",
-                    Map.of("type", "string", "enum", List.of("list", "auth_url", "revoke")),
-                    "account_key",
-                    Map.of("type", "string")),
-                "required",
-                List.of("action"))),
+        jsonSchema(ManageAccountsRequest.class),
         false,
         (context, args) -> {
           if (!gcalClient.isConfigured()) {
             return "not configured";
           }
-          String action = getOptionalText(args, "action");
-          if (action == null || action.isBlank()) {
+          ManageAccountsRequest request =
+              context.getMapper().convertValue(args, ManageAccountsRequest.class);
+          if (request.action() == null) {
             return "missing action";
           }
           try {
-            switch (action) {
-              case "list" -> {
+            switch (request.action()) {
+              case LIST -> {
                 String accountBase = resolveAccountBase(context);
                 if (accountBase == null || accountBase.isBlank()) {
                   return "no account";
@@ -52,7 +61,7 @@ public class ManageAccountsAgentTool extends GcalToolSupport implements ToolProv
                 response.put("accounts", gcalClient.listAccountsFor(accountBase));
                 return gcalClient.mapper().writeValueAsString(response);
               }
-              case "auth_url" -> {
+              case AUTH_URL -> {
                 String accountBase = resolveAccountBase(context);
                 if (accountBase == null || accountBase.isBlank()) {
                   return "no account";
@@ -73,12 +82,12 @@ public class ManageAccountsAgentTool extends GcalToolSupport implements ToolProv
                 response.put("account_key", "new");
                 return gcalClient.mapper().writeValueAsString(response);
               }
-              case "revoke" -> {
+              case REVOKE -> {
                 String accountBase = resolveAccountBase(context);
                 if (accountBase == null || accountBase.isBlank()) {
                   return "no account";
                 }
-                String requestedAccountKey = getOptionalText(args, "account_key");
+                String requestedAccountKey = request.accountKey();
                 String accountKey = gcalClient.scopeAccountKey(accountBase, requestedAccountKey);
                 boolean success = gcalClient.revokeAccount(accountKey);
                 return success ? "revoked" : "not found";

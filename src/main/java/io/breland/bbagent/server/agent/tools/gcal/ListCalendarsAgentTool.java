@@ -1,12 +1,14 @@
 package io.breland.bbagent.server.agent.tools.gcal;
 
-import static io.breland.bbagent.server.agent.BBMessageAgent.jsonSchema;
+import static io.breland.bbagent.server.agent.tools.JsonSchemaUtilities.jsonSchema;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
 import com.google.api.services.calendar.Calendar;
 import com.google.api.services.calendar.model.CalendarList;
 import com.google.api.services.calendar.model.CalendarListEntry;
 import io.breland.bbagent.server.agent.tools.AgentTool;
 import io.breland.bbagent.server.agent.tools.ToolProvider;
+import io.swagger.v3.oas.annotations.media.Schema;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -14,6 +16,11 @@ import java.util.Map;
 
 public class ListCalendarsAgentTool extends GcalToolSupport implements ToolProvider {
   public static final String TOOL_NAME = "list_calendars";
+
+  @Schema(description = "List calendars for the current linked account.")
+  public record ListCalendarsRequest(
+      @Schema(description = "Account key to list calendars for.") @JsonProperty("account_key")
+          String accountKey) {}
 
   public ListCalendarsAgentTool(GcalClient gcalClient) {
     super(gcalClient);
@@ -23,15 +30,15 @@ public class ListCalendarsAgentTool extends GcalToolSupport implements ToolProvi
     return new AgentTool(
         TOOL_NAME,
         "List calendars available for the current account. Use this to map a calendar name to a calendar_id when other tools take the calendar_id parameter. Always search for calendar names to calendar_id or listing the associated calendars using this tool. Use account_key when multiple accounts are linked.",
-        jsonSchema(
-            Map.of(
-                "type", "object", "properties", Map.of("account_key", Map.of("type", "string")))),
+        jsonSchema(ListCalendarsRequest.class),
         false,
         (context, args) -> {
           if (!gcalClient.isConfigured()) {
             return "not configured";
           }
-          String accountKey = resolveAccountKey(context, args);
+          ListCalendarsRequest request =
+              context.getMapper().convertValue(args, ListCalendarsRequest.class);
+          String accountKey = resolveAccountKey(context, request.accountKey());
           if (accountKey == null || accountKey.isBlank()) {
             return "no account";
           }

@@ -1,19 +1,86 @@
 package io.breland.bbagent.server.agent.tools.bb;
 
-import static io.breland.bbagent.server.agent.BBMessageAgent.*;
+import static io.breland.bbagent.server.agent.tools.JsonSchemaUtilities.jsonSchema;
 
-import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.annotation.JsonProperty;
 import io.breland.bbagent.generated.bluebubblesclient.model.ApiV1MessageTextPostRequest;
 import io.breland.bbagent.server.agent.BBHttpClientWrapper;
 import io.breland.bbagent.server.agent.tools.AgentTool;
 import io.breland.bbagent.server.agent.tools.ToolProvider;
-import java.util.*;
-import java.util.function.Predicate;
+import io.swagger.v3.oas.annotations.media.Schema;
+import java.util.Locale;
+import java.util.Optional;
+import java.util.UUID;
 
 public class SendTextAgentTool implements ToolProvider {
 
   public static final String TOOL_NAME = "send_text";
   private final BBHttpClientWrapper bbHttpClientWrapper;
+
+  @Schema(description = "Send a text message via iMessage.")
+  public record SendTextRequest(
+      @Schema(
+              description = "Chat GUID to send the message to.",
+              requiredMode = Schema.RequiredMode.REQUIRED)
+          String chatGuid,
+      @Schema(description = "Text message to send.", requiredMode = Schema.RequiredMode.REQUIRED)
+          String message,
+      @Schema(
+              description =
+                  "Use to reply directly to a message in a thread. Pass the message GUID to reply to.")
+          String selectedMessageGuid,
+      @Schema(
+              description = "Optional iMessage effect to use sparingly.",
+              allowableValues = {
+                "slam",
+                "gentle",
+                "invisible",
+                "loud",
+                "confetti",
+                "echo",
+                "fireworks",
+                "happy_birthday",
+                "heart",
+                "love",
+                "lasers",
+                "shooting_star",
+                "sparkles",
+                "spotlight"
+              })
+          Effect effect,
+      @Schema(description = "Attachment part index when replying with multiple parts.")
+          Integer partIndex) {}
+
+  public enum Effect {
+    @JsonProperty("slam")
+    SLAM,
+    @JsonProperty("gentle")
+    GENTLE,
+    @JsonProperty("invisible")
+    INVISIBLE,
+    @JsonProperty("loud")
+    LOUD,
+    @JsonProperty("confetti")
+    CONFETTI,
+    @JsonProperty("echo")
+    ECHO,
+    @JsonProperty("fireworks")
+    FIREWORKS,
+    @JsonProperty("happy_birthday")
+    HAPPY_BIRTHDAY,
+    @JsonProperty("heart")
+    HEART,
+    @JsonProperty("love")
+    LOVE,
+    @JsonProperty("lasers")
+    LASERS,
+    @JsonProperty("shooting_star")
+    SHOOTING_STAR,
+    @JsonProperty("sparkles")
+    SPARKLES,
+    @JsonProperty("spotlight")
+    SPOTLIGHT
+  }
 
   public SendTextAgentTool(BBHttpClientWrapper bbHttpClientWrapper) {
     this.bbHttpClientWrapper = bbHttpClientWrapper;
@@ -23,71 +90,30 @@ public class SendTextAgentTool implements ToolProvider {
     return new AgentTool(
         TOOL_NAME,
         "Send a text reply via iMessage. You may optionally apply an iMessage effect sparingly (e.g. happy_birthday for birthday wishes).",
-        jsonSchema(
-            Map.of(
-                "type",
-                "object",
-                "properties",
-                Map.of(
-                    "chatGuid",
-                    Map.of("type", "string"),
-                    "message",
-                    Map.of("type", "string"),
-                    "selectedMessageGuid",
-                    Map.of(
-                        "type",
-                        "string",
-                        "description",
-                        "Use this argument to reply directly to a message in a thread - pass the messageGuid to reply to. Always use this when the original message is in a thread."),
-                    "effect",
-                    Map.of(
-                        "type",
-                        "string",
-                        "description",
-                        "Optional iMessage effect to use sparingly. Example: happy_birthday.",
-                        "enum",
-                        List.of(
-                            "slam",
-                            "gentle",
-                            "invisible",
-                            "loud",
-                            "confetti",
-                            "echo",
-                            "fireworks",
-                            "happy_birthday",
-                            "heart",
-                            "love",
-                            "lasers",
-                            "shooting_star",
-                            "sparkles",
-                            "spotlight")),
-                    "partIndex",
-                    Map.of("type", "integer", "minimum", 0)),
-                "required",
-                List.of("chatGuid", "message"))),
+        jsonSchema(SendTextRequest.class),
         false,
         (context, args) -> {
           ApiV1MessageTextPostRequest request = new ApiV1MessageTextPostRequest();
-          String chatGuid = getRequired(args, "chatGuid");
-          String message = getRequired(args, "message");
+          SendTextRequest toolRequest =
+              context.getMapper().convertValue(args, SendTextRequest.class);
+          String chatGuid = toolRequest.chatGuid();
+          String message = toolRequest.message();
+          if (chatGuid == null || chatGuid.isBlank()) {
+            return "missing chatGuid";
+          }
+          if (message == null || message.isBlank()) {
+            return "missing message";
+          }
           request.setChatGuid(chatGuid);
           request.setMessage(message);
           request.setTempGuid(UUID.randomUUID().toString());
 
-          Optional.of(args)
-              .map(a -> a.get("selectedMessageGuid"))
-              .filter(Predicate.not(JsonNode::isNull))
-              .filter(JsonNode::isTextual)
-              .map(JsonNode::asText)
+          Optional.ofNullable(toolRequest.selectedMessageGuid())
               .ifPresent(request::selectedMessageGuid);
 
-          Optional.of(args)
-              .map(a -> a.get("effect"))
-              .filter(Predicate.not(JsonNode::isNull))
-              .filter(JsonNode::isTextual)
-              .map(JsonNode::asText)
+          Optional.ofNullable(toolRequest.effect())
               .map(
-                  effectName -> {
+                  effect -> {
                     // https://docs.rs/imessage-database/latest/imessage_database/message_types/expressives/enum.Expressive.html
                     // com.apple.MobileSMS.expressivesend.gentle
                     // com.apple.MobileSMS.expressivesend.impact
@@ -103,7 +129,8 @@ public class SendTextAgentTool implements ToolProvider {
                     // com.apple.messages.effect.CKSparklesEffect
                     // com.apple.messages.effect.CKSpotlightEffect
                     String normalized =
-                        effectName
+                        effect
+                            .name()
                             .trim()
                             .toLowerCase(Locale.ROOT)
                             .replace("-", "_")
@@ -128,12 +155,7 @@ public class SendTextAgentTool implements ToolProvider {
                   })
               .ifPresent(request::effectId);
 
-          Optional.of(args)
-              .map(a -> a.get("partIndex"))
-              .filter(Predicate.not(JsonNode::isNull))
-              .filter(JsonNode::isNumber)
-              .map(JsonNode::asInt)
-              .ifPresent(request::partIndex);
+          Optional.ofNullable(toolRequest.partIndex()).ifPresent(request::partIndex);
 
           bbHttpClientWrapper.sendTextDirect(request);
           context.recordAssistantTurn(message);

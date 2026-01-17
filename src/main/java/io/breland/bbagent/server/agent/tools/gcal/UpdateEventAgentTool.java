@@ -1,9 +1,8 @@
 package io.breland.bbagent.server.agent.tools.gcal;
 
-import static io.breland.bbagent.server.agent.BBMessageAgent.getOptionalText;
-import static io.breland.bbagent.server.agent.BBMessageAgent.getRequired;
-import static io.breland.bbagent.server.agent.BBMessageAgent.jsonSchema;
+import static io.breland.bbagent.server.agent.tools.JsonSchemaUtilities.jsonSchema;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
 import com.google.api.client.util.DateTime;
 import com.google.api.services.calendar.Calendar;
 import com.google.api.services.calendar.model.Event;
@@ -11,13 +10,29 @@ import com.google.api.services.calendar.model.EventAttendee;
 import com.google.api.services.calendar.model.EventDateTime;
 import io.breland.bbagent.server.agent.tools.AgentTool;
 import io.breland.bbagent.server.agent.tools.ToolProvider;
+import io.swagger.v3.oas.annotations.media.Schema;
 import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
 
 public class UpdateEventAgentTool extends GcalToolSupport implements ToolProvider {
   public static final String TOOL_NAME = "update_event";
+
+  @Schema(description = "Update a calendar event.")
+  public record UpdateEventRequest(
+      @Schema(description = "Account key to use.") @JsonProperty("account_key") String accountKey,
+      @Schema(description = "Calendar ID containing the event.") @JsonProperty("calendar_id")
+          String calendarId,
+      @Schema(description = "Event ID to update.", requiredMode = Schema.RequiredMode.REQUIRED)
+          @JsonProperty("event_id")
+          String eventId,
+      @Schema(description = "Updated event summary.") String summary,
+      @Schema(description = "Updated event description.") String description,
+      @Schema(description = "Updated event location.") String location,
+      @Schema(description = "Updated event start time.") String start,
+      @Schema(description = "Updated event end time.") String end,
+      @Schema(description = "Timezone to interpret date/time strings.") String timezone,
+      @Schema(description = "Attendee email addresses.") List<String> attendees) {}
 
   public UpdateEventAgentTool(GcalClient gcalClient) {
     super(gcalClient);
@@ -27,54 +42,42 @@ public class UpdateEventAgentTool extends GcalToolSupport implements ToolProvide
     return new AgentTool(
         TOOL_NAME,
         "Update a calendar event. Do not use this tool to rename or update conversation / chat information.",
-        jsonSchema(
-            Map.of(
-                "type",
-                "object",
-                "properties",
-                Map.of(
-                    "account_key", Map.of("type", "string"),
-                    "calendar_id", Map.of("type", "string"),
-                    "event_id", Map.of("type", "string"),
-                    "summary", Map.of("type", "string"),
-                    "description", Map.of("type", "string"),
-                    "location", Map.of("type", "string"),
-                    "start", Map.of("type", "string"),
-                    "end", Map.of("type", "string"),
-                    "timezone", Map.of("type", "string"),
-                    "attendees", Map.of("type", "array", "items", Map.of("type", "string"))),
-                "required",
-                List.of("event_id"))),
+        jsonSchema(UpdateEventRequest.class),
         false,
         (context, args) -> {
           if (!gcalClient.isConfigured()) {
             return "not configured";
           }
-          String accountKey = resolveAccountKey(context, args);
+          UpdateEventRequest request =
+              context.getMapper().convertValue(args, UpdateEventRequest.class);
+          String accountKey = resolveAccountKey(context, request.accountKey());
           if (accountKey == null || accountKey.isBlank()) {
             return "no account";
           }
-          String calendarId = resolveCalendarId(args);
-          String eventId = getRequired(args, "event_id");
-          ZoneId zone = resolveZone(args);
+          String calendarId = resolveCalendarId(request.calendarId());
+          String eventId = request.eventId();
+          if (eventId == null || eventId.isBlank()) {
+            return "missing event_id";
+          }
+          ZoneId zone = resolveZone(request.timezone());
           try {
             Calendar client = gcalClient.getCalendarService(accountKey);
             Event patch = new Event();
-            String summary = getOptionalText(args, "summary");
+            String summary = request.summary();
             if (summary != null) {
               patch.setSummary(summary);
             }
-            String description = getOptionalText(args, "description");
+            String description = request.description();
             if (description != null) {
               patch.setDescription(description);
             }
-            String location = getOptionalText(args, "location");
+            String location = request.location();
             if (location != null) {
               patch.setLocation(location);
             }
-            String startText = getOptionalText(args, "start");
-            String endText = getOptionalText(args, "end");
-            String timezone = getOptionalText(args, "timezone");
+            String startText = request.start();
+            String endText = request.end();
+            String timezone = request.timezone();
             if (startText != null && !startText.isBlank()) {
               DateTime start = gcalClient.parseDateTime(startText, zone);
               if (start != null) {
@@ -95,11 +98,12 @@ public class UpdateEventAgentTool extends GcalToolSupport implements ToolProvide
                 patch.setEnd(endTime);
               }
             }
-            if (args.has("attendees") && args.get("attendees").isArray()) {
+            List<String> attendeeEmails = request.attendees();
+            if (attendeeEmails != null) {
               List<EventAttendee> attendees = new ArrayList<>();
-              for (var node : args.get("attendees")) {
-                if (node != null && node.isTextual()) {
-                  attendees.add(new EventAttendee().setEmail(node.asText()));
+              for (String email : attendeeEmails) {
+                if (email != null && !email.isBlank()) {
+                  attendees.add(new EventAttendee().setEmail(email));
                 }
               }
               patch.setAttendees(attendees);

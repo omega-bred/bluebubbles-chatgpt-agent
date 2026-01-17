@@ -1,8 +1,8 @@
 package io.breland.bbagent.server.agent.tools.bb;
 
-import static io.breland.bbagent.server.agent.BBMessageAgent.getOptionalText;
-import static io.breland.bbagent.server.agent.BBMessageAgent.jsonSchema;
+import static io.breland.bbagent.server.agent.tools.JsonSchemaUtilities.jsonSchema;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import io.breland.bbagent.server.agent.ConversationState;
@@ -10,6 +10,7 @@ import io.breland.bbagent.server.agent.IncomingAttachment;
 import io.breland.bbagent.server.agent.tools.AgentTool;
 import io.breland.bbagent.server.agent.tools.ToolContext;
 import io.breland.bbagent.server.agent.tools.ToolProvider;
+import io.swagger.v3.oas.annotations.media.Schema;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -21,20 +22,23 @@ import lombok.extern.slf4j.Slf4j;
 public class GetThreadContextAgentTool implements ToolProvider {
   public static final String TOOL_NAME = "get_thread_context";
 
+  @Schema(description = "Request for thread context.")
+  public record GetThreadContextRequest(
+      @Schema(description = "Thread root message GUID to fetch context for.")
+          @JsonProperty("thread_root_guid")
+          String threadRootGuid) {}
+
   @Override
   public AgentTool getTool() {
     return new AgentTool(
         TOOL_NAME,
         "Get the latest message and images for the current thread. Use when asked about the last message in this thread or previously sent images in this thread.",
-        jsonSchema(
-            Map.of(
-                "type",
-                "object",
-                "properties",
-                Map.of("thread_root_guid", Map.of("type", "string")))),
+        jsonSchema(GetThreadContextRequest.class),
         false,
         (context, args) -> {
-          String threadRootGuid = getOptionalText(args, "thread_root_guid");
+          GetThreadContextRequest request =
+              context.getMapper().convertValue(args, GetThreadContextRequest.class);
+          String threadRootGuid = request.threadRootGuid();
           if (threadRootGuid == null || threadRootGuid.isBlank()) {
             threadRootGuid = resolveThreadRootGuid(context);
           }

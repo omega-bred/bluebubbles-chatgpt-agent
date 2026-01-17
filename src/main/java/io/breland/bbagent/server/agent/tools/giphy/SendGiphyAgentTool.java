@@ -1,10 +1,7 @@
 package io.breland.bbagent.server.agent.tools.giphy;
 
-import static io.breland.bbagent.server.agent.BBMessageAgent.getOptionalText;
-import static io.breland.bbagent.server.agent.BBMessageAgent.getRequired;
-import static io.breland.bbagent.server.agent.BBMessageAgent.jsonSchema;
+import static io.breland.bbagent.server.agent.tools.JsonSchemaUtilities.jsonSchema;
 
-import com.fasterxml.jackson.databind.JsonNode;
 import com.openai.client.OpenAIClient;
 import com.openai.models.ChatModel;
 import com.openai.models.responses.EasyInputMessage;
@@ -20,8 +17,8 @@ import io.breland.bbagent.server.agent.IncomingMessage;
 import io.breland.bbagent.server.agent.tools.AgentTool;
 import io.breland.bbagent.server.agent.tools.ToolContext;
 import io.breland.bbagent.server.agent.tools.ToolProvider;
+import io.swagger.v3.oas.annotations.media.Schema;
 import java.util.List;
-import java.util.Map;
 import java.util.Optional;
 import java.util.function.Supplier;
 import java.util.regex.Matcher;
@@ -33,6 +30,16 @@ public class SendGiphyAgentTool implements ToolProvider {
   private final BBHttpClientWrapper bbHttpClientWrapper;
   private final GiphyClient giphyClient;
   private final Supplier<OpenAIClient> openAiSupplier;
+
+  @Schema(description = "Search Giphy and send a GIF.")
+  public record SendGiphyRequest(
+      @Schema(
+              description = "Search query for the GIF.",
+              requiredMode = Schema.RequiredMode.REQUIRED)
+          String query,
+      @Schema(description = "Optional caption to include with the GIF.") String caption,
+      @Schema(description = "Giphy rating filter (e.g. g, pg, pg-13).") String rating,
+      @Schema(description = "Language code for the search query.") String lang) {}
 
   public SendGiphyAgentTool(
       BBHttpClientWrapper bbHttpClientWrapper,
@@ -47,35 +54,24 @@ public class SendGiphyAgentTool implements ToolProvider {
     return new AgentTool(
         TOOL_NAME,
         "Search Giphy for a GIF and send it as a reply in the current conversation. If your response would be better describe as the perfect gif - use this tool to find and send it. ",
-        jsonSchema(
-            Map.of(
-                "type",
-                "object",
-                "properties",
-                Map.of(
-                    "query",
-                    Map.of("type", "string"),
-                    "caption",
-                    Map.of("type", "string"),
-                    "rating",
-                    Map.of("type", "string"),
-                    "lang",
-                    Map.of("type", "string")),
-                "required",
-                List.of("query"))),
+        jsonSchema(SendGiphyRequest.class),
         false,
         this::sendGif);
   }
 
-  private String sendGif(ToolContext context, JsonNode args) {
+  private String sendGif(ToolContext context, com.fasterxml.jackson.databind.JsonNode args) {
     IncomingMessage message = context.message();
     if (message == null || message.chatGuid() == null || message.chatGuid().isBlank()) {
       return "no chat";
     }
-    String query = getRequired(args, "query");
-    String caption = getOptionalText(args, "caption");
-    String rating = getOptionalText(args, "rating");
-    String lang = getOptionalText(args, "lang");
+    SendGiphyRequest request = context.getMapper().convertValue(args, SendGiphyRequest.class);
+    String query = request.query();
+    if (query == null || query.isBlank()) {
+      return "missing query";
+    }
+    String caption = request.caption();
+    String rating = request.rating();
+    String lang = request.lang();
 
     List<GiphyClient.GiphyGif> candidates = giphyClient.searchGifs(query, 8, rating, lang);
     if (candidates.isEmpty()) {

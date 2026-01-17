@@ -1,12 +1,13 @@
 package io.breland.bbagent.server.agent.tools.bb;
 
-import static io.breland.bbagent.server.agent.BBMessageAgent.jsonSchema;
+import static io.breland.bbagent.server.agent.tools.JsonSchemaUtilities.jsonSchema;
 
 import io.breland.bbagent.generated.bluebubblesclient.model.Chat;
 import io.breland.bbagent.server.agent.BBHttpClientWrapper;
 import io.breland.bbagent.server.agent.IncomingMessage;
 import io.breland.bbagent.server.agent.tools.AgentTool;
 import io.breland.bbagent.server.agent.tools.ToolProvider;
+import io.swagger.v3.oas.annotations.media.Schema;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -16,6 +17,9 @@ public class CurrentConversationInfoAgentTool implements ToolProvider {
   public static final String TOOL_NAME = "current_conversation_info";
   private final BBHttpClientWrapper bbHttpClientWrapper;
 
+  @Schema(description = "No-argument request for current conversation info.")
+  public record CurrentConversationInfoRequest() {}
+
   public CurrentConversationInfoAgentTool(BBHttpClientWrapper bbHttpClientWrapper) {
     this.bbHttpClientWrapper = bbHttpClientWrapper;
   }
@@ -24,7 +28,7 @@ public class CurrentConversationInfoAgentTool implements ToolProvider {
     return new AgentTool(
         TOOL_NAME,
         "Fetch metadata about the current conversation (participants, display name, last message).",
-        jsonSchema(Map.of("type", "object", "properties", Map.of())),
+        jsonSchema(CurrentConversationInfoRequest.class),
         false,
         (context, args) -> {
           IncomingMessage message = context.message();
