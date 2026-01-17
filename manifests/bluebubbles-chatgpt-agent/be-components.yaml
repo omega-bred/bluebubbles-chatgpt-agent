@@ -237,7 +237,7 @@ metadata:
     cert-manager.io/cluster-issuer: letsencrypt-prod-brelandio
   labels:
     app: bluebubbles-chatgpt-agent
-  name: bluebubbles-chatgpt-agent-api
+  name: bluebubbles-chatgpt-agent-api-2
 spec:
   ingressClassName: nginx
   tls:
