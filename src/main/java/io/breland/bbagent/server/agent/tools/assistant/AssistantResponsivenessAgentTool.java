@@ -16,7 +16,7 @@ public class AssistantResponsivenessAgentTool implements ToolProvider {
   public record AssistantResponsivenessRequest(
       @Schema(
               description = "Desired responsiveness level.",
-              allowableValues = {"less_responsive", "more_responsive", "default"},
+              allowableValues = {"less_responsive", "more_responsive", "default", "silent"},
               requiredMode = Schema.RequiredMode.REQUIRED)
           Responsiveness responsiveness) {}
 
@@ -26,14 +26,16 @@ public class AssistantResponsivenessAgentTool implements ToolProvider {
     @JsonProperty("more_responsive")
     MORE_RESPONSIVE,
     @JsonProperty("default")
-    DEFAULT
+    DEFAULT,
+    @JsonProperty("silent")
+    SILENT
   }
 
   @Override
   public AgentTool getTool() {
     return new AgentTool(
         TOOL_NAME,
-        "Update the assistant responsiveness for this conversation. Use less_responsive to reduce participation or more_responsive to be more active. Use default to reset.",
+        "Update the assistant responsiveness for this conversation. Use less_responsive to reduce participation or more_responsive to be more active. Use silent to only respond when invoked. Use default to reset.",
         jsonSchema(AssistantResponsivenessRequest.class),
         false,
         (context, args) -> {
@@ -60,6 +62,7 @@ public class AssistantResponsivenessAgentTool implements ToolProvider {
       case LESS_RESPONSIVE -> BBMessageAgent.AssistantResponsiveness.LESS_RESPONSIVE;
       case MORE_RESPONSIVE -> BBMessageAgent.AssistantResponsiveness.MORE_RESPONSIVE;
       case DEFAULT -> BBMessageAgent.AssistantResponsiveness.DEFAULT;
+      case SILENT -> BBMessageAgent.AssistantResponsiveness.SILENT;
     };
   }
 }

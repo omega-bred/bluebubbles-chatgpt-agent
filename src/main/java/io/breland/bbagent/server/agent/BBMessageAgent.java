@@ -53,7 +53,8 @@ public class BBMessageAgent {
   public enum AssistantResponsiveness {
     DEFAULT,
     LESS_RESPONSIVE,
-    MORE_RESPONSIVE
+    MORE_RESPONSIVE,
+    SILENT
   }
 
   private static final Set<String> GROUP_ONLY_TOOLS =
@@ -216,7 +217,19 @@ public class BBMessageAgent {
       // group name or photo edited.
       return false;
     }
+    AssistantResponsiveness responsiveness = getAssistantResponsiveness(message.chatGuid());
+    if (responsiveness == AssistantResponsiveness.SILENT) {
+      return isSilentInvocation(message.text());
+    }
     return true;
+  }
+
+  private boolean isSilentInvocation(String text) {
+    if (text == null) {
+      return false;
+    }
+    String trimmed = text.stripLeading();
+    return trimmed.regionMatches(true, 0, "Chat", 0, 4);
   }
 
   private Response runAssistant(ConversationState state, IncomingMessage message) {
@@ -653,6 +666,8 @@ public class BBMessageAgent {
                   + " unless explicitly addressed, and do not issue any other response unless DIRECTLY ADDRESS. No reacting unless directly asked. Don't engage in casual conversation, only reply to direct asks. Do not assume a message was meant for you unless you're directly addressed by name.";
           case MORE_RESPONSIVE ->
               "Responsiveness: more responsive. Act like an active participant, reply when helpful, and use reactions more freely. ";
+          case SILENT ->
+              "Responsiveness: silent. Only respond when explicitly invoked with the activation prefix 'Chat' (case-insensitive).";
           case DEFAULT -> "";
         };
     return EasyInputMessage.builder()
@@ -695,7 +710,7 @@ public class BBMessageAgent {
                 + "If the user requests an image and has attached images, use those images as starting references for image generation. "
                 + "If the user asks the assistant to be more or less responsive (especially in group chats), call "
                 + AssistantResponsivenessAgentTool.TOOL_NAME
-                + " to update the setting. "
+                + " to update the setting. The silent mode will only invoke responses when the message starts with 'Chat' (case-insensitive). "
                 + "If a user shares their name, ask if it's okay to store it globally for future chats; only call "
                 + AssistantNameAgentTool.TOOL_NAME
                 + " after they explicitly agree. "
