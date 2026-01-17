@@ -10,10 +10,17 @@ public interface GcalCredentialRepository extends JpaRepository<GcalCredentialEn
 
   List<GcalCredentialEntity> findAllByStoreId(String storeId);
 
+  List<GcalCredentialEntity> findAllByStoreIdAndAccountBase(String storeId, String accountBase);
+
   long deleteByStoreIdAndAccountKey(String storeId, String accountKey);
 
   long deleteAllByStoreId(String storeId);
 
   @Query("select e.accountKey from GcalCredentialEntity e where e.storeId = :storeId")
   List<String> findAllAccountKeysByStoreId(@Param("storeId") String storeId);
+
+  @Query(
+      "select e.accountId from GcalCredentialEntity e where e.storeId = :storeId and e.accountBase = :accountBase")
+  List<String> findAccountIdsByStoreIdAndAccountBase(
+      @Param("storeId") String storeId, @Param("accountBase") String accountBase);
 }

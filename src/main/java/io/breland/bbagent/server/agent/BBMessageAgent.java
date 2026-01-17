@@ -7,6 +7,8 @@ import com.openai.client.OpenAIClient;
 import com.openai.client.okhttp.OpenAIOkHttpClient;
 import com.openai.core.JsonValue;
 import com.openai.models.ChatModel;
+import com.openai.models.Reasoning;
+import com.openai.models.ReasoningEffort;
 import com.openai.models.responses.*;
 import io.breland.bbagent.generated.bluebubblesclient.model.ApiV1MessageTextPostRequest;
 import io.breland.bbagent.server.agent.tools.*;
@@ -386,7 +388,8 @@ public class BBMessageAgent {
                     .build())
             .model(ChatModel.GPT_5_2_CHAT_LATEST)
             .inputOfResponse(inputItems)
-            .maxOutputTokens(600);
+            .maxOutputTokens(1000)
+            .reasoning(Reasoning.builder().effort(ReasoningEffort.MEDIUM).build());
     for (AgentTool tool : tools.values()) {
       if (shouldIncludeTool(tool, message)) {
         params.addTool(Tool.ofFunction(tool.asFunctionTool()));
@@ -925,7 +928,7 @@ public class BBMessageAgent {
                 + ". If the account is not linked, call "
                 + ManageAccountsAgentTool.TOOL_NAME
                 + " to get an auth_url and have the user complete the OAuth flow in their browser. "
-                + "If multiple calendar accounts are linked, pass account_key (the alias from manage_accounts list, or 'default') to the calendar tools to pick the right account; ask if ambiguous. "
+                + "If multiple calendar accounts are linked, pass account_key (the account id from manage_accounts list, or 'default') to the calendar tools to pick the right account; ask if ambiguous. "
                 + "When the user shares information about themselves, or information that is helpful to remember "
                 + "use the "
                 + MemorySaveAgentTool.TOOL_NAME

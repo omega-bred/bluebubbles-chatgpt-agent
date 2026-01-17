@@ -25,6 +25,12 @@ public class GcalCredentialEntity {
   @Column(name = "account_key", nullable = false, length = 255)
   private String accountKey;
 
+  @Column(name = "account_base", length = 255)
+  private String accountBase;
+
+  @Column(name = "account_id", length = 255)
+  private String accountId;
+
   @Column(name = "access_token", columnDefinition = "TEXT")
   private String accessToken;
 
@@ -38,12 +44,16 @@ public class GcalCredentialEntity {
       String id,
       String storeId,
       String accountKey,
+      String accountBase,
+      String accountId,
       String accessToken,
       String refreshToken,
       Long expirationTimeMs) {
     this.id = id;
     this.storeId = storeId;
     this.accountKey = accountKey;
+    this.accountBase = accountBase;
+    this.accountId = accountId;
     this.accessToken = accessToken;
     this.refreshToken = refreshToken;
     this.expirationTimeMs = expirationTimeMs;

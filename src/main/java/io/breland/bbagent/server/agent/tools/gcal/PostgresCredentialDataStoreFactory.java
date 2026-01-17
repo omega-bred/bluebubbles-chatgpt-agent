@@ -105,6 +105,7 @@ public class PostgresCredentialDataStoreFactory implements DataStoreFactory {
         return this;
       }
       String id = idFor(key);
+      AccountKeyParts keyParts = AccountKeyParts.parse(key);
       GcalCredentialEntity existing = repository.findById(id).orElse(null);
       String refreshToken = value.getRefreshToken();
       if ((refreshToken == null || refreshToken.isBlank()) && existing != null) {
@@ -115,6 +116,8 @@ public class PostgresCredentialDataStoreFactory implements DataStoreFactory {
               id,
               storeId,
               key,
+              keyParts.accountBase(),
+              keyParts.accountId(),
               value.getAccessToken(),
               refreshToken,
               value.getExpirationTimeMilliseconds());

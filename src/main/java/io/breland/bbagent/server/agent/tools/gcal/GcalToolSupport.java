@@ -2,7 +2,6 @@ package io.breland.bbagent.server.agent.tools.gcal;
 
 import static io.breland.bbagent.server.agent.BBMessageAgent.getOptionalText;
 
-import io.breland.bbagent.server.agent.tools.AgentTool;
 import io.breland.bbagent.server.agent.tools.ToolContext;
 import java.time.ZoneId;
 import java.util.Optional;
@@ -14,15 +13,30 @@ public class GcalToolSupport {
     this.gcalClient = gcalClient;
   }
 
-  protected String resolveAccountKey(ToolContext context) {
-    return AgentTool.resolveUserIdOrGroupChatId(context.message());
-  }
 
   protected String resolveAccountKey(
       ToolContext context, com.fasterxml.jackson.databind.JsonNode args) {
-    String accountAlias = getOptionalText(args, "account_key");
-    String accountBase = resolveAccountKey(context);
-    return gcalClient.scopeAccountKey(accountBase, accountAlias);
+    String accountId = getOptionalText(args, "account_key");
+    String accountBase = resolveAccountBase(context);
+    return gcalClient.scopeAccountKey(accountBase, accountId);
+  }
+
+  protected String resolveAccountBase(ToolContext context) {
+    if (context == null || context.message() == null) {
+      return null;
+    }
+    String chatGuid = context.message().chatGuid();
+    String sender = context.message().sender();
+    if (chatGuid != null && !chatGuid.isBlank() && sender != null && !sender.isBlank()) {
+      return chatGuid + "|" + sender;
+    }
+    if (sender != null && !sender.isBlank()) {
+      return sender;
+    }
+    if (chatGuid != null && !chatGuid.isBlank()) {
+      return chatGuid;
+    }
+    return null;
   }
 
   protected String resolveCalendarId(com.fasterxml.jackson.databind.JsonNode args) {

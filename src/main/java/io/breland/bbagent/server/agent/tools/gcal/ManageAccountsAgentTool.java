@@ -44,7 +44,7 @@ public class ManageAccountsAgentTool extends GcalToolSupport implements ToolProv
           try {
             switch (action) {
               case "list" -> {
-                String accountBase = resolveAccountKey(context);
+                String accountBase = resolveAccountBase(context);
                 if (accountBase == null || accountBase.isBlank()) {
                   return "no account";
                 }
@@ -53,12 +53,11 @@ public class ManageAccountsAgentTool extends GcalToolSupport implements ToolProv
                 return gcalClient.mapper().writeValueAsString(response);
               }
               case "auth_url" -> {
-                String accountBase = resolveAccountKey(context);
+                String accountBase = resolveAccountBase(context);
                 if (accountBase == null || accountBase.isBlank()) {
                   return "no account";
                 }
-                String requestedAccountKey = getOptionalText(args, "account_key");
-                String accountKey = gcalClient.scopeAccountKey(accountBase, requestedAccountKey);
+                String accountKey = accountBase;
                 String chatGuid = context.message() != null ? context.message().chatGuid() : null;
                 String messageGuid =
                     context.message() != null ? context.message().messageGuid() : null;
@@ -71,15 +70,11 @@ public class ManageAccountsAgentTool extends GcalToolSupport implements ToolProv
                 }
                 Map<String, Object> response = new LinkedHashMap<>();
                 response.put("auth_url", url);
-                response.put(
-                    "account_key",
-                    requestedAccountKey != null && !requestedAccountKey.isBlank()
-                        ? requestedAccountKey
-                        : "default");
+                response.put("account_key", "new");
                 return gcalClient.mapper().writeValueAsString(response);
               }
               case "revoke" -> {
-                String accountBase = resolveAccountKey(context);
+                String accountBase = resolveAccountBase(context);
                 if (accountBase == null || accountBase.isBlank()) {
                   return "no account";
                 }

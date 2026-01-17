@@ -18,6 +18,8 @@ import com.google.api.client.json.jackson2.JacksonFactory;
 import com.google.api.client.util.store.DataStoreFactory;
 import com.google.api.services.calendar.Calendar;
 import com.google.api.services.calendar.CalendarScopes;
+import com.google.api.services.calendar.model.CalendarListEntry;
+import io.breland.bbagent.server.agent.persistence.GcalCredentialEntity;
 import io.breland.bbagent.server.agent.persistence.GcalCredentialRepository;
 import java.io.FileInputStream;
 import java.io.IOException;
@@ -45,7 +47,7 @@ public class GcalClient {
   private static final Collection<String> SCOPES = List.of(CalendarScopes.CALENDAR);
   private static final Duration OAUTH_STATE_TTL = Duration.ofMinutes(10);
   private static final String STORE_ID = StoredCredential.DEFAULT_DATA_STORE_ID;
-  private static final String ACCOUNT_DELIM = "::";
+  private static final String ACCOUNT_PENDING_PREFIX = "pending::";
 
   private final ObjectMapper objectMapper = new ObjectMapper();
   private final String clientSecretPath;
@@ -86,31 +88,41 @@ public class GcalClient {
     return configured;
   }
 
-  public String getAuthUrl(String accountKey, String chatGuid, String messageGuid) {
+  public String getAuthUrl(String accountBase, String chatGuid, String messageGuid) {
     if (!isConfigured()) {
       return null;
     }
-    String state = createOauthState(accountKey, chatGuid, messageGuid);
+    String pendingKey =
+        accountBase + AccountKeyParts.ACCOUNT_DELIM + ACCOUNT_PENDING_PREFIX + UUID.randomUUID();
+    String state = createOauthState(accountBase, pendingKey, chatGuid, messageGuid);
     if (state == null) {
       return null;
     }
-    GoogleAuthorizationCodeFlow flow = buildFlow(accountKey);
+    GoogleAuthorizationCodeFlow flow = buildFlow(pendingKey);
     return flow.newAuthorizationUrl().setRedirectUri(redirectUri).setState(state).build();
   }
 
-  public boolean exchangeCode(String accountKey, String code) {
+  public Optional<String> exchangeCode(String accountBase, String pendingKey, String code) {
     if (!isConfigured()) {
-      return false;
+      return Optional.empty();
     }
     try {
-      GoogleAuthorizationCodeFlow flow = buildFlow(accountKey);
+      GoogleAuthorizationCodeFlow flow = buildFlow(pendingKey);
       TokenResponse tokenResponse =
           flow.newTokenRequest(code).setRedirectUri(redirectUri).execute();
-      flow.createAndStoreCredential(tokenResponse, accountKey);
-      return true;
+      flow.createAndStoreCredential(tokenResponse, pendingKey);
+      String accountId = resolveAccountId(pendingKey);
+      if (accountId == null || accountId.isBlank()) {
+        return Optional.empty();
+      }
+      String scopedKey = scopeAccountKey(accountBase, accountId);
+      if (!scopedKey.equals(pendingKey)) {
+        migrateCredentialKey(pendingKey, scopedKey);
+      }
+      return Optional.of(accountId);
     } catch (Exception e) {
       log.warn("Failed to exchange code", e);
-      return false;
+      return Optional.empty();
     }
   }
 
@@ -122,40 +134,38 @@ public class GcalClient {
     if (accountBase == null || accountBase.isBlank()) {
       return List.of();
     }
-    List<String> accounts = listAccounts();
-    if (accounts.isEmpty()) {
+    List<String> accountIds =
+        credentialRepository.findAccountIdsByStoreIdAndAccountBase(STORE_ID, accountBase);
+    if (accountIds == null || accountIds.isEmpty()) {
       return List.of();
     }
-    List<String> result = new ArrayList<>();
-    for (String key : accounts) {
-      if (key == null || key.isBlank()) {
+    LinkedHashSet<String> result = new LinkedHashSet<>();
+    for (String accountId : accountIds) {
+      if (accountId == null || accountId.isBlank()) {
         continue;
       }
-      if (key.equals(accountBase)) {
-        result.add("default");
+      if (accountId.startsWith(ACCOUNT_PENDING_PREFIX)) {
         continue;
       }
-      if (key.startsWith(accountBase + ACCOUNT_DELIM)) {
-        result.add(key.substring((accountBase + ACCOUNT_DELIM).length()));
-      }
+      result.add(accountId);
     }
-    return result;
+    return List.copyOf(result);
   }
 
-  public String scopeAccountKey(String accountBase, String accountAlias) {
-    if (accountAlias == null || accountAlias.isBlank()) {
+  public String scopeAccountKey(String accountBase, String accountId) {
+    if (accountId == null || accountId.isBlank()) {
       return accountBase;
     }
-    if (accountAlias.contains(ACCOUNT_DELIM)) {
-      return accountAlias;
+    if (accountId.contains(AccountKeyParts.ACCOUNT_DELIM)) {
+      return accountId;
     }
-    if ("default".equalsIgnoreCase(accountAlias)) {
+    if (AccountKeyParts.DEFAULT_ACCOUNT_ID.equalsIgnoreCase(accountId)) {
       return accountBase;
     }
     if (accountBase == null || accountBase.isBlank()) {
-      return accountAlias;
+      return accountId;
     }
-    return accountBase + ACCOUNT_DELIM + accountAlias;
+    return accountBase + AccountKeyParts.ACCOUNT_DELIM + accountId;
   }
 
   public boolean revokeAccount(String accountKey) {
@@ -221,13 +231,17 @@ public class GcalClient {
     try {
       JWTVerifier verifier = JWT.require(stateAlgorithm).build();
       DecodedJWT jwt = verifier.verify(state);
-      String accountKey = jwt.getClaim("account_key").asString();
+      String accountBase = jwt.getClaim("account_base").asString();
+      String pendingKey = jwt.getClaim("pending_key").asString();
       String chatGuid = jwt.getClaim("chat_guid").asString();
       String messageGuid = jwt.getClaim("message_guid").asString();
-      if (accountKey == null || accountKey.isBlank() || chatGuid == null || chatGuid.isBlank()) {
+      if (accountBase == null || accountBase.isBlank() || chatGuid == null || chatGuid.isBlank()) {
         return Optional.empty();
       }
-      return Optional.of(new OauthState(accountKey, chatGuid, messageGuid));
+      if (pendingKey == null || pendingKey.isBlank()) {
+        return Optional.empty();
+      }
+      return Optional.of(new OauthState(accountBase, pendingKey, chatGuid, messageGuid));
     } catch (JWTVerificationException e) {
       log.warn("Failed to parse OAuth state", e);
       return Optional.empty();
@@ -285,11 +299,12 @@ public class GcalClient {
     throw new IllegalStateException("Failed to load Google client secrets");
   }
 
-  private String createOauthState(String accountKey, String chatGuid, String messageGuid) {
+  private String createOauthState(
+      String accountBase, String pendingKey, String chatGuid, String messageGuid) {
     if (stateAlgorithm == null) {
       return null;
     }
-    if (accountKey == null || accountKey.isBlank() || chatGuid == null || chatGuid.isBlank()) {
+    if (accountBase == null || accountBase.isBlank() || chatGuid == null || chatGuid.isBlank()) {
       return null;
     }
     try {
@@ -297,7 +312,8 @@ public class GcalClient {
       return JWT.create()
           .withIssuedAt(Date.from(now))
           .withExpiresAt(Date.from(now.plus(OAUTH_STATE_TTL)))
-          .withClaim("account_key", accountKey)
+          .withClaim("account_base", accountBase)
+          .withClaim("pending_key", pendingKey)
           .withClaim("chat_guid", chatGuid)
           .withClaim("message_guid", messageGuid)
           .sign(stateAlgorithm);
@@ -307,5 +323,45 @@ public class GcalClient {
     }
   }
 
-  public record OauthState(String accountKey, String chatGuid, String messageGuid) {}
+  public record OauthState(
+      String accountBase, String pendingKey, String chatGuid, String messageGuid) {}
+
+  private String resolveAccountId(String accountKey) {
+    try {
+      Calendar client = getCalendarService(accountKey);
+      CalendarListEntry primary = client.calendarList().get("primary").execute();
+      if (primary != null && primary.getId() != null && !primary.getId().isBlank()) {
+        return primary.getId();
+      }
+    } catch (Exception e) {
+      log.warn("Failed to resolve primary calendar id", e);
+    }
+    return null;
+  }
+
+  private void migrateCredentialKey(String fromKey, String toKey) {
+    try {
+      String fromId = STORE_ID + ":" + fromKey;
+      String toId = STORE_ID + ":" + toKey;
+      AccountKeyParts keyParts = AccountKeyParts.parse(toKey);
+      credentialRepository
+          .findById(fromId)
+          .ifPresent(
+              existing -> {
+                credentialRepository.save(
+                    new GcalCredentialEntity(
+                        toId,
+                        existing.getStoreId(),
+                        toKey,
+                        keyParts.accountBase(),
+                        keyParts.accountId(),
+                        existing.getAccessToken(),
+                        existing.getRefreshToken(),
+                        existing.getExpirationTimeMs()));
+                credentialRepository.deleteById(fromId);
+              });
+    } catch (Exception e) {
+      log.warn("Failed to migrate credential key {} -> {}", fromKey, toKey, e);
+    }
+  }
 }
