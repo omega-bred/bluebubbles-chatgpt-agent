@@ -38,7 +38,7 @@ public class SendTextAgentTool implements ToolProvider {
                         "type",
                         "string",
                         "description",
-                        "If it makes it more clear - you can pass the messageGuid you're replying to"),
+                        "Use this argument to reply directly to a message in a thread - pass the messageGuid to reply to. Always use this when the original message is in a thread."),
                     "effect",
                     Map.of(
                         "type",

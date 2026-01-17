@@ -8,12 +8,14 @@ import com.openai.client.okhttp.OpenAIOkHttpClient;
 import com.openai.core.JsonValue;
 import com.openai.models.ChatModel;
 import com.openai.models.responses.*;
+import io.breland.bbagent.generated.bluebubblesclient.model.ApiV1MessageTextPostRequest;
 import io.breland.bbagent.server.agent.tools.*;
 import io.breland.bbagent.server.agent.tools.AgentTool;
 import io.breland.bbagent.server.agent.tools.ToolContext;
 import io.breland.bbagent.server.agent.tools.assistant.AssistantNameAgentTool;
 import io.breland.bbagent.server.agent.tools.assistant.AssistantResponsivenessAgentTool;
 import io.breland.bbagent.server.agent.tools.bb.CurrentConversationInfoAgentTool;
+import io.breland.bbagent.server.agent.tools.bb.GetThreadContextAgentTool;
 import io.breland.bbagent.server.agent.tools.bb.RenameConversationAgentTool;
 import io.breland.bbagent.server.agent.tools.bb.SearchConvoHistoryAgentTool;
 import io.breland.bbagent.server.agent.tools.bb.SendReactionAgentTool;
@@ -76,6 +78,14 @@ public class BBMessageAgent {
   @Getter private final Map<String, ConversationState> conversations = new ConcurrentHashMap<>();
   private final AgentSettingsStore agentSettingsStore;
   private final Map<String, AgentTool> tools = new ConcurrentHashMap<>();
+
+  public ObjectMapper getObjectMapper() {
+    return objectMapper;
+  }
+
+  public BBHttpClientWrapper getBbHttpClientWrapper() {
+    return bbHttpClientWrapper;
+  }
 
   private OpenAIClient openAIClient;
   private final Supplier<OpenAIClient> openAiSupplier =
@@ -213,6 +223,7 @@ public class BBMessageAgent {
       }
       state.setLastProcessedMessageGuid(message.messageGuid());
       state.setLastProcessedMessageFingerprint(fingerprint);
+      updateThreadContext(state, message);
     }
   }
 
@@ -310,7 +321,7 @@ public class BBMessageAgent {
     if (!assistantText.isBlank() && !NO_RESPONSE_TEXT.equalsIgnoreCase(assistantText.trim())) {
       log.info("Assistant reply text: {}", assistantText);
       if (!sentTextByTool && !sentImageByMultipart) {
-        bbHttpClientWrapper.sendTextDirect(message, assistantText.trim());
+        sendThreadAwareText(message, assistantText.trim());
       }
       state.addTurn(ConversationTurn.assistant(assistantText.trim(), Instant.now()));
     } else {
@@ -321,6 +332,39 @@ public class BBMessageAgent {
       }
     }
     return response;
+  }
+
+  private void sendThreadAwareText(IncomingMessage message, String text) {
+    if (message == null || text == null || text.isBlank()) {
+      return;
+    }
+    String replyTarget = resolveThreadRootGuid(message);
+    Optional<Integer> partIndex = parseThreadPartIndex(message);
+    if (replyTarget == null || replyTarget.isBlank()) {
+      bbHttpClientWrapper.sendTextDirect(message, text);
+      return;
+    }
+    ApiV1MessageTextPostRequest request = new ApiV1MessageTextPostRequest();
+    request.setChatGuid(message.chatGuid());
+    request.setMessage(text);
+    request.setSelectedMessageGuid(replyTarget);
+    partIndex.ifPresent(request::setPartIndex);
+    bbHttpClientWrapper.sendTextDirect(request);
+  }
+
+  private Optional<Integer> parseThreadPartIndex(IncomingMessage message) {
+    if (message == null || message.threadOriginatorPart() == null) {
+      return Optional.empty();
+    }
+    String raw = message.threadOriginatorPart().trim();
+    if (raw.isBlank()) {
+      return Optional.empty();
+    }
+    try {
+      return Optional.of(Integer.parseInt(raw));
+    } catch (NumberFormatException e) {
+      return Optional.empty();
+    }
   }
 
   private Response createResponse(List<ResponseInputItem> inputItems, IncomingMessage message) {
@@ -397,6 +441,7 @@ public class BBMessageAgent {
       String output;
       try {
         JsonNode args = objectMapper.readTree(toolCall.arguments());
+        args = applyThreadReplyDefaults(toolCall.name(), args, message);
         if (tool == null) {
           output = "Unknown tool: " + toolCall.name();
         } else {
@@ -415,6 +460,29 @@ public class BBMessageAgent {
       outputs.add(ResponseInputItem.ofFunctionCallOutput(toolOutput));
     }
     return outputs;
+  }
+
+  private JsonNode applyThreadReplyDefaults(
+      String toolName, JsonNode args, IncomingMessage message) {
+    if (toolName == null || args == null || message == null) {
+      return args;
+    }
+    if (!SendTextAgentTool.TOOL_NAME.equals(toolName)) {
+      return args;
+    }
+    if (args.hasNonNull("selectedMessageGuid")) {
+      return args;
+    }
+    String replyTarget = resolveThreadRootGuid(message);
+    if (replyTarget == null || replyTarget.isBlank()) {
+      return args;
+    }
+    if (!(args instanceof com.fasterxml.jackson.databind.node.ObjectNode objectNode)) {
+      return args;
+    }
+    objectNode.put("selectedMessageGuid", replyTarget);
+    parseThreadPartIndex(message).ifPresent(index -> objectNode.put("partIndex", index));
+    return objectNode;
   }
 
   private Optional<String> parseReactionText(String text) {
@@ -571,11 +639,53 @@ public class BBMessageAgent {
     }
   }
 
+  private void updateThreadContext(ConversationState state, IncomingMessage message) {
+    if (state == null || message == null) {
+      return;
+    }
+    String threadRootGuid = resolveThreadRootGuid(message);
+    if (threadRootGuid == null || threadRootGuid.isBlank()) {
+      return;
+    }
+    List<String> imageUrls = resolveImageUrls(message);
+    ConversationState.ThreadContext existing = state.getThreadContext(threadRootGuid);
+    if ((imageUrls == null || imageUrls.isEmpty()) && existing != null) {
+      imageUrls = existing.lastImageUrls();
+    }
+    String timestamp =
+        message.timestamp() != null ? message.timestamp().toString() : Instant.now().toString();
+    ConversationState.ThreadContext context =
+        new ConversationState.ThreadContext(
+            threadRootGuid,
+            message.messageGuid(),
+            message.text(),
+            message.sender(),
+            timestamp,
+            imageUrls);
+    state.recordThreadMessage(threadRootGuid, context);
+  }
+
+  private String resolveThreadRootGuid(IncomingMessage message) {
+    if (message == null) {
+      return null;
+    }
+    if (message.threadOriginatorGuid() != null && !message.threadOriginatorGuid().isBlank()) {
+      return message.threadOriginatorGuid();
+    }
+    if (message.replyToGuid() != null && !message.replyToGuid().isBlank()) {
+      return message.replyToGuid();
+    }
+    return null;
+  }
+
   private IncomingMessage parseWebhookMessage(JsonNode data) {
     if (data == null || data.isNull()) {
       return null;
     }
     String messageGuid = getText(data, "guid");
+    String threadOriginatorGuid = getText(data, "threadOriginatorGuid");
+    String threadOriginatorPart = getText(data, "threadOriginatorPart");
+    String replyToGuid = getText(data, "replyToGuid");
     String text = getText(data, "text");
     Boolean fromMe = getBoolean(data, "isFromMe");
     String service = getText(data.path("handle"), "service");
@@ -585,7 +695,18 @@ public class BBMessageAgent {
     String chatGuid = resolveChatGuid(data);
     Boolean isGroup = resolveIsGroup(data);
     return new IncomingMessage(
-        chatGuid, messageGuid, text, fromMe, service, sender, isGroup, timestamp, attachments);
+        chatGuid,
+        messageGuid,
+        threadOriginatorGuid,
+        threadOriginatorPart,
+        replyToGuid,
+        text,
+        fromMe,
+        service,
+        sender,
+        isGroup,
+        timestamp,
+        attachments);
   }
 
   private String resolveChatGuid(JsonNode data) {
@@ -770,6 +891,10 @@ public class BBMessageAgent {
                 + "Use "
                 + CurrentConversationInfoAgentTool.TOOL_NAME
                 + " to see participants and metadata for the chat. "
+                + "If the incoming message is part of a thread (replyToGuid or threadOriginatorGuid), reply in the same thread by setting selectedMessageGuid (and partIndex if provided). "
+                + "Use "
+                + GetThreadContextAgentTool.TOOL_NAME
+                + " when asked about the last message or previously sent images in this thread. "
                 + "For group chats, you can rename the conversation or set a group icon when requested. "
                 + "Use "
                 + SendGiphyAgentTool.TOOL_NAME
@@ -848,6 +973,18 @@ public class BBMessageAgent {
     }
     if (message.messageGuid() != null && !message.messageGuid().isBlank()) {
       text.append(" [messageGuid=").append(message.messageGuid()).append("]");
+    }
+    if (message.threadOriginatorGuid() != null && !message.threadOriginatorGuid().isBlank()) {
+      text.append(" [threadOriginatorGuid=").append(message.threadOriginatorGuid()).append("]");
+    }
+    if (message.threadOriginatorPart() != null && !message.threadOriginatorPart().isBlank()) {
+      text.append(" [threadOriginatorPart=").append(message.threadOriginatorPart()).append("]");
+    }
+    if (message.replyToGuid() != null && !message.replyToGuid().isBlank()) {
+      text.append(" [replyToGuid=").append(message.replyToGuid()).append("]");
+    }
+    if (resolveThreadRootGuid(message) != null) {
+      text.append(" [threadReply=true]");
     }
     text.append(": ");
     if (message.text() != null && !message.text().isBlank()) {
@@ -1039,6 +1176,7 @@ public class BBMessageAgent {
     registerTool(new ManageAccountsAgentTool(gcalClient).getTool());
     registerTool(new ListColorsAgentTool(gcalClient).getTool());
     registerTool(new GetCurrentTimeAgentTool(gcalClient).getTool());
+    registerTool(new GetThreadContextAgentTool().getTool());
   }
 
   private void registerTool(AgentTool tool) {

@@ -7,6 +7,9 @@ import java.util.List;
 public record IncomingMessage(
     String chatGuid,
     String messageGuid,
+    String threadOriginatorGuid,
+    String threadOriginatorPart,
+    String replyToGuid,
     String text,
     Boolean fromMe,
     String service,
@@ -19,6 +22,9 @@ public record IncomingMessage(
     return new IncomingMessage(
         message.getChats().stream().findFirst().get().getGuid(),
         message.getGuid(),
+        null,
+        null,
+        null,
         message.getText(),
         message.getIsFromMe(),
         BBMessageAgent.IMESSAGE_SERVICE,

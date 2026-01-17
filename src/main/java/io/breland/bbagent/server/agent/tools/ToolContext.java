@@ -19,6 +19,18 @@ public class ToolContext {
     return message;
   }
 
+  public java.util.Map<String, ConversationState> getConversations() {
+    return bbMessageAgent.getConversations();
+  }
+
+  public com.fasterxml.jackson.databind.ObjectMapper getMapper() {
+    return bbMessageAgent.getObjectMapper();
+  }
+
+  public io.breland.bbagent.server.agent.BBHttpClientWrapper getBbHttpClientWrapper() {
+    return bbMessageAgent.getBbHttpClientWrapper();
+  }
+
   public void setAssistantResponsiveness(BBMessageAgent.AssistantResponsiveness responsiveness) {
     bbMessageAgent.setAssistantResponsiveness(message.chatGuid(), responsiveness);
   }
