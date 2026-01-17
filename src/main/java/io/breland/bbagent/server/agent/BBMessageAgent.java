@@ -703,9 +703,9 @@ public class BBMessageAgent {
     String responsivenessInstruction =
         switch (responsiveness) {
           case LESS_RESPONSIVE ->
-              "Responsiveness: less responsive. Assume "
+              "Responsiveness: ALWAYS REPLY "
                   + NO_RESPONSE_TEXT
-                  + " unless explicitly addressed, and avoid jumping into group chat unless asked. No reacting unless directly asked. Don't engage in casual conversation, only reply to direct asks to you only. Do not assume a message was meant for you unless you're directly addressed by name.";
+                  + " unless explicitly addressed, and do not issue any other response unless DIRECTLY ADDRESS. No reacting unless directly asked. Don't engage in casual conversation, only reply to direct asks. Do not assume a message was meant for you unless you're directly addressed by name.";
           case MORE_RESPONSIVE ->
               "Responsiveness: more responsive. Act like an active participant, reply when helpful, and use reactions more freely. ";
           case DEFAULT -> "";
