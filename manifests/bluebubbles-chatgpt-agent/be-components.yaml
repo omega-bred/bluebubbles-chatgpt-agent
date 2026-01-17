@@ -237,12 +237,13 @@ metadata:
     cert-manager.io/cluster-issuer: letsencrypt-prod-brelandio
   labels:
     app: bluebubbles-chatgpt-agent
-  name: bluebubbles-chatgpt-agent-api-2
+  name: bluebubbles-chatgpt-agent-api-3
 spec:
   ingressClassName: nginx
   tls:
     - hosts:
         - chatagent.bre.land
+      secretName: chatagent-bre-land-cert
   rules:
     - host: chatagent.bre.land
       http:
