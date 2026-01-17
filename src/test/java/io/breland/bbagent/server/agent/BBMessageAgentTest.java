@@ -73,8 +73,6 @@ class BBMessageAgentTest {
             "iMessage;+;chat-1",
             "msg-1",
             null,
-            null,
-            null,
             "how how's it going",
             false,
             "iMessage",
