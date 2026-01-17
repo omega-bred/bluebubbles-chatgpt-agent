@@ -73,6 +73,9 @@ public class BBMessageAgent {
           "-laugh",
           "-emphasize",
           "-question");
+  private static final List<String> REACTION_PREFIXES =
+      List.of(
+          "Reacted ", "Loved ", "Liked ", "Disliked ", "Questioned ", "Emphasized ", "Laughed at ");
 
   private final ObjectMapper objectMapper;
   @Getter private final Map<String, ConversationState> conversations = new ConcurrentHashMap<>();
@@ -220,11 +223,27 @@ public class BBMessageAgent {
       // group name or photo edited.
       return false;
     }
+    if (isReactionMessage(message.text())) {
+      return false;
+    }
     AssistantResponsiveness responsiveness = getAssistantResponsiveness(message.chatGuid());
     if (responsiveness == AssistantResponsiveness.SILENT) {
       return isSilentInvocation(message.text());
     }
     return true;
+  }
+
+  private boolean isReactionMessage(String text) {
+    if (text == null) {
+      return false;
+    }
+    String trimmed = text.stripLeading();
+    for (String prefix : REACTION_PREFIXES) {
+      if (trimmed.regionMatches(true, 0, prefix, 0, prefix.length())) {
+        return true;
+      }
+    }
+    return false;
   }
 
   private boolean isSilentInvocation(String text) {
