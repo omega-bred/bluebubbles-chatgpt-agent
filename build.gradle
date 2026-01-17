@@ -186,8 +186,11 @@ dependencies {
 
 
 	// OpenAPI deps
-	implementation 'io.swagger.core.v3:swagger-models:2.2.22'
-	implementation 'io.swagger.core.v3:swagger-annotations:2.2.22'
+	implementation 'io.swagger.core.v3:swagger-models:2.2.28'
+	implementation 'io.swagger.core.v3:swagger-annotations:2.2.28'
+	implementation 'io.swagger.core.v3:swagger-core:2.2.28'
+	implementation 'javax.xml.bind:jaxb-api:2.3.1'
+	runtimeOnly 'org.glassfish.jaxb:jaxb-runtime:2.3.8'
 	implementation 'jakarta.validation:jakarta.validation-api:3.1.0'
 	implementation 'jakarta.annotation:jakarta.annotation-api:3.0.0'
 	implementation 'org.openapitools:jackson-databind-nullable:0.2.6'

@@ -1,41 +1,49 @@
 package io.breland.bbagent.server.agent.tools.assistant;
 
-import static io.breland.bbagent.server.agent.BBMessageAgent.getOptionalText;
 import static io.breland.bbagent.server.agent.BBMessageAgent.jsonSchema;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
 import io.breland.bbagent.server.agent.BBMessageAgent;
 import io.breland.bbagent.server.agent.tools.AgentTool;
 import io.breland.bbagent.server.agent.tools.ToolProvider;
-import java.util.Map;
+import io.swagger.v3.oas.annotations.media.Schema;
 
 public class AssistantResponsivenessAgentTool implements ToolProvider {
 
   public static final String TOOL_NAME = "assistant_responsiveness_tool";
+
+  @Schema(description = "Update assistant responsiveness for the current conversation.")
+  public record AssistantResponsivenessRequest(
+      @Schema(
+              description = "Desired responsiveness level.",
+              allowableValues = {"less_responsive", "more_responsive", "default"},
+              requiredMode = Schema.RequiredMode.REQUIRED)
+          Responsiveness responsiveness) {}
+
+  public enum Responsiveness {
+    @JsonProperty("less_responsive")
+    LESS_RESPONSIVE,
+    @JsonProperty("more_responsive")
+    MORE_RESPONSIVE,
+    @JsonProperty("default")
+    DEFAULT
+  }
 
   @Override
   public AgentTool getTool() {
     return new AgentTool(
         TOOL_NAME,
         "Update the assistant responsiveness for this conversation. Use less_responsive to reduce participation or more_responsive to be more active. Use default to reset.",
-        jsonSchema(
-            Map.of(
-                "type",
-                "object",
-                "properties",
-                Map.of(
-                    "responsiveness",
-                    Map.of(
-                        "type",
-                        "string",
-                        "enum",
-                        java.util.List.of("less_responsive", "more_responsive", "default"))))),
+        jsonSchema(AssistantResponsivenessRequest.class),
         false,
         (context, args) -> {
-          String responsiveness = getOptionalText(args, "responsiveness");
-          if (responsiveness == null || responsiveness.isBlank()) {
+          AssistantResponsivenessRequest request =
+              context.getMapper().convertValue(args, AssistantResponsivenessRequest.class);
+          if (request.responsiveness() == null) {
             return "missing responsiveness";
           }
-          BBMessageAgent.AssistantResponsiveness resolved = resolveVerbosity(responsiveness);
+          BBMessageAgent.AssistantResponsiveness resolved =
+              resolveVerbosity(request.responsiveness());
           if (resolved == null) {
             return "invalid responsiveness";
           }
@@ -44,18 +52,14 @@ public class AssistantResponsivenessAgentTool implements ToolProvider {
         });
   }
 
-  private BBMessageAgent.AssistantResponsiveness resolveVerbosity(String raw) {
-    if (raw == null) {
+  private BBMessageAgent.AssistantResponsiveness resolveVerbosity(Responsiveness responsiveness) {
+    if (responsiveness == null) {
       return null;
     }
-    String value = raw.trim().toLowerCase();
-    return switch (value) {
-      case "less", "less_responsive", "quiet", "silent", "reserved" ->
-          BBMessageAgent.AssistantResponsiveness.LESS_RESPONSIVE;
-      case "more", "more_responsive", "active", "chatty", "participant" ->
-          BBMessageAgent.AssistantResponsiveness.MORE_RESPONSIVE;
-      case "default", "normal", "balanced" -> BBMessageAgent.AssistantResponsiveness.DEFAULT;
-      default -> null;
+    return switch (responsiveness) {
+      case LESS_RESPONSIVE -> BBMessageAgent.AssistantResponsiveness.LESS_RESPONSIVE;
+      case MORE_RESPONSIVE -> BBMessageAgent.AssistantResponsiveness.MORE_RESPONSIVE;
+      case DEFAULT -> BBMessageAgent.AssistantResponsiveness.DEFAULT;
     };
   }
 }

@@ -13,7 +13,6 @@ public class GcalToolSupport {
     this.gcalClient = gcalClient;
   }
 
-
   protected String resolveAccountKey(
       ToolContext context, com.fasterxml.jackson.databind.JsonNode args) {
     String accountId = getOptionalText(args, "account_key");

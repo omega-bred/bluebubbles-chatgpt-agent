@@ -1,5 +1,6 @@
 package io.breland.bbagent.server.agent;
 
+import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
@@ -27,6 +28,9 @@ import io.breland.bbagent.server.agent.tools.gcal.*;
 import io.breland.bbagent.server.agent.tools.giphy.GiphyClient;
 import io.breland.bbagent.server.agent.tools.giphy.SendGiphyAgentTool;
 import io.breland.bbagent.server.agent.tools.memory.*;
+import io.swagger.v3.core.converter.ModelConverters;
+import io.swagger.v3.core.converter.ResolvedSchema;
+import io.swagger.v3.core.util.Json;
 import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
 import java.net.URL;
@@ -855,7 +859,8 @@ public class BBMessageAgent {
                     ? "Only respond when it is helpful or requested - this is a group message and not all messages are for you. You MUST ONLY respond if the message was directed to you or if your response will add useful and helpful information."
                     : "This is a one on one message with a user. You should respond to messages unless no reply is needed.")
                 + "You can use reactions for quick acknowledgements and avoid spamming. "
-                + "iMessage does not support markdown - so do not use markdown semantics. You *MUST* constrain your output to plain text and emojis only."
+                + "iMessage does not support markdown - so do not use markdown semantics. You MUST constrain your output to plain text and emojis only."
+                + "DO NOT USE ** FOR EMPHASIS - IT IS NOT SUPPORTED"
                 + "Never reply to your own messages."
                 + responsivenessInstruction
                 + "Use the "
@@ -1245,6 +1250,13 @@ public class BBMessageAgent {
       builder.putAdditionalProperty(entry.getKey(), JsonValue.from(entry.getValue()));
     }
     return builder.build();
+  }
+
+  public static FunctionTool.Parameters jsonSchema(Class<?> schemaClass) {
+    ResolvedSchema resolved = ModelConverters.getInstance().readAllAsResolvedSchema(schemaClass);
+    Map<String, Object> schema =
+        Json.mapper().convertValue(resolved.schema, new TypeReference<Map<String, Object>>() {});
+    return jsonSchema(schema);
   }
 
   public static String getRequired(JsonNode args, String field) {
