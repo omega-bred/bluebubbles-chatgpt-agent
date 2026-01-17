@@ -344,7 +344,6 @@ public class BBMessageAgent {
                     .build())
             .model(ChatModel.GPT_5_2_CHAT_LATEST)
             .inputOfResponse(inputItems)
-            .temperature(0.2)
             .maxOutputTokens(600);
     for (AgentTool tool : tools.values()) {
       if (shouldIncludeTool(tool, message)) {

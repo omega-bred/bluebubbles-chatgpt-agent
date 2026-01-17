@@ -105,13 +105,18 @@ public class PostgresCredentialDataStoreFactory implements DataStoreFactory {
         return this;
       }
       String id = idFor(key);
+      GcalCredentialEntity existing = repository.findById(id).orElse(null);
+      String refreshToken = value.getRefreshToken();
+      if ((refreshToken == null || refreshToken.isBlank()) && existing != null) {
+        refreshToken = existing.getRefreshToken();
+      }
       GcalCredentialEntity entity =
           new GcalCredentialEntity(
               id,
               storeId,
               key,
               value.getAccessToken(),
-              value.getRefreshToken(),
+              refreshToken,
               value.getExpirationTimeMilliseconds());
       repository.save(entity);
       return this;
