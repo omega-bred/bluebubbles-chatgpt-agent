@@ -5,6 +5,7 @@ import static io.breland.bbagent.server.agent.tools.JsonSchemaUtilities.jsonSche
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
+import io.breland.bbagent.server.agent.BBHttpClientWrapper;
 import io.breland.bbagent.server.agent.ConversationState;
 import io.breland.bbagent.server.agent.IncomingAttachment;
 import io.breland.bbagent.server.agent.tools.AgentTool;
@@ -20,6 +21,13 @@ import lombok.extern.slf4j.Slf4j;
 
 @Slf4j
 public class GetThreadContextAgentTool implements ToolProvider {
+
+  private final BBHttpClientWrapper bbHttpClientWrapper;
+
+  public GetThreadContextAgentTool(BBHttpClientWrapper bbHttpClientWrapper) {
+    this.bbHttpClientWrapper = bbHttpClientWrapper;
+  }
+
   public static final String TOOL_NAME = "get_thread_context";
 
   @Schema(description = "Request for thread context.")
@@ -94,7 +102,7 @@ public class GetThreadContextAgentTool implements ToolProvider {
       return null;
     }
     try {
-      var message = context.getBbHttpClientWrapper().getMessage(threadRootGuid);
+      var message = this.bbHttpClientWrapper.getMessage(threadRootGuid);
       if (message == null) {
         return null;
       }

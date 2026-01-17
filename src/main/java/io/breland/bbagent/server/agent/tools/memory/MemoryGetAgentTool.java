@@ -30,7 +30,7 @@ public class MemoryGetAgentTool implements ToolProvider {
   public AgentTool getTool() {
     return new AgentTool(
         TOOL_NAME,
-        "Query memory for the current user or conversation. Use it any time the user asks a question or when memory might answer their question or if personal details or prior context might enhance your ability to answer. The memory accepts a natural language query. Use this tool to try and resolve inputs for other tools that rely on personal details or preferences (examples are things like names, relationships, location, user preferences, etc). ",
+        "Query memory for the current user or conversation. Use this tool any time the user asks a question or when memory might answer their question or if personal details or prior context might enhance your ability to answer. The memory accepts a natural language query. Use this tool to try and resolve inputs for other tools that rely on personal details or preferences (examples are things like names, relationships, location, user preferences, etc). ",
         jsonSchema(MemoryGetRequest.class),
         false,
         (context, args) -> {

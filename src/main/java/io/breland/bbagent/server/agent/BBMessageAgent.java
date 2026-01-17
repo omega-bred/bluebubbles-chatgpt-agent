@@ -2,7 +2,6 @@ package io.breland.bbagent.server.agent;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import com.openai.client.OpenAIClient;
 import com.openai.client.okhttp.OpenAIOkHttpClient;
 import com.openai.models.ChatModel;
@@ -74,17 +73,13 @@ public class BBMessageAgent {
           "-emphasize",
           "-question");
 
-  private final ObjectMapper objectMapper = new ObjectMapper().registerModule(new JavaTimeModule());
+  private final ObjectMapper objectMapper;
   @Getter private final Map<String, ConversationState> conversations = new ConcurrentHashMap<>();
   private final AgentSettingsStore agentSettingsStore;
   private final Map<String, AgentTool> tools = new ConcurrentHashMap<>();
 
   public ObjectMapper getObjectMapper() {
     return objectMapper;
-  }
-
-  public BBHttpClientWrapper getBbHttpClientWrapper() {
-    return bbHttpClientWrapper;
   }
 
   private OpenAIClient openAIClient;
@@ -107,12 +102,14 @@ public class BBMessageAgent {
       Mem0Client mem0Client,
       GcalClient gcalClient,
       GiphyClient giphyClient,
-      AgentSettingsStore agentSettingsStore) {
+      AgentSettingsStore agentSettingsStore,
+      ObjectMapper objectMapper) {
     this.bbHttpClientWrapper = bbHttpClientWrapper;
     this.mem0Client = mem0Client;
     this.gcalClient = gcalClient;
     this.giphyClient = giphyClient;
     this.agentSettingsStore = agentSettingsStore;
+    this.objectMapper = objectMapper;
     registerBuiltInTools();
   }
 
@@ -129,6 +126,7 @@ public class BBMessageAgent {
     this.gcalClient = gcalClient;
     this.giphyClient = giphyClient;
     this.agentSettingsStore = agentSettingsStore;
+    this.objectMapper = new ObjectMapper();
     registerBuiltInTools();
   }
 
@@ -672,6 +670,7 @@ public class BBMessageAgent {
                 + "Use the "
                 + MemoryGetAgentTool.TOOL_NAME
                 + " tool when memory could improve your response (skip if no reply is needed or another tool is more appropriate). "
+                + " Always ask the memory tool before directly asking the user to see if memory already has the answer to your question. "
                 + "Send a natural language query to the tool describing what information may help you answer. "
                 + "If no reply is needed, output exactly "
                 + NO_RESPONSE_TEXT
@@ -684,6 +683,7 @@ public class BBMessageAgent {
         .role(EasyInputMessage.Role.DEVELOPER)
         .content(
             "You may respond with plain text if that is sufficient. "
+                + "All outgoing iMessage text must be plain text only. Do not use markdown or formatting markers such as **, __, backticks, or markdown lists. "
                 + "Only call "
                 + SendTextAgentTool.TOOL_NAME
                 + " or "
@@ -984,7 +984,7 @@ public class BBMessageAgent {
     registerTool(new ManageAccountsAgentTool(gcalClient).getTool());
     registerTool(new ListColorsAgentTool(gcalClient).getTool());
     registerTool(new GetCurrentTimeAgentTool(gcalClient).getTool());
-    registerTool(new GetThreadContextAgentTool().getTool());
+    registerTool(new GetThreadContextAgentTool(bbHttpClientWrapper).getTool());
   }
 
   private void registerTool(AgentTool tool) {

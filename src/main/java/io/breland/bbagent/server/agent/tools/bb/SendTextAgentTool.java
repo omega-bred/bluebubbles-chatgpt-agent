@@ -89,7 +89,7 @@ public class SendTextAgentTool implements ToolProvider {
   public AgentTool getTool() {
     return new AgentTool(
         TOOL_NAME,
-        "Send a text reply via iMessage. You may optionally apply an iMessage effect sparingly (e.g. happy_birthday for birthday wishes).",
+        "Send a plain-text reply via iMessage (no markdown or formatting markers). You may optionally apply an iMessage effect sparingly (e.g. happy_birthday for birthday wishes).",
         jsonSchema(SendTextRequest.class),
         false,
         (context, args) -> {

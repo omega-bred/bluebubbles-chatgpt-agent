@@ -27,10 +27,6 @@ public class ToolContext {
     return bbMessageAgent.getObjectMapper();
   }
 
-  public io.breland.bbagent.server.agent.BBHttpClientWrapper getBbHttpClientWrapper() {
-    return bbMessageAgent.getBbHttpClientWrapper();
-  }
-
   public void setAssistantResponsiveness(BBMessageAgent.AssistantResponsiveness responsiveness) {
     bbMessageAgent.setAssistantResponsiveness(message.chatGuid(), responsiveness);
   }
