@@ -1,5 +1,7 @@
 package io.breland.bbagent.server.agent.tools;
 
+import static io.breland.bbagent.server.controllers.BluebubblesWebhookController.GROUP_PREFIX;
+
 import com.openai.models.responses.FunctionTool;
 import io.breland.bbagent.server.agent.IncomingMessage;
 
@@ -26,7 +28,7 @@ public record AgentTool(
     if (message.isGroup() != null && message.isGroup()) {
       return true;
     }
-    return message.chatGuid().startsWith("iMessage;+;chat");
+    return message.chatGuid().startsWith(GROUP_PREFIX);
   }
 
   public static String getSenderId(IncomingMessage message) {

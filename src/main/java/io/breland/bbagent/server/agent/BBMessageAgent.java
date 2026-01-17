@@ -150,21 +150,24 @@ public class BBMessageAgent {
                     .reversed()
                     .forEach(
                         msg -> {
-                          var turn =
-                              msg.getIsFromMe() != null && msg.getIsFromMe() == true
-                                  ? ConversationTurn.assistant(
-                                      msg.getText(), Instant.ofEpochSecond(msg.getDateCreated()))
-                                  : ConversationTurn.user(
-                                      msg.getText(), Instant.ofEpochSecond(msg.getDateCreated()));
-                          if (!msg.getGuid().equals(message.messageGuid())) {
-                            if (!msg.getIsFromMe()) {
-                              stateToHydrate.setLastProcessedMessageGuid(msg.getGuid());
-                              if (msg.getHandle() != null && msg.getHandle().getAddress() != null) {
-                                stateToHydrate.setLastProcessedMessageFingerprint(
-                                    IncomingMessage.create(msg).computeMessageFingerprint());
+                          if (msg.getText() != null && msg.getText().length() > 0) {
+                            var turn =
+                                msg.getIsFromMe() != null && msg.getIsFromMe() == true
+                                    ? ConversationTurn.assistant(
+                                        msg.getText(), Instant.ofEpochSecond(msg.getDateCreated()))
+                                    : ConversationTurn.user(
+                                        msg.getText(), Instant.ofEpochSecond(msg.getDateCreated()));
+                            if (!msg.getGuid().equals(message.messageGuid())) {
+                              if (!msg.getIsFromMe()) {
+                                stateToHydrate.setLastProcessedMessageGuid(msg.getGuid());
+                                if (msg.getHandle() != null
+                                    && msg.getHandle().getAddress() != null) {
+                                  stateToHydrate.setLastProcessedMessageFingerprint(
+                                      IncomingMessage.create(msg).computeMessageFingerprint());
+                                }
                               }
+                              stateToHydrate.addTurn(turn);
                             }
-                            stateToHydrate.addTurn(turn);
                           }
                         });
 
