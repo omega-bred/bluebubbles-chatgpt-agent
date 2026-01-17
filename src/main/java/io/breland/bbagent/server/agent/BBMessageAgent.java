@@ -342,7 +342,7 @@ public class BBMessageAgent {
                     .type(WebSearchTool.Type.WEB_SEARCH_2025_08_26)
                     .searchContextSize(WebSearchTool.SearchContextSize.MEDIUM)
                     .build())
-            .model(ChatModel.GPT_5_CHAT_LATEST)
+            .model(ChatModel.GPT_5_2_CHAT_LATEST)
             .inputOfResponse(inputItems)
             .temperature(0.2)
             .maxOutputTokens(600);

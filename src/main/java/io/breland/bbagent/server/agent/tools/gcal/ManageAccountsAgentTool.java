@@ -19,7 +19,7 @@ public class ManageAccountsAgentTool extends GcalToolSupport implements ToolProv
   public AgentTool getTool() {
     return new AgentTool(
         TOOL_NAME,
-        "Manage Google Calendar accounts (auth URL, list, revoke). Use this tool to find out if a calendar/account is already linked and other account management operations. Use account_key to target a specific linked account.",
+        "Manage Google Calendar accounts (auth URL, list, revoke). Use this tool to find out if a calendar/account is already linked and other account management operations. Use account_key to target a specific linked account. Always use this tool to make a new account link URL - never re-use an existing URL.",
         jsonSchema(
             Map.of(
                 "type",

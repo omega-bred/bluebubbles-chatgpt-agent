@@ -49,7 +49,6 @@ public class GcalClient {
   private final String clientSecretPath;
   private final String redirectUri;
   private final String applicationName;
-  private final String stateSecret;
   private final Algorithm stateAlgorithm;
   private final GcalCredentialRepository credentialRepository;
 
@@ -61,7 +60,6 @@ public class GcalClient {
       GcalCredentialRepository credentialRepository) {
     this.clientSecretPath = clientSecretPath;
     this.redirectUri = redirectUri;
-    this.stateSecret = stateSecret;
     this.stateAlgorithm =
         stateSecret == null || stateSecret.isBlank() ? null : Algorithm.HMAC256(stateSecret);
     this.applicationName = applicationName;
