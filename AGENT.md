@@ -24,5 +24,3 @@ If you add new configs:
 - Prefer environment variables with sensible defaults in `application.properties`.
 - Update `manifests/bluebubbles-chatgpt-agent/be-components.yaml` if needed for production deploys.
 - Most properties will need to be replicated into the `application.properties` in the `test/resources` folder.
-
-Primarily, the "agent" lives in `src/main/java/io/breland/bbagent/server/agent/BBMessageAgent.java`. 
