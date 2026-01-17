@@ -18,6 +18,10 @@ import com.google.api.client.json.jackson2.JacksonFactory;
 import com.google.api.client.util.store.DataStoreFactory;
 import com.google.api.services.calendar.Calendar;
 import com.google.api.services.calendar.CalendarScopes;
+import com.google.api.services.calendar.model.CalendarList;
+import com.google.api.services.calendar.model.CalendarListEntry;
+import io.breland.bbagent.server.agent.persistence.GcalCalendarAccessEntity;
+import io.breland.bbagent.server.agent.persistence.GcalCalendarAccessRepository;
 import io.breland.bbagent.server.agent.persistence.GcalCredentialRepository;
 import java.io.FileInputStream;
 import java.io.IOException;
@@ -45,6 +49,7 @@ public class GcalClient {
   private static final Collection<String> SCOPES = List.of(CalendarScopes.CALENDAR);
   private static final Duration OAUTH_STATE_TTL = Duration.ofMinutes(10);
   private static final String STORE_ID = StoredCredential.DEFAULT_DATA_STORE_ID;
+  private static final String ACCESS_NONE_SENTINEL = "__none__";
 
   private final ObjectMapper objectMapper = new ObjectMapper();
   private final String clientSecretPath;
@@ -53,6 +58,7 @@ public class GcalClient {
   private final String applicationName;
   private final Algorithm stateAlgorithm;
   private final GcalCredentialRepository credentialRepository;
+  private final GcalCalendarAccessRepository calendarAccessRepository;
 
   public GcalClient(
       @Value("${gcal.oauth.client_secret_path:}") String clientSecretPath,
@@ -60,7 +66,8 @@ public class GcalClient {
       @Value("${gcal.oauth.redirect_uri:}") String redirectUri,
       @Value("${gcal.oauth.state_secret:}") String stateSecret,
       @Value("${gcal.application_name:iMessage + ChatGPT}") String applicationName,
-      GcalCredentialRepository credentialRepository) {
+      GcalCredentialRepository credentialRepository,
+      GcalCalendarAccessRepository calendarAccessRepository) {
     this.clientSecretPath = clientSecretPath;
     this.clientSecret = clientSecret;
     this.redirectUri = redirectUri;
@@ -68,6 +75,7 @@ public class GcalClient {
         stateSecret == null || stateSecret.isBlank() ? null : Algorithm.HMAC256(stateSecret);
     this.applicationName = applicationName;
     this.credentialRepository = credentialRepository;
+    this.calendarAccessRepository = calendarAccessRepository;
   }
 
   public boolean isConfigured() {
@@ -117,11 +125,120 @@ public class GcalClient {
     return credentialRepository.findAllAccountKeysByStoreId(STORE_ID);
   }
 
+  public List<CalendarInfo> listCalendars(String accountKey) throws IOException {
+    Calendar client = getCalendarService(accountKey);
+    CalendarList list = client.calendarList().list().execute();
+    List<CalendarInfo> calendars = new ArrayList<>();
+    if (list.getItems() != null) {
+      for (CalendarListEntry entry : list.getItems()) {
+        calendars.add(
+            new CalendarInfo(
+                entry.getId(),
+                entry.getSummary(),
+                entry.getPrimary(),
+                entry.getTimeZone(),
+                entry.getAccessRole()));
+      }
+    }
+    return calendars;
+  }
+
   public boolean revokeAccount(String accountKey) {
     if (accountKey == null || accountKey.isBlank()) {
       return false;
     }
+    calendarAccessRepository.deleteByAccountKey(accountKey);
     return credentialRepository.deleteByStoreIdAndAccountKey(STORE_ID, accountKey) > 0;
+  }
+
+  public CalendarAccessConfig getCalendarAccessConfig(String accountKey) {
+    if (accountKey == null || accountKey.isBlank()) {
+      return new CalendarAccessConfig(false, Map.of());
+    }
+    boolean configured = calendarAccessRepository.countByAccountKey(accountKey) > 0;
+    if (!configured) {
+      return new CalendarAccessConfig(false, Map.of());
+    }
+    List<GcalCalendarAccessEntity> entries =
+        calendarAccessRepository.findAllByAccountKey(accountKey);
+    Map<String, CalendarAccessMode> result = new LinkedHashMap<>();
+    for (GcalCalendarAccessEntity entry : entries) {
+      if (ACCESS_NONE_SENTINEL.equals(entry.getCalendarId())) {
+        continue;
+      }
+      CalendarAccessMode mode = CalendarAccessMode.fromDbValue(entry.getMode());
+      if (mode != null) {
+        result.put(entry.getCalendarId(), mode);
+      }
+    }
+    return new CalendarAccessConfig(true, result);
+  }
+
+  public Map<String, CalendarAccessMode> getCalendarAccessMap(String accountKey) {
+    return getCalendarAccessConfig(accountKey).accessMap();
+  }
+
+  public void saveCalendarAccess(String accountKey, List<CalendarAccess> calendars) {
+    if (accountKey == null || accountKey.isBlank()) {
+      return;
+    }
+    calendarAccessRepository.deleteByAccountKey(accountKey);
+    if (calendars == null || calendars.isEmpty()) {
+      String id = accountKey + ":" + ACCESS_NONE_SENTINEL;
+      calendarAccessRepository.save(
+          new GcalCalendarAccessEntity(
+              id, accountKey, ACCESS_NONE_SENTINEL, CalendarAccessMode.READ_ONLY.dbValue));
+      return;
+    }
+    List<GcalCalendarAccessEntity> entities = new ArrayList<>();
+    for (CalendarAccess access : calendars) {
+      if (access == null || access.calendarId() == null || access.calendarId().isBlank()) {
+        continue;
+      }
+      CalendarAccessMode mode =
+          access.mode() != null ? access.mode() : CalendarAccessMode.READ_ONLY;
+      String id = accountKey + ":" + access.calendarId();
+      entities.add(new GcalCalendarAccessEntity(id, accountKey, access.calendarId(), mode.dbValue));
+    }
+    calendarAccessRepository.saveAll(entities);
+  }
+
+  public boolean canReadCalendar(String accountKey, String calendarId) {
+    return checkAccess(accountKey, calendarId, AccessRequirement.READ);
+  }
+
+  public boolean canWriteCalendar(String accountKey, String calendarId) {
+    return checkAccess(accountKey, calendarId, AccessRequirement.WRITE);
+  }
+
+  public boolean canFreeBusy(String accountKey, String calendarId) {
+    return checkAccess(accountKey, calendarId, AccessRequirement.FREE_BUSY);
+  }
+
+  private boolean checkAccess(String accountKey, String calendarId, AccessRequirement requirement) {
+    if (accountKey == null || accountKey.isBlank()) {
+      return false;
+    }
+    if (calendarId == null || calendarId.isBlank()) {
+      return false;
+    }
+    CalendarAccessConfig config = getCalendarAccessConfig(accountKey);
+    if (!config.configured()) {
+      return true;
+    }
+    Map<String, CalendarAccessMode> accessMap = config.accessMap();
+    if (accessMap.isEmpty()) {
+      return false;
+    }
+    CalendarAccessMode mode = accessMap.get(calendarId);
+    if (mode == null) {
+      return false;
+    }
+    return switch (requirement) {
+      case READ -> mode == CalendarAccessMode.FULL || mode == CalendarAccessMode.READ_ONLY;
+      case WRITE -> mode == CalendarAccessMode.FULL;
+      case FREE_BUSY -> true;
+    };
   }
 
   public Calendar getCalendarService(String accountKey) throws IOException {
@@ -267,4 +384,54 @@ public class GcalClient {
   }
 
   public record OauthState(String accountKey, String chatGuid, String messageGuid) {}
+
+  public record CalendarAccess(String calendarId, CalendarAccessMode mode) {}
+
+  public record CalendarAccessConfig(
+      boolean configured, Map<String, CalendarAccessMode> accessMap) {}
+
+  public record CalendarInfo(
+      String calendarId, String summary, Boolean primary, String timeZone, String accessRole) {}
+
+  public enum CalendarAccessMode {
+    FULL("full"),
+    READ_ONLY("read_only"),
+    FREE_BUSY("free_busy");
+
+    private final String dbValue;
+
+    CalendarAccessMode(String dbValue) {
+      this.dbValue = dbValue;
+    }
+
+    public static CalendarAccessMode fromDbValue(String value) {
+      if (value == null) {
+        return null;
+      }
+      return switch (value) {
+        case "full" -> FULL;
+        case "read_only" -> READ_ONLY;
+        case "free_busy" -> FREE_BUSY;
+        default -> null;
+      };
+    }
+
+    public static CalendarAccessMode fromApiValue(
+        io.breland.bbagent.generated.model.GcalCalendarAccessMode value) {
+      if (value == null) {
+        return null;
+      }
+      return switch (value) {
+        case FULL -> FULL;
+        case READ_ONLY -> READ_ONLY;
+        case FREE_BUSY -> FREE_BUSY;
+      };
+    }
+  }
+
+  private enum AccessRequirement {
+    READ,
+    WRITE,
+    FREE_BUSY
+  }
 }

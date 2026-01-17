@@ -51,6 +51,9 @@ public class RespondToEventAgentTool extends GcalToolSupport implements ToolProv
             return "no account";
           }
           String calendarId = resolveCalendarId(args);
+          if (!gcalClient.canWriteCalendar(accountKey, calendarId)) {
+            return "no access";
+          }
           String eventId = getRequired(args, "event_id");
           String attendeeEmail = getRequired(args, "attendee_email");
           String responseStatus = getRequired(args, "response_status");

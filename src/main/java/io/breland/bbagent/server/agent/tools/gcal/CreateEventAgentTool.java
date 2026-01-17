@@ -54,6 +54,9 @@ public class CreateEventAgentTool extends GcalToolSupport implements ToolProvide
             return "no account";
           }
           String calendarId = resolveCalendarId(args);
+          if (!gcalClient.canWriteCalendar(accountKey, calendarId)) {
+            return "no access";
+          }
           ZoneId zone = resolveZone(args);
           String startText = getRequired(args, "start");
           String endText = getRequired(args, "end");

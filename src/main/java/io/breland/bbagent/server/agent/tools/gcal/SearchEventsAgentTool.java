@@ -49,6 +49,9 @@ public class SearchEventsAgentTool extends GcalToolSupport implements ToolProvid
             return "no account";
           }
           String calendarId = resolveCalendarId(args);
+          if (!gcalClient.canReadCalendar(accountKey, calendarId)) {
+            return "no access";
+          }
           String query = getOptionalText(args, "query");
           if (query == null || query.isBlank()) {
             return "missing query";

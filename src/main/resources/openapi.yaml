@@ -87,6 +87,71 @@ paths:
             text/html:
               schema:
                 type: string
+  /api/v1/gcal/calendars.gcal:
+    get:
+      operationId: gcalListCalendars
+      tags:
+        - gcal
+      summary: List calendars for an account
+      description: Returns calendars for a Google Calendar account with current access settings.
+      parameters:
+        - name: account_key
+          in: query
+          description: Account key used to identify the linked Google account
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Calendars returned
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GcalCalendarListResponse'
+        '400':
+          description: Missing or invalid parameters
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorModel'
+        '500':
+          description: Fetch failed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorModel'
+  /api/v1/gcal/calendarAccess.gcal:
+    post:
+      operationId: gcalSaveCalendarAccess
+      tags:
+        - gcal
+      summary: Save calendar access settings
+      description: Stores allowed calendars and access modes for a linked account.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GcalCalendarAccessRequest'
+      responses:
+        '200':
+          description: Settings saved
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GcalCalendarAccessResponse'
+        '400':
+          description: Missing or invalid parameters
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorModel'
+        '500':
+          description: Save failed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorModel'
 
 
 components:
@@ -114,3 +179,62 @@ components:
         timestamp:
           type: string
           format: date-time
+    GcalCalendarAccessMode:
+      type: string
+      enum:
+        - full
+        - read_only
+        - free_busy
+    GcalCalendarAccessEntry:
+      type: object
+      required:
+        - calendar_id
+        - mode
+      properties:
+        calendar_id:
+          type: string
+        mode:
+          $ref: '#/components/schemas/GcalCalendarAccessMode'
+    GcalCalendarAccessRequest:
+      type: object
+      required:
+        - account_key
+        - calendars
+      properties:
+        account_key:
+          type: string
+        calendars:
+          type: array
+          items:
+            $ref: '#/components/schemas/GcalCalendarAccessEntry'
+    GcalCalendarAccessResponse:
+      type: object
+      properties:
+        status:
+          type: string
+    GcalCalendarInfo:
+      type: object
+      properties:
+        calendar_id:
+          type: string
+        summary:
+          type: string
+        primary:
+          type: boolean
+        timeZone:
+          type: string
+        accessRole:
+          type: string
+        selected:
+          type: boolean
+        mode:
+          $ref: '#/components/schemas/GcalCalendarAccessMode'
+    GcalCalendarListResponse:
+      type: object
+      properties:
+        account_key:
+          type: string
+        calendars:
+          type: array
+          items:
+            $ref: '#/components/schemas/GcalCalendarInfo'

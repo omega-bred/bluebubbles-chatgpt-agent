@@ -50,6 +50,9 @@ public class ListEventsAgentTool extends GcalToolSupport implements ToolProvider
             return "no account";
           }
           String calendarId = resolveCalendarId(args);
+          if (!gcalClient.canReadCalendar(accountKey, calendarId)) {
+            return "no access";
+          }
           ZoneId zone = resolveZone(args);
           String timeMin = getOptionalText(args, "time_min");
           String timeMax = getOptionalText(args, "time_max");

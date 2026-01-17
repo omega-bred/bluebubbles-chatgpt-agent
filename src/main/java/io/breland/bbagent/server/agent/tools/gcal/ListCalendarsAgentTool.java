@@ -2,13 +2,8 @@ package io.breland.bbagent.server.agent.tools.gcal;
 
 import static io.breland.bbagent.server.agent.BBMessageAgent.jsonSchema;
 
-import com.google.api.services.calendar.Calendar;
-import com.google.api.services.calendar.model.CalendarList;
-import com.google.api.services.calendar.model.CalendarListEntry;
 import io.breland.bbagent.server.agent.tools.AgentTool;
 import io.breland.bbagent.server.agent.tools.ToolProvider;
-import java.util.ArrayList;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -36,21 +31,27 @@ public class ListCalendarsAgentTool extends GcalToolSupport implements ToolProvi
             return "no account";
           }
           try {
-            Calendar client = gcalClient.getCalendarService(accountKey);
-            CalendarList list = client.calendarList().list().execute();
-            List<Map<String, Object>> calendars = new ArrayList<>();
-            if (list.getItems() != null) {
-              for (CalendarListEntry entry : list.getItems()) {
-                Map<String, Object> item = new LinkedHashMap<>();
-                item.put("calendar_id", entry.getId());
-                item.put("summary", entry.getSummary());
-                item.put("primary", entry.getPrimary());
-                item.put("timeZone", entry.getTimeZone());
-                item.put("accessRole", entry.getAccessRole());
-                calendars.add(item);
-              }
+            List<GcalClient.CalendarInfo> calendars = gcalClient.listCalendars(accountKey);
+            GcalClient.CalendarAccessConfig accessConfig =
+                gcalClient.getCalendarAccessConfig(accountKey);
+            Map<String, GcalClient.CalendarAccessMode> accessMap = accessConfig.accessMap();
+            if (accessConfig.configured()) {
+              calendars =
+                  calendars.stream()
+                      .filter(item -> accessMap.containsKey(item.calendarId()))
+                      .toList();
             }
-            return gcalClient.mapper().writeValueAsString(calendars);
+            List<Map<String, Object>> response = new ArrayList<>();
+            for (GcalClient.CalendarInfo entry : calendars) {
+              Map<String, Object> item = new LinkedHashMap<>();
+              item.put("calendar_id", entry.calendarId());
+              item.put("summary", entry.summary());
+              item.put("primary", entry.primary());
+              item.put("timeZone", entry.timeZone());
+              item.put("accessRole", entry.accessRole());
+              response.add(item);
+            }
+            return gcalClient.mapper().writeValueAsString(response);
           } catch (Exception e) {
             return "error: " + e.getMessage();
           }

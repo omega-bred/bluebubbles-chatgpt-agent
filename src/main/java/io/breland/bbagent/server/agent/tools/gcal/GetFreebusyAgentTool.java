@@ -61,11 +61,14 @@ public class GetFreebusyAgentTool extends GcalToolSupport implements ToolProvide
           List<FreeBusyRequestItem> items = new ArrayList<>();
           for (var node : args.get("calendars")) {
             if (node != null && node.isTextual()) {
-              items.add(new FreeBusyRequestItem().setId(node.asText()));
+              String calendarId = node.asText();
+              if (gcalClient.canFreeBusy(accountKey, calendarId)) {
+                items.add(new FreeBusyRequestItem().setId(calendarId));
+              }
             }
           }
           if (items.isEmpty()) {
-            return "missing calendars";
+            return "no access";
           }
           try {
             Calendar client = gcalClient.getCalendarService(accountKey);

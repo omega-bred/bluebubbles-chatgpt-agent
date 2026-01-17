@@ -41,6 +41,9 @@ public class GetEventAgentTool extends GcalToolSupport implements ToolProvider {
             return "no account";
           }
           String calendarId = resolveCalendarId(args);
+          if (!gcalClient.canReadCalendar(accountKey, calendarId)) {
+            return "no access";
+          }
           String eventId = getRequired(args, "event_id");
           try {
             Calendar client = gcalClient.getCalendarService(accountKey);
