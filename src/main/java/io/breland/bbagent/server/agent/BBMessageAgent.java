@@ -132,33 +132,6 @@ public class BBMessageAgent {
     registerBuiltInTools();
   }
 
-  public void handleIncomingMessage(Map<String, Object> payload) {
-    log.debug("Incoming Message {}", payload);
-    JsonNode root = objectMapper.valueToTree(payload);
-    String type = root.path("type").asText();
-    if (!isMessageEvent(type, root.path("data"))) {
-      return;
-    }
-    JsonNode data = root.path("data");
-    IncomingMessage message = parseWebhookMessage(data);
-    if (message != null) {
-      handleIncomingMessage(message);
-    }
-  }
-
-  private boolean isMessageEvent(String type, JsonNode data) {
-    if ("new-message".equals(type)) {
-      return true;
-    }
-    if ("edited-message".equals(type)
-        || "message-edited".equals(type)
-        || "edit-message".equals(type)) {
-      return true;
-    }
-    JsonNode edited = data.path("dateEdited");
-    return edited != null && !edited.isNull();
-  }
-
   public void handleIncomingMessage(IncomingMessage message) {
     if (!shouldProcess(message)) {
       log.debug("Dropping message {}", message);
@@ -339,7 +312,6 @@ public class BBMessageAgent {
       return;
     }
     String replyTarget = resolveThreadRootGuid(message);
-    Optional<Integer> partIndex = parseThreadPartIndex(message);
     if (replyTarget == null || replyTarget.isBlank()) {
       bbHttpClientWrapper.sendTextDirect(message, text);
       return;
@@ -348,23 +320,7 @@ public class BBMessageAgent {
     request.setChatGuid(message.chatGuid());
     request.setMessage(text);
     request.setSelectedMessageGuid(replyTarget);
-    partIndex.ifPresent(request::setPartIndex);
     bbHttpClientWrapper.sendTextDirect(request);
-  }
-
-  private Optional<Integer> parseThreadPartIndex(IncomingMessage message) {
-    if (message == null || message.threadOriginatorPart() == null) {
-      return Optional.empty();
-    }
-    String raw = message.threadOriginatorPart().trim();
-    if (raw.isBlank()) {
-      return Optional.empty();
-    }
-    try {
-      return Optional.of(Integer.parseInt(raw));
-    } catch (NumberFormatException e) {
-      return Optional.empty();
-    }
   }
 
   private Response createResponse(List<ResponseInputItem> inputItems, IncomingMessage message) {
@@ -482,7 +438,6 @@ public class BBMessageAgent {
       return args;
     }
     objectNode.put("selectedMessageGuid", replyTarget);
-    parseThreadPartIndex(message).ifPresent(index -> objectNode.put("partIndex", index));
     return objectNode;
   }
 
@@ -673,149 +628,6 @@ public class BBMessageAgent {
     if (message.threadOriginatorGuid() != null && !message.threadOriginatorGuid().isBlank()) {
       return message.threadOriginatorGuid();
     }
-    if (message.replyToGuid() != null && !message.replyToGuid().isBlank()) {
-      return message.replyToGuid();
-    }
-    return null;
-  }
-
-  private IncomingMessage parseWebhookMessage(JsonNode data) {
-    if (data == null || data.isNull()) {
-      return null;
-    }
-    String messageGuid = getText(data, "guid");
-    String threadOriginatorGuid = getText(data, "threadOriginatorGuid");
-    String threadOriginatorPart = getText(data, "threadOriginatorPart");
-    String replyToGuid = getText(data, "replyToGuid");
-    String text = getText(data, "text");
-    Boolean fromMe = getBoolean(data, "isFromMe");
-    String service = getText(data.path("handle"), "service");
-    String sender = getText(data.path("handle"), "address");
-    Instant timestamp = parseTimestamp(data.path("dateCreated"));
-    List<IncomingAttachment> attachments = parseAttachments(data.path("attachments"));
-    String chatGuid = resolveChatGuid(data);
-    Boolean isGroup = resolveIsGroup(data);
-    return new IncomingMessage(
-        chatGuid,
-        messageGuid,
-        threadOriginatorGuid,
-        threadOriginatorPart,
-        replyToGuid,
-        text,
-        fromMe,
-        service,
-        sender,
-        isGroup,
-        timestamp,
-        attachments);
-  }
-
-  private String resolveChatGuid(JsonNode data) {
-    JsonNode chats = data.path("chats");
-    if (chats.isArray() && !chats.isEmpty()) {
-      JsonNode chat = chats.get(0);
-      String guid = getText(chat, "guid");
-      if (guid != null) {
-        return guid;
-      }
-    }
-    return getText(data, "chatGuid");
-  }
-
-  private Boolean resolveIsGroup(JsonNode data) {
-    JsonNode chats = data.path("chats");
-    if (chats.isArray() && chats.size() > 1) {
-      return true;
-    }
-    String groupTitle = getText(data, "groupTitle");
-    if (groupTitle != null && !groupTitle.isBlank()) {
-      return true;
-    }
-    return null;
-  }
-
-  private Instant parseTimestamp(JsonNode value) {
-    if (value == null || value.isNull()) {
-      return Instant.now();
-    }
-    if (value.isNumber()) {
-      long epoch = value.asLong();
-      if (epoch > 1_000_000_000_000L) {
-        return Instant.ofEpochMilli(epoch);
-      }
-      return Instant.ofEpochSecond(epoch);
-    }
-    if (value.isTextual()) {
-      String raw = value.asText();
-      try {
-        long epoch = Long.parseLong(raw);
-        if (epoch > 1_000_000_000_000L) {
-          return Instant.ofEpochMilli(epoch);
-        }
-        return Instant.ofEpochSecond(epoch);
-      } catch (NumberFormatException ignored) {
-        try {
-          return Instant.parse(raw);
-        } catch (Exception ignored2) {
-          return Instant.now();
-        }
-      }
-    }
-    return Instant.now();
-  }
-
-  private List<IncomingAttachment> parseAttachments(JsonNode attachmentsNode) {
-    if (attachmentsNode == null || !attachmentsNode.isArray()) {
-      return List.of();
-    }
-    List<IncomingAttachment> attachments = new ArrayList<>();
-    for (JsonNode attachmentNode : attachmentsNode) {
-      String guid = getText(attachmentNode, "guid", "id");
-      String mimeType = getText(attachmentNode, "mimeType", "mime_type");
-      String filename = getText(attachmentNode, "filename", "transferName", "name");
-      String url = getText(attachmentNode, "url", "path");
-      String dataUrl = getText(attachmentNode, "dataUrl");
-      String base64 = getText(attachmentNode, "base64");
-      attachments.add(new IncomingAttachment(guid, mimeType, filename, url, dataUrl, base64));
-    }
-    return attachments;
-  }
-
-  private String getText(JsonNode node, String... fields) {
-    if (node == null || node.isNull()) {
-      return null;
-    }
-    for (String field : fields) {
-      JsonNode value = node.get(field);
-      if (value == null || value.isNull()) {
-        continue;
-      }
-      if (value.isTextual()) {
-        return value.asText();
-      }
-      if (value.isNumber() || value.isBoolean()) {
-        return value.asText();
-      }
-    }
-    return null;
-  }
-
-  private Boolean getBoolean(JsonNode node, String... fields) {
-    if (node == null || node.isNull()) {
-      return null;
-    }
-    for (String field : fields) {
-      JsonNode value = node.get(field);
-      if (value == null || value.isNull()) {
-        continue;
-      }
-      if (value.isBoolean()) {
-        return value.asBoolean();
-      }
-      if (value.isTextual()) {
-        return Boolean.parseBoolean(value.asText());
-      }
-    }
     return null;
   }
 
@@ -978,12 +790,6 @@ public class BBMessageAgent {
     }
     if (message.threadOriginatorGuid() != null && !message.threadOriginatorGuid().isBlank()) {
       text.append(" [threadOriginatorGuid=").append(message.threadOriginatorGuid()).append("]");
-    }
-    if (message.threadOriginatorPart() != null && !message.threadOriginatorPart().isBlank()) {
-      text.append(" [threadOriginatorPart=").append(message.threadOriginatorPart()).append("]");
-    }
-    if (message.replyToGuid() != null && !message.replyToGuid().isBlank()) {
-      text.append(" [replyToGuid=").append(message.replyToGuid()).append("]");
     }
     if (resolveThreadRootGuid(message) != null) {
       text.append(" [threadReply=true]");

@@ -93,7 +93,170 @@ components:
   schemas:
     BlueBubblesMessageReceivedRequest:
       type: object
-      additionalProperties: true
+      required:
+        - type
+        - data
+      properties:
+        type:
+          type: string
+          description: Webhook event type.
+          enum:
+            - new-message
+            - updated-message
+            - typing-indicator
+        data:
+          type: object
+          description: Incoming message payload.
+          required:
+            - originalROWID
+            - guid
+          properties:
+            originalROWID:
+              type: integer
+            guid:
+              type: string
+            text:
+              type: string
+              nullable: true
+            attributedBody:
+              type: string
+              nullable: true
+            handle:
+              type: object
+              required:
+                - address
+              properties:
+                originalROWID:
+                  type: integer
+                address:
+                  type: string
+                service:
+                  type: string
+                uncanonicalizedId:
+                  type: string
+                  nullable: true
+                country:
+                  type: string
+            handleId:
+              type: integer
+            otherHandle:
+              type: integer
+            attachments:
+              type: array
+              items:
+                type: object
+                required:
+                  - originalROWID
+                  - guid
+                properties:
+                  originalROWID:
+                    type: integer
+                  guid:
+                    type: string
+                  uti:
+                    type: string
+                  mimeType:
+                    type: string
+                  transferName:
+                    type: string
+                  totalBytes:
+                    type: integer
+                  height:
+                    type: integer
+                  width:
+                    type: integer
+                  metadata:
+                    type: object
+                    nullable: true
+            subject:
+              type: string
+              nullable: true
+            error:
+              type: integer
+            dateCreated:
+              type: integer
+              format: int64
+            dateRead:
+              type: integer
+              nullable: true
+              format: int64
+            dateDelivered:
+              type: integer
+              nullable: true
+              format: int64
+            isDelivered:
+              type: boolean
+            isFromMe:
+              type: boolean
+            hasDdResults:
+              type: boolean
+            isArchived:
+              type: boolean
+            itemType:
+              type: integer
+            groupTitle:
+              type: string
+              nullable: true
+            groupActionType:
+              type: integer
+            balloonBundleId:
+              type: string
+              nullable: true
+            associatedMessageGuid:
+              type: string
+              nullable: true
+            associatedMessageType:
+              type: integer
+              nullable: true
+            expressiveSendStyleId:
+              type: string
+              nullable: true
+            threadOriginatorGuid:
+              type: string
+              nullable: true
+            hasPayloadData:
+              type: boolean
+            chats:
+              type: array
+              items:
+                type: object
+                required:
+                  - originalROWID
+                  - guid
+                  - style
+                  - chatIdentifier
+                  - isArchived
+                  - displayName
+                properties:
+                  originalROWID:
+                    type: integer
+                  guid:
+                    type: string
+                  style:
+                    type: integer
+                  chatIdentifier:
+                    type: string
+                  isArchived:
+                    type: boolean
+                  displayName:
+                    type: string
+            messageSummaryInfo:
+              type: object
+              nullable: true
+            payloadData:
+              type: object
+              nullable: true
+            dateEdited:
+              type: integer
+              nullable: true
+            dateRetracted:
+              type: integer
+              nullable: true
+            partCount:
+              type: integer
+            tempGuid:
+              type: string
+              nullable: true
     ErrorModel:
       type: object
       required:

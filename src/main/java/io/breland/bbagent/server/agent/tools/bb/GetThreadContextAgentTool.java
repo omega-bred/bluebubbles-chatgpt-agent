@@ -85,10 +85,6 @@ public class GetThreadContextAgentTool implements ToolProvider {
     if (threadOriginatorGuid != null && !threadOriginatorGuid.isBlank()) {
       return threadOriginatorGuid;
     }
-    String replyToGuid = context.message().replyToGuid();
-    if (replyToGuid != null && !replyToGuid.isBlank()) {
-      return replyToGuid;
-    }
     return null;
   }
 

@@ -37,6 +37,8 @@ public class JsonSchemaUtilities {
     Map<String, Object> schema =
         Json.mapper().convertValue(resolved.schema, new TypeReference<Map<String, Object>>() {});
     Map<String, Object> normalized = new LinkedHashMap<>(schema);
+    normalized.putIfAbsent("type", "object");
+    normalized.putIfAbsent("properties", new LinkedHashMap<>());
     normalized.putIfAbsent("additionalProperties", false);
     FunctionTool.Parameters.Builder builder = FunctionTool.Parameters.builder();
     for (Map.Entry<String, Object> entry : normalized.entrySet()) {

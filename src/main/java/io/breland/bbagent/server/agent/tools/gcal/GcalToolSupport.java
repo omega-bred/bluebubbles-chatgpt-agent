@@ -32,7 +32,7 @@ public class GcalToolSupport {
     return gcalClient.scopeAccountKey(accountBase, accountId);
   }
 
-  protected String resolveAccountBase(JsonNode context) {
+  protected String resolveAccountBase(ToolContext context) {
     if (context == null || context.message() == null) {
       return null;
     }
@@ -48,14 +48,6 @@ public class GcalToolSupport {
       return chatGuid;
     }
     return null;
-  }
-
-  protected ZoneId resolveCalendarId(com.fasterxml.jackson.databind.JsonNode args) {
-    String calendarId = getOptionalText(args, "calendar_id");
-    if (calendarId != null && !calendarId.isBlank()) {
-      return calendarId;
-    }
-    return "primary";
   }
 
   protected String resolveCalendarId(String calendarId) {
