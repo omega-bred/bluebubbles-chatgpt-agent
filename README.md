@@ -98,3 +98,7 @@ Tests run with an in-memory H2 database by default, and Flyway migrations enable
 ```bash
 ./gradlew test
 ```
+
+## Deploying
+
+An example kubernetes deployment spec with all the resources is provided in `manifests/bluebubbls-chatgpt-agent`. You'll need to adjust the secrets and URLs accordingly. 
