@@ -24,7 +24,7 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.context.request.NativeWebRequest;
 
 @RestController
-@RequestMapping("${openapi.newsies.base-path:}")
+@RequestMapping("${openapi.bbagent.base-path:}")
 @Slf4j
 public class BluebubblesWebhookController extends BluebubblesApiController {
 

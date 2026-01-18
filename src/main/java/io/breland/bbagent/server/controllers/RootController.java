@@ -6,7 +6,7 @@ import org.springframework.web.bind.annotation.RequestMethod;
 import org.springframework.web.bind.annotation.RestController;
 
 @RestController
-@RequestMapping("${openapi.newsies.base-path:}")
+@RequestMapping("${openapi.bbagent.base-path:}")
 public class RootController {
 
   @RequestMapping(method = RequestMethod.GET, value = "/")
