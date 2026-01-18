@@ -7,6 +7,3 @@ images:
 - name: ghcr.io/omega-bred/bluebubbles-chatgpt-agent
   newName: ghcr.io/omega-bred/bluebubbles-chatgpt-agent
   newTag: d401762c17e1b4cc5c90707a16923da1d5bf6b46-37
-- name: registry.breland.io/omega-bred/bluebubbles-chatgpt-agent
-  newName: registry.breland.io/omega-bred/bluebubbles-chatgpt-agent
-  newTag: b1092e88c370ce1778dbaba0220ecee6235f40e5-35

@@ -150,7 +150,7 @@ spec:
                 secretKeyRef:
                   key: "password"
                   name: gcal-oauth-state-secret
-          image: registry.breland.io/omega-bred/bluebubbles-chatgpt-agent:latest
+          image: ghcr.io/omega-bred/bluebubbles-chatgpt-agent:latest
           imagePullPolicy: Always
           securityContext:
             privileged: false
