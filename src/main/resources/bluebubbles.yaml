@@ -1,0 +1,4010 @@
+openapi: 3.0.0
+info:
+  title: BlueBubbles
+  description: >-
+    This is the API Documentation for the BlueBubbles Server App's REST API.
+
+
+    ## What is BlueBubbles
+
+
+    BlueBubbles is a cross-platform app ecosystem aimed to bring iMessage to all
+    your devices. This means, as long as you have a macOS device/deployment
+    running the BlueBubbles Server App, you'll be able to send and receive
+    iMessages.
+
+
+    ## What does this API offer?
+
+
+    This API offers abilities to store backups of settings/themes, as well as
+    interacting with the underlying macOS device. You'll be able to fetch chats,
+    messages, attachments, handles, as well as receive notifications via sockets
+    (Socket.IO; I want to change this in the future...)
+  version: 1.0.0
+servers:
+  - url: undefined://{{host}}
+tags:
+  - name: v1
+    description: >-
+      This is BlueBubbles first public REST API. Subsequent major changes to the
+      API will be created under new versions.
+  - name: v1 > Web
+    description: Endpoints you should access via your web browser
+  - name: v1 > MacOS
+    description: |-
+      APIs that allow you to interact with the underlying mac operating system.
+
+      **Minimum BlueBubbles Server Version**: 0.3.0
+  - name: v1 > iCloud
+  - name: v1 > Server
+    description: APIs allowing you to interact with the BlueBubbles Server App
+  - name: v1 > Server > Statistics
+    description: Get statistics about your iMessage database (local to your mac)
+  - name: v1 > FCM
+    description: >-
+      APIs to interact with aspects of Google Firebase that are integrated into
+      BlueBubbles
+  - name: v1 > Chat
+    description: APIs for interacting with your iMessage Chats
+  - name: v1 > Chat > Group-Specific
+  - name: v1 > Handle
+    description: APIs for interacting with your iMessage Handles
+  - name: v1 > Message
+    description: APIs for interacting with your iMessage Messages
+  - name: v1 > Message > Scheduling
+  - name: v1 > Attachment
+    description: APIs for interacting with your iMessage Attachments
+  - name: v1 > Contact
+    description: APIs for interacting with your Address Book on your mac
+  - name: v1 > Backup
+    description: APIs for storing backups for things such as client settings & themes
+  - name: v1 > Other
+    description: Other random API requests that don't really fall into a specific category
+paths:
+  /:
+    get:
+      tags:
+        - v1 > Web
+      summary: Get Landing Page
+      description: Get the server's landing page (index.html)
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json: {}
+  /api/v1/mac/lock:
+    post:
+      tags:
+        - v1 > MacOS
+      summary: Lock Mac
+      description: >-
+        Lock your macOS device directly via the API. This endpoint can be useful
+        if you believe your macOS device has been compromised. Locking it will
+        prevent the adversary from accessing your account. This will not log you
+        out, but will lock your account.
+      parameters:
+        - name: password
+          in: query
+          schema:
+            type: string
+          description: Your BlueBubbles Server password
+          example: '{{password}}'
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json: {}
+  /api/v1/icloud/findmy/devices:
+    get:
+      tags:
+        - v1 > iCloud
+      summary: Get FindMy Devices Locations
+      description: >-
+        Fetch your FindMy Devices locations. If your macOS version doesn't
+        support it, or you've never opened the FindMy app, this endpoint may
+        *not* return `data`.
+      parameters:
+        - name: password
+          in: query
+          schema:
+            type: string
+          description: Your BlueBubbles Server password
+          example: '{{password}}'
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json: {}
+  /api/v1/icloud/account:
+    get:
+      tags:
+        - v1 > iCloud
+      summary: Get Account Info
+      description: >-
+        Fetches your iCloud Account info. Details include your iCloud aliases,
+        SMS forwarding, and more. See the sample response below
+
+
+        ``` json
+
+        {
+            "status": 200,
+            "message": "Successfully fetched account info!",
+            "data": {
+                "account_name": "John Doe",
+                "vetted_aliases": [
+                    {
+                        "Alias": "john.doe@icloud.com",
+                        "Status": 3,
+                        "IsUserVisible": true
+                    },
+                    {
+                        "Alias": "jdoe@gmail.com",
+                        "Status": 3,
+                        "IsUserVisible": true
+                    }
+                ],
+                "aliases": [
+                    {
+                        "Alias": "john.doe2@icloud.com",
+                        "Status": 3,
+                        "IsUserVisible": true
+                    },
+                    {
+                        "Alias": "jdoe@gmail.com",
+                        "Status": 3,
+                        "IsUserVisible": true
+                    }
+                ],
+                "sms_forwarding_enabled": false,
+                "apple_id": "john.doe@icloud.com",
+                "sms_forwarding_capable": false,
+                "login_status_message": "Connected"
+            }
+        }
+
+         ```
+      parameters:
+        - name: password
+          in: query
+          schema:
+            type: string
+          description: Your BlueBubbles Server password
+          example: '{{password}}'
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponse_IcloudAccount'
+  /api/v1/icloud/findmy/friends:
+    get:
+      tags:
+        - v1 > iCloud
+      summary: Get FindMy Friends Locations
+      description: >-
+        Fetch your FindMy Friends locations. If your macOS version doesn't
+        support it, or you've never opened the FindMy app, this endpoint may
+        *not* return `data`.
+      parameters:
+        - name: password
+          in: query
+          schema:
+            type: string
+          description: Your BlueBubbles Server password
+          example: '{{password}}'
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json: {}
+  /api/v1/icloud/contact:
+    get:
+      tags:
+        - v1 > iCloud
+      summary: Get Contact Card
+      description: >-
+        Get your own contact information or the contact information for someone
+        who has shared their contact card with you.
+
+
+        **The `address` URL parameter is optional. If you don't support the
+        parameter, the API will return your own contact information. If you
+        provide an address, it will return the contact information of the
+        address (if they've shared it).
+
+
+        Sample Response:
+
+
+        ``` json
+
+        {
+            "status": 200,
+            "message": "Successfully fetched contact card!",
+            "data": {
+                "name": "John Doe",
+                "avatar": "...base64 bytes..."
+            }
+        }
+
+         ```
+      parameters:
+        - name: password
+          in: query
+          schema:
+            type: string
+          description: Your BlueBubbles Server password
+          example: '{{password}}'
+        - name: address
+          in: query
+          schema:
+            type: string
+          example: john.doe@icloud.com
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json: {}
+  /api/v1/icloud/findmy/devices/refresh:
+    post:
+      tags:
+        - v1 > iCloud
+      summary: Refresh FindMy Devices
+      description: >-
+        Refresh your FindMy Devices locations by using Accessibility to open the
+        FindMy app. This endpoint returns the location data after the locations
+        update.
+      parameters:
+        - name: password
+          in: query
+          schema:
+            type: string
+          description: Your BlueBubbles Server password
+          example: '{{password}}'
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json: {}
+  /api/v1/icloud/findmy/friends/refresh:
+    post:
+      tags:
+        - v1 > iCloud
+      summary: Refresh FindMy Friends
+      description: >-
+        Refresh your FindMy Friends locations by using Accessibility to open the
+        FindMy app. This endpoint returns the location data after the locations
+        update.
+      parameters:
+        - name: password
+          in: query
+          schema:
+            type: string
+          description: Your BlueBubbles Server password
+          example: '{{password}}'
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json: {}
+  /ap/v1/icloud/account/alias:
+    post:
+      tags:
+        - v1 > iCloud
+      summary: Modify Active Alias
+      description: >-
+        **Private API Only**
+
+
+        Change which iCloud address you send iMessages from. If you have
+        multiple aliases for your iCloud account setup, you can choose one
+        specifically to send messages from. By default, it's your original Apple
+        ID.
+
+
+        If the alias you provide is not a vetted (approved) alias, this call
+        will throw an error.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              example:
+                alias: jdoe@gmail.com
+      parameters:
+        - name: password
+          in: query
+          schema:
+            type: string
+          description: Your BlueBubbles Server password
+          example: '{{password}}'
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json: {}
+  /api/v1/server/statistics/media/chat:
+    get:
+      tags:
+        - v1 > Server > Statistics
+      summary: Get Media Totals Per Chat
+      description: Fetches different types of media totals per chat (i.e. videos & images).
+      parameters:
+        - name: password
+          in: query
+          schema:
+            type: string
+          description: Your BlueBubbles Server password
+          example: '{{password}}'
+        - name: only
+          in: query
+          schema:
+            type: string
+          description: >-
+            (Optional) A parameter telling the API which totals to calculate.
+            Must be one of: `video`, `image`, `location` (Default: All)
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json: {}
+  /api/v1/server/statistics/media:
+    get:
+      tags:
+        - v1 > Server > Statistics
+      summary: Get Media Totals
+      description: >-
+        Fetches different types of media totals for all chats (i.e. videos &
+        images).
+      parameters:
+        - name: password
+          in: query
+          schema:
+            type: string
+          description: Your BlueBubbles Server password
+          example: '{{password}}'
+        - name: only
+          in: query
+          schema:
+            type: string
+          description: >-
+            (Optional) A parameter telling the API which totals to calculate.
+            Must be one of: `video`, `image`, `location` (Default: All)
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json: {}
+  /api/v1/server/statistics/totals:
+    get:
+      tags:
+        - v1 > Server > Statistics
+      summary: Get iMessage Entity Totals
+      description: >-
+        Fetches the database totals for the iMessage entities (i.e. handles,
+        messages, chats, etc.)
+      parameters:
+        - name: password
+          in: query
+          schema:
+            type: string
+          description: Your BlueBubbles Server password
+          example: '{{password}}'
+        - name: only
+          in: query
+          schema:
+            type: string
+          description: >-
+            (Optional) A parameter telling the API which totals to calculate.
+            Must be one of: `handle`, `message`, `chat`, `attachment` (Default:
+            All)
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json: {}
+  /api/v1/server/update/check:
+    get:
+      tags:
+        - v1 > Server
+      summary: Check for Server Update
+      description: >-
+        Check to see if the BlueBubbles Server App has an update available. If
+        an update is available, the update metadata will be returned.
+      parameters:
+        - name: password
+          in: query
+          schema:
+            type: string
+          description: Your BlueBubbles Server password
+          example: '{{password}}'
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json: {}
+  /api/v1/server/update/install:
+    post:
+      tags:
+        - v1 > Server
+      summary: Install Server Update
+      description: >-
+        Installs an update if one is available.
+
+
+        You may pass a `wait=true` URL parameter to have the endpoint wait until
+        the update is complete to return. Otherwise, it will not by default.
+      parameters:
+        - name: password
+          in: query
+          schema:
+            type: string
+          description: Your BlueBubbles Server password
+          example: '{{password}}'
+        - name: wait
+          in: query
+          schema:
+            type: boolean
+          description: >-
+            (Optional) Waits for the update to complete to return (default:
+            false)
+          example: 'true'
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json: {}
+  /api/v1/server/alert/read:
+    post:
+      tags:
+        - v1 > Server
+      summary: Mark Alerts As Read
+      description: >-
+        Mark alerts as read on your BlueBubbles Server. This requires the IDs of
+        the alerts (found by using the Get Server Alerts request) because of
+        race cases making a "catch-all" endpoint to mark all alerts as read.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              example:
+                ids:
+                  - 1
+                  - 2
+                  - 3
+      parameters:
+        - name: password
+          in: query
+          schema:
+            type: string
+          description: Your BlueBubbles Server password
+          example: '{{password}}'
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json: {}
+  /api/v1/server/info:
+    get:
+      tags:
+        - v1 > Server
+      summary: Get Server Metadata
+      description: Fetch metadata about your BlueBubbles Server & Operating System
+      parameters:
+        - name: password
+          in: query
+          schema:
+            type: string
+          description: Your BlueBubbles Server password
+          example: '{{password}}'
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json: {}
+  /api/v1/server/logs:
+    get:
+      tags:
+        - v1 > Server
+      summary: Get Server Logs
+      description: Fetch logs from your BlueBubbles Server.
+      parameters:
+        - name: password
+          in: query
+          schema:
+            type: string
+          description: Your BlueBubbles Server password
+          example: '{{password}}'
+        - name: count
+          in: query
+          schema:
+            type: integer
+          description: >-
+            (Optional) The number of logs to fetch (starting from the most
+            recent). Default: 100
+          example: '100'
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json: {}
+  /api/v1/server/alert:
+    get:
+      tags:
+        - v1 > Server
+      summary: Get Server Alerts
+      description: Fetch Alerts from the BlueBubbles Server
+      parameters:
+        - name: password
+          in: query
+          schema:
+            type: string
+          description: Your BlueBubbles Server password
+          example: '{{password}}'
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json: {}
+  /api/v1/server/restart/soft:
+    get:
+      tags:
+        - v1 > Server
+      summary: Restart Services
+      description: >-
+        Restarts the services on the BlueBubbles server. Services such as the
+        HTTP service, the FCM service, and the Private API service.
+      parameters:
+        - name: password
+          in: query
+          schema:
+            type: string
+          description: Your BlueBubbles Server password
+          example: '{{password}}'
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json: {}
+  /api/v1/server/restart/hard:
+    get:
+      tags:
+        - v1 > Server
+      summary: Restart Server
+      description: >-
+        Completely restarts the server. Meaning the server closes itself and
+        reopens itself. The Mac will not restart.
+      parameters:
+        - name: password
+          in: query
+          schema:
+            type: string
+          description: Your BlueBubbles Server password
+          example: '{{password}}'
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json: {}
+  /api/v1/fcm/device:
+    post:
+      tags:
+        - v1 > FCM
+      summary: Register Device
+      description: |-
+        Registers a device for Google FCM Notifications
+
+        #### Request Body
+
+        ```json
+        {
+            // A name for the device you are registering
+            "name": "pixel5a",
+            // A unique identifier string that Google FCM will use to send notifications to your device.
+            // This is typically generated when you authenticate with Google FCM.
+            "identifier": ""
+        }
+        ```
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              example:
+                name: pixel5a
+                identifier: ''
+      parameters:
+        - name: password
+          in: query
+          schema:
+            type: string
+          description: Your BlueBubbles Server password
+          example: '{{password}}'
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json: {}
+  /api/v1/fcm/client:
+    get:
+      tags:
+        - v1 > FCM
+      summary: Get FCM Client Config
+      description: >-
+        Fetches your Server's FCM Client Configuration so you can register your
+        device with Google Firebase.
+      parameters:
+        - name: password
+          in: query
+          schema:
+            type: string
+          description: Your BlueBubbles Server password
+          example: '{{password}}'
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json: {}
+  /api/v1/chat/{chatGuid}/participant:
+    post:
+      tags:
+        - v1 > Chat > Group-Specific
+      summary: Add Participant to Chat
+      description: >-
+        Adds a participant to an existing chat.
+
+
+        Include the country code (if possible). For instance, the country code
+        for the United States is `+1`, so include a `1` at the start of the
+        phone number from the US.
+
+
+        **Minimum BlueBubbles Server Version**: 0.3.0
+
+
+        **Requires:** Private API
+
+
+        #### Request Body
+
+
+        ``` json
+
+        {
+            // The participant address to add
+            "address": ""
+        }
+
+
+        ```
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              example:
+                address: ''
+      parameters:
+        - name: password
+          in: query
+          schema:
+            type: string
+          description: Your BlueBubbles Server password
+          example: '{{password}}'
+        - name: chatGuid
+          in: path
+          schema:
+            type: string
+          required: true
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json: {}
+    delete:
+      tags:
+        - v1 > Chat > Group-Specific
+      summary: Remove Participant from Chat
+      description: |-
+        Removes a participant from an existing chat
+
+        **Minimum BlueBubbles Server Version**: 0.3.0
+
+        **Requires:** Private API
+
+        #### Request Body
+
+        ```json
+        {
+            // The participant address to remove
+            "address": ""
+        }
+        ```
+      parameters:
+        - name: chatGuid
+          in: path
+          schema:
+            type: string
+          required: true
+        - name: password
+          in: query
+          schema:
+            type: string
+          description: Your BlueBubbles Server password
+          example: '{{password}}'
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json: {}
+  /api/v1/chat/{chatGuid}/leave:
+    post:
+      tags:
+        - v1 > Chat > Group-Specific
+      summary: Leave Chat
+      description: >-
+        Allows you to leave a group chat that you are in.
+
+
+        An error will be thrown if the chat you are trying to leave is not a
+        group chat.
+
+
+        **Requires:** Private API
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              example: ''
+      parameters:
+        - name: chatGuid
+          in: path
+          schema:
+            type: string
+          required: true
+        - name: password
+          in: query
+          schema:
+            type: string
+          description: Your BlueBubbles Server password
+          example: '{{password}}'
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json: {}
+  /api/v1/chat/{chatGuid}/icon:
+    post:
+      tags:
+        - v1 > Chat > Group-Specific
+      summary: Set Group Icon
+      description: |-
+        Set a group chat's icon/photo.
+
+        **Requires:** Private API
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                icon:
+                  type: string
+                  format: binary
+              required:
+                - icon
+      parameters:
+        - name: chatGuid
+          in: path
+          schema:
+            type: string
+          required: true
+        - name: password
+          in: query
+          schema:
+            type: string
+          description: Your BlueBubbles Server password
+          example: '{{password}}'
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json: {}
+    delete:
+      tags:
+        - v1 > Chat > Group-Specific
+      summary: Remove Group Icon
+      description: |-
+        Removes/Unsets a group chat's icon/photo.
+
+        **Requires:** Private API
+      parameters:
+        - name: chatGuid
+          in: path
+          schema:
+            type: string
+          required: true
+        - name: password
+          in: query
+          schema:
+            type: string
+          description: Your BlueBubbles Server password
+          example: '{{password}}'
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json: {}
+  /api/v1/chat/{chatGuid}:
+    get:
+      tags:
+        - v1 > Chat
+      summary: Get Chat Icon by GUID
+      description: >-
+        Fetches a group chat's Icon. This will only return an icon if the group
+        has one set, and if they have set it at somepoint *after* the inception
+        of the macOS host.
+      parameters:
+        - name: chatGuid
+          in: path
+          schema:
+            type: string
+          required: true
+        - name: password
+          in: query
+          schema:
+            type: string
+          description: Your BlueBubbles Server password
+          example: '{{password}}'
+        - name: with
+          in: query
+          schema:
+            type: string
+          description: >-
+            (Optional) A comma-separated list of related items to fetch for this
+            Chat. Must be one or more of: `lastmessage`, `participants`
+          example: participants,lastmessage
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponse_GetChat'
+    delete:
+      tags:
+        - v1 > Chat
+      summary: Delete Chat
+      description: >-
+        Deletes a chat from the iMessage client on the macOS server. This will
+        only apply to the macOS server's iMessage client, and no other Apple
+        devices.
+
+
+        **Minimum BlueBubbles Server Version**: 1.3.0
+
+
+        **Requires:** Private API
+
+
+        #### Request Body
+
+
+        N/A
+      parameters:
+        - name: chatGuid
+          in: path
+          schema:
+            type: string
+          required: true
+        - name: password
+          in: query
+          schema:
+            type: string
+          description: Your BlueBubbles Server password
+          example: '{{password}}'
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json: {}
+    put:
+      tags:
+        - v1 > Chat
+      summary: Update a Chat
+      description: |-
+        Updates an existing chat
+
+        **Minimum BlueBubbles Server Version**: 0.3.0
+
+        **Requires:** Private API
+
+        #### Request Body
+
+        ```json
+        {
+            // (Optional) A new name for a group chat
+            "displayName": ""
+        }
+        ```
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                displayName:
+                  type: string
+              example:
+                displayName: ''
+      parameters:
+        - name: chatGuid
+          in: path
+          schema:
+            type: string
+          required: true
+        - name: password
+          in: query
+          schema:
+            type: string
+          description: Your BlueBubbles Server password
+          example: '{{password}}'
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponse_UpdateChat'
+              example:
+                status: 200
+                message:
+                  Successfully updated the following fields: displayName
+                data:
+                  originalROWID: 2214
+                  guid: iMessage;+;chat293505621450166166
+                  style: 43
+                  chatIdentifier: chat293505621450166166
+                  isArchived: false
+                  displayName: Test rename response
+                  participants: [ ]
+                  isFiltered: false
+                  groupId: C9E25921-8D4F-44A9-BF2A-C55A776E656B
+                  properties:
+                    - pv: 3
+                      numberOfTimesRespondedtoThread: 3
+                      shouldForceToSMS: false
+                      lastSeenMessageGuid: 9C45CD9B-1763-4554-A865-06EFCF6DD3ED
+                      groupPhotoGuid: 1CFB7180-2BBD-439C-8EA3-E67BACD9F075
+                      hasBeenAutoSpamReported: true
+                      LSMD: "2026-01-15T00:03:04.227Z"
+                  lastAddressedHandle: user@example.com
+  /api/v1/chat/count:
+    get:
+      tags:
+        - v1 > Chat
+      summary: Get Chat Count
+      description: Get the total number of chats for your iMessage account (on the device)
+      parameters:
+        - name: password
+          in: query
+          schema:
+            type: string
+          description: Your BlueBubbles Server password
+          example: '{{password}}'
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json: {}
+  /api/v1/chat/{chatGuid}/message:
+    get:
+      tags:
+        - v1 > Chat
+      summary: Get Chat Messages
+      description: Fetch messages associated with a specified chat
+      parameters:
+        - name: chatGuid
+          in: path
+          required: true
+          schema:
+            type: string
+          description: The GUID of the chat to fetch messages for
+        - name: password
+          in: query
+          schema:
+            type: string
+          description: Your BlueBubbles Server password
+          example: '{{password}}'
+        - name: with
+          in: query
+          schema:
+            type: string
+          description: >-
+            (Optional) What related information do you want returned with the
+            messages? Must be one of: `attachment`, `handle`,  `sms`
+        - name: after
+          in: query
+          schema:
+            type: string
+          description: >-
+            (Optional) Fetches messages after a specified date, represented in
+            seconds since EPOCH
+        - name: before
+          in: query
+          schema:
+            type: string
+          description: >-
+            (Optional) Fetches messages before a specified date, represented in
+            seconds since EPOCH
+        - name: offset
+          in: query
+          schema:
+            type: integer
+          description: >-
+            (Optional) A number representing the offset for the database query.
+            This is useful for paging through data from the database to make
+            database calls return as quick as possible. (Default: 0)
+          example: '0'
+        - name: limit
+          in: query
+          schema:
+            type: integer
+          description: >-
+            (Optional) A number representing the limit for the database query.
+            This is useful for paging through data from the database to make
+            database calls return as quick as possible. (Default: 1000; Max:
+            1000)
+          example: '1000'
+        - name: sort
+          in: query
+          schema:
+            type: string
+          description: >-
+            (Optional) How you want to sort the returned data by date. Must be
+            one of: `ASC`, `DESC`
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: integer
+                  message:
+                    type: string
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        originalROWID:
+                          type: integer
+                        guid:
+                          type: string
+                        text:
+                          type: string
+                          nullable: true
+                        handle:
+                          type: object
+                          properties:
+                            originalROWID:
+                              type: integer
+                            messages:
+                              type: array
+                              items:
+                                type: object
+                            chats:
+                              type: array
+                              items:
+                                type: object
+                            address:
+                              type: string
+                            country:
+                              type: string
+                              nullable: true
+                            uncanonicalizedId:
+                              type: string
+                              nullable: true
+                        handleId:
+                          type: integer
+                        otherHandle:
+                          type: integer
+                        chats:
+                          type: array
+                          items:
+                            type: object
+                            properties:
+                              originalROWID:
+                                type: integer
+                              guid:
+                                type: string
+                              participants:
+                                type: array
+                                items:
+                                  type: object
+                              messages:
+                                type: array
+                                items:
+                                  type: object
+                              style:
+                                type: integer
+                              chatIdentifier:
+                                type: string
+                              isArchived:
+                                type: boolean
+                              isFiltered:
+                                type: boolean
+                              displayName:
+                                type: string
+                              groupId:
+                                type: string
+                        attachments:
+                          type: array
+                          items:
+                            type: object
+                        subject:
+                          type: string
+                          nullable: true
+                        country:
+                          type: string
+                          nullable: true
+                        error:
+                          type: integer
+                        dateCreated:
+                          type: integer
+                          format: int64
+                        dateRead:
+                          type: integer
+                          format: int64
+                          nullable: true
+                        dateDelivered:
+                          type: integer
+                          format: int64
+                          nullable: true
+                        isFromMe:
+                          type: boolean
+                        isDelayed:
+                          type: boolean
+                        isAutoReply:
+                          type: boolean
+                        isSystemMessage:
+                          type: boolean
+                        isServiceMessage:
+                          type: boolean
+                        isForward:
+                          type: boolean
+                        isArchived:
+                          type: boolean
+                        cacheRoomnames:
+                          type: string
+                        isAudioMessage:
+                          type: boolean
+                        hasDdResults:
+                          type: boolean
+                        datePlayed:
+                          type: integer
+                          format: int64
+                          nullable: true
+                        itemType:
+                          type: integer
+                        groupTitle:
+                          type: string
+                          nullable: true
+                        groupActionType:
+                          type: integer
+                        isExpired:
+                          type: boolean
+                        balloonBundleId:
+                          type: string
+                          nullable: true
+                        associatedMessageGuid:
+                          type: string
+                        associatedMessageType:
+                          type: string
+                        expressiveSendStyleId:
+                          type: string
+                          nullable: true
+                        timeExpressiveSendStyleId:
+                          type: string
+                          nullable: true
+  /api/v1/chat/{chatGuid}/share/contact/status:
+    get:
+      tags:
+        - v1 > Chat
+      summary: Get Contact Share Status
+      description: Fetch messages associated with a specified chat
+      parameters:
+        - name: chatGuid
+          in: path
+          schema:
+            type: string
+          required: true
+        - name: password
+          in: query
+          schema:
+            type: string
+          description: Your BlueBubbles Server password
+          example: '{{password}}'
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json: {}
+  /api/v1/chat/query:
+    post:
+      tags:
+        - v1 > Chat
+      summary: Query Chats
+      description: |-
+        Query for Chats from the database
+
+        #### Request Body
+
+        ``` json
+        {
+            // (Optional) A number representing the offset for the database query.
+            // This is useful for paging through data from the database to make database calls return as quick as possible.
+            // (Default: 0)
+            "limit": 1000,
+            //( Optional) A number representing the offset for the database query.
+            // This is useful for paging through data from the database to make database calls return as quick as possible.
+            // (Default: 0)
+            "offset": 0,
+            // (Optional) What related information do you want returned with the messages?
+            // Must be one of: `participants`, `lastmessage`, `sms`, `archived`, `message.attributed-body`, `message.message-info-summary`, `message.payload-data`
+            "with": [
+                "lastMessage",
+                "participants",
+                "sms",
+                "archived"
+            ],
+            // (Optional) How the returned data should be sorted.
+            // In order to sort, `lastmessage` must be included in the `with` parameter.
+            // Must be: `lastmessage`
+            "sort": "lastmessage"
+        }
+
+        ```
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              example:
+                limit: 1000
+                offset: 0
+                with:
+                  - lastMessage
+                  - sms
+                  - archived
+                sort: lastmessage
+      parameters:
+        - name: password
+          in: query
+          schema:
+            type: string
+          description: Your BlueBubbles Server password
+          example: '{{password}}'
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json: {}
+  /api/v1/chat/new:
+    post:
+      tags:
+        - v1 > Chat
+      summary: Create New Chat
+      description: |-
+        Create a new iMessage chat
+
+        **Minimum BlueBubbles Server Version**: 0.3.0
+
+        **Requires:** Private API
+
+        #### Request Body
+
+        ```json
+        {
+            // A list of participants for the chat
+            "addresses": [],
+            // (Optional) A message to send in the new chat
+            "message": "An optional message to send"
+        }
+        ```
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              example:
+                addresses: []
+                message: An optional message to send
+      parameters:
+        - name: password
+          in: query
+          schema:
+            type: string
+          description: Your BlueBubbles Server password
+          example: '{{password}}'
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json: {}
+  /api/v1/chat/{chatGuid}/read:
+    post:
+      tags:
+        - v1 > Chat
+      summary: Mark Chat as Read
+      description: >-
+        Marks a chat as read. This will also dispatch an event to other
+        BlueBubbles clients indicating the chat should be marked read.
+
+
+        **Minimum BlueBubbles Server Version**: 1.1.0
+
+
+        **Requires:** Private API
+
+
+        #### Request Body
+
+
+        N/A
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              example: ''
+      parameters:
+        - name: chatGuid
+          in: path
+          schema:
+            type: string
+          required: true
+        - name: password
+          in: query
+          schema:
+            type: string
+          description: Your BlueBubbles Server password
+          example: '{{password}}'
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json: {}
+  /api/v1/chat/{chatGuid}/unread:
+    post:
+      tags:
+        - v1 > Chat
+      summary: Mark Chat as Unread
+      description: >-
+        Marks a chat as unread. This will also dispatch an event to other
+        BlueBubbles clients indicating the chat should be marked unread.
+
+
+        If you are not running macOS Ventura and send this API request, the
+        event will still be dispatched to other BlueBubbles clients. However, it
+        will not be marked as unread "officially" for other iOS devices.
+
+
+        **Minimum BlueBubbles Server Version**: 1.4.0
+
+
+        **Requires:**
+
+
+        - Private API
+
+        - macOS Ventura
+        
+        
+        #### Request Body
+
+
+        N/A
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              example: ''
+      parameters:
+        - name: chatGuid
+          in: path
+          schema:
+            type: string
+          required: true
+        - name: password
+          in: query
+          schema:
+            type: string
+          description: Your BlueBubbles Server password
+          example: '{{password}}'
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json: {}
+  /api/v1/chat/{chatGuid}/share/contact:
+    post:
+      tags:
+        - v1 > Chat
+      summary: Share Contact Info
+      description: Allows you to share your own iCloud Contact Card with another chat.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              example: ''
+      parameters:
+        - name: chatGuid
+          in: path
+          schema:
+            type: string
+          required: true
+        - name: password
+          in: query
+          schema:
+            type: string
+          description: Your BlueBubbles Server password
+          example: '{{password}}'
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json: {}
+  /api/v1/chat/{chatGuid}/typing:
+    post:
+      tags:
+        - v1 > Chat
+      summary: Start Send Typing Indicator
+      description: >-
+        Allows you to start sending typing indicators to a chat
+
+
+        **Requires:** Private API
+
+
+        **Note:** Typing indicators will automatically stop when you send a
+        message to the specified chat.
+      parameters:
+        - name: chatGuid
+          in: path
+          schema:
+            type: string
+          required: true
+        - name: password
+          in: query
+          schema:
+            type: string
+          description: Your BlueBubbles Server password
+          example: '{{password}}'
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json: {}
+    delete:
+      tags:
+        - v1 > Chat
+      summary: Stop Send Typing Indicator
+      description: >-
+        Allows you to stop sending typing indicators to a chat
+
+
+        **Requires:** Private API
+
+
+        **Note:** Typing indicators will automatically stop when you send a
+        message to the specified chat.
+      parameters:
+        - name: chatGuid
+          in: path
+          schema:
+            type: string
+          required: true
+        - name: password
+          in: query
+          schema:
+            type: string
+          description: Your BlueBubbles Server password
+          example: '{{password}}'
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json: {}
+  /api/v1/handle/{address}:
+    get:
+      tags:
+        - v1 > Handle
+      summary: Get Handle by Address
+      description: Fetch a Handle's database information by Address (email or phone number)
+      parameters:
+        - name: address
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: password
+          in: query
+          schema:
+            type: string
+          description: Your BlueBubbles Server password
+          example: '{{password}}'
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json: {}
+  /api/v1/handle/count:
+    get:
+      tags:
+        - v1 > Handle
+      summary: Get Handle Count
+      description: >-
+        Get the total number of handles for your iMessage account (on the
+        device)
+      parameters:
+        - name: password
+          in: query
+          schema:
+            type: string
+          description: Your BlueBubbles Server password
+          example: '{{password}}'
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json: {}
+  /api/v1/handle/{address}/focus:
+    get:
+      tags:
+        - v1 > Handle
+      summary: Get Handle's Focus Status
+      description: |-
+        Get the handle's focus mode status.
+
+        Return values include:
+
+        - unknown
+        - silenced
+        - none
+      parameters:
+        - name: address
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: password
+          in: query
+          schema:
+            type: string
+          example: '{{password}}'
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json: {}
+  /api/v1/handle/availability/imessage:
+    get:
+      tags:
+        - v1 > Handle
+      summary: Get iMessage Availability
+      description: Checks if a given address has iMessage enabled for it.
+      parameters:
+        - name: password
+          in: query
+          schema:
+            type: string
+          example: '{{password}}'
+        - name: address
+          in: query
+          schema:
+            type: string
+          description: Required. The address to check if it has iMessage activated
+          example: john.doe@icloud.com
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json: {}
+  /api/v1/handle/availability/facetime:
+    get:
+      tags:
+        - v1 > Handle
+      summary: Get FaceTimeAvailability
+      description: Checks if a given address has FaceTime enabled for it.
+      parameters:
+        - name: password
+          in: query
+          schema:
+            type: string
+          example: '{{password}}'
+        - name: address
+          in: query
+          schema:
+            type: string
+          description: Required. The address to check if it has FaceTime activated
+          example: john.doe@icloud.com
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json: {}
+  /api/v1/handle/query:
+    post:
+      tags:
+        - v1 > Handle
+      summary: Query Handles
+      description: |-
+        Query for Chats from the database
+
+        #### Request Body
+
+        ```json
+        {
+            // (Optional) A number representing the offset for the database query.
+            // This is useful for paging through data from the database to make database calls return as quick as possible.
+            // (Default: 0)
+            "limit": 1000,
+            //( Optional) A number representing the offset for the database query.
+            // This is useful for paging through data from the database to make database calls return as quick as possible.
+            // (Default: 0)
+            "offset": 0,
+            // (Optional) What related information do you want returned with the messages?
+            // Must be one of: `participants`, `lastmessage`, `sms`, `archived`
+            "with": [
+                "lastMessage",
+                "participants",
+                "sms",
+                "archived"
+            ],
+            // (Optional) How the returned data should be sorted.
+            // In order to sort, `lastmessage` must be included in the `with` parameter.
+            // Must be: `lastmessage`
+            "sort": "lastmessage"
+        }
+        ```
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              example:
+                limit: 1000
+                offset: 0
+                with:
+                  - chat
+                  - chat.participants
+                address: '1234567890'
+      parameters:
+        - name: password
+          in: query
+          schema:
+            type: string
+          description: Your BlueBubbles Server password
+          example: '{{password}}'
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json: {}
+  /api/v1/message/schedule:
+    get:
+      tags:
+        - v1 > Message > Scheduling
+      summary: Get Scheduled Messages
+      description: >-
+        Gets the messages you currently have scheduled, or have been scheduled
+        in the past.
+
+
+        **Minimum BlueBubbles Server Version:** 1.4.0
+      parameters:
+        - name: password
+          in: query
+          schema:
+            type: string
+          description: Your BlueBubbles Server password
+          example: '{{password}}'
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json: {}
+    post:
+      tags:
+        - v1 > Message > Scheduling
+      summary: Schedule a Message
+      description: >-
+        Schedules a message to be sent at a future time.
+
+
+        You can also schedule messages to be sent on a recurring schedule.
+
+
+        **Minimum BlueBubbles Server Version:** 1.4.0
+
+
+        **Payload:** This dictionary contains metadata used to send a message.
+        It mimics the same parameters as the `Send Text` API endpoint.
+
+
+        **Action Types:**
+
+
+        - send-message
+        
+        
+        **Schedule Types:**
+
+
+        - once
+
+        - recurring
+        
+        
+        **Schedule Interval Types:**
+
+
+        - hourly
+
+        - daily
+
+        - weekly
+
+        - monthly
+
+        - yearly
+        
+        
+        #### Request Body (One-time):
+
+
+        **Note:** If a one-time message is missed -- for instance, if the server
+        went down during the time it was supposed to send -- the message will
+        _not_ be sent.
+
+
+        ``` json
+
+        {
+            "type": "send-message",
+            // The message data to send at the scheduled time.
+            // This mimics the "Send Text" API endpoint.
+            "payload": {
+                "chatGuid": "iMessage;-;XXXXXXXXXX",
+                "message": "Good morning!",
+                "method": "private-api"
+            },
+            // This is a milliseconds-since-epoch timestamp.
+            // This represents the time the message should be sent at.
+            // This must be sometime in the future.
+
+            "scheduledFor": 1668413100000,
+             // The scheduling configuration.
+             // For a one-time message, this is all that is required.
+
+            "schedule": {
+                "type": "once"
+            }
+        }
+
+
+        ```
+
+
+        #### Request Body (Recurring):
+
+
+        **Note:** When the first `scheduledFor` time is reached, the next
+        scheduled for time will be calculated before the message is sent. This
+        is to ensure that recurring messages are sent at a consistent time.
+
+
+        **Note:** If a recurring message is missed -- for instance if the server
+        was offline when the message was scheduled to be sent -- it will not
+        send, and will be rescheduled for the next time the recurring interval
+        occurs. This will also ensure that recurring messages are sent at a
+        consistent time.
+
+
+        ``` json
+
+        {
+            "type": "send-message",
+            // The message data to send at the scheduled time.
+            // This mimics the "Send Text" API endpoint.
+            "payload": {
+                "chatGuid": "iMessage;-;XXXXXXXXXX",
+                "message": "Good morning!",
+                "method": "private-api"
+            },
+            // This is a milliseconds-since-epoch timestamp.
+            // This represents the time the message should be sent at.
+            // This must be sometime in the future.
+
+            "scheduledFor": 1668413100000,
+             // The scheduling configuration.
+             // For a one-time message, this is all that is required.
+
+            "schedule": {
+                "type": "recurring",
+                "intervalType": "daily",
+                "interval": 1
+
+            }
+        }
+
+
+        ```
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              example:
+                type: send-message
+                payload:
+                  chatGuid: iMessage;-;XXXXXXXXXX
+                  message: Good morning!
+                  method: private-api
+                scheduledFor: 1668413100000
+                schedule:
+                  type: once
+      parameters:
+        - name: password
+          in: query
+          schema:
+            type: string
+          description: Your BlueBubbles Server password
+          example: '{{password}}'
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json: {}
+  /api/v1/message/schedule/{scheduleId}:
+    get:
+      tags:
+        - v1 > Message > Scheduling
+      summary: Get Scheduled Message by ID
+      description: |-
+        Gets a single scheduled message by its' ID.
+
+        **Minimum BlueBubbles Server Version:** 1.4.0
+      parameters:
+        - name: scheduleId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: password
+          in: query
+          schema:
+            type: string
+          description: Your BlueBubbles Server password
+          example: '{{password}}'
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json: {}
+    delete:
+      tags:
+        - v1 > Message > Scheduling
+      summary: Delete Scheduled Message by ID
+      description: |-
+        Delets a scheduled message by its' ID
+
+        **Minimum BlueBubbles Server Version:** 1.4.0
+      parameters:
+        - name: scheduleId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: password
+          in: query
+          schema:
+            type: string
+          description: Your BlueBubbles Server password
+          example: '{{password}}'
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json: {}
+    put:
+      tags:
+        - v1 > Message > Scheduling
+      summary: Update a Scheduled Message by ID
+      description: >-
+        Updates a scheduled message by ID
+
+
+        **Payload:** This dictionary contains metadata used to send a message.
+        It mimics the same parameters as the `Send Text` API endpoint.
+
+
+        **Action Types:**
+
+
+        - send-message
+        
+        
+        **Schedule Types:**
+
+
+        - once
+
+        - recurring
+        
+        
+        **Schedule Interval Types:**
+
+
+        - hourly
+
+        - daily
+
+        - weekly
+
+        - monthly
+
+        - yearly
+        
+        
+        #### Request Body (One-time):
+
+
+        **Note:** If a one-time message is missed -- for instance, if the server
+        went down during the time it was supposed to send -- the message will
+        _not_ be sent.
+
+
+        ``` json
+
+        {
+            "type": "send-message",
+            // The message data to send at the scheduled time.
+            // This mimics the "Send Text" API endpoint.
+            "payload": {
+                "chatGuid": "iMessage;-;XXXXXXXXXX",
+                "message": "Good morning!",
+                "method": "private-api"
+            },
+            // This is a milliseconds-since-epoch timestamp.
+            // This represents the time the message should be sent at.
+            // This must be sometime in the future.
+            "scheduledFor": 1668413100000,
+             // The scheduling configuration.
+             // For a one-time message, this is all that is required.
+            "schedule": {
+                "type": "once"
+            }
+        }
+
+
+        ```
+
+
+        #### Request Body (Recurring):
+
+
+        **Note:** When the first `scheduledFor` time is reached, the next
+        scheduled for time will be calculated before the message is sent. This
+        is to ensure that recurring messages are sent at a consistent time.
+
+
+        **Note:** If a recurring message is missed -- for instance if the server
+        was offline when the message was scheduled to be sent -- it will not
+        send, and will be rescheduled for the next time the recurring interval
+        occurs. This will also ensure that recurring messages are sent at a
+        consistent time.
+
+
+        ``` json
+
+        {
+            "type": "send-message",
+            // The message data to send at the scheduled time.
+            // This mimics the "Send Text" API endpoint.
+            "payload": {
+                "chatGuid": "iMessage;-;XXXXXXXXXX",
+                "message": "Good morning!",
+                "method": "private-api"
+            },
+            // This is a milliseconds-since-epoch timestamp.
+            // This represents the time the message should be sent at.
+            // This must be sometime in the future.
+            "scheduledFor": 1668413100000,
+             // The scheduling configuration.
+             // For a one-time message, this is all that is required.
+            "schedule": {
+                "type": "recurring",
+                "intervalType": "daily",
+                "interval": 1
+            }
+        }
+
+
+        ```
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              example:
+                type: send-message
+                payload:
+                  chatGuid: iMessage;-;XXXXXXXXXX
+                  message: Good morning!
+                  method: private-api
+                scheduledFor: 1668413100000
+                schedule:
+                  type: once
+      parameters:
+        - name: scheduleId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: password
+          in: query
+          schema:
+            type: string
+          description: Your BlueBubbles Server password
+          example: '{{password}}'
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json: {}
+  /api/v1/message/count:
+    get:
+      tags:
+        - v1 > Message
+      summary: Get Updated Message Count
+      description: >-
+        Get the total number of messages for your iMessage account (on the
+        device)
+      parameters:
+        - name: password
+          in: query
+          schema:
+            type: string
+          description: Your BlueBubbles Server password
+          example: '{{password}}'
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json: {}
+  /api/v1/message/count/me:
+    get:
+      tags:
+        - v1 > Message
+      summary: Get My Sent Message Count
+      description: >-
+        Get the total number of messages that you have sent, for your iMessage
+        account (on the device)
+      parameters:
+        - name: password
+          in: query
+          schema:
+            type: string
+          description: Your BlueBubbles Server password
+          example: '{{password}}'
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json: {}
+  /api/v1/message/{messageGuid}:
+    get:
+      tags:
+        - v1 > Message
+      summary: Get Message by GUID
+      description: Fetch a Message's database information by ID
+      parameters:
+        - name: messageGuid
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: password
+          in: query
+          schema:
+            type: string
+          description: Your BlueBubbles Server password
+          example: '{{password}}'
+        - name: with
+          in: query
+          schema:
+            type: string
+          description: >-
+            (Optional) A comma-separated list of related items to fetch for this
+            Message. Must be one or more of: `chats`, `participants`
+          example: chats,participants
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiResponse_Message"
+  /api/v1/message/{messageGuid}/embedded-media:
+    get:
+      tags:
+        - v1 > Message
+      summary: Get Message's Embedded Media
+      description: >-
+        Gets a message's embedded media such as a digital touch message's `.mov`
+        or a handwritten message
+      parameters:
+        - name: messageGuid
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: password
+          in: query
+          schema:
+            type: string
+          description: Your BlueBubbles Server password
+          example: '{{password}}'
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json: {}
+  /api/v1/message/query:
+    post:
+      tags:
+        - v1 > Message
+      summary: Query Messages
+      description: |-
+        Query for Messages from the database
+
+        #### Request Body
+
+        ``` json
+        {
+            // (Optional) A number representing the offset for the database query.
+            // This is useful for paging through data from the database to make database calls return as quick as possible.
+            // (Default: 0)
+            "limit": 1000,
+            //( Optional) A number representing the offset for the database query.
+            // This is useful for paging through data from the database to make database calls return as quick as possible.
+            // (Default: 0)
+            "offset": 0,
+            // (Optional) What related information do you want returned with the messages?
+            // Must be one of: `chat`, `chat.participants`, `attachment`, `handle`, `sms`, `attributed-body`, `message-info-summary`, `payload-data`
+            "with": [
+                "chat",
+                "attachment",
+                "handle"
+            ],
+            // (Optional) Database WHERE clauses allowing you to granularly filter down or search for messages.
+            // This should follow TypeORM's WHERE expression query builder.
+            // Reference: https://typeorm.io/#/select-query-builder/adding-where-expression
+            "where": [
+                {
+                    "statement": "message.text = :text",
+                    "args": {
+                        "text": "Hello World!"
+                    }
+                }
+            ],
+            // (Optional) Fetches messages after a specified date, represented in seconds since EPOCH
+            "after": 0,
+            // (Optional) Fetches messages before a specified date, represented in seconds since EPOCH
+            "before": 1633965221,
+            // (Optional) How the returned data should be sorted.
+            // Must be one of: `ASC`, `DESC
+            "sort": "DESC"
+        }
+
+        ```
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                chatGuid:
+                  type: string
+                limit:
+                  type: integer
+                offset:
+                  type: integer
+                with:
+                  type: array
+                  description: >
+                    Related entities/fields to include with each message.
+                  items:
+                    type: string
+                    enum:
+                      - chat
+                      - chat.participants
+                      - attachment
+                      - handle
+                      - sms
+                      - attributed-body
+                      - message-info-summary
+                      - payload-data
+                  default: [ ]
+                  uniqueItems: true
+                where:
+                  type: array
+                  description: >
+                    Database WHERE clauses using TypeORM QueryBuilder expressions.
+                    Each entry includes a statement and named args.
+                  items:
+                    $ref: '#/components/schemas/WhereClause'
+                  default: [ ]
+                after:
+                  type: integer
+                  format: int64
+                  minimum: 0
+                  default: 0
+                  description: >
+                    Fetch messages after this time, expressed as seconds since Unix epoch.
+                before:
+                  type: integer
+                  format: int64
+                  minimum: 0
+                  description: >
+                    Fetch messages before this time, expressed as seconds since Unix epoch.
+                sort:
+                  type: string
+                  enum: [ ASC, DESC ]
+                  default: DESC
+                  description: >
+                    Sort order for returned messages.
+              example:
+                limit: 10
+                offset: 0
+                chatGuid: ''
+                with:
+                  - chat
+                  - chat.participants
+                  - attachment
+                  - handle
+                  - sms
+                where:
+                  - statement: message.text = :text
+                    args:
+                      text: Kara and Mimi
+                sort: DESC
+      parameters:
+        - name: password
+          in: query
+          schema:
+            type: string
+          description: Your BlueBubbles Server password
+          example: '{{password}}'
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: integer
+                    format: int32
+                    example: 200
+                  message:
+                    type: string
+                    example:
+                      Successfully updated the following fields: displayName
+                  data:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Message"
+                  
+  /api/v1/message/text:
+    post:
+      tags:
+        - v1 > Message
+      summary: Send Text
+      description: >-
+        Send a text message via iMessage
+
+
+        **Minimum BlueBubbles Server Version**: 0.3.0
+
+
+        _**Note**__: the_ _`partIndex`_ _parameter is only supported on macOS
+        BIg Sur and newer, and requires BlueBubbles Server v1.4.0_
+
+
+        _**Note**__: This endpoint conditionally uses the Private API if certain
+        parameters are present. Here are the parameters that will use the
+        Private API:_
+
+
+        - _method: private-api_
+
+        - _subject_
+
+        - _effectId_
+
+        - _selectedMessageGuid_
+        
+        
+        #### Request Body
+
+
+        ``` json
+
+        {
+            // The GUID for the Chat you want this message to be sent to
+            "chatGuid": "iMessage;+;xxxxxxxxxxxx",
+            // A unique identifier for the message.
+            // This is to prevent duplicate messages from being sent.
+            "tempGuid": "",
+            // The text message to send
+            "message": "Hello World!",
+            // (Optional) Method to send the message using. Must be one of: `apple-script`, `private-api`. Default: `apple-script`.
+            "method": "apple-script",
+            // (Optional) Send a subject with the message.
+            // Setting this will force the method to be `private-api`, so you must have the Private API setup.
+            "subject": "",
+            // (Optional) Send a message using an effect.
+            // Setting this will force the method to be `private-api`, so you must have the Private API setup.
+            "effectId": "",
+            // (Optional) Reply to another message by GUID.
+            // Setting this will force the method to be `private-api`, so you must have the Private API setup.
+            "selectedMessageGuid": "",
+            // The part of the message to reply to.
+            // This is only used for replies.
+            // macOS Big Sur and newer.
+            // Optional, defaults to 0.
+            // Must be an integer (min: 0)
+            "partIndex": 0
+        }
+
+
+        ```
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                chatGuid:
+                  type: string
+                tempGuid:
+                  type: string
+                message:
+                  type: string
+                method:
+                  type: string
+                subject:
+                  type: string
+                effectId:
+                  type: string
+                selectedMessageGuid:
+                  type: string
+                partIndex:
+                  type: integer
+              example:
+                chatGuid: iMessage;+;xxxxxxxxxxxx
+                tempGuid: ''
+                message: Hello World!
+                method: apple-script
+                subject: ''
+                effectId: ''
+                selectedMessageGuid: ''
+      parameters:
+        - name: password
+          in: query
+          schema:
+            type: string
+          description: Your BlueBubbles Server password
+          example: '{{password}}'
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json: {}
+  /api/v1/message/react:
+    post:
+      tags:
+        - v1 > Message
+      summary: Send Reaction
+      description: >-
+        Send a text message via iMessage
+
+
+        **Minimum BlueBubbles Server Version**: 0.3.0
+
+
+        _Note: the_ _`partIndex`_ _parameter is only supported on macOS BIg Sur
+        and newer, and requires BlueBubbles Server v1.4.0_
+
+
+        **Requires**: Private API
+
+
+        #### Request Body
+
+
+        ``` json
+
+        {
+            // The GUID for the Chat you want this message to be sent to
+            "chatGuid": "iMessage;+;xxxxxxxxxxxx",
+            // The message GUID to react to
+            "selectedMessageGuid": "",
+            // The reaction to send.
+            // Must be one of: `love`, `like`, `dislike`, `laugh`, `emphasize`, `question`, or `-love`, `-like`, `-dislike`, `-laugh`, `-emphasize`, `-question`
+            "reaction": "",
+            // The part of the message to react to.
+            // This is typically used for messages with multiple parts.
+            // For example, if the message has multiple images & text.
+            // macOS Big Sur and newer.
+            // Optional, defaults to 0.
+            // Must be an integer (min: 0)
+            "partIndex": 0
+        }
+
+
+        ```
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                chatGuid:
+                  type: string
+                selectedMessageText:
+                  type: string
+                selectedMessageGuid:
+                  type: string
+                reaction:
+                  type: string
+                partIndex:
+                  type: integer
+              example:
+                chatGuid: iMessage;+;xxxxxxxxxxxx
+                selectedMessageText: ''
+                selectedMessageGuid: ''
+                reaction: ''
+                partIndex: 0
+      parameters:
+        - name: password
+          in: query
+          schema:
+            type: string
+          description: Your BlueBubbles Server password
+          example: '{{password}}'
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json: {}
+  /api/v1/message/attachment:
+    post:
+      tags:
+        - v1 > Message
+      summary: Send Attachment
+      description: >-
+        Send an attachment via iMessage.
+
+
+        **Minimum BlueBubbles Server Version**: 0.3.0
+
+
+        _**Note**__: the_ _`partIndex`_ _parameter is only supported on macOS
+        BIg Sur and newer, and requires BlueBubbles Server v1.4.0_
+
+
+        _**Note**__: This endpoint conditionally uses the Private API if certain
+        parameters are present. Here are the parameters that will use the
+        Private API:_
+
+
+        - _method: private-api_
+
+        - _subject_
+
+        - _effectId_
+
+        - _selectedMessageGuid_
+      requestBody:
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                icon:
+                  type: string
+                  format: binary
+              required:
+                - attachment
+      parameters:
+        - name: password
+          in: query
+          schema:
+            type: string
+          description: Your BlueBubbles Server password
+          example: '{{password}}'
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json: {}
+  /api/v1/message/multipart:
+    post:
+      tags:
+        - v1 > Message
+      summary: Send Multipart Message
+      description: |-
+        Send a multipart message
+
+        #### Request Body
+
+        ``` json
+        {
+            // The GUID for the Chat you want this message to be sent to
+            "chatGuid": "iMessage;+;xxxxxxxxxxxx",
+            // (Optional) Send a subject with the message.
+            "subject": "",
+            // (Optional) Send a message using an effect.
+            "effectId": "",
+            // (Optional) Reply to another message by GUID.
+            "selectedMessageGuid": "",
+            // (Optional) The part of the message to reply to.
+            // This is only used when replying to a specific part of a message
+            // Defaults to 0. Must be an integer (min: 0)
+            "partIndex": 0,
+            // The list parts of the multipart message.
+            // 1. Each part must be a dictionary
+            // 2. Each part must have a partIndex
+            // 3. Each part must have either a text or attachment
+            // 4. Each attachment part must have a name
+            // 5. Each attachment must have been uploaded prior using the /attachment/upload endpoint
+            // 6. Each mention must have text
+            "parts": [
+                {
+                    "partIndex": 0,
+                    "text": "Hey, "
+                },
+                {
+                    "partIndex": 1,
+                    "text": "Tim Apple",
+                    "mention": "tim@apple.com"
+                },
+                {
+                    "partIndex": 2,
+                    "text": " check out these photos!"
+                },
+                {
+                    "partIndex": 3,
+                    "attachment": "<Uploaded Attachment UUID>",
+                    "name": "apple.jpg"
+                },
+                {
+                    "partIndex": 4,
+                    "attachment": "<Uploaded Attachment UUID>",
+                    "name": "macbook.png"
+                }
+            ]
+        }
+
+        ```
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              example:
+                chatGuid: iMessage;+;xxxxxxxxxxxx
+                subject: ''
+                effectId: ''
+                selectedMessageGuid: ''
+                partIndex: 0
+                parts:
+                  - partIndex: 0
+                    text: 'Hey, '
+                  - partIndex: 1
+                    text: Tim Apple
+                    mention: tim@apple.com
+                  - partIndex: 2
+                    text: ' check out these photos!'
+                  - partIndex: 3
+                    attachment: <Uploaded Attachment UUID>
+                    name: apple.jpg
+                  - partIndex: 4
+                    attachment: <Uploaded Attachment UUID>
+                    name: macbook.png
+      parameters:
+        - name: password
+          in: query
+          schema:
+            type: string
+          description: Your BlueBubbles Server password
+          example: '{{password}}'
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json: {}
+  /api/v1/message/{messageGuid}/edit:
+    post:
+      tags:
+        - v1 > Message
+      summary: Edit Message
+      description: >-
+        Edit a message you've sent.
+
+
+        **Minimum BlueBubbles Server Version**: 1.4.0
+
+
+        _Note: the_ _`partIndex`_ _parameter is only supported on macOS BIg Sur
+        and newer, and requires BlueBubbles Server v1.4.0_
+
+
+        **Requires**:
+
+
+        - Private API
+
+        - macOS Ventura
+        
+        
+        #### Request Body
+
+
+        ``` json
+
+        {
+            // The message you want to edit the selected message to
+            "editedMessage": "This is the new message",
+            // The message to send to older iOS/macOS users
+            "backwardsCompatibilityMessage": "Edited to “This is the new message”",
+            // The part of the message to edit.
+            // macOS Big Sur and newer.
+            // Optional, defaults to 0.
+            // Must be an integer (min: 0)
+            "partIndex": 0
+        }
+
+
+        ```
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              example:
+                editedMessage: This is the new message
+                backwardsCompatibilityMessage: Edited to “This is the new message”
+                partIndex: 0
+      parameters:
+        - name: messageGuid
+          in: path
+          schema:
+            type: string
+          required: true
+        - name: password
+          in: query
+          schema:
+            type: string
+          description: Your BlueBubbles Server password
+          example: '{{password}}'
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json: {}
+  /api/v1/message/{messageGuid}/unsend:
+    post:
+      tags:
+        - v1 > Message
+      summary: Unsend Message
+      description: >-
+        Unsend a message that you've sent.
+
+
+        **Minimum BlueBubbles Server Version**: 1.4.0
+
+
+        _Note: the_ _`partIndex`_ _parameter is only supported on macOS BIg Sur
+        and newer, and requires BlueBubbles Server v1.4.0_
+
+
+        **Requires**:
+
+
+        - Private API
+
+        - macOS Ventura
+        
+        
+        #### Request Body
+
+
+        ``` json
+
+        {
+            // The part of the message to unsend.
+            // macOS Big Sur and newer.
+            // Optional, defaults to 0.
+            // Must be an integer (min: 0)
+            "partIndex": 0
+        }
+
+
+        ```
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              example:
+                editedMessage: This is the new message
+                backwardsCompatibilityMessage: Edited to “This is the new message”
+                partIndex: 0
+      parameters:
+        - name: messageGuid
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: password
+          in: query
+          schema:
+            type: string
+          description: Your BlueBubbles Server password
+          example: '{{password}}'
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json: {}
+  /api/v1/message/{messageGuid}/notify:
+    post:
+      tags:
+        - v1 > Message
+      summary: Notify for Silenced Message
+      description: >-
+        Notify for a sent message that has been silenced by the recipient's
+        focus mode status
+
+
+        **Requires**:
+
+
+        - Private API
+
+        - macOS Monterey
+      parameters:
+        - name: messageGuid
+          in: path
+          schema:
+            type: string
+          description: Message guid
+          required: true
+        - name: password
+          in: query
+          schema:
+            type: string
+          description: Your BlueBubbles Server password
+          example: '{{password}}'
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json: {}
+  /api/v1/attachment/{attachmentGuid}:
+    get:
+      tags:
+        - v1 > Attachment
+      summary: Get Attachment by GUID
+      description: Fetch an Attachment's database information by ID
+      parameters:
+        - name: attachmentGuid
+          in: path
+          schema:
+            type: string
+          description: Attachment guid
+          required: true
+        - name: password
+          in: query
+          schema:
+            type: string
+          description: Your BlueBubbles Server password
+          example: '{{password}}'
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json: {}
+  /api/v1/attachment/count:
+    get:
+      tags:
+        - v1 > Attachment
+      summary: Get Attachment Count
+      description: >-
+        Fetch the total number of attachments for your iMessage account (on the
+        device)
+      parameters:
+        - name: password
+          in: query
+          schema:
+            type: string
+          description: Your BlueBubbles Server password
+          example: '{{password}}'
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json: {}
+  /api/v1/attachment/{attachmentGuid}/download:
+    get:
+      tags:
+        - v1 > Attachment
+      summary: Download Attachment
+      description: >-
+        Download an iMessage Attachment by ID. You may optionally specify
+        height/width parameters to resize the image.
+      parameters:
+        - name: attachmentGuid
+          in: path
+          schema:
+            type: string
+          required: true
+        - name: password
+          in: query
+          schema:
+            type: string
+          description: Your BlueBubbles Server password
+          example: '{{password}}'
+        - name: width
+          in: query
+          schema:
+            type: integer
+          description: >-
+            (Optional) A parameter specifying the value to resize the width to.
+            This aspect ratio will be maintained if a height is not present.
+          example: '100'
+        - name: height
+          in: query
+          schema:
+            type: integer
+          description: >-
+            (Optional) A parameter specifying the value to resize the height to.
+            This aspect ratio will be maintained if a width is not present..
+          example: '100'
+        - name: quality
+          in: query
+          schema:
+            type: string
+          description: >-
+            (Optional) Change the quality of the image you are fetching. Must be
+            one of: `good`, `better`, `best`
+        - name: original
+          in: query
+          schema:
+            type: integer
+          description: >-
+            (Optional) Download the original attachment (useful for
+            auto-converted attachments like HEIC & CAF)
+          example: '0'
+      responses:
+        '200':
+          description: Successful response
+          content:
+            '*/*':
+              schema:
+                type: string
+                format: binary
+                x-java-type: byte[]
+  /api/v1/attachment/{attachmentGuid}/download/force:
+    get:
+      tags:
+        - v1 > Attachment
+      summary: Force Download Attachment
+      description: >-
+        **Private API Required**
+
+
+        Force download an iMessage Attachment by ID. You may optionally specify
+        height/width parameters to resize the image.
+
+
+        This is different from the regular download endpoint as this will force
+        the attachment to download if it's not already downloaded on the Mac. If
+        an image isn't already downloaded on the Mac, and you use the regular
+        download endpoint, you'll receive a 404 not found.
+      parameters:
+        - name: attachmentGuid
+          in: path
+          schema:
+            type: string
+          required: true
+        - name: password
+          in: query
+          schema:
+            type: string
+          description: Your BlueBubbles Server password
+          example: '{{password}}'
+        - name: width
+          in: query
+          schema:
+            type: integer
+          description: >-
+            (Optional) A parameter specifying the value to resize the width to.
+            This aspect ratio will be maintained if a height is not present.
+          example: '100'
+        - name: height
+          in: query
+          schema:
+            type: integer
+          description: >-
+            (Optional) A parameter specifying the value to resize the height to.
+            This aspect ratio will be maintained if a width is not present..
+          example: '100'
+        - name: quality
+          in: query
+          schema:
+            type: string
+          description: >-
+            (Optional) Change the quality of the image you are fetching. Must be
+            one of: `good`, `better`, `best`
+        - name: original
+          in: query
+          schema:
+            type: integer
+          description: >-
+            (Optional) Download the original attachment (useful for
+            auto-converted attachments like HEIC & CAF)
+          example: '0'
+      responses:
+        '200':
+          description: Successful response
+          content:
+            '*/*':
+              schema:
+                type: string
+                format: binary
+                x-java-type: byte[]
+  /api/v1/attachment/{attachmentGuid}/blurhash:
+    get:
+      tags:
+        - v1 > Attachment
+      summary: Get Attachment Blurhash
+      description: >-
+        Generates a BlurHash string based on the given Attachment (by ID). You
+        may optionally resize the image before the BlurHash is generated.
+
+
+        **Note**: Calculating a BlurHash is fairly intensive. Resizing the image
+        to smaller size by specifying and/or height will reduce the time it
+        takes to generate the hash string.
+      parameters:
+        - name: attachmentGuid
+          in: path
+          schema:
+            type: string
+          required: true
+        - name: password
+          in: query
+          schema:
+            type: string
+          description: Your BlueBubbles Server password
+          example: '{{password}}'
+        - name: width
+          in: query
+          schema:
+            type: integer
+          description: >-
+            (Optional) A parameter specifying the value to resize the width to.
+            This aspect ratio will be maintained if a height is not present.
+          example: '320'
+        - name: height
+          in: query
+          schema:
+            type: integer
+          description: >-
+            (Optional) A parameter specifying the value to resize the height to.
+            This aspect ratio will be maintained if a width is not present.
+          example: '480'
+        - name: quality
+          in: query
+          schema:
+            type: string
+          description: >-
+            (Optional) Change the quality of the image you are fetching. Must be
+            one of: `good`, `better`, `best` (Default: `good`)
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json: {}
+  /api/v1/attachment/{attachmentGuid}/live:
+    get:
+      tags:
+        - v1 > Attachment
+      summary: Get Attachment Live Photo
+      description: >-
+        Get's an attachment's "live photo" (if available).
+
+
+        If an attachment is not an image or does not have a live version, this
+        endpoint will return an error indicating that a live photo does not
+        exist for the attachment.
+      parameters:
+        - name: attachmentGuid
+          in: path
+          schema:
+            type: string
+          required: true
+        - name: password
+          in: query
+          schema:
+            type: string
+          description: Your BlueBubbles Server password
+          example: '{{password}}'
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json: {}
+  /api/v1/attachment/upload:
+    post:
+      tags:
+        - v1 > Attachment
+      summary: Upload Attachment
+      description: >-
+        Upload an attachment to the server's iMessage attachments directory.
+
+
+        This is a pre-requisite and _must_ be done before sending an attachment
+        as part of a _multipart_ message. This is **not** required when sending
+        a normal attachment.
+
+
+        The response of this endpoint will be a unique identifier that you can
+        use when sending a _multipart_ message.
+
+
+        #### Example Response
+
+
+        ``` json
+
+        {
+            "status": 200,
+            "message": "Success",
+            "data": {
+                "path": "a04a23a0833b33db8a63ee0816948786"
+            }
+        }
+
+
+        ```
+      requestBody:
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                attachment:
+                  type: string
+                  format: binary
+              required:
+                - attachment
+      parameters:
+        - name: password
+          in: query
+          schema:
+            type: string
+          description: Your BlueBubbles Server password
+          example: '{{password}}'
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: integer
+                  message:
+                    type: string
+                  data:
+                    type: object
+                    properties:
+                      path:
+                        type: string
+
+
+  /api/v1/contact:
+    get:
+      tags:
+        - v1 > Contact
+      summary: Get Contacts
+      description: Fetch contacts from your macOS device
+      parameters:
+        - name: password
+          in: query
+          schema:
+            type: string
+          description: Your BlueBubbles Server password
+          example: '{{password}}'
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: integer
+                  message:
+                    type: string
+                  data:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/contact"
+    post:
+      tags:
+        - v1 > Contact
+      summary: Create or Update Contact
+      description: Create or update a contact via the API
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ContactUpsertRequest'
+      parameters:
+        - name: password
+          in: query
+          schema:
+            type: string
+          description: Your BlueBubbles Server password
+          example: '{{password}}'
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json: {}
+  /api/v1/contact/query:
+    post:
+      tags:
+        - v1 > Contact
+      summary: Query Contacts
+      description: |-
+        Query your contacts from your macOS device.
+
+        #### Request Body
+
+        ```json
+        {
+            // (Optional) A list of one or more addresses to return data for
+            "addresses": []
+        }
+        ```
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              example:
+                addresses: []
+      parameters:
+        - name: password
+          in: query
+          schema:
+            type: string
+          description: Your BlueBubbles Server password
+          example: '{{password}}'
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json: {}
+  /api/v1/backup/theme:
+    get:
+      tags:
+        - v1 > Backup
+      summary: Get Themes
+      description: Fetches themes saved to your BlueBubbles Server.
+      parameters:
+        - name: password
+          in: query
+          schema:
+            type: string
+          description: Your BlueBubbles Server password
+          example: '{{password}}'
+        - name: name
+          in: query
+          schema:
+            type: string
+          description: >-
+            (Optional) Find a theme by name. If no match is found, null is
+            returned.
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json: {}
+    post:
+      tags:
+        - v1 > Backup
+      summary: Save Theme
+      description: >-
+        Save a Theme to your BlueBubbles Server App. This request has 2 required
+        fields, `name` and `data`. Otherwise, the actual configuration data is
+        up to the client. The only caveat is that clients that are pulling
+        themes from the server need to be able to understand the format.
+
+
+        #### Request Body
+
+
+        ```json
+
+        {
+            // The name of your theme
+            "name": "OLED Dark",
+
+            // The configuration data for your theme
+            "data": {}
+        }
+
+        ```
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              example:
+                name: OLED Dark
+                data: {}
+      parameters:
+        - name: password
+          in: query
+          schema:
+            type: string
+          description: Your BlueBubbles Server password
+          example: '{{password}}'
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json: {}
+    delete:
+      tags:
+        - v1 > Backup
+      summary: Delete Theme
+      description: |-
+        Deletes a theme backup by name.
+
+        #### Request Body
+
+        ``` json
+        {
+            // The name of your theme
+            "name": "SettingsBackup - 2021/10/11"
+        }
+
+        ```
+      parameters:
+        - name: password
+          in: query
+          schema:
+            type: string
+          description: Your BlueBubbles Server password
+          example: '{{password}}'
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json: {}
+  /api/v1/backup/settings:
+    get:
+      tags:
+        - v1 > Backup
+      summary: Get Settings
+      description: Fetches settings saved to your BlueBubbles Server.
+      parameters:
+        - name: password
+          in: query
+          schema:
+            type: string
+          description: Your BlueBubbles Server password
+          example: '{{password}}'
+        - name: name
+          in: query
+          schema:
+            type: string
+          description: >-
+            (Optional) Find a settings configuration by name. If no match is
+            found, null is returned.
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json: {}
+    post:
+      tags:
+        - v1 > Backup
+      summary: Save Settings
+      description: >-
+        Save a Settings configuration to your BlueBubbles Server App. This
+        request has 2 required fields, `name` and `data`. Otherwise, the actual
+        configuration data is up to the client. The only caveat is that clients
+        that are pulling settings from the server need to be able to understand
+        the format.
+
+
+        #### Request Body
+
+
+        ``` json
+
+        {
+            // The name of your settings
+            "name": "SettingsBackup - 2021/10/11",
+            // The configuration data for your settings
+            "data": {}
+        }
+
+
+        ```
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              example:
+                name: SettingsBackup - 2021/10/11
+                data: {}
+      parameters:
+        - name: password
+          in: query
+          schema:
+            type: string
+          description: Your BlueBubbles Server password
+          example: '{{password}}'
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json: {}
+    delete:
+      tags:
+        - v1 > Backup
+      summary: Delete Settings
+      description: |-
+        Deletes a settings backup by name.
+
+        #### Request Body
+
+        ``` json
+        {
+            // The name of your settings
+            "name": "SettingsBackup - 2021/10/11"
+        }
+
+        ```
+      parameters:
+        - name: password
+          in: query
+          schema:
+            type: string
+          description: Your BlueBubbles Server password
+          example: '{{password}}'
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json: {}
+  /api/v1/ping:
+    get:
+      tags:
+        - v1 > Other
+      summary: Ping
+      description: >-
+        Send a quick ping to your BlueBubbles Server to make sure it's online
+        and responding to requests
+      parameters:
+        - name: password
+          in: query
+          schema:
+            type: string
+          description: Your BlueBubbles Server password
+          example: '{{password}}'
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json: {}
+
+components:
+  schemas:
+    ApiResponse_Message:
+      type: object
+      additionalProperties: false
+      required: [ status, message, data ]
+      properties:
+        status:
+          type: integer
+          format: int32
+          example: 200
+        message:
+          type: string
+          example: Success
+        data:
+          $ref: '#/components/schemas/Message'
+
+    ApiResponse_IcloudAccount:
+      type: object
+      additionalProperties: false
+      required: [ status, message, data ]
+      properties:
+        status:
+          type: integer
+          format: int32
+          example: 200
+        message:
+          type: string
+          example: Successfully fetched account info!
+        data:
+          $ref: '#/components/schemas/IcloudAccountInfo'
+
+    IcloudAlias:
+      type: object
+      additionalProperties: false
+      required: [ Alias, Status, IsUserVisible ]
+      properties:
+        Alias:
+          type: string
+          example: john.doe@icloud.com
+        Status:
+          type: integer
+          format: int32
+          example: 3
+        IsUserVisible:
+          type: boolean
+          example: true
+
+    IcloudAccountInfo:
+      type: object
+      additionalProperties: false
+      required:
+        - account_name
+        - vetted_aliases
+        - aliases
+        - sms_forwarding_enabled
+        - apple_id
+        - sms_forwarding_capable
+        - login_status_message
+      properties:
+        account_name:
+          type: string
+          example: John Doe
+        vetted_aliases:
+          type: array
+          items:
+            $ref: '#/components/schemas/IcloudAlias'
+        aliases:
+          type: array
+          items:
+            $ref: '#/components/schemas/IcloudAlias'
+        sms_forwarding_enabled:
+          type: boolean
+          example: false
+        apple_id:
+          type: string
+          example: john.doe@icloud.com
+        sms_forwarding_capable:
+          type: boolean
+          example: false
+        login_status_message:
+          type: string
+          example: Connected
+      
+    Message:
+      type: object
+      additionalProperties: false
+      required:
+        - originalROWID
+        - guid
+        - handleId
+        - otherHandle
+        - attachments
+        - error
+        - dateCreated
+        - isDelivered
+        - isFromMe
+        - hasDdResults
+        - isArchived
+        - itemType
+        - groupActionType
+        - hasPayloadData
+        - isDelayed
+        - isAutoReply
+        - isSystemMessage
+        - isServiceMessage
+        - isForward
+        - isCorrupt
+        - isSpam
+        - isExpired
+        - isAudioMessage
+        - shareStatus
+        - shareDirection
+        - wasDeliveredQuietly
+        - didNotifyRecipient
+        - chats
+        - partCount
+      properties:
+        originalROWID:
+          type: integer
+          format: int64
+          example: 333712
+        guid:
+          type: string
+          format: uuid
+          example: 8D7D7D09-DD10-425F-9B72-8EF322ECA49D
+        
+        text:
+          oneOf:
+            - type: string
+            - type: "null"
+        attributedBody:
+          oneOf:
+            - type: string
+            - type: "null"
+        handle:
+          oneOf:
+            - type: string
+            - type: "null"
+            - type: object
+        
+        handleId:
+          type: integer
+          format: int64
+          example: 0
+        otherHandle:
+          type: integer
+          format: int64
+          example: 0
+        
+        attachments:
+          type: array
+          items: { }
+          example: [ ]
+        
+        subject:
+          oneOf:
+            - type: string
+            - type: "null"
+        
+        error:
+          type: integer
+          format: int32
+          example: 0
+        
+        dateCreated:
+          type: integer
+          format: int64
+          description: Milliseconds since Unix epoch
+          example: 1768459304321
+        dateRead:
+          oneOf:
+            - type: integer
+              format: int64
+            - type: "null"
+        dateDelivered:
+          oneOf:
+            - type: integer
+              format: int64
+            - type: "null"
+        
+        isDelivered:
+          type: boolean
+        isFromMe:
+          type: boolean
+        hasDdResults:
+          type: boolean
+        isArchived:
+          type: boolean
+        
+        itemType:
+          type: integer
+          format: int32
+          example: 2
+        
+        groupTitle:
+          oneOf:
+            - type: string
+            - type: "null"
+        
+        groupActionType:
+          type: integer
+          format: int32
+          example: 0
+        
+        balloonBundleId:
+          oneOf:
+            - type: string
+            - type: "null"
+        
+        associatedMessageGuid:
+          oneOf:
+            - type: string
+            - type: "null"
+        associatedMessageType:
+          oneOf:
+            - type: integer
+            - type: "null"
+        
+        expressiveSendStyleId:
+          oneOf:
+            - type: string
+            - type: "null"
+        
+        threadOriginatorGuid:
+          oneOf:
+            - type: string
+            - type: "null"
+        
+        hasPayloadData:
+          type: boolean
+        
+        country:
+          oneOf:
+            - type: string
+            - type: "null"
+        
+        isDelayed:
+          type: boolean
+        isAutoReply:
+          type: boolean
+        isSystemMessage:
+          type: boolean
+        isServiceMessage:
+          type: boolean
+        isForward:
+          type: boolean
+        
+        threadOriginatorPart:
+          oneOf:
+            - type: string
+            - type: "null"
+        
+        isCorrupt:
+          type: boolean
+        
+        datePlayed:
+          oneOf:
+            - type: integer
+              format: int64
+            - type: "null"
+        
+        cacheRoomnames:
+          type: string
+          example: chat293505621450166166
+        
+        isSpam:
+          type: boolean
+        isExpired:
+          type: boolean
+        
+        timeExpressiveSendPlayed:
+          oneOf:
+            - type: integer
+              format: int64
+            - type: "null"
+        
+        isAudioMessage:
+          type: boolean
+        
+        replyToGuid:
+          oneOf:
+            - type: string
+            - type: "null"
+        
+        shareStatus:
+          type: integer
+          format: int32
+          example: 0
+        shareDirection:
+          type: integer
+          format: int32
+          example: 0
+        
+        wasDeliveredQuietly:
+          type: boolean
+        didNotifyRecipient:
+          type: boolean
+        
+        chats:
+          type: array
+          items:
+            $ref: "#/components/schemas/Chat"
+          example: [ ]
+        
+        messageSummaryInfo:
+          oneOf:
+            - type: object
+            - type: "null"
+        
+        payloadData:
+          oneOf:
+            - type: object
+            - type: "null"
+        
+        dateEdited:
+          oneOf:
+            - type: integer
+              format: int64
+            - type: "null"
+        
+        dateRetracted:
+          oneOf:
+            - type: integer
+              format: int64
+            - type: "null"
+        
+        partCount:
+          type: integer
+          format: int32
+          example: 0
+
+    ApiResponse_GetChat:
+      type: object
+      additionalProperties: false
+      required: [ status, message, data ]
+      properties:
+        status:
+          type: integer
+          format: int32
+          example: 200
+        message:
+          type: string
+          example:
+            Success
+        data:
+          $ref: '#/components/schemas/Chat'
+    ApiResponse_UpdateChat:
+      type: object
+      additionalProperties: false
+      required: [ status, message, data ]
+      properties:
+        status:
+          type: integer
+          format: int32
+          example: 200
+        message:
+          type: string
+          example:
+            Successfully updated the following fields: displayName
+        data:
+          $ref: '#/components/schemas/Chat'
+    ChatParticipant:
+      type: object
+      additionalProperties: false
+      required: [ originalROWID, address, service, country ]
+      properties:
+        originalROWID:
+          type: integer
+          format: int64
+          example: 991
+        address:
+          type: string
+          description: Phone number or handle address for the participant.
+          example: "+12039191031"
+        service:
+          type: string
+          description: Messaging service used for the participant.
+          example: iMessage
+          # If you know the full set, lock it down here. Otherwise delete "enum".
+          enum: [ iMessage, SMS ]
+        uncanonicalizedId:
+          description: Raw/un-normalized identifier if available.
+          oneOf:
+            - type: string
+            - type: "null"
+          example: null
+        country:
+          type: string
+          description: ISO 3166-1 alpha-2 country code.
+          minLength: 2
+          maxLength: 2
+          example: US
+    Chat:
+      type: object
+      additionalProperties: false
+      required:
+        - originalROWID
+        - guid
+        - style
+        - chatIdentifier
+        - isArchived
+        - displayName
+        - participants
+        - isFiltered
+        - groupId
+        - properties
+        - lastAddressedHandle
+      properties:
+        originalROWID:
+          type: integer
+          format: int64
+          example: 2214
+        guid:
+          type: string
+          example: iMessage;+;chat293505621450166166
+        style:
+          type: integer
+          format: int32
+          example: 43
+        chatIdentifier:
+          type: string
+          example: chat293505621450166166
+        isArchived:
+          type: boolean
+          example: false
+        displayName:
+          type: string
+          example: Test rename response
+        participants:
+          type: array
+          description: Participants in the chat (shape depends on your participant model).
+          items:
+            $ref: '#/components/schemas/ChatParticipant'
+          example: [ ]
+        isFiltered:
+          type: boolean
+          example: false
+        groupId:
+          type: string
+          format: uuid
+          example: C9E25921-8D4F-44A9-BF2A-C55A776E656B
+        properties:
+          type: array
+          items:
+            $ref: '#/components/schemas/ChatProperties'
+        lastAddressedHandle:
+          type: string
+          example: user@example.com
+    
+    ChatProperties:
+      type: object
+      additionalProperties: false
+      required:
+        - pv
+        - numberOfTimesRespondedtoThread
+        - shouldForceToSMS
+        - lastSeenMessageGuid
+        - groupPhotoGuid
+        - hasBeenAutoSpamReported
+        - LSMD
+      properties:
+        pv:
+          type: integer
+          format: int32
+          example: 3
+        numberOfTimesRespondedtoThread:
+          type: integer
+          format: int32
+          example: 3
+        shouldForceToSMS:
+          type: boolean
+          example: false
+        lastSeenMessageGuid:
+          type: string
+          format: uuid
+          example: 9C45CD9B-1763-4554-A865-06EFCF6DD3ED
+        groupPhotoGuid:
+          type: string
+          format: uuid
+          example: 1CFB7180-2BBD-439C-8EA3-E67BACD9F075
+        hasBeenAutoSpamReported:
+          type: boolean
+          example: true
+        LSMD:
+          type: string
+          format: date-time
+          example: "2026-01-15T00:03:04.227Z"
+
+    WhereClause:
+      type: object
+      additionalProperties: false
+      required: [ statement ]
+      properties:
+        statement:
+          type: string
+          description: >
+            TypeORM WHERE expression (e.g. "message.text = :text").
+        args:
+          type: object
+          description: >
+            Named parameters used by the statement (e.g. {"text":"Hello"}).
+          additionalProperties: true
+      example:
+        statement: "message.text = :text"
+        args:
+          text: "Hello World!"
+    ContactUpsertRequest:
+      type: object
+      properties:
+        phoneNumbers:
+          type: array
+          items:
+            type: string
+        emails:
+          type: array
+          items:
+            type: string
+        firstName:
+          type: string
+        lastName:
+          type: string
+        displayName:
+          type: string
+        avatar:
+          type: string
+          format: byte
+    addressEntry:
+      title: Email or Address entry
+      properties:
+        id:
+          type: string
+        address:
+          type: string
+    contact:
+      title: Contact
+      properties:
+        phoneNumbers:
+          type: array
+          items:
+            $ref: "#/components/schemas/addressEntry"
+        emails:
+          type: array
+          items:
+            $ref: "#/components/schemas/addressEntry"
+        firstName:
+          type: string
+        lastName:
+          type: string
+        displayName:
+          type: string
+        nickname:
+          type: string
+        birthday:
+          type: string
+        avatar:
+          type: string
+        sourceType:
+          type: string
+        id:
+          type: string

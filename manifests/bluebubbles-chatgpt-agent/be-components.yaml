@@ -1,0 +1,278 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: bluebubbles-chatgpt-agent
+  labels:
+    pod-security.kubernetes.io/enforce: baseline
+---
+apiVersion: onepassword.com/v1
+kind: OnePasswordItem
+metadata:
+  name: giphy-api-key #this name will also be used for naming the generated kubernetes secret
+  namespace: bluebubbles-chatgpt-agent
+spec:
+  itemPath: "vaults/Kubernetes/items/giphy-api-key"
+---
+apiVersion: onepassword.com/v1
+kind: OnePasswordItem
+metadata:
+  name: mem0-api-key #this name will also be used for naming the generated kubernetes secret
+  namespace: bluebubbles-chatgpt-agent
+spec:
+  itemPath: "vaults/Kubernetes/items/mem0-api-key"
+---
+apiVersion: onepassword.com/v1
+kind: OnePasswordItem
+metadata:
+  name: bluebubbles #this name will also be used for naming the generated kubernetes secret
+  namespace: bluebubbles-chatgpt-agent
+spec:
+  itemPath: "vaults/Kubernetes/items/BlueBubbles"
+---
+apiVersion: onepassword.com/v1
+kind: OnePasswordItem
+metadata:
+  name: openai-bluebubbles-chatgpt-agent-api-key #this name will also be used for naming the generated kubernetes secret
+  namespace: bluebubbles-chatgpt-agent
+spec:
+  itemPath: "vaults/Kubernetes/items/openai-bluebubbles-chatgpt-agent-api-key"
+---
+apiVersion: onepassword.com/v1
+kind: OnePasswordItem
+metadata:
+  name: bluebubbles-chatgpt-agent-influx-token #this name will also be used for naming the generated kubernetes secret
+  namespace: bluebubbles-chatgpt-agent
+spec:
+  itemPath: "vaults/Kubernetes/items/bluebubbles-chatgpt-agent-influx-token"
+---
+apiVersion: onepassword.com/v1
+kind: OnePasswordItem
+metadata:
+  name: gcal-mcp-server #this name will also be used for naming the generated kubernetes secret
+  namespace: bluebubbles-chatgpt-agent
+spec:
+  itemPath: "vaults/Kubernetes/items/gcal-mcp-server"
+---
+apiVersion: onepassword.com/v1
+kind: OnePasswordItem
+metadata:
+  name: gcal-oauth-state-secret #this name will also be used for naming the generated kubernetes secret
+  namespace: bluebubbles-chatgpt-agent
+spec:
+  itemPath: "vaults/Kubernetes/items/gcal-oauth-state-secret"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app: bluebubbles-chatgpt-agent
+  name: bluebubbles-chatgpt-agent
+spec:
+  progressDeadlineSeconds: 600
+  replicas: 1
+  revisionHistoryLimit: 5
+  selector:
+    matchLabels:
+      app: bluebubbles-chatgpt-agent
+  strategy:
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+    type: RollingUpdate
+  template:
+    metadata:
+      labels:
+        app: bluebubbles-chatgpt-agent
+    spec:
+      containers:
+        - name: bluebubbles-chatgpt-agent
+          env:
+            - name: POD_IP
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.podIP
+            - name: KUBERNETES_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            - name: SPRING_PROFILES_ACTIVE
+              value: "prod"
+            - name: INFLUX_DB_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  key: password
+                  name: bluebubbles-chatgpt-agent-influx-token
+            - name: INFLUX_DB_URI
+              value: "https://influxdb-1.taild1b69.ts.net"
+            - name: "OPENAI_API_KEY"
+              valueFrom:
+                secretKeyRef:
+                  key: "password"
+                  name: openai-bluebubbles-chatgpt-agent-api-key
+            - name: "BLUEBUBBLES_PATH"
+              valueFrom:
+                secretKeyRef:
+                  key: "host"
+                  name: bluebubbles
+            - name: "BLUEBUBBLES_PASSWORD"
+              valueFrom:
+                secretKeyRef:
+                  key: "password"
+                  name: bluebubbles
+            - name: "MEM0_API_KEY"
+              valueFrom:
+                secretKeyRef:
+                  key: "password"
+                  name: mem0-api-key
+            - name: POSTGRES_JDBC_URL
+              value: "jdbc:postgresql://bb-chatgpt-agent-db-2.bluebubbles-chatgpt-agent.svc.cluster.local:5432/bb_chatgpt_agent?sslmode=require"
+            - name: POSTGRES_USER
+              valueFrom:
+                secretKeyRef:
+                  name: bb-chatgpt-agent-admin.bb-chatgpt-agent-db-2.credentials.postgresql.acid.zalan.do
+                  key: username
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: bb-chatgpt-agent-admin.bb-chatgpt-agent-db-2.credentials.postgresql.acid.zalan.do
+                  key: password
+            - name: "GIPHY_API_KEY"
+              valueFrom:
+                secretKeyRef:
+                  key: "password"
+                  name: giphy-api-key
+            - name: "GCAL_OAUTH_CLIENT_SECRET_PATH"
+              value: "/var/run/secrets/gcal/client_secret_552753055766-0fnkjtl0ug4i39hhrr0q9jk49648akra.apps.googleusercontent.com.json"
+            - name: GCAL_OAUTH_REDIRECT_URI
+              value: "https://chatagent.bre.land/api/v1/gcal/completeOauth.gcal"
+            - name: GCAL_OAUTH_STATE_SECRET
+              valueFrom:
+                secretKeyRef:
+                  key: "password"
+                  name: gcal-oauth-state-secret
+          image: registry.breland.io/omega-bred/bluebubbles-chatgpt-agent:latest
+          imagePullPolicy: Always
+          securityContext:
+            privileged: false
+          ports:
+            - containerPort: 8080
+              protocol: TCP
+          readinessProbe:
+            tcpSocket:
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 30
+          livenessProbe:
+            tcpSocket:
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 30
+          resources:
+            limits:
+              cpu: 2048m
+              memory: 2048Mi
+            requests:
+              cpu: 512m
+              memory: 512Mi
+          terminationMessagePath: /dev/termination-log
+          terminationMessagePolicy: File
+          volumeMounts:
+            - name: gcal-client-secret
+              mountPath: /var/run/secrets/gcal
+              readOnly: true
+      dnsPolicy: ClusterFirst
+      restartPolicy: Always
+      schedulerName: default-scheduler
+      securityContext: {}
+      terminationGracePeriodSeconds: 30
+      volumes:
+        - name: gcal-client-secret
+          secret:
+            secretName: gcal-mcp-server
+#      nodeSelector:
+#        topology.kubernetes.io/zone: "3646"
+---
+kind: Service
+apiVersion: v1
+metadata:
+  name: bluebubbles-chatgpt-agent
+  labels:
+    app: bluebubbles-chatgpt-agent
+spec:
+  ports:
+    - name: http
+      protocol: TCP
+      port: 80
+      targetPort: 8080
+  selector:
+    app: bluebubbles-chatgpt-agent
+  type: LoadBalancer
+  sessionAffinity: None
+  externalTrafficPolicy: Cluster
+  ipFamilies:
+    - IPv4
+  ipFamilyPolicy: SingleStack
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  labels:
+    app: bluebubbles-chatgpt-agent
+  name: bluebubbles-chatgpt-agent
+spec:
+  defaultBackend:
+    service:
+      name: bluebubbles-chatgpt-agent
+      port:
+        number: 80
+  tls:
+    - hosts:
+        - bluebubbles-chatgpt-agent
+  ingressClassName: tailscale
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod-brelandio
+  labels:
+    app: bluebubbles-chatgpt-agent
+  name: bluebubbles-chatgpt-agent-api-3
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts:
+        - chatagent.bre.land
+      secretName: chatagent-bre-land-cert
+  rules:
+    - host: chatagent.bre.land
+      http:
+        paths:
+          - path: /api/
+            pathType: Prefix
+            backend:
+              service:
+                name: bluebubbles-chatgpt-agent
+                port:
+                  number: 80
+---
+apiVersion: "acid.zalan.do/v1"
+kind: postgresql
+metadata:
+  name: bb-chatgpt-agent-db-2
+spec:
+  teamId: "bb-chatgpt-agent"
+  enableMasterLoadBalancer: true
+  volume:
+    size: 50Gi
+    storageClass: freenas-iscsi-csi-3646
+  numberOfInstances: 1
+  users:
+    bb_chatgpt_agent_admin:
+      - superuser
+      - createdb
+  databases:
+    bb_chatgpt_agent: bb_chatgpt_agent_admin
+  postgresql:
+    version: "16"
+---
