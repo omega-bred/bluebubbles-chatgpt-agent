@@ -1,6 +1,8 @@
 package io.breland.bbagent.server.agent;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
@@ -90,6 +92,31 @@ class BBMessageAgentTest {
     assertEquals("iMessage;+;chat-1", body.getChatGuid());
     assertEquals("Hey! Doing well—how about you?", body.getMessage());
     verify(responseService, times(2)).create(any(ResponseCreateParams.class));
+  }
+
+  @Test
+  void reactionMessageMatcherCoversReactedEmojiTo() {
+    assertTrue(BBMessageAgent.isReactionMessage("Reacted 😂 to"));
+    assertTrue(BBMessageAgent.isReactionMessage("  Reacted 😂 to"));
+  }
+
+  @Test
+  void reactionMessageMatcherCoversCommonPrefixes() {
+    assertTrue(BBMessageAgent.isReactionMessage("Loved \"nice!\""));
+    assertTrue(BBMessageAgent.isReactionMessage("Liked it"));
+    assertTrue(BBMessageAgent.isReactionMessage("Disliked that"));
+    assertTrue(BBMessageAgent.isReactionMessage("Questioned \"why?\""));
+    assertTrue(BBMessageAgent.isReactionMessage("Emphasized wow"));
+    assertTrue(BBMessageAgent.isReactionMessage("Laughed at that"));
+  }
+
+  @Test
+  void reactionMessageMatcherIgnoresNormalText() {
+    assertFalse(BBMessageAgent.isReactionMessage("Reacted? I don't think so."));
+    assertFalse(BBMessageAgent.isReactionMessage("I loved that"));
+    assertFalse(BBMessageAgent.isReactionMessage("questioned"));
+    assertFalse(BBMessageAgent.isReactionMessage(""));
+    assertFalse(BBMessageAgent.isReactionMessage(null));
   }
 
   private static Response responseWithFunctionCall(String name, String argsJson, String callId) {
