@@ -126,7 +126,7 @@ def npmPath = ['bash', 'zsh']
                 null
             }
         }
-        .find { it } ?: '/Users/breland/.nvm/versions/node/v24.6.0/bin/npm'
+        .find { it } ?: "${System.getProperty('user.home')}/.nvm/versions/node/v24.6.0/bin/npm"
 
 java {
 	toolchain {

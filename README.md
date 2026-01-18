@@ -1,7 +1,7 @@
 # bluebubbles-chatgpt-agent
 
 A ChatGPT agent that integrates with BlueBubbles (iMessage) and optional Google
-Calendar. Built with Spring Boot + OpenAPI.
+Calendar + other tools. Built with Spring Boot + OpenAPI.
 
 ## Features
 - BlueBubbles iMessage webhook ingestion + reply tools
@@ -10,6 +10,15 @@ Calendar. Built with Spring Boot + OpenAPI.
 - OpenAI Responses API support (including image generation, web search)
 - OpenAPI spec and generated TypeScript client
 - Integration with Mem0
+- Rich texting support (thread replies, reactions, message effects)
+- Group management (set group title, set group photo from prompt)
+- Understands and responds to images sent in texts
+- "Responsiveness" tool - in which you can change the system prompt to drive how the model reacts / interacts (eg "Chat go in to silent mode")
+- Global "contact book"
+
+![screenshot1](./images/screen1.png)
+![screenshot2](./images/screen2.png)
+![screenshot3](./images/screen3.jpg)
 
 ## Requirements
 - Java 21+ (project uses Gradle toolchains; default is 24)
@@ -45,6 +54,7 @@ Required:
 - `BLUEBUBBLES_PASSWORD`
 - `BLUEBUBBLES_BASE_PATH` (or `bluebubbles.basePath` in properties)
 - `POSTGRES_JDBC_URL`, `POSTGRES_USER`, `POSTGRES_PASSWORD`
+- `MEM0_API_KEY` (TODO: Make optional)
 
 Optional (Google Calendar):
 - `GCAL_OAUTH_CLIENT_SECRET_PATH` (Google OAuth client JSON)
@@ -66,7 +76,8 @@ to match your deployment.
 
 ## OpenAPI / generated clients
 
-When adding or modifying REST APIs:
+When adding or modifying REST APIs to regen the server stubs:
+
 ```bash
 ./gradlew openApiGenerate
 ```
@@ -76,7 +87,7 @@ The frontend should use the generated TypeScript client in `frontend/src/client`
 ## BlueBubbles / iMessage / Apple Account
 
 You almost certainly will want to have a dedicated Mac somewhere running BlueBubbles and very probably its own iMessage/iCloud account. It can be just an email only / no phone number account.
-BlueBubbles can be a pain to set up - and requires disable important security features of your Mac. It is best if this is a spare / non-used machine that can be isolated and remain generally unused.
+BlueBubbles can be a pain to set up - and requires disable important security features of your Mac. It is best if this is a spare / non-used machine that can be isolated and remain generally unused. I spent a lot of time building the OpenAPI spec for BlueBubbles - I hope it's useful.
 
 > ⚠️⚠️⚠️⚠️⚠️⚠️ **Important - Apple may or may not do some form of automated bot/spam detection in iMessage. We *DO NOT* recommend using your own personal iCloud account for running this as you may get flagged as spam / could have your account suspended.**
 
@@ -87,8 +98,3 @@ Tests run with an in-memory H2 database by default, and Flyway migrations enable
 ```bash
 ./gradlew test
 ```
-
-## Notes for open-source use
-
-- Replace any internal URLs in config (BlueBubbles base path, etc.) with your own endpoints.
-- Provide your own OAuth credentials and secrets (never commit them).
