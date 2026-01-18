@@ -31,8 +31,7 @@ jobs:
         uses: gradle/gradle-build-action@v3
         with:
           arguments: test
-        env:
-          OPENWEBUI_KEY: ${{ secrets.OPENWEBUI_KEY }}
+        env: {}
 
   build_and_push:
     name: Build and Push Docker Image
@@ -40,6 +39,9 @@ jobs:
     # Only build/push on push events (not PRs)
     if: ${{ github.event_name == 'push' }}
     runs-on: ubuntu-latest
+    env:
+      REGISTRY: ghcr.io
+      IMAGE_NAME: ${{ github.repository }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -53,9 +55,19 @@ jobs:
       - name: Log in to container registry
         uses: docker/login-action@v3
         with:
-          registry: ${{ secrets.CI_REGISTRY }}
-          username: ${{ secrets.CI_REGISTRY_USER }}
-          password: ${{ secrets.CI_REGISTRY_PASSWORD }}
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata (tags, labels)
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=sha,format=long
+            type=raw,value=${{ github.sha }}-${{ github.run_number }}
+            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
 
       - name: Build and push
         uses: docker/build-push-action@v6
@@ -63,7 +75,8 @@ jobs:
           context: .
           push: true
           platforms: linux/amd64
-          tags: ${{ secrets.CI_REGISTRY }}/${{ github.repository }}:${{ github.sha }}-${{ github.run_number }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
 
   update_manifest:
     name: Update Kube Manifest
@@ -89,16 +102,15 @@ jobs:
         working-directory: manifests/bluebubbles-chatgpt-agent
         env:
           # Set this secret to the image name used in your manifests, e.g. "registry.breland.io/omega-bred/bluebubbles-chatgpt-agent"
-          # If not set, it falls back to "${{ secrets.CI_REGISTRY }}/${{ github.repository }}"
+          # If not set, it falls back to "ghcr.io/${{ github.repository }}"
           KUSTOMIZE_IMAGE_NAME: ${{ secrets.KUSTOMIZE_IMAGE_NAME }}
-          CI_REGISTRY: ${{ secrets.CI_REGISTRY }}
           BUILD_SHA: ${{ github.sha }}
           BUILD_RUN_NUMBER: ${{ github.run_number }}
         run: |
           set -euo pipefail
           IMAGE_NAME="${KUSTOMIZE_IMAGE_NAME:-}"
           if [ -z "$IMAGE_NAME" ]; then
-            IMAGE_NAME="${CI_REGISTRY}/${{ github.repository }}"
+            IMAGE_NAME="ghcr.io/${{ github.repository }}"
           fi
           NEW_TAG="${BUILD_SHA}-${BUILD_RUN_NUMBER}"
           echo "Setting image ${IMAGE_NAME} to tag ${NEW_TAG}"
