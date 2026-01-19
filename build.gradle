@@ -208,7 +208,7 @@ dependencies {
     implementation 'com.auth0:java-jwt:4.5.0'
 
 
-    implementation("com.openai:openai-java-spring-boot-starter:4.14.0")
+    implementation("com.openai:openai-java-spring-boot-starter:4.15.0")
 
     implementation 'io.micrometer:micrometer-core'
     runtimeOnly 'io.micrometer:micrometer-registry-influx'
