@@ -177,8 +177,8 @@ dependencies {
 
 
     // lombok
-	compileOnly 'org.projectlombok:lombok:1.18.38'
-	annotationProcessor 'org.projectlombok:lombok:1.18.38'
+	compileOnly 'org.projectlombok:lombok:1.18.42'
+	annotationProcessor 'org.projectlombok:lombok:1.18.42'
 	implementation platform('org.apache.logging.log4j:log4j-bom:2.24.0')
     implementation platform("org.springframework.ai:spring-ai-bom:1.1.2")
 
