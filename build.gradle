@@ -8,7 +8,7 @@ plugins {
 	id 'io.spring.dependency-management' version '1.1.7'
 	id 'org.openapi.generator' version '7.8.0'
 	id 'com.diffplug.spotless' version '7.0.3'
-    id "org.flywaydb.flyway" version "10.20.1"
+    id "org.flywaydb.flyway" version "11.20.2"
 }
 
 var grp = 'io.breland.bbagent'
