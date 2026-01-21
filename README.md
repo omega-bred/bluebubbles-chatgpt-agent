@@ -46,6 +46,8 @@ npm run dev
 
 ## Configuration
 
+You must have BlueBubbles running / set up. Add a webhook pointing to this server. The path is `http://$bb_agent_host:$bb_agent_port//api/v1/bluebubbles/messageReceived.message`.
+
 All configuration is via environment variables (with defaults in
 `src/main/resources/application.properties`).
 
