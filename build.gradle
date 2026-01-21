@@ -193,7 +193,7 @@ dependencies {
 	runtimeOnly 'org.glassfish.jaxb:jaxb-runtime:2.3.8'
 	implementation 'jakarta.validation:jakarta.validation-api:3.1.0'
 	implementation 'jakarta.annotation:jakarta.annotation-api:3.0.0'
-	implementation 'org.openapitools:jackson-databind-nullable:0.2.6'
+	implementation 'org.openapitools:jackson-databind-nullable:0.2.8'
     implementation "org.springframework.boot:spring-boot-starter-webflux"
 
 
