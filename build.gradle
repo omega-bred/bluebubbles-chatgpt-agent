@@ -219,7 +219,7 @@ dependencies {
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
 
     // generated java client
-    implementation "org.springframework:spring-webflux:6.2.7"
+    implementation "org.springframework:spring-webflux:7.0.3"
     implementation "jakarta.annotation:jakarta.annotation-api:3.0.0"
     implementation 'joda-time:joda-time:2.14.0'
     implementation "com.fasterxml.jackson.datatype:jackson-datatype-jsr310"
