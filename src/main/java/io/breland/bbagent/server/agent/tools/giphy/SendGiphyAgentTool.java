@@ -69,6 +69,9 @@ public class SendGiphyAgentTool implements ToolProvider {
     if (query == null || query.isBlank()) {
       return "missing query";
     }
+    if (!context.canSendResponses()) {
+      return "skipped: outdated workflow";
+    }
     String caption = request.caption();
     String rating = request.rating();
     String lang = request.lang();

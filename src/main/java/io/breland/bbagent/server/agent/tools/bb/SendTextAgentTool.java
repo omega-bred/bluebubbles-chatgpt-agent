@@ -104,6 +104,9 @@ public class SendTextAgentTool implements ToolProvider {
           if (message == null || message.isBlank()) {
             return "missing message";
           }
+          if (!context.canSendResponses()) {
+            return "skipped: outdated workflow";
+          }
           request.setChatGuid(chatGuid);
           request.setMessage(message);
           request.setTempGuid(UUID.randomUUID().toString());

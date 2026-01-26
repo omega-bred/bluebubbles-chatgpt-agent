@@ -1,5 +1,7 @@
 package io.breland.bbagent.server.agent;
 
+import static io.breland.bbagent.server.agent.AgentResponseHelper.parseReactionText;
+
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.openai.client.OpenAIClient;
@@ -31,11 +33,13 @@ import java.nio.file.Path;
 import java.time.Instant;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.lang.Nullable;
 import org.springframework.stereotype.Service;
 
 @Service
@@ -80,7 +84,11 @@ public class BBMessageAgent {
   private final ObjectMapper objectMapper;
   @Getter private final Map<String, ConversationState> conversations = new ConcurrentHashMap<>();
   private final AgentSettingsStore agentSettingsStore;
+  private final AgentWorkflowProperties workflowProperties;
+  private final CadenceWorkflowLauncher cadenceWorkflowLauncher;
   private final Map<String, AgentTool> tools = new ConcurrentHashMap<>();
+  private final AtomicLong workflowSequence = new AtomicLong();
+  private final AtomicLong latestWorkflowSequence = new AtomicLong();
 
   public ObjectMapper getObjectMapper() {
     return objectMapper;
@@ -107,13 +115,17 @@ public class BBMessageAgent {
       GcalClient gcalClient,
       GiphyClient giphyClient,
       AgentSettingsStore agentSettingsStore,
-      ObjectMapper objectMapper) {
+      AgentWorkflowProperties workflowProperties,
+      ObjectMapper objectMapper,
+      @Nullable CadenceWorkflowLauncher cadenceWorkflowLauncher) {
     this.bbHttpClientWrapper = bbHttpClientWrapper;
     this.mem0Client = mem0Client;
     this.gcalClient = gcalClient;
     this.giphyClient = giphyClient;
     this.agentSettingsStore = agentSettingsStore;
+    this.workflowProperties = workflowProperties;
     this.objectMapper = objectMapper;
+    this.cadenceWorkflowLauncher = cadenceWorkflowLauncher;
     registerBuiltInTools();
   }
 
@@ -123,14 +135,18 @@ public class BBMessageAgent {
       Mem0Client mem0Client,
       GcalClient gcalClient,
       GiphyClient giphyClient,
-      AgentSettingsStore agentSettingsStore) {
+      AgentSettingsStore agentSettingsStore,
+      AgentWorkflowProperties workflowProperties,
+      @Nullable CadenceWorkflowLauncher cadenceWorkflowLauncher) {
     this.openAIClient = openAIClient;
     this.bbHttpClientWrapper = bbHttpClientWrapper;
     this.mem0Client = mem0Client;
     this.gcalClient = gcalClient;
     this.giphyClient = giphyClient;
     this.agentSettingsStore = agentSettingsStore;
+    this.workflowProperties = workflowProperties;
     this.objectMapper = new ObjectMapper();
+    this.cadenceWorkflowLauncher = cadenceWorkflowLauncher;
     registerBuiltInTools();
   }
 
@@ -183,6 +199,7 @@ public class BBMessageAgent {
               }
               return stateToHydrate;
             });
+    AgentWorkflowContext workflowContext;
     synchronized (state) {
       String fingerprint = message.computeMessageFingerprint();
       if (message.messageGuid() != null
@@ -194,15 +211,36 @@ public class BBMessageAgent {
         log.warn("Dropping duplicate message [ fingerprint ] {}", message);
         return;
       }
-      Response response = runAssistant(state, message);
-      if (response != null) {
-        Instant timestamp = message.timestamp() != null ? message.timestamp() : Instant.now();
-        state.addTurn(ConversationTurn.user(message.summaryForHistory(), timestamp));
+      String workflowId = resolveWorkflowId(message);
+      if (workflowId != null && workflowId.equals(state.getLastRespondedWorkflowId())) {
+        log.warn("Dropping message [ workflow responded ] {}", message);
+        return;
       }
-      state.setLastProcessedMessageGuid(message.messageGuid());
-      state.setLastProcessedMessageFingerprint(fingerprint);
-      updateThreadContext(state, message);
+      if (workflowId != null && workflowId.equals(state.getLastStartedWorkflowId())) {
+        log.warn("Dropping message [ workflow already started ] {}", message);
+        return;
+      }
+      long sequence = workflowSequence.incrementAndGet();
+      latestWorkflowSequence.set(sequence);
+      state.setLastStartedWorkflowId(workflowId);
+      state.setLatestWorkflowSequence(sequence);
+      workflowContext =
+          new AgentWorkflowContext(
+              workflowId, message.chatGuid(), message.messageGuid(), sequence, Instant.now());
     }
+    if (workflowProperties.useCadenceWorkflow()) {
+      log.info("Responding via cadence workflow");
+      if (cadenceWorkflowLauncher == null) {
+        log.warn("Cadence workflow launcher is not configured; skipping message {}", message);
+        return;
+      }
+      CadenceMessageWorkflowRequest request =
+          new CadenceMessageWorkflowRequest(workflowContext, message);
+      cadenceWorkflowLauncher.startWorkflow(request);
+      return;
+    }
+    log.info("Responding via inline workflow");
+    runMessageWorkflow(state, message, workflowContext);
   }
 
   private boolean shouldProcess(IncomingMessage message) {
@@ -233,6 +271,89 @@ public class BBMessageAgent {
     return true;
   }
 
+  private String resolveWorkflowId(IncomingMessage message) {
+    if (message == null) {
+      return null;
+    }
+    if (message.messageGuid() != null && !message.messageGuid().isBlank()) {
+      return message.messageGuid();
+    }
+    String fingerprint = message.computeMessageFingerprint();
+    if (fingerprint != null && !fingerprint.isBlank()) {
+      return fingerprint;
+    }
+    if (message.chatGuid() != null && !message.chatGuid().isBlank()) {
+      return message.chatGuid() + "|" + Instant.now().toEpochMilli();
+    }
+    return UUID.randomUUID().toString();
+  }
+
+  private void runMessageWorkflow(
+      ConversationState state, IncomingMessage message, AgentWorkflowContext workflowContext) {
+    Response response = null;
+    try {
+      response = runAssistant(state, message, workflowContext);
+    } catch (RuntimeException e) {
+      log.warn("Workflow failed for {}", message, e);
+    } finally {
+      synchronized (state) {
+        if (response != null) {
+          Instant timestamp = message.timestamp() != null ? message.timestamp() : Instant.now();
+          state.addTurn(ConversationTurn.user(message.summaryForHistory(), timestamp));
+        }
+        state.setLastProcessedMessageGuid(message.messageGuid());
+        state.setLastProcessedMessageFingerprint(message.computeMessageFingerprint());
+        updateThreadContext(state, message);
+        if (workflowContext != null && workflowContext.workflowId() != null) {
+          state.setLastRespondedWorkflowId(workflowContext.workflowId());
+        }
+      }
+    }
+  }
+
+  public void runMessageWorkflowForCadence(
+      IncomingMessage message, AgentWorkflowContext workflowContext) {
+    if (message == null || message.chatGuid() == null || message.chatGuid().isBlank()) {
+      return;
+    }
+    ConversationState state =
+        conversations.computeIfAbsent(message.chatGuid(), key -> new ConversationState());
+    runMessageWorkflow(state, message, workflowContext);
+  }
+
+  public boolean canSendResponses(AgentWorkflowContext workflowContext) {
+    if (workflowContext == null) {
+      return true;
+    }
+    if (workflowContext.chatGuid() == null || workflowContext.chatGuid().isBlank()) {
+      return true;
+    }
+    ConversationState state = conversations.get(workflowContext.chatGuid());
+    if (state == null) {
+      return true;
+    }
+    synchronized (state) {
+      if (workflowContext.workflowId() != null
+          && workflowContext.workflowId().equals(state.getLastRespondedWorkflowId())) {
+        return false;
+      }
+      long latestSequence = state.getLatestWorkflowSequence();
+      if (latestSequence > 0 && latestSequence != workflowContext.sequence()) {
+        return false;
+      }
+      if (workflowContext.workflowId() != null
+          && state.getLastStartedWorkflowId() != null
+          && !workflowContext.workflowId().equals(state.getLastStartedWorkflowId())) {
+        return false;
+      }
+    }
+    long globalLatest = latestWorkflowSequence.get();
+    if (globalLatest > 0 && globalLatest != workflowContext.sequence()) {
+      return false;
+    }
+    return true;
+  }
+
   private boolean isSilentInvocation(String text) {
     if (text == null) {
       return false;
@@ -258,10 +379,11 @@ public class BBMessageAgent {
     return false;
   }
 
-  private Response runAssistant(ConversationState state, IncomingMessage message) {
-    List<ResponseInputItem> inputItems = buildConversationInput(state, message);
+  Response runAssistant(
+      ConversationState state, IncomingMessage message, AgentWorkflowContext workflowContext) {
+    List<ResponseInputItem> inputItems = buildConversationInput(state.history(), message);
     log.trace("Getting response for {}", inputItems.toString());
-    Response response = createResponse(inputItems, message);
+    Response response = createResponse(inputItems, message, workflowContext);
     if (response == null) {
       log.warn("Got a null response for {}", message.text());
       return null;
@@ -271,7 +393,7 @@ public class BBMessageAgent {
     boolean sentReactionByTool = false;
     int loops = 0;
     while (loops < MAX_TOOL_LOOPS) {
-      List<ResponseFunctionToolCall> toolCalls = extractFunctionCalls(response);
+      List<ResponseFunctionToolCall> toolCalls = AgentResponseHelper.extractFunctionCalls(response);
       log.debug(toolCalls.toString());
       if (toolCalls.isEmpty()) {
         break;
@@ -285,13 +407,15 @@ public class BBMessageAgent {
       }
       List<ResponseInputItem> toolContinuation = new ArrayList<>(inputItems);
       log.debug(toolContinuation.toString());
-      toolContinuation.addAll(extractToolContextItems(response));
-      toolContinuation.addAll(executeToolCalls(toolCalls, message));
-      response = createResponse(toolContinuation, message);
+      toolContinuation.addAll(AgentResponseHelper.extractToolContextItems(response));
+      toolContinuation.addAll(executeToolCalls(toolCalls, message, workflowContext));
+      response = createResponse(toolContinuation, message, workflowContext);
       inputItems = toolContinuation;
       loops++;
     }
-    String assistantText = normalizeAssistantText(extractResponseText(response));
+    String assistantText =
+        AgentResponseHelper.normalizeAssistantText(
+            objectMapper, AgentResponseHelper.extractResponseText(response));
     List<GeneratedImage> generatedImages = extractGeneratedImages(response);
     log.info("Extracted " + generatedImages.size() + " images from assistant response");
     boolean sentImageByMultipart = false;
@@ -310,10 +434,14 @@ public class BBMessageAgent {
       for (GeneratedImage image : generatedImages) {
         attachments.add(new BBHttpClientWrapper.AttachmentData(image.filename(), image.bytes()));
       }
-      sentImageByMultipart =
-          bbHttpClientWrapper.sendMultipartMessage(message.chatGuid(), caption, attachments);
-      if (sentImageByMultipart && caption != null && !caption.isBlank()) {
-        sentTextByTool = true;
+      if (canSendResponses(workflowContext)) {
+        sentImageByMultipart =
+            bbHttpClientWrapper.sendMultipartMessage(message.chatGuid(), caption, attachments);
+        if (sentImageByMultipart && caption != null && !caption.isBlank()) {
+          sentTextByTool = true;
+        }
+      } else {
+        log.info("Skipping multipart image send for outdated workflow {}", workflowContext);
       }
     }
     Optional<String> parsedReaction = parseReactionText(assistantText);
@@ -321,8 +449,11 @@ public class BBMessageAgent {
       String reaction = parsedReaction.get();
       if (sentReactionByTool) {
         log.debug("Skipping reaction text output since reaction tool already ran");
-      } else if (bbHttpClientWrapper.sendReactionDirect(message, reaction)) {
-        state.addTurn(ConversationTurn.assistant("[reaction: " + reaction + "]", Instant.now()));
+      } else if (canSendResponses(workflowContext)
+          && bbHttpClientWrapper.sendReactionDirect(message, reaction)) {
+        synchronized (state) {
+          state.addTurn(ConversationTurn.assistant("[reaction: " + reaction + "]", Instant.now()));
+        }
       } else {
         log.warn("Unable to send reaction for assistant text: {}", assistantText);
       }
@@ -330,13 +461,23 @@ public class BBMessageAgent {
     }
     if (!assistantText.isBlank() && !NO_RESPONSE_TEXT.equalsIgnoreCase(assistantText.trim())) {
       log.info("Assistant reply text: {}", assistantText);
-      if (!sentTextByTool && !sentImageByMultipart) {
+      if (!sentTextByTool && !sentImageByMultipart && canSendResponses(workflowContext)) {
         sendThreadAwareText(message, assistantText.trim());
+      } else if (!canSendResponses(workflowContext)) {
+        log.info("Skipping direct response send for outdated workflow {}", workflowContext);
       }
-      state.addTurn(ConversationTurn.assistant(assistantText.trim(), Instant.now()));
+      if (canSendResponses(workflowContext)) {
+        synchronized (state) {
+          state.addTurn(ConversationTurn.assistant(assistantText.trim(), Instant.now()));
+        }
+      }
     } else {
       if (sentImageByMultipart) {
-        state.addTurn(ConversationTurn.assistant("[image]", Instant.now()));
+        if (canSendResponses(workflowContext)) {
+          synchronized (state) {
+            state.addTurn(ConversationTurn.assistant("[image]", Instant.now()));
+          }
+        }
       } else {
         log.info("No assistant reply generated");
       }
@@ -344,7 +485,7 @@ public class BBMessageAgent {
     return response;
   }
 
-  private void sendThreadAwareText(IncomingMessage message, String text) {
+  void sendThreadAwareText(IncomingMessage message, String text) {
     if (message == null || text == null || text.isBlank()) {
       return;
     }
@@ -360,7 +501,14 @@ public class BBMessageAgent {
     bbHttpClientWrapper.sendTextDirect(request);
   }
 
-  private Response createResponse(List<ResponseInputItem> inputItems, IncomingMessage message) {
+  BBHttpClientWrapper getBbHttpClientWrapper() {
+    return bbHttpClientWrapper;
+  }
+
+  Response createResponse(
+      List<ResponseInputItem> inputItems,
+      IncomingMessage message,
+      AgentWorkflowContext workflowContext) {
     ResponseCreateParams.Builder params =
         ResponseCreateParams.builder()
             .addTool(
@@ -397,63 +545,43 @@ public class BBMessageAgent {
     }
   }
 
-  private List<ResponseFunctionToolCall> extractFunctionCalls(Response response) {
-    if (response == null || response.output() == null) {
-      return List.of();
-    }
-    List<ResponseFunctionToolCall> calls = new ArrayList<>();
-    for (ResponseOutputItem item : response.output()) {
-      if (item.functionCall().isPresent()) {
-        calls.add(item.functionCall().get());
-      }
-    }
-    return calls;
-  }
-
-  private List<ResponseInputItem> extractToolContextItems(Response response) {
-    if (response == null || response.output() == null) {
-      return List.of();
-    }
-    List<ResponseInputItem> items = new ArrayList<>();
-    for (ResponseOutputItem item : response.output()) {
-      if (item.reasoning().isPresent()) {
-        items.add(ResponseInputItem.ofReasoning(item.reasoning().get()));
-      }
-      if (item.functionCall().isPresent()) {
-        items.add(ResponseInputItem.ofFunctionCall(item.functionCall().get()));
-      }
-    }
-    return items;
-  }
-
-  private List<ResponseInputItem> executeToolCalls(
-      List<ResponseFunctionToolCall> toolCalls, IncomingMessage message) {
+  List<ResponseInputItem> executeToolCalls(
+      List<ResponseFunctionToolCall> toolCalls,
+      IncomingMessage message,
+      AgentWorkflowContext workflowContext) {
     List<ResponseInputItem> outputs = new ArrayList<>();
     for (ResponseFunctionToolCall toolCall : toolCalls) {
-      log.info("Invoking tool {}", toolCall.name());
-      AgentTool tool = tools.get(toolCall.name());
-      String output;
-      try {
-        JsonNode args = objectMapper.readTree(toolCall.arguments());
-        args = applyThreadReplyDefaults(toolCall.name(), args, message);
-        if (tool == null) {
-          output = "Unknown tool: " + toolCall.name();
-        } else {
-          output = tool.handler().apply(new ToolContext(this, message), args);
-        }
-      } catch (Exception e) {
-        output = "Tool call failed: " + e.getMessage();
-        log.warn("Tool call failed: {}", toolCall.name(), e);
-      }
-
-      ResponseInputItem.FunctionCallOutput toolOutput =
-          ResponseInputItem.FunctionCallOutput.builder()
-              .callId(toolCall.callId())
-              .output(output)
-              .build();
-      outputs.add(ResponseInputItem.ofFunctionCallOutput(toolOutput));
+      outputs.add(runToolActivity(toolCall, message, workflowContext));
     }
     return outputs;
+  }
+
+  private ResponseInputItem runToolActivity(
+      ResponseFunctionToolCall toolCall,
+      IncomingMessage message,
+      AgentWorkflowContext workflowContext) {
+    log.info("Invoking tool {}", toolCall.name());
+    AgentTool tool = tools.get(toolCall.name());
+    String output;
+    try {
+      JsonNode args = objectMapper.readTree(toolCall.arguments());
+      args = applyThreadReplyDefaults(toolCall.name(), args, message);
+      if (tool == null) {
+        output = "Unknown tool: " + toolCall.name();
+      } else {
+        output = tool.handler().apply(new ToolContext(this, message, workflowContext), args);
+      }
+    } catch (Exception e) {
+      output = "Tool call failed: " + e.getMessage();
+      log.warn("Tool call failed: {}", toolCall.name(), e);
+    }
+
+    ResponseInputItem.FunctionCallOutput toolOutput =
+        ResponseInputItem.FunctionCallOutput.builder()
+            .callId(toolCall.callId())
+            .output(output)
+            .build();
+    return ResponseInputItem.ofFunctionCallOutput(toolOutput);
   }
 
   private JsonNode applyThreadReplyDefaults(
@@ -478,25 +606,6 @@ public class BBMessageAgent {
     return objectNode;
   }
 
-  private Optional<String> parseReactionText(String text) {
-    if (text == null) {
-      return Optional.empty();
-    }
-    String trimmed = text.trim();
-    if (!trimmed.startsWith("[reaction:") || !trimmed.endsWith("]")) {
-      return Optional.empty();
-    }
-    String inner = trimmed.substring("[reaction:".length(), trimmed.length() - 1).trim();
-    if (inner.isBlank()) {
-      return Optional.empty();
-    }
-    String reaction = inner.toLowerCase(Locale.ROOT);
-    if (!SUPPORTED_REACTIONS.contains(reaction)) {
-      return Optional.empty();
-    }
-    return Optional.of(reaction);
-  }
-
   private boolean shouldIncludeTool(AgentTool tool, IncomingMessage message) {
     if (GROUP_ONLY_TOOLS.contains(tool.name())) {
       return AgentTool.isGroupMessage(message);
@@ -504,50 +613,7 @@ public class BBMessageAgent {
     return true;
   }
 
-  private String extractResponseText(Response response) {
-    if (response == null || response.output() == null) {
-      return "";
-    }
-    StringBuilder builder = new StringBuilder();
-    for (ResponseOutputItem item : response.output()) {
-      if (item.message().isEmpty()) {
-        continue;
-      }
-      ResponseOutputMessage message = item.message().get();
-      for (ResponseOutputMessage.Content content : message.content()) {
-        if (content.isOutputText()) {
-          if (builder.length() > 0) {
-            builder.append(' ');
-          }
-          builder.append(content.asOutputText().text());
-        }
-      }
-    }
-    return builder.toString().trim();
-  }
-
-  private String normalizeAssistantText(String text) {
-    if (text == null) {
-      return "";
-    }
-    String trimmed = text.trim();
-    if (trimmed.startsWith("{") && trimmed.endsWith("}")) {
-      try {
-        JsonNode node = objectMapper.readTree(trimmed);
-        JsonNode messageNode = node.get("message");
-        if (messageNode != null && messageNode.isTextual()) {
-          return messageNode.asText().trim();
-        }
-      } catch (Exception ignored) {
-        return trimmed;
-      }
-    }
-    return trimmed;
-  }
-
-  private record GeneratedImage(byte[] bytes, String filename) {}
-
-  private List<GeneratedImage> extractGeneratedImages(Response response) {
+  List<GeneratedImage> extractGeneratedImages(Response response) {
     if (response == null || response.output() == null) {
       return List.of();
     }
@@ -632,7 +698,7 @@ public class BBMessageAgent {
     }
   }
 
-  private void updateThreadContext(ConversationState state, IncomingMessage message) {
+  void updateThreadContext(ConversationState state, IncomingMessage message) {
     if (state == null || message == null) {
       return;
     }
@@ -668,14 +734,16 @@ public class BBMessageAgent {
     return null;
   }
 
-  private List<ResponseInputItem> buildConversationInput(
-      ConversationState state, IncomingMessage message) {
+  List<ResponseInputItem> buildConversationInput(
+      List<ConversationTurn> history, IncomingMessage message) {
     List<ResponseInputItem> items = new ArrayList<>();
     boolean isGroupMessage = AgentTool.isGroupMessage(message);
     items.add(ResponseInputItem.ofEasyInputMessage(systemMessage(isGroupMessage, message)));
     items.add(ResponseInputItem.ofEasyInputMessage(developerMessage()));
-    for (ConversationTurn turn : state.history()) {
-      items.add(ResponseInputItem.ofEasyInputMessage(turn.toEasyInputMessage()));
+    if (history != null) {
+      for (ConversationTurn turn : history) {
+        items.add(ResponseInputItem.ofEasyInputMessage(turn.toEasyInputMessage()));
+      }
     }
     items.add(ResponseInputItem.ofEasyInputMessage(userMessage(message)));
     return items;
