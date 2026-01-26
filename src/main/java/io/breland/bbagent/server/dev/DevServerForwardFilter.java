@@ -144,6 +144,9 @@ public class DevServerForwardFilter extends OncePerRequestFilter {
         }
       }
       return mapping != null;
+    } catch (IllegalStateException ex) {
+      // nothing
+      return false;
     } catch (Exception ex) {
       throw new ServletException(ex);
     }
