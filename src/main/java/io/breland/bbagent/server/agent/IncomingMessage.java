@@ -1,6 +1,7 @@
 package io.breland.bbagent.server.agent;
 
 import io.breland.bbagent.generated.bluebubblesclient.model.ApiV1ChatChatGuidMessageGet200ResponseDataInner;
+import io.breland.bbagent.server.agent.cadence.models.IncomingAttachment;
 import java.time.Instant;
 import java.util.List;
 
@@ -41,7 +42,7 @@ public record IncomingMessage(
     return sender + "|" + text + "|" + timestamp + "|" + attachmentCount;
   }
 
-  String summaryForHistory() {
+  public String summaryForHistory() {
     StringBuilder builder = new StringBuilder();
     if (sender != null && !sender.isBlank()) {
       builder.append(sender).append(": ");

@@ -1,8 +1,10 @@
-package io.breland.bbagent.server.agent;
+package io.breland.bbagent.server.agent.cadence;
 
 import com.uber.cadence.WorkflowIdReusePolicy;
 import com.uber.cadence.client.WorkflowClient;
 import com.uber.cadence.client.WorkflowOptions;
+import io.breland.bbagent.server.agent.AgentWorkflowProperties;
+import io.breland.bbagent.server.agent.cadence.models.CadenceMessageWorkflowRequest;
 import java.time.Duration;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
@@ -31,7 +33,7 @@ public class CadenceWorkflowLauncher {
         new WorkflowOptions.Builder()
             .setTaskList(workflowProperties.getCadenceTaskList())
             .setWorkflowId(request.workflowContext().workflowId())
-            .setWorkflowIdReusePolicy(WorkflowIdReusePolicy.RejectDuplicate)
+            .setWorkflowIdReusePolicy(WorkflowIdReusePolicy.TerminateIfRunning)
             .setExecutionStartToCloseTimeout(Duration.ofMinutes(5))
             .setTaskStartToCloseTimeout(Duration.ofMinutes(1))
             .build();

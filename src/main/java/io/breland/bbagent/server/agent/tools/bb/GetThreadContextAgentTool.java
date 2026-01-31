@@ -7,7 +7,7 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import io.breland.bbagent.server.agent.BBHttpClientWrapper;
 import io.breland.bbagent.server.agent.ConversationState;
-import io.breland.bbagent.server.agent.IncomingAttachment;
+import io.breland.bbagent.server.agent.cadence.models.IncomingAttachment;
 import io.breland.bbagent.server.agent.tools.AgentTool;
 import io.breland.bbagent.server.agent.tools.ToolContext;
 import io.breland.bbagent.server.agent.tools.ToolProvider;

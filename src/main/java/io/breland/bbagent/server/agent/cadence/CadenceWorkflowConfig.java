@@ -1,4 +1,4 @@
-package io.breland.bbagent.server.agent;
+package io.breland.bbagent.server.agent.cadence;
 
 import com.google.gson.JsonDeserializationContext;
 import com.google.gson.JsonDeserializer;
@@ -16,6 +16,7 @@ import com.uber.cadence.serviceclient.ClientOptions;
 import com.uber.cadence.serviceclient.WorkflowServiceTChannel;
 import com.uber.cadence.worker.Worker;
 import com.uber.cadence.worker.WorkerFactory;
+import io.breland.bbagent.server.agent.AgentWorkflowProperties;
 import java.lang.reflect.Type;
 import java.time.Instant;
 import java.time.format.DateTimeParseException;

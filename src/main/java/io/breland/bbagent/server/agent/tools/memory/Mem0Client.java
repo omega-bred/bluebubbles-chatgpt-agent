@@ -28,15 +28,17 @@ public class Mem0Client {
   private final String orgId;
   private final String projectId;
   @Getter private final boolean configured;
-  private final ObjectMapper objectMapper = new ObjectMapper();
+  @Getter private final ObjectMapper objectMapper;
 
   public Mem0Client(
       @Value("${mem0.base-url}") String baseUrl,
       @Value("${mem0.api-key}") String apiKey,
       @Value("${mem0.org-id:}") String orgId,
-      @Value("${mem0.project-id:}") String projectId) {
+      @Value("${mem0.project-id:}") String projectId,
+      ObjectMapper objectMapper) {
     this.orgId = orgId;
     this.projectId = projectId;
+    this.objectMapper = objectMapper;
     this.configured = apiKey != null && !apiKey.isBlank() && !"fake_key".equals(apiKey);
     HttpClient httpClient =
         HttpClient.create()

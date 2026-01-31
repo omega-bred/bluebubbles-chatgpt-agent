@@ -45,13 +45,13 @@ public class BBHttpClientWrapper {
 
   private final String password;
 
-  @Getter
-  private final ObjectMapper objectMapper = new ObjectMapper().registerModule(new JavaTimeModule());
+  @Getter private final ObjectMapper objectMapper;
 
   @Autowired
   public BBHttpClientWrapper(
       @Value("${bluebubbles.basePath}") String basePath,
-      @Value("${bluebubbles.password}") String password) {
+      @Value("${bluebubbles.password}") String password,
+      ObjectMapper objectMapper) {
     this.password = password;
     this.apiClient = new ApiClient();
     this.apiClient.setBasePath(basePath);
@@ -61,6 +61,7 @@ public class BBHttpClientWrapper {
     this.chatApi = new V1ChatApi(apiClient);
     this.otherApi = new V1OtherApi(apiClient);
     this.icloudApi = new V1ICloudApi(apiClient);
+    this.objectMapper = objectMapper;
   }
 
   BBHttpClientWrapper(String password, V1MessageApi messageApi, V1ContactApi contactApi) {
@@ -71,6 +72,7 @@ public class BBHttpClientWrapper {
     this.chatApi = new V1ChatApi(new ApiClient());
     this.otherApi = new V1OtherApi(new ApiClient());
     this.icloudApi = new V1ICloudApi(new ApiClient());
+    this.objectMapper = new ObjectMapper().registerModule(new JavaTimeModule());
   }
 
   public record AttachmentData(String filename, byte[] bytes) {}

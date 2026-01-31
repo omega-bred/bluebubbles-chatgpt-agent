@@ -1,7 +1,5 @@
 package io.breland.bbagent.server.agent.tools;
 
-import static io.breland.bbagent.server.controllers.BluebubblesWebhookController.GROUP_PREFIX;
-
 import com.openai.models.responses.FunctionTool;
 import io.breland.bbagent.server.agent.IncomingMessage;
 
@@ -21,16 +19,6 @@ public record AgentTool(
         .build();
   }
 
-  public static boolean isGroupMessage(IncomingMessage message) {
-    if (message == null) {
-      return false;
-    }
-    if (message.isGroup() != null && message.isGroup()) {
-      return true;
-    }
-    return message.chatGuid().startsWith(GROUP_PREFIX);
-  }
-
   public static String getSenderId(IncomingMessage message) {
     if (message == null) {
       return null;
@@ -48,7 +36,7 @@ public record AgentTool(
     }
     String sender = message.sender();
     String chatGuid = message.chatGuid();
-    if (isGroupMessage(message)) {
+    if (message.isGroup()) {
       if (chatGuid != null && !chatGuid.isBlank()) {
         return chatGuid;
       }

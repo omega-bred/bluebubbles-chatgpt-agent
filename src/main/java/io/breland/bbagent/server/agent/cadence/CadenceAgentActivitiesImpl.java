@@ -1,8 +1,11 @@
-package io.breland.bbagent.server.agent;
+package io.breland.bbagent.server.agent.cadence;
 
 import com.openai.models.responses.Response;
 import com.openai.models.responses.ResponseFunctionToolCall;
 import com.openai.models.responses.ResponseInputItem;
+import io.breland.bbagent.server.agent.*;
+import io.breland.bbagent.server.agent.cadence.models.GeneratedImage;
+import io.breland.bbagent.server.agent.cadence.models.ImageSendResult;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
@@ -12,9 +15,11 @@ import org.springframework.stereotype.Component;
 public class CadenceAgentActivitiesImpl implements CadenceAgentActivities {
 
   private final BBMessageAgent messageAgent;
+  private final BBHttpClientWrapper httpClient;
 
-  public CadenceAgentActivitiesImpl(BBMessageAgent messageAgent) {
+  public CadenceAgentActivitiesImpl(BBMessageAgent messageAgent, BBHttpClientWrapper httpClient) {
     this.messageAgent = messageAgent;
+    this.httpClient = httpClient;
   }
 
   @Override
@@ -67,10 +72,7 @@ public class CadenceAgentActivitiesImpl implements CadenceAgentActivities {
     if (!messageAgent.canSendResponses(workflowContext)) {
       return new ImageSendResult(false, false);
     }
-    boolean sent =
-        messageAgent
-            .getBbHttpClientWrapper()
-            .sendMultipartMessage(message.chatGuid(), caption, attachments);
+    boolean sent = this.httpClient.sendMultipartMessage(message.chatGuid(), caption, attachments);
     boolean captionSent = sent && caption != null && !caption.isBlank();
     return new ImageSendResult(sent, captionSent);
   }
@@ -81,7 +83,7 @@ public class CadenceAgentActivitiesImpl implements CadenceAgentActivities {
     if (!messageAgent.canSendResponses(workflowContext)) {
       return false;
     }
-    boolean sent = messageAgent.getBbHttpClientWrapper().sendReactionDirect(message, reaction);
+    boolean sent = this.httpClient.sendReactionDirect(message, reaction);
     if (sent) {
       recordAssistantTurn(message, "[reaction: " + reaction + "]", workflowContext);
     }

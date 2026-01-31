@@ -11,6 +11,10 @@ import com.openai.models.Reasoning;
 import com.openai.models.ReasoningEffort;
 import com.openai.models.responses.*;
 import io.breland.bbagent.generated.bluebubblesclient.model.ApiV1MessageTextPostRequest;
+import io.breland.bbagent.server.agent.cadence.CadenceWorkflowLauncher;
+import io.breland.bbagent.server.agent.cadence.models.CadenceMessageWorkflowRequest;
+import io.breland.bbagent.server.agent.cadence.models.GeneratedImage;
+import io.breland.bbagent.server.agent.cadence.models.IncomingAttachment;
 import io.breland.bbagent.server.agent.tools.AgentTool;
 import io.breland.bbagent.server.agent.tools.ToolContext;
 import io.breland.bbagent.server.agent.tools.assistant.AssistantNameAgentTool;
@@ -81,7 +85,7 @@ public class BBMessageAgent {
       List.of(
           "reacted ", "loved ", "liked ", "disliked ", "questioned ", "emphasized ", "laughed at ");
 
-  private final ObjectMapper objectMapper;
+  @Getter private final ObjectMapper objectMapper;
   @Getter private final Map<String, ConversationState> conversations = new ConcurrentHashMap<>();
   private final AgentSettingsStore agentSettingsStore;
   private final AgentWorkflowProperties workflowProperties;
@@ -89,10 +93,6 @@ public class BBMessageAgent {
   private final Map<String, AgentTool> tools = new ConcurrentHashMap<>();
   private final AtomicLong workflowSequence = new AtomicLong();
   private final AtomicLong latestWorkflowSequence = new AtomicLong();
-
-  public ObjectMapper getObjectMapper() {
-    return objectMapper;
-  }
 
   private OpenAIClient openAIClient;
   private final Supplier<OpenAIClient> openAiSupplier =
@@ -150,6 +150,46 @@ public class BBMessageAgent {
     registerBuiltInTools();
   }
 
+  private ConversationState computeConversationState(String chatId, IncomingMessage message) {
+    ConversationState stateToHydrate = new ConversationState();
+    log.info("Hydrating conversation state for chat {}", chatId);
+    try {
+      var messages = bbHttpClientWrapper.getMessagesInChat(chatId);
+
+      messages
+          .reversed()
+          .forEach(
+              msg -> {
+                if (msg.getText() != null && msg.getText().length() > 0) {
+                  var turn =
+                      msg.getIsFromMe() != null && msg.getIsFromMe() == true
+                          ? ConversationTurn.assistant(
+                              msg.getText(), Instant.ofEpochSecond(msg.getDateCreated()))
+                          : ConversationTurn.user(
+                              msg.getText(), Instant.ofEpochSecond(msg.getDateCreated()));
+                  if (!msg.getGuid().equals(message.messageGuid())) {
+                    if (!msg.getIsFromMe()) {
+                      stateToHydrate.setLastProcessedMessageGuid(msg.getGuid());
+                      if (msg.getHandle() != null && msg.getHandle().getAddress() != null) {
+                        stateToHydrate.setLastProcessedMessageFingerprint(
+                            IncomingMessage.create(msg).computeMessageFingerprint());
+                      }
+                    }
+                    stateToHydrate.addTurn(turn);
+                  }
+                }
+              });
+
+      log.info(
+          "Hydrated conversation state for chat {} got {} messages from history",
+          chatId,
+          stateToHydrate.history().size());
+    } catch (Exception e) {
+      log.warn("Failed to hydrate conversation state for chat {}", chatId, e);
+    }
+    return stateToHydrate;
+  }
+
   public void handleIncomingMessage(IncomingMessage message) {
     if (!shouldProcess(message)) {
       log.debug("Dropping message {}", message);
@@ -158,47 +198,7 @@ public class BBMessageAgent {
     log.info("Processing Message {}", message);
     ConversationState state =
         conversations.computeIfAbsent(
-            message.chatGuid(),
-            key -> {
-              ConversationState stateToHydrate = new ConversationState();
-              log.info("Hydrating conversation state for chat {}", key);
-              try {
-                var messages = bbHttpClientWrapper.getMessagesInChat(key);
-
-                messages
-                    .reversed()
-                    .forEach(
-                        msg -> {
-                          if (msg.getText() != null && msg.getText().length() > 0) {
-                            var turn =
-                                msg.getIsFromMe() != null && msg.getIsFromMe() == true
-                                    ? ConversationTurn.assistant(
-                                        msg.getText(), Instant.ofEpochSecond(msg.getDateCreated()))
-                                    : ConversationTurn.user(
-                                        msg.getText(), Instant.ofEpochSecond(msg.getDateCreated()));
-                            if (!msg.getGuid().equals(message.messageGuid())) {
-                              if (!msg.getIsFromMe()) {
-                                stateToHydrate.setLastProcessedMessageGuid(msg.getGuid());
-                                if (msg.getHandle() != null
-                                    && msg.getHandle().getAddress() != null) {
-                                  stateToHydrate.setLastProcessedMessageFingerprint(
-                                      IncomingMessage.create(msg).computeMessageFingerprint());
-                                }
-                              }
-                              stateToHydrate.addTurn(turn);
-                            }
-                          }
-                        });
-
-                log.info(
-                    "Hydrated conversation state for chat {} got {} messages from history",
-                    key,
-                    stateToHydrate.history().size());
-              } catch (Exception e) {
-                log.warn("Failed to hydrate conversation state for chat {}", key, e);
-              }
-              return stateToHydrate;
-            });
+            message.chatGuid(), key -> this.computeConversationState(key, message));
     AgentWorkflowContext workflowContext;
     synchronized (state) {
       String fingerprint = message.computeMessageFingerprint();
@@ -256,9 +256,7 @@ public class BBMessageAgent {
     if (message.service() != null && !IMESSAGE_SERVICE.equalsIgnoreCase(message.service())) {
       return false;
     }
-    if (message.text() == null
-        || message.text().isBlank() && message.isGroup() != null && message.isGroup()) {
-      // group name or photo edited.
+    if (message.text() == null || message.text().isBlank()) {
       return false;
     }
     if (isReactionMessage(message.text())) {
@@ -275,16 +273,16 @@ public class BBMessageAgent {
     if (message == null) {
       return null;
     }
-    if (message.messageGuid() != null && !message.messageGuid().isBlank()) {
-      return message.messageGuid();
-    }
-    String fingerprint = message.computeMessageFingerprint();
-    if (fingerprint != null && !fingerprint.isBlank()) {
-      return fingerprint;
-    }
+    // in cadecne - we will terminate an existing workflow with the same id
+    // in both groups, and regular texts - we use the group chat as the main workflow id
+    // such that new messages will cancel current ones.
+    // this is useful if we have an active chat- and we want the response to kind of happen "all at
+    // once"
+    // instead of serially processing
     if (message.chatGuid() != null && !message.chatGuid().isBlank()) {
-      return message.chatGuid() + "|" + Instant.now().toEpochMilli();
+      return message.chatGuid();
     }
+    log.warn("Message did not have a chat guid - this is unexpected");
     return UUID.randomUUID().toString();
   }
 
@@ -317,7 +315,8 @@ public class BBMessageAgent {
       return;
     }
     ConversationState state =
-        conversations.computeIfAbsent(message.chatGuid(), key -> new ConversationState());
+        conversations.computeIfAbsent(
+            message.chatGuid(), key -> computeConversationState(key, message));
     runMessageWorkflow(state, message, workflowContext);
   }
 
@@ -485,7 +484,7 @@ public class BBMessageAgent {
     return response;
   }
 
-  void sendThreadAwareText(IncomingMessage message, String text) {
+  public void sendThreadAwareText(IncomingMessage message, String text) {
     if (message == null || text == null || text.isBlank()) {
       return;
     }
@@ -505,7 +504,7 @@ public class BBMessageAgent {
     return bbHttpClientWrapper;
   }
 
-  Response createResponse(
+  public Response createResponse(
       List<ResponseInputItem> inputItems,
       IncomingMessage message,
       AgentWorkflowContext workflowContext) {
@@ -545,7 +544,7 @@ public class BBMessageAgent {
     }
   }
 
-  List<ResponseInputItem> executeToolCalls(
+  public List<ResponseInputItem> executeToolCalls(
       List<ResponseFunctionToolCall> toolCalls,
       IncomingMessage message,
       AgentWorkflowContext workflowContext) {
@@ -608,12 +607,12 @@ public class BBMessageAgent {
 
   private boolean shouldIncludeTool(AgentTool tool, IncomingMessage message) {
     if (GROUP_ONLY_TOOLS.contains(tool.name())) {
-      return AgentTool.isGroupMessage(message);
+      return message.isGroup();
     }
     return true;
   }
 
-  List<GeneratedImage> extractGeneratedImages(Response response) {
+  public List<GeneratedImage> extractGeneratedImages(Response response) {
     if (response == null || response.output() == null) {
       return List.of();
     }
@@ -698,7 +697,7 @@ public class BBMessageAgent {
     }
   }
 
-  void updateThreadContext(ConversationState state, IncomingMessage message) {
+  public void updateThreadContext(ConversationState state, IncomingMessage message) {
     if (state == null || message == null) {
       return;
     }
@@ -734,10 +733,10 @@ public class BBMessageAgent {
     return null;
   }
 
-  List<ResponseInputItem> buildConversationInput(
+  public List<ResponseInputItem> buildConversationInput(
       List<ConversationTurn> history, IncomingMessage message) {
     List<ResponseInputItem> items = new ArrayList<>();
-    boolean isGroupMessage = AgentTool.isGroupMessage(message);
+    boolean isGroupMessage = message.isGroup();
     items.add(ResponseInputItem.ofEasyInputMessage(systemMessage(isGroupMessage, message)));
     items.add(ResponseInputItem.ofEasyInputMessage(developerMessage()));
     if (history != null) {
@@ -882,7 +881,7 @@ public class BBMessageAgent {
     if (message.sender() != null && !message.sender().isBlank()) {
       text.append(" from ").append(message.sender());
     }
-    if (AgentTool.isGroupMessage(message)) {
+    if (message.isGroup()) {
       text.append(" (group chat)");
       if (message.sender() != null && !message.sender().isBlank()) {
         String knownName = getGlobalNameForSender(message.sender());

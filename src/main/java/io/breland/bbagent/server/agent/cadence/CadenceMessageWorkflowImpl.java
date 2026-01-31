@@ -1,7 +1,8 @@
-package io.breland.bbagent.server.agent;
+package io.breland.bbagent.server.agent.cadence;
 
 import com.uber.cadence.activity.ActivityOptions;
 import com.uber.cadence.workflow.Workflow;
+import io.breland.bbagent.server.agent.cadence.models.CadenceMessageWorkflowRequest;
 import java.time.Duration;
 import lombok.extern.slf4j.Slf4j;
 
