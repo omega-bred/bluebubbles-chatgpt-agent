@@ -92,7 +92,6 @@ public class BBMessageAgent {
   private final CadenceWorkflowLauncher cadenceWorkflowLauncher;
   private final Map<String, AgentTool> tools = new ConcurrentHashMap<>();
   private final AtomicLong workflowSequence = new AtomicLong();
-  private final AtomicLong latestWorkflowSequence = new AtomicLong();
 
   private OpenAIClient openAIClient;
   private final Supplier<OpenAIClient> openAiSupplier =
@@ -221,7 +220,6 @@ public class BBMessageAgent {
         return;
       }
       long sequence = workflowSequence.incrementAndGet();
-      latestWorkflowSequence.set(sequence);
       state.setLastStartedWorkflowId(workflowId);
       state.setLatestWorkflowSequence(sequence);
       workflowContext =
@@ -345,10 +343,6 @@ public class BBMessageAgent {
           && !workflowContext.workflowId().equals(state.getLastStartedWorkflowId())) {
         return false;
       }
-    }
-    long globalLatest = latestWorkflowSequence.get();
-    if (globalLatest > 0 && globalLatest != workflowContext.sequence()) {
-      return false;
     }
     return true;
   }
