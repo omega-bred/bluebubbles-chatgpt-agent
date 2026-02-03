@@ -130,9 +130,6 @@ public class CadenceAgentActivitiesImpl implements CadenceAgentActivities {
       state.setLastProcessedMessageGuid(message.messageGuid());
       state.setLastProcessedMessageFingerprint(message.computeMessageFingerprint());
       messageAgent.updateThreadContext(state, message);
-      if (workflowContext != null && workflowContext.workflowId() != null) {
-        state.setLastRespondedWorkflowId(workflowContext.workflowId());
-      }
     }
   }
 }

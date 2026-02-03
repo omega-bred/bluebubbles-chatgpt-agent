@@ -10,6 +10,9 @@ import com.openai.models.ChatModel;
 import com.openai.models.Reasoning;
 import com.openai.models.ReasoningEffort;
 import com.openai.models.responses.*;
+import com.uber.cadence.WorkflowExecution;
+import com.uber.cadence.workflow.Workflow;
+import com.uber.cadence.workflow.WorkflowInfo;
 import io.breland.bbagent.generated.bluebubblesclient.model.ApiV1MessageTextPostRequest;
 import io.breland.bbagent.server.agent.cadence.CadenceWorkflowLauncher;
 import io.breland.bbagent.server.agent.cadence.models.CadenceMessageWorkflowRequest;
@@ -37,7 +40,6 @@ import java.nio.file.Path;
 import java.time.Instant;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
 import lombok.Getter;
@@ -91,7 +93,6 @@ public class BBMessageAgent {
   private final AgentWorkflowProperties workflowProperties;
   private final CadenceWorkflowLauncher cadenceWorkflowLauncher;
   private final Map<String, AgentTool> tools = new ConcurrentHashMap<>();
-  private final AtomicLong workflowSequence = new AtomicLong();
 
   private OpenAIClient openAIClient;
   private final Supplier<OpenAIClient> openAiSupplier =
@@ -199,7 +200,7 @@ public class BBMessageAgent {
     ConversationState state =
         conversations.computeIfAbsent(
             message.chatGuid(), key -> this.computeConversationState(key, message));
-    AgentWorkflowContext workflowContext;
+
     synchronized (state) {
       String fingerprint = message.computeMessageFingerprint();
       if (message.messageGuid() != null
@@ -211,15 +212,6 @@ public class BBMessageAgent {
         log.warn("Dropping duplicate message [ fingerprint ] {}", message);
         return;
       }
-      String workflowId = resolveWorkflowId(message);
-      if (workflowId != null && workflowId.equals(state.getLastRespondedWorkflowId())) {
-        log.warn("Dropping message [ workflow responded ] {}", message);
-        return;
-      }
-      if (workflowId != null && workflowId.equals(state.getLastStartedWorkflowId())) {
-        log.warn("Dropping message [ workflow already started ] {}", message);
-        return;
-      }
       if (workflowProperties.useCadenceWorkflow()) {
         if (cadenceWorkflowLauncher == null) {
           log.error(
@@ -228,18 +220,17 @@ public class BBMessageAgent {
           return;
         }
       }
-      long sequence = workflowSequence.incrementAndGet();
-      state.setLastStartedWorkflowId(workflowId);
-      state.setLatestWorkflowSequence(sequence);
-      workflowContext =
-          new AgentWorkflowContext(
-              workflowId, message.chatGuid(), message.messageGuid(), sequence, Instant.now());
     }
+    String workflowId = resolveWorkflowId(message);
+    AgentWorkflowContext workflowContext =
+        new AgentWorkflowContext(
+            workflowId, message.chatGuid(), message.messageGuid(), Instant.now());
     if (workflowProperties.useCadenceWorkflow()) {
       log.info("Responding via cadence workflow");
       CadenceMessageWorkflowRequest request =
           new CadenceMessageWorkflowRequest(workflowContext, message);
-      cadenceWorkflowLauncher.startWorkflow(request);
+      WorkflowExecution execution = cadenceWorkflowLauncher.startWorkflow(request);
+      state.setLatestWorkflowRunId(execution.getRunId());
       return;
     }
     log.info("Responding via inline workflow");
@@ -302,9 +293,6 @@ public class BBMessageAgent {
         state.setLastProcessedMessageGuid(message.messageGuid());
         state.setLastProcessedMessageFingerprint(message.computeMessageFingerprint());
         updateThreadContext(state, message);
-        if (workflowContext != null && workflowContext.workflowId() != null) {
-          state.setLastRespondedWorkflowId(workflowContext.workflowId());
-        }
       }
     }
   }
@@ -331,19 +319,13 @@ public class BBMessageAgent {
     if (state == null) {
       return true;
     }
-    synchronized (state) {
-      if (workflowContext.workflowId() != null
-          && workflowContext.workflowId().equals(state.getLastRespondedWorkflowId())) {
-        return false;
-      }
-      long latestSequence = state.getLatestWorkflowSequence();
-      if (latestSequence > 0 && latestSequence != workflowContext.sequence()) {
-        return false;
-      }
-      if (workflowContext.workflowId() != null
-          && state.getLastStartedWorkflowId() != null
-          && !workflowContext.workflowId().equals(state.getLastStartedWorkflowId())) {
-        return false;
+    WorkflowInfo info = Workflow.getWorkflowInfo();
+    if (info != null && info.getRunId() != null) {
+      synchronized (state) {
+        String latestWorkflowRunId = state.getLatestWorkflowRunId();
+        if (!latestWorkflowRunId.equals(info.getRunId())) {
+          return false;
+        }
       }
     }
     return true;

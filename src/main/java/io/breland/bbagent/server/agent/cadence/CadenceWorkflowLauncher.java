@@ -1,11 +1,13 @@
 package io.breland.bbagent.server.agent.cadence;
 
+import com.uber.cadence.WorkflowExecution;
 import com.uber.cadence.WorkflowIdReusePolicy;
 import com.uber.cadence.client.WorkflowClient;
 import com.uber.cadence.client.WorkflowOptions;
 import io.breland.bbagent.server.agent.AgentWorkflowProperties;
 import io.breland.bbagent.server.agent.cadence.models.CadenceMessageWorkflowRequest;
 import java.time.Duration;
+import javax.annotation.Nullable;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.stereotype.Component;
@@ -24,10 +26,10 @@ public class CadenceWorkflowLauncher {
     this.workflowProperties = workflowProperties;
   }
 
-  public void startWorkflow(CadenceMessageWorkflowRequest request) {
+  public @Nullable WorkflowExecution startWorkflow(CadenceMessageWorkflowRequest request) {
     if (request == null || request.workflowContext() == null) {
       log.warn("Dropping cadence start workflow [ request or workflowContext is null ]");
-      return;
+      return null;
     }
     WorkflowOptions options =
         new WorkflowOptions.Builder()
@@ -40,7 +42,8 @@ public class CadenceWorkflowLauncher {
     CadenceMessageWorkflow workflow =
         workflowClient.newWorkflowStub(CadenceMessageWorkflow.class, options);
     log.info("Submitting workflow: {}", workflow);
-    WorkflowClient.start(workflow::run, request);
-    log.info("Submitted workflow: {}", workflow);
+    WorkflowExecution execution = WorkflowClient.start(workflow::run, request);
+    log.info("Submitted workflow: {}, {}", workflow, execution);
+    return execution;
   }
 }
