@@ -84,7 +84,8 @@ class BBMessageAgentTest {
             "Alice",
             false,
             Instant.now(),
-            List.of());
+            List.of(),
+            false);
 
     agent.handleIncomingMessage(incoming);
 
