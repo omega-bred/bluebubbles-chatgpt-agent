@@ -2,6 +2,7 @@ package io.breland.bbagent.server.agent;
 
 import io.breland.bbagent.generated.bluebubblesclient.model.ApiV1ChatChatGuidMessageGet200ResponseDataInner;
 import io.breland.bbagent.server.agent.cadence.models.IncomingAttachment;
+import io.breland.bbagent.server.controllers.BluebubblesWebhookController;
 import java.time.Instant;
 import java.util.List;
 
@@ -13,9 +14,10 @@ public record IncomingMessage(
     Boolean fromMe,
     String service,
     String sender,
-    Boolean isGroup,
+    boolean isGroup,
     Instant timestamp,
-    List<IncomingAttachment> attachments) {
+    List<IncomingAttachment> attachments,
+    boolean isSystemMessage) {
 
   public static IncomingMessage create(ApiV1ChatChatGuidMessageGet200ResponseDataInner message) {
     return new IncomingMessage(
@@ -26,9 +28,11 @@ public record IncomingMessage(
         message.getIsFromMe(),
         BBMessageAgent.IMESSAGE_SERVICE,
         message.getHandle().getAddress(),
-        message.getIsServiceMessage(), // wrong
+        message.getGuid().startsWith(BluebubblesWebhookController.GROUP_PREFIX),
         Instant.ofEpochSecond(message.getDateCreated()),
-        List.of());
+        List.of(),
+        (message.getIsSystemMessage() != null && message.getIsSystemMessage())
+            || (message.getIsServiceMessage() != null && message.getIsServiceMessage()));
   }
 
   public String computeMessageFingerprint() {

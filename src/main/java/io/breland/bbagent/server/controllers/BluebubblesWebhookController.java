@@ -69,7 +69,9 @@ public class BluebubblesWebhookController extends BluebubblesApiController {
     Instant timestamp = parseTimestamp(data.getDateCreated());
     List<IncomingAttachment> attachments = parseAttachments(data.getAttachments());
     String chatGuid = data.getChats().getFirst().getGuid();
-    Boolean isGroup = resolveIsGroup(data);
+    boolean isGroup = resolveIsGroup(data);
+    boolean isSystem = false; // TODO: determine how to get isSystem correctly here
+
     return new IncomingMessage(
         chatGuid,
         messageGuid,
@@ -80,7 +82,8 @@ public class BluebubblesWebhookController extends BluebubblesApiController {
         sender,
         isGroup,
         timestamp,
-        attachments);
+        attachments,
+        isSystem);
   }
 
   private boolean isMessageEvent(BlueBubblesMessageReceivedRequest request) {
