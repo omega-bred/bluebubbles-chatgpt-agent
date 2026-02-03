@@ -323,7 +323,9 @@ public class BBMessageAgent {
     if (info != null && info.getRunId() != null) {
       synchronized (state) {
         String latestWorkflowRunId = state.getLatestWorkflowRunId();
-        if (!latestWorkflowRunId.equals(info.getRunId())) {
+
+        // can be null until we persist state in a real db.
+        if (latestWorkflowRunId != null && !latestWorkflowRunId.equals(info.getRunId())) {
           return false;
         }
       }
