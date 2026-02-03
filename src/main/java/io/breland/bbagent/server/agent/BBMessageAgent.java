@@ -253,6 +253,12 @@ public class BBMessageAgent {
     if (isReactionMessage(message.text())) {
       return false;
     }
+    if ((message.text() == null || message.text().isBlank())
+        && (message.attachments() == null || message.attachments().isEmpty())) {
+      // assume it's a group name or photo edited
+      // there's no text to process and no attachments so must be that?
+      return false;
+    }
     AssistantResponsiveness responsiveness = getAssistantResponsiveness(message.chatGuid());
     if (responsiveness == AssistantResponsiveness.SILENT) {
       return isSilentInvocation(message.text());
