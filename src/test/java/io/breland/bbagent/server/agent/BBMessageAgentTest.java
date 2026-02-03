@@ -46,6 +46,7 @@ class BBMessageAgentTest {
     Mem0Client mem0Client = Mockito.mock(Mem0Client.class);
     GcalClient gcalClient = Mockito.mock(GcalClient.class);
     GiphyClient giphyClient = Mockito.mock(GiphyClient.class);
+    AgentWorkflowProperties workflowProperties = new AgentWorkflowProperties();
 
     when(openAIClient.responses()).thenReturn(responseService);
     when(messageApi.apiV1MessageTextPost(anyString(), any())).thenReturn(Mono.empty());
@@ -59,7 +60,9 @@ class BBMessageAgentTest {
             mem0Client,
             gcalClient,
             giphyClient,
-            new InMemoryAgentSettingsStore());
+            new InMemoryAgentSettingsStore(),
+            workflowProperties,
+            null);
 
     Response first =
         responseWithFunctionCall(
@@ -81,7 +84,8 @@ class BBMessageAgentTest {
             "Alice",
             false,
             Instant.now(),
-            List.of());
+            List.of(),
+            false);
 
     agent.handleIncomingMessage(incoming);
 

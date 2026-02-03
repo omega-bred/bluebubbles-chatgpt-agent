@@ -49,7 +49,7 @@ public class GcalClient {
   private static final String STORE_ID = StoredCredential.DEFAULT_DATA_STORE_ID;
   private static final String ACCOUNT_PENDING_PREFIX = "pending::";
 
-  private final ObjectMapper objectMapper = new ObjectMapper();
+  private final ObjectMapper objectMapper;
   private final String clientSecretPath;
   private final String clientSecret;
   private final String redirectUri;
@@ -63,7 +63,8 @@ public class GcalClient {
       @Value("${gcal.oauth.redirect_uri:}") String redirectUri,
       @Value("${gcal.oauth.state_secret:}") String stateSecret,
       @Value("${gcal.application_name:iMessage + ChatGPT}") String applicationName,
-      GcalCredentialRepository credentialRepository) {
+      GcalCredentialRepository credentialRepository,
+      ObjectMapper objectMapper) {
     this.clientSecretPath = clientSecretPath;
     this.clientSecret = clientSecret;
     this.redirectUri = redirectUri;
@@ -71,6 +72,7 @@ public class GcalClient {
         stateSecret == null || stateSecret.isBlank() ? null : Algorithm.HMAC256(stateSecret);
     this.applicationName = applicationName;
     this.credentialRepository = credentialRepository;
+    this.objectMapper = objectMapper;
   }
 
   public boolean isConfigured() {

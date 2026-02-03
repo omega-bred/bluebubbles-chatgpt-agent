@@ -2,8 +2,6 @@ package io.breland.bbagent.server.agent.tools.memory;
 
 import static io.breland.bbagent.server.agent.tools.JsonSchemaUtilities.jsonSchema;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import io.breland.bbagent.server.agent.IncomingMessage;
 import io.breland.bbagent.server.agent.tools.AgentTool;
 import io.breland.bbagent.server.agent.tools.ToolProvider;
@@ -16,7 +14,6 @@ import lombok.extern.slf4j.Slf4j;
 @Slf4j
 public class MemoryGetAgentTool implements ToolProvider {
   public static final String TOOL_NAME = "memory_get";
-  private final ObjectMapper objectMapper = new ObjectMapper().registerModule(new JavaTimeModule());
   private final Mem0Client mem0Client;
 
   @Schema(description = "Query memory for the current user or conversation.")
@@ -75,7 +72,7 @@ public class MemoryGetAgentTool implements ToolProvider {
           }
           result.put("memories", formatted);
           try {
-            return objectMapper.writeValueAsString(result);
+            return this.mem0Client.getObjectMapper().writeValueAsString(result);
           } catch (Exception e) {
             return result.toString();
           }

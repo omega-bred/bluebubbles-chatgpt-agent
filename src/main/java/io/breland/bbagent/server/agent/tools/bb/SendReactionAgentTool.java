@@ -70,6 +70,9 @@ public class SendReactionAgentTool implements ToolProvider {
           if (reaction == null || reaction.isBlank()) {
             return "missing reaction";
           }
+          if (!context.canSendResponses()) {
+            return "skipped: outdated workflow";
+          }
           ApiV1MessageReactPostRequest apiRequest = new ApiV1MessageReactPostRequest();
           apiRequest.setChatGuid(chatGuid);
           apiRequest.setSelectedMessageGuid(selectedMessageGuid);

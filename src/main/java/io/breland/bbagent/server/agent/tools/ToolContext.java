@@ -1,5 +1,6 @@
 package io.breland.bbagent.server.agent.tools;
 
+import io.breland.bbagent.server.agent.AgentWorkflowContext;
 import io.breland.bbagent.server.agent.BBMessageAgent;
 import io.breland.bbagent.server.agent.ConversationState;
 import io.breland.bbagent.server.agent.ConversationTurn;
@@ -9,10 +10,15 @@ import java.time.Instant;
 public class ToolContext {
   private final BBMessageAgent bbMessageAgent;
   private final IncomingMessage message;
+  private final AgentWorkflowContext workflowContext;
 
-  public ToolContext(BBMessageAgent bbMessageAgent, IncomingMessage message) {
+  public ToolContext(
+      BBMessageAgent bbMessageAgent,
+      IncomingMessage message,
+      AgentWorkflowContext workflowContext) {
     this.bbMessageAgent = bbMessageAgent;
     this.message = message;
+    this.workflowContext = workflowContext;
   }
 
   public IncomingMessage message() {
@@ -40,9 +46,22 @@ public class ToolContext {
   }
 
   public void recordAssistantTurn(String content) {
+    if (!canSendResponses()) {
+      return;
+    }
     ConversationState state = bbMessageAgent.getConversations().get(message.chatGuid());
     if (state != null) {
-      state.addTurn(ConversationTurn.assistant(content, Instant.now()));
+      synchronized (state) {
+        state.addTurn(ConversationTurn.assistant(content, Instant.now()));
+      }
     }
+  }
+
+  public boolean canSendResponses() {
+    return bbMessageAgent.canSendResponses(workflowContext);
+  }
+
+  public AgentWorkflowContext workflowContext() {
+    return workflowContext;
   }
 }

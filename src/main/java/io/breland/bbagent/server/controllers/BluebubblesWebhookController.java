@@ -7,8 +7,8 @@ import io.breland.bbagent.generated.model.BlueBubblesMessageReceivedRequestData;
 import io.breland.bbagent.generated.model.BlueBubblesMessageReceivedRequestDataAttachmentsInner;
 import io.breland.bbagent.generated.model.BlueBubblesMessageReceivedRequestDataChatsInner;
 import io.breland.bbagent.server.agent.BBMessageAgent;
-import io.breland.bbagent.server.agent.IncomingAttachment;
 import io.breland.bbagent.server.agent.IncomingMessage;
+import io.breland.bbagent.server.agent.cadence.models.IncomingAttachment;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotNull;
 import java.time.Instant;
@@ -50,7 +50,6 @@ public class BluebubblesWebhookController extends BluebubblesApiController {
     }
     IncomingMessage message = parseWebhookMessage(requestBody.getData());
     if (message != null) {
-      // TODO: throw on cadence/temporal?
       messageAgent.handleIncomingMessage(message);
     }
     return ResponseEntity.ok(Map.of("status", "ok"));
@@ -63,8 +62,6 @@ public class BluebubblesWebhookController extends BluebubblesApiController {
     }
     String messageGuid = data.getGuid();
     String threadOriginatorGuid = data.getThreadOriginatorGuid();
-    //    String threadOriginatorPart = data.getThreadOriginatorPart();
-    //    String replyToGuid = data.getReplyToGuid();
     String text = data.getText();
     Boolean fromMe = data.getIsFromMe();
     String service = data.getHandle().getService();
@@ -72,7 +69,9 @@ public class BluebubblesWebhookController extends BluebubblesApiController {
     Instant timestamp = parseTimestamp(data.getDateCreated());
     List<IncomingAttachment> attachments = parseAttachments(data.getAttachments());
     String chatGuid = data.getChats().getFirst().getGuid();
-    Boolean isGroup = resolveIsGroup(data);
+    boolean isGroup = resolveIsGroup(data);
+    boolean isSystem = false; // TODO: determine how to get isSystem correctly here
+
     return new IncomingMessage(
         chatGuid,
         messageGuid,
@@ -83,7 +82,8 @@ public class BluebubblesWebhookController extends BluebubblesApiController {
         sender,
         isGroup,
         timestamp,
-        attachments);
+        attachments,
+        isSystem);
   }
 
   private boolean isMessageEvent(BlueBubblesMessageReceivedRequest request) {

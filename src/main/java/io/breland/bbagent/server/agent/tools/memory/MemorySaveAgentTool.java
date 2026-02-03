@@ -44,8 +44,7 @@ public class MemorySaveAgentTool implements ToolProvider {
           if (memory == null || memory.isBlank()) {
             return "no memory";
           }
-          String groupChatSenderId =
-              AgentTool.isGroupMessage(message) ? AgentTool.getSenderId(message) : null;
+          String groupChatSenderId = message.isGroup() ? AgentTool.getSenderId(message) : null;
           boolean saved =
               mem0Client.addMemory(
                   userIdOrGroupChatId, memory.trim(), buildMetadata(message), null);
@@ -65,9 +64,7 @@ public class MemorySaveAgentTool implements ToolProvider {
     if (message.messageGuid() != null && !message.messageGuid().isBlank()) {
       metadata.put("message_guid", message.messageGuid());
     }
-    if (message.isGroup() != null) {
-      metadata.put("is_group", AgentTool.isGroupMessage(message));
-    }
+    metadata.put("is_group", message.isGroup());
     if (message.sender() != null && !message.sender().isBlank()) {
       metadata.put("sender", message.sender());
     }
