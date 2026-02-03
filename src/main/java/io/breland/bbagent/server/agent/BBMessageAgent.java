@@ -189,6 +189,7 @@ public class BBMessageAgent {
     return stateToHydrate;
   }
 
+  // main invocation point from webhook
   public void handleIncomingMessage(IncomingMessage message) {
     if (!shouldProcess(message)) {
       log.debug("Dropping message {}", message);
@@ -219,6 +220,14 @@ public class BBMessageAgent {
         log.warn("Dropping message [ workflow already started ] {}", message);
         return;
       }
+      if (workflowProperties.useCadenceWorkflow()) {
+        if (cadenceWorkflowLauncher == null) {
+          log.error(
+              "Cadence workflow launcher is not configured - but we should use cadence workflow; incorrectly dropping message {}",
+              message);
+          return;
+        }
+      }
       long sequence = workflowSequence.incrementAndGet();
       state.setLastStartedWorkflowId(workflowId);
       state.setLatestWorkflowSequence(sequence);
@@ -228,10 +237,6 @@ public class BBMessageAgent {
     }
     if (workflowProperties.useCadenceWorkflow()) {
       log.info("Responding via cadence workflow");
-      if (cadenceWorkflowLauncher == null) {
-        log.warn("Cadence workflow launcher is not configured; skipping message {}", message);
-        return;
-      }
       CadenceMessageWorkflowRequest request =
           new CadenceMessageWorkflowRequest(workflowContext, message);
       cadenceWorkflowLauncher.startWorkflow(request);
@@ -252,9 +257,6 @@ public class BBMessageAgent {
       return false;
     }
     if (message.service() != null && !IMESSAGE_SERVICE.equalsIgnoreCase(message.service())) {
-      return false;
-    }
-    if (message.text() == null || message.text().isBlank()) {
       return false;
     }
     if (isReactionMessage(message.text())) {
