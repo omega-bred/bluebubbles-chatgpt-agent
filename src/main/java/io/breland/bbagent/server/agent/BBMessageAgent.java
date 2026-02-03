@@ -319,16 +319,23 @@ public class BBMessageAgent {
     if (state == null) {
       return true;
     }
-    WorkflowInfo info = Workflow.getWorkflowInfo();
-    if (info != null && info.getRunId() != null) {
-      synchronized (state) {
-        String latestWorkflowRunId = state.getLatestWorkflowRunId();
+    try {
+      WorkflowInfo info = Workflow.getWorkflowInfo();
+      if (info != null && info.getRunId() != null) {
+        synchronized (state) {
+          String latestWorkflowRunId = state.getLatestWorkflowRunId();
 
-        // can be null until we persist state in a real db.
-        if (latestWorkflowRunId != null && !latestWorkflowRunId.equals(info.getRunId())) {
-          return false;
+          // can be null until we persist state in a real db.
+          if (latestWorkflowRunId != null && !latestWorkflowRunId.equals(info.getRunId())) {
+            return false;
+          }
         }
       }
+    } catch (Error e) {
+      if (e.getMessage().contains("non workflow")) {
+        return true;
+      }
+      throw e;
     }
     return true;
   }
