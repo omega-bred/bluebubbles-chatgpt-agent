@@ -13,7 +13,7 @@ public interface CadenceAgentActivities {
   List<ResponseInputItem> buildConversationInput(
       List<ConversationTurn> history, IncomingMessage message);
 
-  void runMessageWorkflow(IncomingMessage message, AgentWorkflowContext workflowContext);
+  List<ConversationTurn> getConversationHistory(IncomingMessage message);
 
   Response createResponse(List<ResponseInputItem> inputItems, IncomingMessage message);
 

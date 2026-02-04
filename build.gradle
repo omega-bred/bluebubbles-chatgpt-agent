@@ -108,6 +108,13 @@ tasks.matching { it.name == 'bootRun' }.configureEach {
     }
 }
 
+bootRun {
+    jvmArgs = [
+            "--add-opens=java.base/java.lang=ALL-UNNAMED",
+            "--add-opens=java.base/java.nio.charset=ALL-UNNAMED"
+    ]
+}
+
 group = grp
 version = '0.0.1-SNAPSHOT'
 

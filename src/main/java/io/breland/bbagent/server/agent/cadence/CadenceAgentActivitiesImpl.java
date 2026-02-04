@@ -29,8 +29,21 @@ public class CadenceAgentActivitiesImpl implements CadenceAgentActivities {
   }
 
   @Override
-  public void runMessageWorkflow(IncomingMessage message, AgentWorkflowContext workflowContext) {
-    messageAgent.runMessageWorkflowForCadence(message, workflowContext);
+  public List<ConversationTurn> getConversationHistory(IncomingMessage message) {
+    if (message == null || message.chatGuid() == null || message.chatGuid().isBlank()) {
+      return List.of();
+    }
+    ConversationState state = messageAgent.getConversations().get(message.chatGuid());
+    if (state == null) {
+      state =
+          messageAgent
+              .getConversations()
+              .computeIfAbsent(
+                  message.chatGuid(), key -> messageAgent.computeConversationState(key, message));
+    }
+    synchronized (state) {
+      return state.history();
+    }
   }
 
   @Override
