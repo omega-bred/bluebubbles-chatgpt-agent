@@ -17,7 +17,7 @@ public class ConversationState {
   @Getter @Setter private String lastProcessedMessageFingerprint;
   @Getter @Setter private String latestWorkflowRunId;
 
-  List<ConversationTurn> history() {
+  public List<ConversationTurn> history() {
     return new ArrayList<>(history);
   }
 

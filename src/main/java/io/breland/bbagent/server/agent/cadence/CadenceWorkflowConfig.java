@@ -8,6 +8,8 @@ import com.google.gson.JsonParseException;
 import com.google.gson.JsonPrimitive;
 import com.google.gson.JsonSerializationContext;
 import com.google.gson.JsonSerializer;
+import com.openai.core.JsonField;
+import com.openai.core.JsonValue;
 import com.uber.cadence.client.WorkflowClient;
 import com.uber.cadence.client.WorkflowClientOptions;
 import com.uber.cadence.converter.DataConverter;
@@ -20,6 +22,7 @@ import io.breland.bbagent.server.agent.AgentWorkflowProperties;
 import java.lang.reflect.Type;
 import java.time.Instant;
 import java.time.format.DateTimeParseException;
+import kotlin.Lazy;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -43,7 +46,12 @@ public class CadenceWorkflowConfig {
       WorkflowServiceTChannel cadenceService, AgentWorkflowProperties properties) {
     DataConverter dataConverter =
         new JsonDataConverter(
-            builder -> builder.registerTypeAdapter(Instant.class, new InstantTypeAdapter()));
+            builder ->
+                builder
+                    .registerTypeAdapter(Instant.class, new InstantTypeAdapter())
+                    .registerTypeHierarchyAdapter(JsonField.class, new JsonFieldTypeAdapter())
+                    .registerTypeHierarchyAdapter(JsonValue.class, new JsonValueTypeAdapter())
+                    .registerTypeHierarchyAdapter(Lazy.class, new LazyTypeAdapter()));
     WorkflowClientOptions options =
         WorkflowClientOptions.newBuilder()
             .setDomain(properties.getCadenceDomain())
@@ -102,6 +110,98 @@ public class CadenceWorkflowConfig {
         }
       }
       throw new JsonParseException("Unsupported Instant value: " + json);
+    }
+  }
+
+  static final class JsonFieldTypeAdapter
+      implements JsonSerializer<JsonField<?>>, JsonDeserializer<JsonField<?>> {
+    @Override
+    public JsonElement serialize(
+        JsonField<?> src, Type typeOfSrc, JsonSerializationContext context) {
+      if (src == null || src.isMissing() || src.isNull()) {
+        return JsonNull.INSTANCE;
+      }
+      if (src.asKnown().isPresent()) {
+        return context.serialize(src.asKnown().get());
+      }
+      if (src.asUnknown().isPresent()) {
+        return context.serialize(src.asUnknown().get());
+      }
+      return JsonNull.INSTANCE;
+    }
+
+    @Override
+    public JsonField<?> deserialize(
+        JsonElement json, Type typeOfT, JsonDeserializationContext context)
+        throws JsonParseException {
+      if (json == null || json.isJsonNull()) {
+        return JsonField.ofNullable(null);
+      }
+      Object value = context.deserialize(json, Object.class);
+      return JsonField.ofNullable(value);
+    }
+  }
+
+  static final class JsonValueTypeAdapter
+      implements JsonSerializer<JsonValue>, JsonDeserializer<JsonValue> {
+    @Override
+    public JsonElement serialize(JsonValue src, Type typeOfSrc, JsonSerializationContext context) {
+      if (src == null) {
+        return JsonNull.INSTANCE;
+      }
+      Object value = src.convert(Object.class);
+      return context.serialize(value);
+    }
+
+    @Override
+    public JsonValue deserialize(JsonElement json, Type typeOfT, JsonDeserializationContext context)
+        throws JsonParseException {
+      if (json == null || json.isJsonNull()) {
+        return JsonValue.from(null);
+      }
+      Object value = context.deserialize(json, Object.class);
+      return JsonValue.from(value);
+    }
+  }
+
+  static final class LazyTypeAdapter implements JsonSerializer<Lazy<?>>, JsonDeserializer<Lazy<?>> {
+    @Override
+    public JsonElement serialize(Lazy<?> src, Type typeOfSrc, JsonSerializationContext context) {
+      if (src == null) {
+        return JsonNull.INSTANCE;
+      }
+      if (src.isInitialized()) {
+        return context.serialize(src.getValue());
+      }
+      return JsonNull.INSTANCE;
+    }
+
+    @Override
+    public Lazy<?> deserialize(JsonElement json, Type typeOfT, JsonDeserializationContext context)
+        throws JsonParseException {
+      if (json == null || json.isJsonNull()) {
+        return new SimpleLazy<>(null);
+      }
+      Object value = context.deserialize(json, Object.class);
+      return new SimpleLazy<>(value);
+    }
+  }
+
+  static final class SimpleLazy<T> implements Lazy<T> {
+    private final T value;
+
+    SimpleLazy(T value) {
+      this.value = value;
+    }
+
+    @Override
+    public T getValue() {
+      return value;
+    }
+
+    @Override
+    public boolean isInitialized() {
+      return true;
     }
   }
 }
