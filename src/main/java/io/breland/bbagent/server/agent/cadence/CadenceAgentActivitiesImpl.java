@@ -35,7 +35,11 @@ public class CadenceAgentActivitiesImpl implements CadenceAgentActivities {
     }
     ConversationState state = messageAgent.getConversations().get(message.chatGuid());
     if (state == null) {
-      return List.of();
+      state =
+          messageAgent
+              .getConversations()
+              .computeIfAbsent(
+                  message.chatGuid(), key -> messageAgent.computeConversationState(key, message));
     }
     synchronized (state) {
       return state.history();

@@ -150,7 +150,7 @@ public class BBMessageAgent {
     registerBuiltInTools();
   }
 
-  private ConversationState computeConversationState(String chatId, IncomingMessage message) {
+  public ConversationState computeConversationState(String chatId, IncomingMessage message) {
     ConversationState stateToHydrate = new ConversationState();
     log.info("Hydrating conversation state for chat {}", chatId);
     try {
