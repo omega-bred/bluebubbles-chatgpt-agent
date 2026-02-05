@@ -1,6 +1,5 @@
 package io.breland.bbagent.server.controllers;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import io.breland.bbagent.generated.api.BluebubblesApiController;
 import io.breland.bbagent.generated.model.BlueBubblesMessageReceivedRequest;
 import io.breland.bbagent.generated.model.BlueBubblesMessageReceivedRequestData;
@@ -31,7 +30,6 @@ public class BluebubblesWebhookController extends BluebubblesApiController {
   public static final String GROUP_PREFIX = "iMessage;+;chat";
 
   @Autowired private BBMessageAgent messageAgent;
-  @Autowired private ObjectMapper objectMapper;
 
   public BluebubblesWebhookController(NativeWebRequest request) {
     super(request);

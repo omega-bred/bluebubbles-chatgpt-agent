@@ -212,13 +212,13 @@ public class BBMessageAgent {
         log.warn("Dropping duplicate message [ fingerprint ] {}", message);
         return;
       }
-      if (workflowProperties.useCadenceWorkflow()) {
-        if (cadenceWorkflowLauncher == null) {
-          log.error(
-              "Cadence workflow launcher is not configured - but we should use cadence workflow; incorrectly dropping message {}",
-              message);
-          return;
-        }
+    }
+    if (workflowProperties.useCadenceWorkflow()) {
+      if (cadenceWorkflowLauncher == null) {
+        log.error(
+            "Cadence workflow launcher is not configured - but we should use cadence workflow; incorrectly dropping message {}",
+            message);
+        return;
       }
     }
     String workflowId = resolveWorkflowId(message);
