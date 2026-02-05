@@ -548,7 +548,7 @@ public class BBMessageAgent {
     return outputs;
   }
 
-  private ResponseInputItem runToolActivity(
+  public ResponseInputItem runToolActivity(
       ResponseFunctionToolCall toolCall,
       IncomingMessage message,
       AgentWorkflowContext workflowContext) {

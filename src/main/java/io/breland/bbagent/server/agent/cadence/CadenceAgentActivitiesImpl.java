@@ -1,14 +1,18 @@
 package io.breland.bbagent.server.agent.cadence;
 
-import com.openai.models.responses.Response;
-import com.openai.models.responses.ResponseFunctionToolCall;
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.openai.core.JsonValue;
 import com.openai.models.responses.ResponseInputItem;
 import io.breland.bbagent.server.agent.*;
+import io.breland.bbagent.server.agent.cadence.models.CadenceResponseBundle;
+import io.breland.bbagent.server.agent.cadence.models.CadenceToolCall;
 import io.breland.bbagent.server.agent.cadence.models.GeneratedImage;
 import io.breland.bbagent.server.agent.cadence.models.ImageSendResult;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.stream.Collectors;
 import org.springframework.stereotype.Component;
 
 @Component
@@ -23,9 +27,13 @@ public class CadenceAgentActivitiesImpl implements CadenceAgentActivities {
   }
 
   @Override
-  public List<ResponseInputItem> buildConversationInput(
+  public String buildConversationInputJson(
       List<ConversationTurn> history, IncomingMessage message) {
-    return messageAgent.buildConversationInput(history, message);
+    try {
+      return toJson(messageAgent.buildConversationInput(history, message));
+    } catch (Exception e) {
+      throw new RuntimeException("Failed to serialize conversation input", e);
+    }
   }
 
   @Override
@@ -47,24 +55,70 @@ public class CadenceAgentActivitiesImpl implements CadenceAgentActivities {
   }
 
   @Override
-  public Response createResponse(List<ResponseInputItem> inputItems, IncomingMessage message) {
-    return messageAgent.createResponse(inputItems, message, null);
+  public CadenceResponseBundle createResponseBundle(
+      String inputItemsJson, IncomingMessage message) {
+    try {
+      JsonNode inputNode = messageAgent.getObjectMapper().readTree(inputItemsJson);
+      List<ResponseInputItem> inputItems =
+          JsonValue.fromJsonNode(inputNode)
+              .convert(new TypeReference<List<ResponseInputItem>>() {});
+      var response = messageAgent.createResponse(inputItems, message, null);
+      if (response == null) {
+        return null;
+      }
+      String responseJson = toJson(response);
+      String assistantText =
+          AgentResponseHelper.normalizeAssistantText(
+              messageAgent.getObjectMapper(), AgentResponseHelper.extractResponseText(response));
+      List<CadenceToolCall> toolCalls =
+          AgentResponseHelper.extractFunctionCalls(response).stream()
+              .map(call -> new CadenceToolCall(call.callId(), call.name(), call.arguments()))
+              .collect(Collectors.toList());
+      String toolContextItemsJson = toJson(AgentResponseHelper.extractToolContextItems(response));
+      return new CadenceResponseBundle(
+          responseJson, assistantText, toolContextItemsJson, toolCalls);
+    } catch (Exception e) {
+      throw new RuntimeException("Failed to create response bundle", e);
+    }
   }
 
   @Override
-  public List<ResponseInputItem> executeToolCalls(
-      List<ResponseFunctionToolCall> toolCalls,
+  public String executeToolCallsJson(
+      List<CadenceToolCall> toolCalls,
       IncomingMessage message,
       AgentWorkflowContext workflowContext) {
-    return messageAgent.executeToolCalls(toolCalls, message, workflowContext);
+    try {
+      List<com.openai.models.responses.ResponseInputItem> outputs = new ArrayList<>();
+      for (CadenceToolCall toolCall : toolCalls) {
+        com.openai.models.responses.ResponseFunctionToolCall call =
+            com.openai.models.responses.ResponseFunctionToolCall.builder()
+                .callId(toolCall.callId())
+                .name(toolCall.name())
+                .arguments(toolCall.arguments())
+                .build();
+        outputs.add(messageAgent.runToolActivity(call, message, workflowContext));
+      }
+      return toJson(outputs);
+    } catch (Exception e) {
+      throw new RuntimeException("Failed to execute tool calls", e);
+    }
   }
 
   @Override
   public ImageSendResult handleGeneratedImages(
-      Response response,
+      String responseJson,
       String assistantText,
       IncomingMessage message,
       AgentWorkflowContext workflowContext) {
+    com.openai.models.responses.Response response;
+    try {
+      response =
+          messageAgent
+              .getObjectMapper()
+              .readValue(responseJson, com.openai.models.responses.Response.class);
+    } catch (Exception e) {
+      throw new RuntimeException("Failed to parse response json", e);
+    }
     List<GeneratedImage> generatedImages = messageAgent.extractGeneratedImages(response);
     if (generatedImages.isEmpty()) {
       return new ImageSendResult(false, false);
@@ -144,5 +198,10 @@ public class CadenceAgentActivitiesImpl implements CadenceAgentActivities {
       state.setLastProcessedMessageFingerprint(message.computeMessageFingerprint());
       messageAgent.updateThreadContext(state, message);
     }
+  }
+
+  private String toJson(Object value) throws Exception {
+    JsonNode node = JsonValue.from(value).convert(JsonNode.class);
+    return messageAgent.getObjectMapper().writeValueAsString(node);
   }
 }

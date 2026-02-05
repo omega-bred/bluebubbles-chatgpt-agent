@@ -1,22 +1,14 @@
 package io.breland.bbagent.server.agent.cadence;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.openai.models.responses.Response;
-import com.openai.models.responses.ResponseFunctionToolCall;
-import com.openai.models.responses.ResponseInputItem;
 import com.uber.cadence.activity.ActivityOptions;
 import com.uber.cadence.workflow.Workflow;
-import io.breland.bbagent.server.agent.AgentResponseHelper;
 import io.breland.bbagent.server.agent.BBMessageAgent;
-import io.breland.bbagent.server.agent.ConversationTurn;
 import io.breland.bbagent.server.agent.IncomingMessage;
 import io.breland.bbagent.server.agent.cadence.models.CadenceMessageWorkflowRequest;
+import io.breland.bbagent.server.agent.cadence.models.CadenceResponseBundle;
+import io.breland.bbagent.server.agent.cadence.models.CadenceToolCall;
 import io.breland.bbagent.server.agent.cadence.models.ImageSendResult;
-import io.breland.bbagent.server.agent.tools.bb.SendReactionAgentTool;
-import io.breland.bbagent.server.agent.tools.bb.SendTextAgentTool;
 import java.time.Duration;
-import java.util.ArrayList;
-import java.util.List;
 import java.util.Optional;
 import lombok.extern.slf4j.Slf4j;
 
@@ -40,47 +32,49 @@ public class CadenceMessageWorkflowImpl implements CadenceMessageWorkflow {
     }
     log.info("Handling message via cadence: {}", request.workflowContext());
     IncomingMessage message = request.message();
-    List<ConversationTurn> history = activities.getConversationHistory(message);
-    List<ResponseInputItem> inputItems = activities.buildConversationInput(history, message);
-    Response response = activities.createResponse(inputItems, message);
-    if (response == null) {
+    String inputItemsJson =
+        activities.buildConversationInputJson(activities.getConversationHistory(message), message);
+    CadenceResponseBundle bundle = activities.createResponseBundle(inputItemsJson, message);
+    if (bundle == null) {
       activities.finalizeWorkflow(message, request.workflowContext(), false);
       return;
     }
     boolean sentTextByTool = false;
     boolean sentReactionByTool = false;
-    int loops = 0;
-    while (loops < MAX_TOOL_LOOPS) {
-      List<ResponseFunctionToolCall> toolCalls = AgentResponseHelper.extractFunctionCalls(response);
-      if (toolCalls.isEmpty()) {
+    for (int loops = 0; loops < MAX_TOOL_LOOPS; loops++) {
+      if (bundle.toolCalls() == null || bundle.toolCalls().isEmpty()) {
         break;
       }
-      if (toolCalls.stream().anyMatch(call -> SendTextAgentTool.TOOL_NAME.equals(call.name()))) {
-        sentTextByTool = true;
+      sentTextByTool =
+          sentTextByTool
+              || hasToolCall(
+                  bundle.toolCalls(),
+                  io.breland.bbagent.server.agent.tools.bb.SendTextAgentTool.TOOL_NAME);
+      sentReactionByTool =
+          sentReactionByTool
+              || hasToolCall(
+                  bundle.toolCalls(),
+                  io.breland.bbagent.server.agent.tools.bb.SendReactionAgentTool.TOOL_NAME);
+      String toolOutputsJson =
+          activities.executeToolCallsJson(bundle.toolCalls(), message, request.workflowContext());
+      inputItemsJson =
+          mergeJsonArrays(inputItemsJson, bundle.toolContextItemsJson(), toolOutputsJson);
+      bundle = activities.createResponseBundle(inputItemsJson, message);
+      if (bundle == null) {
+        activities.finalizeWorkflow(message, request.workflowContext(), false);
+        return;
       }
-      if (toolCalls.stream()
-          .anyMatch(call -> SendReactionAgentTool.TOOL_NAME.equals(call.name()))) {
-        sentReactionByTool = true;
-      }
-      List<ResponseInputItem> toolContinuation = new ArrayList<>(inputItems);
-      toolContinuation.addAll(AgentResponseHelper.extractToolContextItems(response));
-      toolContinuation.addAll(
-          activities.executeToolCalls(toolCalls, message, request.workflowContext()));
-      response = activities.createResponse(toolContinuation, message);
-      inputItems = toolContinuation;
-      loops++;
     }
-    String assistantText =
-        AgentResponseHelper.normalizeAssistantText(
-            new ObjectMapper(), AgentResponseHelper.extractResponseText(response));
+    String assistantText = bundle.assistantText();
     ImageSendResult imageResult =
         activities.handleGeneratedImages(
-            response, assistantText, message, request.workflowContext());
+            bundle.responseJson(), assistantText, message, request.workflowContext());
     boolean sentImageByMultipart = imageResult.sentImage();
     if (imageResult.captionSent()) {
       sentTextByTool = true;
     }
-    Optional<String> parsedReaction = AgentResponseHelper.parseReactionText(assistantText);
+    Optional<String> parsedReaction =
+        io.breland.bbagent.server.agent.AgentResponseHelper.parseReactionText(assistantText);
     if (parsedReaction.isPresent()) {
       if (!sentReactionByTool) {
         activities.sendReaction(message, parsedReaction.get(), request.workflowContext());
@@ -99,5 +93,51 @@ public class CadenceMessageWorkflowImpl implements CadenceMessageWorkflow {
       activities.recordAssistantTurn(message, "[image]", request.workflowContext());
     }
     activities.finalizeWorkflow(message, request.workflowContext(), true);
+  }
+
+  private static boolean hasToolCall(java.util.List<CadenceToolCall> toolCalls, String name) {
+    if (toolCalls == null || toolCalls.isEmpty() || name == null) {
+      return false;
+    }
+    for (CadenceToolCall call : toolCalls) {
+      if (name.equals(call.name())) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  private static String mergeJsonArrays(String baseJson, String... extraJson) {
+    try {
+      com.fasterxml.jackson.databind.ObjectMapper mapper =
+          new com.fasterxml.jackson.databind.ObjectMapper();
+      com.fasterxml.jackson.databind.node.ArrayNode merged = mapper.createArrayNode();
+      appendArrayJson(mapper, merged, baseJson);
+      if (extraJson != null) {
+        for (String json : extraJson) {
+          appendArrayJson(mapper, merged, json);
+        }
+      }
+      return mapper.writeValueAsString(merged);
+    } catch (Exception e) {
+      throw new RuntimeException("Failed to merge response input arrays", e);
+    }
+  }
+
+  private static void appendArrayJson(
+      com.fasterxml.jackson.databind.ObjectMapper mapper,
+      com.fasterxml.jackson.databind.node.ArrayNode target,
+      String json)
+      throws java.io.IOException {
+    if (json == null || json.isBlank()) {
+      return;
+    }
+    com.fasterxml.jackson.databind.JsonNode node = mapper.readTree(json);
+    if (node == null || !node.isArray()) {
+      return;
+    }
+    for (com.fasterxml.jackson.databind.JsonNode item : node) {
+      target.add(item);
+    }
   }
 }
