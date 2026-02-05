@@ -1,5 +1,9 @@
 package io.breland.bbagent.server.agent.cadence;
 
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.openai.core.JsonValue;
+import com.openai.models.responses.ResponseInputItem;
 import io.breland.bbagent.server.agent.*;
 import io.breland.bbagent.server.agent.cadence.models.CadenceResponseBundle;
 import io.breland.bbagent.server.agent.cadence.models.CadenceToolCall;
@@ -26,9 +30,7 @@ public class CadenceAgentActivitiesImpl implements CadenceAgentActivities {
   public String buildConversationInputJson(
       List<ConversationTurn> history, IncomingMessage message) {
     try {
-      return messageAgent
-          .getObjectMapper()
-          .writeValueAsString(messageAgent.buildConversationInput(history, message));
+      return toJson(messageAgent.buildConversationInput(history, message));
     } catch (Exception e) {
       throw new RuntimeException("Failed to serialize conversation input", e);
     }
@@ -56,28 +58,23 @@ public class CadenceAgentActivitiesImpl implements CadenceAgentActivities {
   public CadenceResponseBundle createResponseBundle(
       String inputItemsJson, IncomingMessage message) {
     try {
-      var mapper = messageAgent.getObjectMapper();
-      var inputItems =
-          mapper.readValue(
-              inputItemsJson,
-              mapper
-                  .getTypeFactory()
-                  .constructCollectionType(
-                      List.class, com.openai.models.responses.ResponseInputItem.class));
+      JsonNode inputNode = messageAgent.getObjectMapper().readTree(inputItemsJson);
+      List<ResponseInputItem> inputItems =
+          JsonValue.fromJsonNode(inputNode)
+              .convert(new TypeReference<List<ResponseInputItem>>() {});
       var response = messageAgent.createResponse(inputItems, message, null);
       if (response == null) {
         return null;
       }
-      String responseJson = mapper.writeValueAsString(response);
+      String responseJson = toJson(response);
       String assistantText =
           AgentResponseHelper.normalizeAssistantText(
-              mapper, AgentResponseHelper.extractResponseText(response));
+              messageAgent.getObjectMapper(), AgentResponseHelper.extractResponseText(response));
       List<CadenceToolCall> toolCalls =
           AgentResponseHelper.extractFunctionCalls(response).stream()
               .map(call -> new CadenceToolCall(call.callId(), call.name(), call.arguments()))
               .collect(Collectors.toList());
-      String toolContextItemsJson =
-          mapper.writeValueAsString(AgentResponseHelper.extractToolContextItems(response));
+      String toolContextItemsJson = toJson(AgentResponseHelper.extractToolContextItems(response));
       return new CadenceResponseBundle(
           responseJson, assistantText, toolContextItemsJson, toolCalls);
     } catch (Exception e) {
@@ -101,7 +98,7 @@ public class CadenceAgentActivitiesImpl implements CadenceAgentActivities {
                 .build();
         outputs.add(messageAgent.runToolActivity(call, message, workflowContext));
       }
-      return messageAgent.getObjectMapper().writeValueAsString(outputs);
+      return toJson(outputs);
     } catch (Exception e) {
       throw new RuntimeException("Failed to execute tool calls", e);
     }
@@ -200,9 +197,11 @@ public class CadenceAgentActivitiesImpl implements CadenceAgentActivities {
       state.setLastProcessedMessageGuid(message.messageGuid());
       state.setLastProcessedMessageFingerprint(message.computeMessageFingerprint());
       messageAgent.updateThreadContext(state, message);
-      if (workflowContext != null && workflowContext.workflowId() != null) {
-        state.setLastRespondedWorkflowId(workflowContext.workflowId());
-      }
     }
+  }
+
+  private String toJson(Object value) throws Exception {
+    JsonNode node = JsonValue.from(value).convert(JsonNode.class);
+    return messageAgent.getObjectMapper().writeValueAsString(node);
   }
 }
