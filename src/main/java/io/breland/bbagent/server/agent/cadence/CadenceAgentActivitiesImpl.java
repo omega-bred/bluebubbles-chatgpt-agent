@@ -2,16 +2,22 @@ package io.breland.bbagent.server.agent.cadence;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.openai.core.JsonValue;
 import com.openai.models.responses.ResponseInputItem;
+import com.openai.models.responses.ResponseOutputItem;
 import io.breland.bbagent.server.agent.*;
 import io.breland.bbagent.server.agent.cadence.models.CadenceResponseBundle;
 import io.breland.bbagent.server.agent.cadence.models.CadenceToolCall;
 import io.breland.bbagent.server.agent.cadence.models.GeneratedImage;
 import io.breland.bbagent.server.agent.cadence.models.ImageSendResult;
+import io.breland.bbagent.server.blobstore.BlobStore;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Optional;
+import java.util.Set;
 import java.util.stream.Collectors;
 import org.springframework.stereotype.Component;
 
@@ -20,10 +26,13 @@ public class CadenceAgentActivitiesImpl implements CadenceAgentActivities {
 
   private final BBMessageAgent messageAgent;
   private final BBHttpClientWrapper httpClient;
+  private final BlobStore blobStore;
 
-  public CadenceAgentActivitiesImpl(BBMessageAgent messageAgent, BBHttpClientWrapper httpClient) {
+  public CadenceAgentActivitiesImpl(
+      BBMessageAgent messageAgent, BBHttpClientWrapper httpClient, BlobStore blobStore) {
     this.messageAgent = messageAgent;
     this.httpClient = httpClient;
+    this.blobStore = blobStore;
   }
 
   @Override
@@ -66,7 +75,29 @@ public class CadenceAgentActivitiesImpl implements CadenceAgentActivities {
       if (response == null) {
         return null;
       }
-      String responseJson = toJson(response);
+      Set<String> imageCallIds = new HashSet<>();
+      response.output().stream()
+          .filter(ResponseOutputItem::isImageGenerationCall)
+          .map(ResponseOutputItem::asImageGenerationCall)
+          .forEach(
+              imageGenerationCall -> {
+                String id = imageGenerationCall.id();
+                Optional<String> value = imageGenerationCall.result();
+                if (value.isEmpty()) {
+                  if (id != null && !id.isBlank()) {
+                    imageCallIds.add(id);
+                  }
+                  return;
+                }
+                String result = value.get();
+                if (id != null && !id.isBlank()) {
+                  imageCallIds.add(id);
+                  if (result != null && !result.isBlank()) {
+                    this.blobStore.storeBlob(message.chatGuid(), id, result);
+                  }
+                }
+              });
+      String responseJson = toJsonWithoutImageResults(response, imageCallIds);
       String assistantText =
           AgentResponseHelper.normalizeAssistantText(
               messageAgent.getObjectMapper(), AgentResponseHelper.extractResponseText(response));
@@ -112,10 +143,11 @@ public class CadenceAgentActivitiesImpl implements CadenceAgentActivities {
       AgentWorkflowContext workflowContext) {
     com.openai.models.responses.Response response;
     try {
+      String hydratedJson = hydrateResponseJson(responseJson, message.chatGuid());
       response =
           messageAgent
               .getObjectMapper()
-              .readValue(responseJson, com.openai.models.responses.Response.class);
+              .readValue(hydratedJson, com.openai.models.responses.Response.class);
     } catch (Exception e) {
       throw new RuntimeException("Failed to parse response json", e);
     }
@@ -203,5 +235,74 @@ public class CadenceAgentActivitiesImpl implements CadenceAgentActivities {
   private String toJson(Object value) throws Exception {
     JsonNode node = JsonValue.from(value).convert(JsonNode.class);
     return messageAgent.getObjectMapper().writeValueAsString(node);
+  }
+
+  private String toJsonWithoutImageResults(
+      com.openai.models.responses.Response response, Set<String> imageCallIds) throws Exception {
+    JsonNode node = JsonValue.from(response).convert(JsonNode.class);
+    if (imageCallIds == null || imageCallIds.isEmpty()) {
+      return messageAgent.getObjectMapper().writeValueAsString(node);
+    }
+    if (node instanceof ObjectNode objectNode) {
+      JsonNode outputNode = objectNode.get("output");
+      if (outputNode != null && outputNode.isArray()) {
+        for (JsonNode itemNode : outputNode) {
+          if (!(itemNode instanceof ObjectNode itemObject)) {
+            continue;
+          }
+          String id = textValue(itemObject.get("id"));
+          if (id == null || !imageCallIds.contains(id)) {
+            continue;
+          }
+          itemObject.remove("result");
+        }
+      }
+    }
+    return messageAgent.getObjectMapper().writeValueAsString(node);
+  }
+
+  private String hydrateResponseJson(String responseJson, String conversationId) throws Exception {
+    if (responseJson == null || responseJson.isBlank()) {
+      return responseJson;
+    }
+    JsonNode node = messageAgent.getObjectMapper().readTree(responseJson);
+    if (!(node instanceof ObjectNode objectNode)) {
+      return responseJson;
+    }
+    JsonNode outputNode = objectNode.get("output");
+    if (outputNode != null && outputNode.isArray()) {
+      for (JsonNode itemNode : outputNode) {
+        if (!(itemNode instanceof ObjectNode itemObject)) {
+          continue;
+        }
+        String id = textValue(itemObject.get("id"));
+        if (id == null || id.isBlank()) {
+          continue;
+        }
+        JsonNode resultNode = itemObject.get("result");
+        if (resultNode != null && !resultNode.isNull()) {
+          String existing = resultNode.asText();
+          if (existing != null && !existing.isBlank()) {
+            continue;
+          }
+        }
+        String blob = blobStore.getBlob(conversationId, id);
+        if (blob == null || blob.isBlank()) {
+          continue;
+        }
+        itemObject.put("result", blob);
+      }
+    }
+    return messageAgent.getObjectMapper().writeValueAsString(node);
+  }
+
+  private static String textValue(JsonNode node) {
+    if (node == null || node.isNull()) {
+      return null;
+    }
+    if (node.isTextual()) {
+      return node.textValue();
+    }
+    return node.asText();
   }
 }
