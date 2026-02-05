@@ -20,6 +20,7 @@ import com.uber.cadence.worker.Worker;
 import com.uber.cadence.worker.WorkerFactory;
 import io.breland.bbagent.server.agent.AgentWorkflowProperties;
 import java.lang.reflect.Type;
+import java.time.Duration;
 import java.time.Instant;
 import java.time.format.DateTimeParseException;
 import kotlin.Lazy;
@@ -49,6 +50,7 @@ public class CadenceWorkflowConfig {
             builder ->
                 builder
                     .registerTypeAdapter(Instant.class, new InstantTypeAdapter())
+                    .registerTypeAdapter(Duration.class, new DurationTypeAdapter())
                     .registerTypeHierarchyAdapter(JsonField.class, new JsonFieldTypeAdapter())
                     .registerTypeHierarchyAdapter(JsonValue.class, new JsonValueTypeAdapter())
                     .registerTypeHierarchyAdapter(Lazy.class, new LazyTypeAdapter()));
@@ -161,6 +163,45 @@ public class CadenceWorkflowConfig {
       }
       Object value = context.deserialize(json, Object.class);
       return JsonValue.from(value);
+    }
+  }
+
+  static final class DurationTypeAdapter
+      implements JsonSerializer<Duration>, JsonDeserializer<Duration> {
+    @Override
+    public JsonElement serialize(Duration src, Type typeOfSrc, JsonSerializationContext context) {
+      if (src == null) {
+        return JsonNull.INSTANCE;
+      }
+      return new JsonPrimitive(src.toString());
+    }
+
+    @Override
+    public Duration deserialize(JsonElement json, Type typeOfT, JsonDeserializationContext context)
+        throws JsonParseException {
+      if (json == null || json.isJsonNull()) {
+        return null;
+      }
+      if (json.isJsonPrimitive()) {
+        JsonPrimitive primitive = json.getAsJsonPrimitive();
+        if (primitive.isNumber()) {
+          return Duration.ofMillis(primitive.getAsLong());
+        }
+        String text = primitive.getAsString();
+        if (text == null || text.isBlank()) {
+          return null;
+        }
+        try {
+          return Duration.parse(text);
+        } catch (Exception ignored) {
+          try {
+            return Duration.ofMillis(Long.parseLong(text));
+          } catch (NumberFormatException ignoredNumber) {
+            return null;
+          }
+        }
+      }
+      throw new JsonParseException("Unsupported Duration value: " + json);
     }
   }
 
