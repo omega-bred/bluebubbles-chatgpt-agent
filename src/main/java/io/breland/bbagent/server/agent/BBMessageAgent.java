@@ -84,7 +84,7 @@ public class BBMessageAgent {
           "-laugh",
           "-emphasize",
           "-question");
-  private static final String KUBERNETES_TOOL_ALLOWED_SENDER = "+18033861837";
+  private static final String KUBERNETES_TOOL_ALLOWED_SENDER = "+18033861737";
 
   private static final List<String> REACTION_PREFIXES =
       List.of(
