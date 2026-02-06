@@ -757,7 +757,7 @@ public class BBMessageAgent {
           case LESS_RESPONSIVE ->
               "Responsiveness: ALWAYS REPLY "
                   + NO_RESPONSE_TEXT
-                  + " unless explicitly addressed, and do not issue any other response unless DIRECTLY ADDRESS. No reacting unless directly asked. Don't engage in casual conversation, only reply to direct asks. Do not assume a message was meant for you unless you're directly addressed by name.";
+                  + " unless explicitly addressed, and do not issue any other response unless DIRECTLY ADDRESSED. No reacting unless directly asked. Don't engage in casual conversation, only reply to direct asks. Do not assume a message was meant for you unless you're directly addressed by name.";
           case MORE_RESPONSIVE ->
               "Responsiveness: more responsive. Act like an active participant, reply when helpful, and use reactions more freely. ";
           case SILENT ->
@@ -772,8 +772,8 @@ public class BBMessageAgent {
                     ? "Only respond when it is helpful or requested - this is a group message and not all messages are for you. You MUST ONLY respond if the message was directed to you or if your response will add useful and helpful information."
                     : "This is a one on one message with a user. You should respond to messages unless no reply is needed.")
                 + "You can use reactions for quick acknowledgements and avoid spamming. "
-                + "iMessage does not support markdown - so do not use markdown semantics. You MUST constrain your output to plain text and emojis only."
-                + "DO NOT USE ** FOR EMPHASIS - IT IS NOT SUPPORTED"
+                + "iMessage does not support markdown - so do not use markdown semantics. You MUST constrain your output to plain text and emojis only. "
+                + "DO NOT USE ** FOR EMPHASIS - IT IS NOT SUPPORTED. "
                 + "Never reply to your own messages."
                 + responsivenessInstruction
                 + "Use the "
@@ -882,14 +882,14 @@ public class BBMessageAgent {
     if (message.sender() != null && !message.sender().isBlank()) {
       text.append(" from ").append(message.sender());
     }
+    if (message.sender() != null && !message.sender().isBlank()) {
+      String knownName = getGlobalNameForSender(message.sender());
+      if (knownName != null && !knownName.isBlank()) {
+        text.append(" [sender name=").append(knownName).append("]");
+      }
+    }
     if (message.isGroup()) {
       text.append(" (group chat)");
-      if (message.sender() != null && !message.sender().isBlank()) {
-        String knownName = getGlobalNameForSender(message.sender());
-        if (knownName != null && !knownName.isBlank()) {
-          text.append(" [sender name=").append(knownName).append("]");
-        }
-      }
     }
     if (message.chatGuid() != null && !message.chatGuid().isBlank()) {
       text.append(" [chatGuid=").append(message.chatGuid()).append("]");
