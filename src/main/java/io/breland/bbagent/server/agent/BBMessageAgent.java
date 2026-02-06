@@ -32,6 +32,7 @@ import io.breland.bbagent.server.agent.tools.bb.SetGroupIconAgentTool;
 import io.breland.bbagent.server.agent.tools.gcal.*;
 import io.breland.bbagent.server.agent.tools.giphy.GiphyClient;
 import io.breland.bbagent.server.agent.tools.giphy.SendGiphyAgentTool;
+import io.breland.bbagent.server.agent.tools.kubernetes.KubernetesReadOnlyAgentTool;
 import io.breland.bbagent.server.agent.tools.memory.*;
 import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
@@ -83,6 +84,8 @@ public class BBMessageAgent {
           "-laugh",
           "-emphasize",
           "-question");
+  private static final String KUBERNETES_TOOL_ALLOWED_SENDER = "+18033861837";
+
   private static final List<String> REACTION_PREFIXES =
       List.of(
           "reacted ", "loved ", "liked ", "disliked ", "questioned ", "emphasized ", "laughed at ");
@@ -602,6 +605,11 @@ public class BBMessageAgent {
     if (GROUP_ONLY_TOOLS.contains(tool.name())) {
       return message.isGroup();
     }
+    if (KubernetesReadOnlyAgentTool.TOOL_NAME.equals(tool.name())) {
+      return message != null
+          && !message.isGroup()
+          && KUBERNETES_TOOL_ALLOWED_SENDER.equals(message.sender());
+    }
     return true;
   }
 
@@ -1085,6 +1093,7 @@ public class BBMessageAgent {
     registerTool(new ManageAccountsAgentTool(gcalClient).getTool());
     registerTool(new ListColorsAgentTool(gcalClient).getTool());
     registerTool(new GetCurrentTimeAgentTool(gcalClient).getTool());
+    registerTool(new KubernetesReadOnlyAgentTool(objectMapper).getTool());
     registerTool(new GetThreadContextAgentTool(bbHttpClientWrapper).getTool());
   }
 

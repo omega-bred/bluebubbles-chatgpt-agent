@@ -61,6 +61,25 @@ metadata:
 spec:
   itemPath: "vaults/Kubernetes/items/gcal-oauth-state-secret"
 ---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: bluebubbles-chatgpt-agent
+  namespace: bluebubbles-chatgpt-agent
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: bluebubbles-chatgpt-agent-read-only
+subjects:
+  - kind: ServiceAccount
+    name: bluebubbles-chatgpt-agent
+    namespace: bluebubbles-chatgpt-agent
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: view
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -84,6 +103,7 @@ spec:
       labels:
         app: bluebubbles-chatgpt-agent
     spec:
+      serviceAccountName: bluebubbles-chatgpt-agent
       containers:
         - name: bluebubbles-chatgpt-agent
           env:
