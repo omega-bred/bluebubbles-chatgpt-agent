@@ -34,6 +34,9 @@ import io.breland.bbagent.server.agent.tools.giphy.GiphyClient;
 import io.breland.bbagent.server.agent.tools.giphy.SendGiphyAgentTool;
 import io.breland.bbagent.server.agent.tools.kubernetes.KubernetesReadOnlyAgentTool;
 import io.breland.bbagent.server.agent.tools.memory.*;
+import io.breland.bbagent.server.agent.tools.scheduled.ScheduledEventDeleteTool;
+import io.breland.bbagent.server.agent.tools.scheduled.ScheduledEventListTool;
+import io.breland.bbagent.server.agent.tools.scheduled.ScheduledEventTool;
 import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
 import java.net.URL;
@@ -231,7 +234,7 @@ public class BBMessageAgent {
     if (workflowProperties.useCadenceWorkflow()) {
       log.info("Responding via cadence workflow");
       CadenceMessageWorkflowRequest request =
-          new CadenceMessageWorkflowRequest(workflowContext, message);
+          new CadenceMessageWorkflowRequest(workflowContext, message, null);
       WorkflowExecution execution = cadenceWorkflowLauncher.startWorkflow(request);
       state.setLatestWorkflowRunId(execution.getRunId());
       return;
@@ -1095,6 +1098,9 @@ public class BBMessageAgent {
     registerTool(new GetCurrentTimeAgentTool(gcalClient).getTool());
     registerTool(new KubernetesReadOnlyAgentTool(objectMapper).getTool());
     registerTool(new GetThreadContextAgentTool(bbHttpClientWrapper).getTool());
+    registerTool(new ScheduledEventTool(cadenceWorkflowLauncher).getTool());
+    registerTool(new ScheduledEventListTool(cadenceWorkflowLauncher).getTool());
+    registerTool(new ScheduledEventDeleteTool(cadenceWorkflowLauncher).getTool());
   }
 
   private void registerTool(AgentTool tool) {
