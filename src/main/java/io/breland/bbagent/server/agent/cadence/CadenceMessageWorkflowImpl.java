@@ -30,6 +30,13 @@ public class CadenceMessageWorkflowImpl implements CadenceMessageWorkflow {
     if (request == null || request.message() == null || request.workflowContext() == null) {
       return;
     }
+    if (request.scheduledFor() != null) {
+      long now = Workflow.currentTimeMillis();
+      long scheduledFor = request.scheduledFor().toEpochMilli();
+      if (scheduledFor > now) {
+        Workflow.sleep(Duration.ofMillis(scheduledFor - now));
+      }
+    }
     log.info("Handling message via cadence: {}", request.workflowContext());
     IncomingMessage message = request.message();
     String inputItemsJson =
