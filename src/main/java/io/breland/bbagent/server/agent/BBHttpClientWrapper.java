@@ -340,11 +340,35 @@ public class BBHttpClientWrapper {
 
   public void sendTextDirect(ApiV1MessageTextPostRequest request) {
     try {
+      applyTextFormatting(request);
       log.info("Attempting to send direct text message {}", request.toString());
       messageApi.apiV1MessageTextPost(password, request).block(API_TIMEOUT);
       log.info("Sent direct message to {}", request.getChatGuid());
     } catch (Exception e) {
       log.warn("Failed to send direct message", e);
+    }
+  }
+
+  private void applyTextFormatting(ApiV1MessageTextPostRequest request) {
+    if (request == null) {
+      return;
+    }
+    String message = request.getMessage();
+    if (message == null || message.isBlank()) {
+      return;
+    }
+    if (request.getTextFormatting() != null && !request.getTextFormatting().isEmpty()) {
+      return;
+    }
+    TextFormattingParser.Result parsed = TextFormattingParser.parse(message);
+    if (parsed.formatting().isEmpty()) {
+      return;
+    }
+    request.setMessage(parsed.text());
+    request.setTextFormatting(parsed.formatting());
+    String method = request.getMethod();
+    if (method == null || method.isBlank() || !"private-api".equalsIgnoreCase(method.trim())) {
+      request.setMethod("private-api");
     }
   }
 

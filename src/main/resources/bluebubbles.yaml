@@ -2374,6 +2374,11 @@ paths:
             // (Optional) Reply to another message by GUID.
             // Setting this will force the method to be `private-api`, so you must have the Private API setup.
             "selectedMessageGuid": "",
+            // (Optional) Apply formatting to parts of the message.
+            // This requires the Private API.
+            "textFormatting": [
+                { "start": 0, "length": 4, "styles": [ "bold" ] }
+            ],
             // The part of the message to reply to.
             // This is only used for replies.
             // macOS Big Sur and newer.
@@ -2404,6 +2409,10 @@ paths:
                   type: string
                 selectedMessageGuid:
                   type: string
+                textFormatting:
+                  type: array
+                  items:
+                    $ref: '#/components/schemas/TextFormattingRange'
                 partIndex:
                   type: integer
               example:
@@ -2414,6 +2423,10 @@ paths:
                 subject: ''
                 effectId: ''
                 selectedMessageGuid: ''
+                textFormatting:
+                  - start: 0
+                    length: 5
+                    styles: [ bold ]
       parameters:
         - name: password
           in: query
@@ -3530,6 +3543,25 @@ components:
         login_status_message:
           type: string
           example: Connected
+
+    TextFormattingRange:
+      type: object
+      additionalProperties: false
+      required: [ start, length, styles ]
+      properties:
+        start:
+          type: integer
+          minimum: 0
+          example: 0
+        length:
+          type: integer
+          minimum: 1
+          example: 4
+        styles:
+          type: array
+          items:
+            type: string
+            example: bold
       
     Message:
       type: object
