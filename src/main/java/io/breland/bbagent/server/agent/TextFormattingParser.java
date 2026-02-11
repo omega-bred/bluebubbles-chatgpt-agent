@@ -160,16 +160,11 @@ final class TextFormattingParser {
     return Character.isLetterOrDigit(value) || value == '_';
   }
 
-  private static void addRange(
-      List<TextFormattingRange> ranges, int start, int length, int mask) {
+  private static void addRange(List<TextFormattingRange> ranges, int start, int length, int mask) {
     if (length <= 0) {
       return;
     }
-    ranges.add(
-        new TextFormattingRange()
-            .start(start)
-            .length(length)
-            .styles(stylesForMask(mask)));
+    ranges.add(new TextFormattingRange().start(start).length(length).styles(stylesForMask(mask)));
   }
 
   private static List<String> stylesForMask(int mask) {
