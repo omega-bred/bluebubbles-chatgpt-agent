@@ -124,10 +124,15 @@ spec:
                   name: bluebubbles-chatgpt-agent-influx-token
             - name: INFLUX_DB_URI
               value: "https://influxdb-1.taild1b69.ts.net"
+            - name: "OPENAI_BASE_URL"
+              valueFrom:
+                secretKeyRef:
+                  key: "base-url"
+                  name: openai-bluebubbles-chatgpt-agent-api-key
             - name: "OPENAI_API_KEY"
               valueFrom:
                 secretKeyRef:
-                  key: "password"
+                  key: "litellm-api-key"
                   name: openai-bluebubbles-chatgpt-agent-api-key
             - name: "BLUEBUBBLES_PATH"
               valueFrom:
