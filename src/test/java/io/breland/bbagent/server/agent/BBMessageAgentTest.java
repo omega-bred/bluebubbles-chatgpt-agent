@@ -8,6 +8,7 @@ import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.when;
 
 import com.openai.client.OpenAIClient;
@@ -25,6 +26,8 @@ import io.breland.bbagent.generated.bluebubblesclient.model.ApiV1MessageTextPost
 import io.breland.bbagent.server.agent.tools.gcal.GcalClient;
 import io.breland.bbagent.server.agent.tools.giphy.GiphyClient;
 import io.breland.bbagent.server.agent.tools.memory.Mem0Client;
+import io.breland.bbagent.server.agent.tools.bb.RenameConversationAgentTool;
+import io.breland.bbagent.server.agent.tools.ToolContext;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
@@ -121,6 +124,131 @@ class BBMessageAgentTest {
     assertFalse(BBMessageAgent.isReactionMessage("questioned"));
     assertFalse(BBMessageAgent.isReactionMessage(""));
     assertFalse(BBMessageAgent.isReactionMessage(null));
+  }
+
+  @Test
+  void includesRenameConversationToolForGroupChats() {
+    OpenAIClient openAIClient = Mockito.mock(OpenAIClient.class);
+    var responseService = Mockito.mock(com.openai.services.blocking.ResponseService.class);
+    V1MessageApi messageApi = Mockito.mock(V1MessageApi.class);
+    V1ContactApi contactApi = Mockito.mock(V1ContactApi.class);
+    Mem0Client mem0Client = Mockito.mock(Mem0Client.class);
+    GcalClient gcalClient = Mockito.mock(GcalClient.class);
+    GiphyClient giphyClient = Mockito.mock(GiphyClient.class);
+    AgentWorkflowProperties workflowProperties = new AgentWorkflowProperties();
+
+    when(openAIClient.responses()).thenReturn(responseService);
+    when(responseService.create(any(ResponseCreateParams.class))).thenReturn(responseWithNoToolCalls());
+    when(messageApi.apiV1MessageTextPost(anyString(), any())).thenReturn(Mono.empty());
+
+    BBHttpClientWrapper bbHttpClientWrapper = new BBHttpClientWrapper("pw", messageApi, contactApi);
+    BBMessageAgent agent =
+        new BBMessageAgent(
+            openAIClient,
+            bbHttpClientWrapper,
+            mem0Client,
+            gcalClient,
+            giphyClient,
+            new InMemoryAgentSettingsStore(),
+            workflowProperties,
+            null);
+
+    IncomingMessage incoming =
+        new IncomingMessage(
+            "iMessage;+;chat-group-1",
+            "msg-group-1",
+            null,
+            "please rename this chat",
+            false,
+            "iMessage",
+            "Alice",
+            false,
+            Instant.now(),
+            List.of(),
+            false);
+
+    agent.handleIncomingMessage(incoming);
+
+    ArgumentCaptor<ResponseCreateParams> paramsCaptor =
+        ArgumentCaptor.forClass(ResponseCreateParams.class);
+    verify(responseService).create(paramsCaptor.capture());
+    boolean hasRenameTool =
+        paramsCaptor.getValue().tools().stream()
+            .filter(tool -> tool.function().isPresent())
+            .map(tool -> tool.function().get().name())
+            .anyMatch(RenameConversationAgentTool.TOOL_NAME::equals);
+
+    assertTrue(hasRenameTool);
+  }
+
+  @Test
+  void renameConversationToolRenamesGroupChats() {
+    V1MessageApi messageApi = Mockito.mock(V1MessageApi.class);
+    V1ContactApi contactApi = Mockito.mock(V1ContactApi.class);
+    BBHttpClientWrapper bbHttpClientWrapper = Mockito.spy(new BBHttpClientWrapper("pw", messageApi, contactApi));
+    when(bbHttpClientWrapper.renameConversation("iMessage;+;chat-group-1", "New Group Name"))
+        .thenReturn(true);
+
+    RenameConversationAgentTool toolProvider = new RenameConversationAgentTool(bbHttpClientWrapper);
+    var tool = toolProvider.getTool();
+
+    IncomingMessage groupMessage =
+        new IncomingMessage(
+            "iMessage;+;chat-group-1",
+            "msg-group-2",
+            null,
+            "rename this group",
+            false,
+            "iMessage",
+            "Alice",
+            false,
+            Instant.now(),
+            List.of(),
+            false);
+
+    ToolContext context = new ToolContext(Mockito.mock(BBMessageAgent.class), groupMessage, null);
+    com.fasterxml.jackson.databind.node.ObjectNode args =
+        new com.fasterxml.jackson.databind.ObjectMapper().createObjectNode();
+    args.put("name", "New Group Name");
+
+    String output = tool.handler().apply(context, args);
+
+    assertEquals("renamed", output);
+    verify(bbHttpClientWrapper).renameConversation("iMessage;+;chat-group-1", "New Group Name");
+  }
+
+  @Test
+  void renameConversationToolRejectsNonGroupChats() {
+    V1MessageApi messageApi = Mockito.mock(V1MessageApi.class);
+    V1ContactApi contactApi = Mockito.mock(V1ContactApi.class);
+    BBHttpClientWrapper bbHttpClientWrapper = Mockito.mock(BBHttpClientWrapper.class);
+
+    RenameConversationAgentTool toolProvider = new RenameConversationAgentTool(bbHttpClientWrapper);
+    var tool = toolProvider.getTool();
+
+    IncomingMessage directMessage =
+        new IncomingMessage(
+            "iMessage;+;user-1",
+            "msg-direct-1",
+            null,
+            "rename this chat",
+            false,
+            "iMessage",
+            "Alice",
+            false,
+            Instant.now(),
+            List.of(),
+            false);
+
+    ToolContext context = new ToolContext(Mockito.mock(BBMessageAgent.class), directMessage, null);
+    com.fasterxml.jackson.databind.node.ObjectNode args =
+        new com.fasterxml.jackson.databind.ObjectMapper().createObjectNode();
+    args.put("name", "Should Not Rename");
+
+    String output = tool.handler().apply(context, args);
+
+    assertEquals("not group", output);
+    verify(bbHttpClientWrapper, never()).renameConversation(anyString(), anyString());
   }
 
   private static Response responseWithFunctionCall(String name, String argsJson, String callId) {
