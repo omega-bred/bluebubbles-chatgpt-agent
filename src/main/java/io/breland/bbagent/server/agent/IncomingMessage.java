@@ -20,15 +20,17 @@ public record IncomingMessage(
     boolean isSystemMessage) {
 
   public static IncomingMessage create(ApiV1ChatChatGuidMessageGet200ResponseDataInner message) {
+    String chatGuid =
+        message.getChats().stream().findFirst().map(chat -> chat.getGuid()).orElse(null);
     return new IncomingMessage(
-        message.getChats().stream().findFirst().get().getGuid(),
+        chatGuid,
         message.getGuid(),
         null,
         message.getText(),
         message.getIsFromMe(),
         BBMessageAgent.IMESSAGE_SERVICE,
         message.getHandle().getAddress(),
-        message.getGuid().startsWith(BluebubblesWebhookController.GROUP_PREFIX),
+        chatGuid != null && chatGuid.startsWith(BluebubblesWebhookController.GROUP_PREFIX),
         Instant.ofEpochSecond(message.getDateCreated()),
         List.of(),
         (message.getIsSystemMessage() != null && message.getIsSystemMessage())
@@ -44,6 +46,13 @@ public record IncomingMessage(
     long timestamp = this.timestamp() != null ? this.timestamp().toEpochMilli() : 0L;
     int attachmentCount = this.attachments() != null ? this.attachments().size() : 0;
     return sender + "|" + text + "|" + timestamp + "|" + attachmentCount;
+  }
+
+  public boolean isLikelyGroupChat() {
+    if (isGroup) {
+      return true;
+    }
+    return chatGuid != null && chatGuid.startsWith(BluebubblesWebhookController.GROUP_PREFIX);
   }
 
   public String summaryForHistory() {

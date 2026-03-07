@@ -34,7 +34,7 @@ public class RenameConversationAgentTool implements ToolProvider {
           if (message == null || message.chatGuid() == null || message.chatGuid().isBlank()) {
             return "no chat";
           }
-          if (!message.isGroup()) {
+          if (!message.isLikelyGroupChat()) {
             return "not group";
           }
           RenameConversationRequest request =

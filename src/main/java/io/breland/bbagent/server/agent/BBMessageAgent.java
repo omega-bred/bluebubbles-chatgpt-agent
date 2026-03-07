@@ -606,7 +606,7 @@ public class BBMessageAgent {
 
   private boolean shouldIncludeTool(AgentTool tool, IncomingMessage message) {
     if (GROUP_ONLY_TOOLS.contains(tool.name())) {
-      return message.isGroup();
+      return message != null && message.isLikelyGroupChat();
     }
     if (KubernetesReadOnlyAgentTool.TOOL_NAME.equals(tool.name())) {
       return message != null
