@@ -6,9 +6,9 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.when;
 
 import com.openai.client.OpenAIClient;
@@ -23,11 +23,11 @@ import com.openai.models.responses.ToolChoiceOptions;
 import io.breland.bbagent.generated.bluebubblesclient.api.V1ContactApi;
 import io.breland.bbagent.generated.bluebubblesclient.api.V1MessageApi;
 import io.breland.bbagent.generated.bluebubblesclient.model.ApiV1MessageTextPostRequest;
+import io.breland.bbagent.server.agent.tools.ToolContext;
+import io.breland.bbagent.server.agent.tools.bb.RenameConversationAgentTool;
 import io.breland.bbagent.server.agent.tools.gcal.GcalClient;
 import io.breland.bbagent.server.agent.tools.giphy.GiphyClient;
 import io.breland.bbagent.server.agent.tools.memory.Mem0Client;
-import io.breland.bbagent.server.agent.tools.bb.RenameConversationAgentTool;
-import io.breland.bbagent.server.agent.tools.ToolContext;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
@@ -138,7 +138,8 @@ class BBMessageAgentTest {
     AgentWorkflowProperties workflowProperties = new AgentWorkflowProperties();
 
     when(openAIClient.responses()).thenReturn(responseService);
-    when(responseService.create(any(ResponseCreateParams.class))).thenReturn(responseWithNoToolCalls());
+    when(responseService.create(any(ResponseCreateParams.class)))
+        .thenReturn(responseWithNoToolCalls());
     when(messageApi.apiV1MessageTextPost(anyString(), any())).thenReturn(Mono.empty());
 
     BBHttpClientWrapper bbHttpClientWrapper = new BBHttpClientWrapper("pw", messageApi, contactApi);
@@ -174,8 +175,8 @@ class BBMessageAgentTest {
     verify(responseService).create(paramsCaptor.capture());
     boolean hasRenameTool =
         paramsCaptor.getValue().tools().stream()
-            .filter(tool -> tool.function().isPresent())
-            .map(tool -> tool.function().get().name())
+            .filter(tool -> tool.getFirst().function().isPresent())
+            .map(tool -> tool.getFirst().function().get().name())
             .anyMatch(RenameConversationAgentTool.TOOL_NAME::equals);
 
     assertTrue(hasRenameTool);
@@ -185,7 +186,8 @@ class BBMessageAgentTest {
   void renameConversationToolRenamesGroupChats() {
     V1MessageApi messageApi = Mockito.mock(V1MessageApi.class);
     V1ContactApi contactApi = Mockito.mock(V1ContactApi.class);
-    BBHttpClientWrapper bbHttpClientWrapper = Mockito.spy(new BBHttpClientWrapper("pw", messageApi, contactApi));
+    BBHttpClientWrapper bbHttpClientWrapper =
+        Mockito.spy(new BBHttpClientWrapper("pw", messageApi, contactApi));
     when(bbHttpClientWrapper.renameConversation("iMessage;+;chat-group-1", "New Group Name"))
         .thenReturn(true);
 
