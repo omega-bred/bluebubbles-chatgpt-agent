@@ -23,6 +23,7 @@ import com.openai.models.responses.ToolChoiceOptions;
 import io.breland.bbagent.generated.bluebubblesclient.api.V1ContactApi;
 import io.breland.bbagent.generated.bluebubblesclient.api.V1MessageApi;
 import io.breland.bbagent.generated.bluebubblesclient.model.ApiV1MessageTextPostRequest;
+import io.breland.bbagent.server.agent.model_picker.ModelPicker;
 import io.breland.bbagent.server.agent.tools.ToolContext;
 import io.breland.bbagent.server.agent.tools.bb.RenameConversationAgentTool;
 import io.breland.bbagent.server.agent.tools.gcal.GcalClient;
@@ -65,7 +66,8 @@ class BBMessageAgentTest {
             giphyClient,
             new InMemoryAgentSettingsStore(),
             workflowProperties,
-            null);
+            null,
+            new ModelPicker());
 
     Response first =
         responseWithFunctionCall(
@@ -152,7 +154,8 @@ class BBMessageAgentTest {
             giphyClient,
             new InMemoryAgentSettingsStore(),
             workflowProperties,
-            null);
+            null,
+            new ModelPicker());
 
     IncomingMessage incoming =
         new IncomingMessage(

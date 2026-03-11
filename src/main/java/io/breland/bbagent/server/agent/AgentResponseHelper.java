@@ -56,7 +56,7 @@ public final class AgentResponseHelper {
       }
       ResponseOutputMessage message = item.message().get();
       for (ResponseOutputMessage.Content content : message.content()) {
-        if (content.isOutputText()) {
+        if (content.isOutputText() && content.asOutputText().isValid()) {
           if (builder.length() > 0) {
             builder.append(' ');
           }

@@ -39,6 +39,7 @@ import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
 import java.net.URL;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
@@ -102,7 +103,8 @@ public class BBMessageAgent {
   private final Supplier<OpenAIClient> openAiSupplier =
       () -> {
         if (openAIClient == null) {
-          openAIClient = OpenAIOkHttpClient.fromEnv();
+          openAIClient =
+              OpenAIOkHttpClient.fromEnv().withOptions(b -> b.timeout(Duration.ofSeconds(120)));
         }
         return openAIClient;
       };
@@ -144,7 +146,8 @@ public class BBMessageAgent {
       GiphyClient giphyClient,
       AgentSettingsStore agentSettingsStore,
       AgentWorkflowProperties workflowProperties,
-      @Nullable CadenceWorkflowLauncher cadenceWorkflowLauncher) {
+      @Nullable CadenceWorkflowLauncher cadenceWorkflowLauncher,
+      ModelPicker modelPicker) {
     this.openAIClient = openAIClient;
     this.bbHttpClientWrapper = bbHttpClientWrapper;
     this.mem0Client = mem0Client;
@@ -154,6 +157,7 @@ public class BBMessageAgent {
     this.workflowProperties = workflowProperties;
     this.objectMapper = new ObjectMapper();
     this.cadenceWorkflowLauncher = cadenceWorkflowLauncher;
+    this.modelPicker = modelPicker;
     registerBuiltInTools();
   }
 
@@ -507,7 +511,6 @@ public class BBMessageAgent {
     }
     try {
       ResponseCreateParams finalRequest = params.build();
-
       log.trace("Final message: {}", finalRequest.toString());
       return openAiSupplier.get().responses().create(finalRequest);
     } catch (RuntimeException e) {

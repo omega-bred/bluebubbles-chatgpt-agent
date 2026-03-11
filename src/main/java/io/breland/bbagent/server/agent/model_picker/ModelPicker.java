@@ -45,7 +45,7 @@ public class ModelPicker {
       log.info("User {} is a standard user", incomingMessage.sender());
       builder.maxOutputTokens(1000);
       //      builder.reasoning(Reasoning.builder().effort(ReasoningEffort.HIGH).build());
-      builder.model("ollama-mbp/gpt-oss:120b");
+      builder.model("mistral/mistral-medium");
     }
     return builder;
   }
@@ -58,6 +58,7 @@ public class ModelPicker {
     if (incomingMessage == null || incomingMessage.sender() == null) {
       return false;
     }
-    return premiumUsers.contains(incomingMessage.sender());
+    return true;
+    //    return premiumUsers.contains(incomingMessage.sender());
   }
 }
