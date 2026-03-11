@@ -18,6 +18,7 @@ import io.breland.bbagent.server.agent.cadence.CadenceWorkflowLauncher;
 import io.breland.bbagent.server.agent.cadence.models.CadenceMessageWorkflowRequest;
 import io.breland.bbagent.server.agent.cadence.models.GeneratedImage;
 import io.breland.bbagent.server.agent.cadence.models.IncomingAttachment;
+import io.breland.bbagent.server.agent.model_picker.ModelPicker;
 import io.breland.bbagent.server.agent.tools.AgentTool;
 import io.breland.bbagent.server.agent.tools.ToolContext;
 import io.breland.bbagent.server.agent.tools.assistant.AssistantNameAgentTool;
@@ -113,6 +114,7 @@ public class BBMessageAgent {
   private Mem0Client mem0Client;
   private GcalClient gcalClient;
   private GiphyClient giphyClient;
+  private ModelPicker modelPicker;
 
   @Autowired
   public BBMessageAgent(
@@ -123,7 +125,8 @@ public class BBMessageAgent {
       AgentSettingsStore agentSettingsStore,
       AgentWorkflowProperties workflowProperties,
       ObjectMapper objectMapper,
-      @Nullable CadenceWorkflowLauncher cadenceWorkflowLauncher) {
+      @Nullable CadenceWorkflowLauncher cadenceWorkflowLauncher,
+      ModelPicker modelPicker) {
     this.bbHttpClientWrapper = bbHttpClientWrapper;
     this.mem0Client = mem0Client;
     this.gcalClient = gcalClient;
@@ -132,6 +135,7 @@ public class BBMessageAgent {
     this.workflowProperties = workflowProperties;
     this.objectMapper = objectMapper;
     this.cadenceWorkflowLauncher = cadenceWorkflowLauncher;
+    this.modelPicker = modelPicker;
     registerBuiltInTools();
   }
 
@@ -307,17 +311,6 @@ public class BBMessageAgent {
         updateThreadContext(state, message);
       }
     }
-  }
-
-  public void runMessageWorkflowForCadence(
-      IncomingMessage message, AgentWorkflowContext workflowContext) {
-    if (message == null || message.chatGuid() == null || message.chatGuid().isBlank()) {
-      return;
-    }
-    ConversationState state =
-        conversations.computeIfAbsent(
-            message.chatGuid(), key -> computeConversationState(key, message));
-    runMessageWorkflow(state, message, workflowContext);
   }
 
   public boolean canSendResponses(AgentWorkflowContext workflowContext) {

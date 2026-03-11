@@ -3,7 +3,6 @@ package io.breland.bbagent.server.agent.model_picker;
 import com.openai.models.ChatModel;
 import com.openai.models.Reasoning;
 import com.openai.models.ReasoningEffort;
-import com.openai.models.chat.completions.ChatCompletionCreateParams;
 import com.openai.models.responses.ResponseCreateParams;
 import com.openai.models.responses.Tool;
 import com.openai.models.responses.WebSearchTool;
@@ -23,30 +22,30 @@ public class ModelPicker {
       IncomingMessage incomingMessage,
       AgentWorkflowContext agentWorkflowContext) {
     if (isPremiumUser(incomingMessage)) {
-        log.info("User {} is a premium user", incomingMessage.sender());
-        builder.maxOutputTokens(2500);
-        builder.reasoning(Reasoning.builder().effort(ReasoningEffort.MEDIUM).build());
-        builder.model("openai/" + ChatModel.GPT_5_3_CHAT_LATEST.toString());
-        builder
-                .addTool(
-                        Tool.ImageGeneration.builder()
-                                .model(Tool.ImageGeneration.Model.GPT_IMAGE_1_5)
-                                .size(Tool.ImageGeneration.Size._1536X1024)
-                                .moderation(Tool.ImageGeneration.Moderation.LOW)
-                                .background(Tool.ImageGeneration.Background.AUTO)
-                                .outputFormat(Tool.ImageGeneration.OutputFormat.PNG)
-                                .quality(Tool.ImageGeneration.Quality.HIGH)
-                                .build())
-                .addTool(
-                        WebSearchTool.builder()
-                                .type(WebSearchTool.Type.WEB_SEARCH_2025_08_26)
-                                .searchContextSize(WebSearchTool.SearchContextSize.MEDIUM)
-                                .build());
+      log.info("User {} is a premium user", incomingMessage.sender());
+      builder.maxOutputTokens(2500);
+      builder.reasoning(Reasoning.builder().effort(ReasoningEffort.MEDIUM).build());
+      builder.model("openai/" + ChatModel.GPT_5_3_CHAT_LATEST.toString());
+      builder
+          .addTool(
+              Tool.ImageGeneration.builder()
+                  .model(Tool.ImageGeneration.Model.GPT_IMAGE_1_5)
+                  .size(Tool.ImageGeneration.Size._1536X1024)
+                  .moderation(Tool.ImageGeneration.Moderation.LOW)
+                  .background(Tool.ImageGeneration.Background.AUTO)
+                  .outputFormat(Tool.ImageGeneration.OutputFormat.PNG)
+                  .quality(Tool.ImageGeneration.Quality.HIGH)
+                  .build())
+          .addTool(
+              WebSearchTool.builder()
+                  .type(WebSearchTool.Type.WEB_SEARCH_2025_08_26)
+                  .searchContextSize(WebSearchTool.SearchContextSize.MEDIUM)
+                  .build());
     } else {
-        log.info("User {} is a standard user", incomingMessage.sender());
-        builder.maxOutputTokens(1000);
-        builder.reasoning(Reasoning.builder().effort(ReasoningEffort.HIGH).build());
-        builder.model("ollama-mbp/gpt-oss:120b");
+      log.info("User {} is a standard user", incomingMessage.sender());
+      builder.maxOutputTokens(1000);
+      builder.reasoning(Reasoning.builder().effort(ReasoningEffort.HIGH).build());
+      builder.model("ollama-mbp/gpt-oss:120b");
     }
     return builder;
   }

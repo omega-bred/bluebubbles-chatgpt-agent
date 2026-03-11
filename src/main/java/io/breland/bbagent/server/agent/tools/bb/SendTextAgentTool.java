@@ -19,10 +19,6 @@ public class SendTextAgentTool implements ToolProvider {
 
   @Schema(description = "Send a text message via iMessage.")
   public record SendTextRequest(
-      @Schema(
-              description = "Chat GUID to send the message to.",
-              requiredMode = Schema.RequiredMode.REQUIRED)
-          String chatGuid,
       @Schema(description = "Text message to send.", requiredMode = Schema.RequiredMode.REQUIRED)
           String message,
       @Schema(
@@ -96,11 +92,8 @@ public class SendTextAgentTool implements ToolProvider {
           ApiV1MessageTextPostRequest request = new ApiV1MessageTextPostRequest();
           SendTextRequest toolRequest =
               context.getMapper().convertValue(args, SendTextRequest.class);
-          String chatGuid = toolRequest.chatGuid();
+          String chatGuid = context.message().chatGuid();
           String message = toolRequest.message();
-          if (chatGuid == null || chatGuid.isBlank()) {
-            return "missing chatGuid";
-          }
           if (message == null || message.isBlank()) {
             return "missing message";
           }
