@@ -44,7 +44,7 @@ public class ModelPicker {
     } else {
       log.info("User {} is a standard user", incomingMessage.sender());
       builder.maxOutputTokens(1000);
-      builder.reasoning(Reasoning.builder().effort(ReasoningEffort.HIGH).build());
+      //      builder.reasoning(Reasoning.builder().effort(ReasoningEffort.HIGH).build());
       builder.model("ollama-mbp/gpt-oss:120b");
     }
     return builder;

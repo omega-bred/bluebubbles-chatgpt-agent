@@ -1,6 +1,8 @@
 package io.breland.bbagent.server.controllers;
 
 import io.breland.bbagent.generated.api.BluebubblesApiController;
+import io.breland.bbagent.generated.bluebubblesclient.model.ApiV1ChatChatGuidMessageGet200ResponseDataInner;
+import io.breland.bbagent.generated.bluebubblesclient.model.ApiV1ChatChatGuidMessageGet200ResponseDataInnerChatsInner;
 import io.breland.bbagent.generated.model.BlueBubblesMessageReceivedRequest;
 import io.breland.bbagent.generated.model.BlueBubblesMessageReceivedRequestData;
 import io.breland.bbagent.generated.model.BlueBubblesMessageReceivedRequestDataAttachmentsInner;
@@ -27,7 +29,8 @@ import org.springframework.web.context.request.NativeWebRequest;
 @Slf4j
 public class BluebubblesWebhookController extends BluebubblesApiController {
 
-  public static final String GROUP_PREFIX = "iMessage;+;chat";
+  private static final String GROUP_PREFIX = "iMessage;+;chat";
+  private static final String GROUP_PREFIX_2 = "any;+;chat";
 
   @Autowired private BBMessageAgent messageAgent;
 
@@ -94,7 +97,28 @@ public class BluebubblesWebhookController extends BluebubblesApiController {
     return false;
   }
 
-  private boolean resolveIsGroup(BlueBubblesMessageReceivedRequestData data) {
+  private static boolean isGroupGuid(String chatGuid) {
+    return chatGuid.startsWith(GROUP_PREFIX) || chatGuid.startsWith(GROUP_PREFIX_2);
+  }
+
+  public static boolean resolveIsGroup(ApiV1ChatChatGuidMessageGet200ResponseDataInner request) {
+    if (request == null) {
+      return false;
+    }
+    List<ApiV1ChatChatGuidMessageGet200ResponseDataInnerChatsInner> chats = request.getChats();
+    if (chats != null && chats.size() > 1) {
+      return true;
+    }
+    if (request.getGroupTitle() != null && !request.getGroupTitle().isEmpty()) {
+      return true;
+    }
+    if (request.getChats().getFirst().getGuid().startsWith(GROUP_PREFIX)) {
+      return true;
+    }
+    return false;
+  }
+
+  public static boolean resolveIsGroup(BlueBubblesMessageReceivedRequestData data) {
     @NotNull
     @Valid
     List<@Valid BlueBubblesMessageReceivedRequestDataChatsInner> chats = data.getChats();

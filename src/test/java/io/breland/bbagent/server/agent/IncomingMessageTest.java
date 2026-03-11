@@ -25,7 +25,7 @@ class IncomingMessageTest {
             List.of(),
             false);
 
-    assertTrue(message.isLikelyGroupChat());
+    assertTrue(message.isGroup());
   }
 
   @Test
@@ -44,7 +44,7 @@ class IncomingMessageTest {
             List.of(),
             false);
 
-    assertTrue(message.isLikelyGroupChat());
+    assertTrue(message.isGroup());
   }
 
   @Test
@@ -63,6 +63,6 @@ class IncomingMessageTest {
             List.of(),
             false);
 
-    assertFalse(message.isLikelyGroupChat());
+    assertFalse(message.isGroup());
   }
 }

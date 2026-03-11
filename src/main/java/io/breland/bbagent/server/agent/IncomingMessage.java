@@ -30,7 +30,7 @@ public record IncomingMessage(
         message.getIsFromMe(),
         BBMessageAgent.IMESSAGE_SERVICE,
         message.getHandle().getAddress(),
-        chatGuid != null && chatGuid.startsWith(BluebubblesWebhookController.GROUP_PREFIX),
+        BluebubblesWebhookController.resolveIsGroup(message),
         Instant.ofEpochSecond(message.getDateCreated()),
         List.of(),
         (message.getIsSystemMessage() != null && message.getIsSystemMessage())
@@ -46,13 +46,6 @@ public record IncomingMessage(
     long timestamp = this.timestamp() != null ? this.timestamp().toEpochMilli() : 0L;
     int attachmentCount = this.attachments() != null ? this.attachments().size() : 0;
     return sender + "|" + text + "|" + timestamp + "|" + attachmentCount;
-  }
-
-  public boolean isLikelyGroupChat() {
-    if (isGroup) {
-      return true;
-    }
-    return chatGuid != null && chatGuid.startsWith(BluebubblesWebhookController.GROUP_PREFIX);
   }
 
   public String summaryForHistory() {

@@ -6,9 +6,6 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.openai.client.OpenAIClient;
 import com.openai.client.okhttp.OpenAIOkHttpClient;
-import com.openai.models.ChatModel;
-import com.openai.models.Reasoning;
-import com.openai.models.ReasoningEffort;
 import com.openai.models.responses.*;
 import com.uber.cadence.WorkflowExecution;
 import com.uber.cadence.workflow.Workflow;
@@ -501,25 +498,8 @@ public class BBMessageAgent {
       IncomingMessage message,
       AgentWorkflowContext workflowContext) {
     ResponseCreateParams.Builder params =
-        ResponseCreateParams.builder()
-            .addTool(
-                Tool.ImageGeneration.builder()
-                    .model(Tool.ImageGeneration.Model.GPT_IMAGE_1)
-                    .size(Tool.ImageGeneration.Size._1536X1024)
-                    .moderation(Tool.ImageGeneration.Moderation.LOW)
-                    .background(Tool.ImageGeneration.Background.AUTO)
-                    .outputFormat(Tool.ImageGeneration.OutputFormat.PNG)
-                    .quality(Tool.ImageGeneration.Quality.HIGH)
-                    .build())
-            .addTool(
-                WebSearchTool.builder()
-                    .type(WebSearchTool.Type.WEB_SEARCH_2025_08_26)
-                    .searchContextSize(WebSearchTool.SearchContextSize.MEDIUM)
-                    .build())
-            .model(ChatModel.GPT_5_2_CHAT_LATEST)
-            .inputOfResponse(inputItems)
-            .maxOutputTokens(1000)
-            .reasoning(Reasoning.builder().effort(ReasoningEffort.MEDIUM).build());
+        ResponseCreateParams.builder().inputOfResponse(inputItems);
+    modelPicker.applyResponsesModelParams(params, message, workflowContext);
     for (AgentTool tool : tools.values()) {
       if (shouldIncludeTool(tool, message)) {
         params.addTool(Tool.ofFunction(tool.asFunctionTool()));
@@ -599,7 +579,7 @@ public class BBMessageAgent {
 
   private boolean shouldIncludeTool(AgentTool tool, IncomingMessage message) {
     if (GROUP_ONLY_TOOLS.contains(tool.name())) {
-      return message != null && message.isLikelyGroupChat();
+      return message != null && message.isGroup();
     }
     if (KubernetesReadOnlyAgentTool.TOOL_NAME.equals(tool.name())) {
       return message != null
