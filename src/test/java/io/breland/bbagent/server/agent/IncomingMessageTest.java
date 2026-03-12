@@ -29,7 +29,7 @@ class IncomingMessageTest {
   }
 
   @Test
-  void likelyGroupChatUsesChatGuidPrefixWhenGroupFlagIsFalse() {
+  void likelyGroupChatDoesNotInferFromChatGuidPrefixWhenGroupFlagIsFalse() {
     IncomingMessage message =
         new IncomingMessage(
             "iMessage;+;chat123",
@@ -44,7 +44,7 @@ class IncomingMessageTest {
             List.of(),
             false);
 
-    assertTrue(message.isGroup());
+    assertFalse(message.isGroup());
   }
 
   @Test
