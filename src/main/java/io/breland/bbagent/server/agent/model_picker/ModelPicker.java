@@ -24,7 +24,7 @@ public class ModelPicker {
     if (isPremiumUser(incomingMessage)) {
       log.info("User {} is a premium user", incomingMessage.sender());
       builder.maxOutputTokens(2500);
-      builder.reasoning(Reasoning.builder().effort(ReasoningEffort.MEDIUM).build());
+      builder.reasoning(Reasoning.builder().effort(ReasoningEffort.HIGH).build());
       builder.model("openai/" + ChatModel.GPT_5_3_CHAT_LATEST.toString());
       builder
           .addTool(
