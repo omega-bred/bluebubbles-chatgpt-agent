@@ -26,3 +26,5 @@ If you add new configs:
 - Most properties will need to be replicated into the `application.properties` in the `test/resources` folder.
 
 Primarily, the "agent" lives in `src/main/java/io/breland/bbagent/server/agent/BBMessageAgent.java`. 
+
+When running the JDK/JVM for development - you may need to update the project to use java21- but never commit this change to the repository. 
