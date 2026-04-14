@@ -4,6 +4,7 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.openai.core.JsonValue;
+import com.openai.models.responses.ResponseFunctionToolCall;
 import com.openai.models.responses.ResponseInputItem;
 import com.openai.models.responses.ResponseOutputItem;
 import io.breland.bbagent.server.agent.*;
@@ -100,12 +101,14 @@ public class CadenceAgentActivitiesImpl implements CadenceAgentActivities {
       String assistantText =
           AgentResponseHelper.normalizeAssistantText(
               messageAgent.getObjectMapper(), AgentResponseHelper.extractResponseText(response));
+      List<ResponseFunctionToolCall> functionCalls =
+          AgentResponseHelper.extractFunctionCalls(response);
       List<CadenceToolCall> toolCalls =
-          AgentResponseHelper.extractFunctionCalls(response).stream()
+          functionCalls.stream()
               .map(call -> new CadenceToolCall(call.callId(), call.name(), call.arguments()))
               .collect(Collectors.toList());
       String toolContextItemsJson =
-          toJson(AgentResponseHelper.extractToolContextItems(response, toolCalls));
+          toJson(AgentResponseHelper.extractToolContextItems(response, functionCalls));
       return new CadenceResponseBundle(
           responseJson, assistantText, toolContextItemsJson, toolCalls);
     } catch (Exception e) {
