@@ -526,6 +526,7 @@ public class BBMessageAgent {
       log.debug(toolContinuation.toString());
       toolContinuation.addAll(AgentResponseHelper.extractToolContextItems(response, toolCalls));
       boolean blockedAnyToolCall = false;
+      int executedToolCalls = 0;
       for (ResponseFunctionToolCall toolCall : toolCalls) {
         if (shouldBlockToolCall(toolCall, toolCallsByName, toolCallsBySignature)) {
           blockedAnyToolCall = true;
@@ -533,10 +534,12 @@ public class BBMessageAgent {
           continue;
         }
         toolContinuation.add(runToolActivity(toolCall, message, workflowContext));
+        executedToolCalls++;
       }
       response = createResponse(toolContinuation, message, workflowContext);
       inputItems = toolContinuation;
-      blockedLoops = blockedAnyToolCall ? blockedLoops + 1 : 0;
+      boolean onlyBlockedToolCalls = blockedAnyToolCall && executedToolCalls == 0;
+      blockedLoops = onlyBlockedToolCalls ? blockedLoops + 1 : 0;
       if (blockedLoops >= MAX_CONSECUTIVE_BLOCKED_TOOL_LOOPS) {
         log.warn(
             "Stopping tool loop after {} consecutive blocked iterations for chat={} messageGuid={}",
