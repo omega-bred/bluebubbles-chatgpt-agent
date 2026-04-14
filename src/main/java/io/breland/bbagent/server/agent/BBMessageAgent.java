@@ -39,8 +39,10 @@ import io.breland.bbagent.server.agent.tools.memory.*;
 import io.breland.bbagent.server.agent.tools.scheduled.ScheduledEventDeleteTool;
 import io.breland.bbagent.server.agent.tools.scheduled.ScheduledEventListTool;
 import io.breland.bbagent.server.agent.tools.scheduled.ScheduledEventTool;
+import io.breland.bbagent.server.agent.tools.website.LinkWebsiteAccountAgentTool;
 import io.breland.bbagent.server.agent.tools.workflowcallback.CreateWorkflowCallbackAgentTool;
 import io.breland.bbagent.server.agent.workflowcallback.WorkflowCallbackService;
+import io.breland.bbagent.server.website.WebsiteAccountService;
 import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
 import java.net.URL;
@@ -120,6 +122,7 @@ public class BBMessageAgent {
   private GcalClient gcalClient;
   private CoderMcpClient coderMcpClient;
   private WorkflowCallbackService workflowCallbackService;
+  private WebsiteAccountService websiteAccountService;
   private GiphyClient giphyClient;
   private ModelPicker modelPicker;
 
@@ -130,6 +133,7 @@ public class BBMessageAgent {
       GcalClient gcalClient,
       CoderMcpClient coderMcpClient,
       WorkflowCallbackService workflowCallbackService,
+      WebsiteAccountService websiteAccountService,
       GiphyClient giphyClient,
       AgentSettingsStore agentSettingsStore,
       AgentWorkflowProperties workflowProperties,
@@ -141,6 +145,7 @@ public class BBMessageAgent {
     this.gcalClient = gcalClient;
     this.coderMcpClient = coderMcpClient;
     this.workflowCallbackService = workflowCallbackService;
+    this.websiteAccountService = websiteAccountService;
     this.giphyClient = giphyClient;
     this.agentSettingsStore = agentSettingsStore;
     this.workflowProperties = workflowProperties;
@@ -167,6 +172,7 @@ public class BBMessageAgent {
         gcalClient,
         null,
         null,
+        null,
         giphyClient,
         agentSettingsStore,
         workflowProperties,
@@ -181,6 +187,7 @@ public class BBMessageAgent {
       GcalClient gcalClient,
       @Nullable CoderMcpClient coderMcpClient,
       @Nullable WorkflowCallbackService workflowCallbackService,
+      @Nullable WebsiteAccountService websiteAccountService,
       GiphyClient giphyClient,
       AgentSettingsStore agentSettingsStore,
       AgentWorkflowProperties workflowProperties,
@@ -192,6 +199,7 @@ public class BBMessageAgent {
     this.gcalClient = gcalClient;
     this.coderMcpClient = coderMcpClient;
     this.workflowCallbackService = workflowCallbackService;
+    this.websiteAccountService = websiteAccountService;
     this.giphyClient = giphyClient;
     this.agentSettingsStore = agentSettingsStore;
     this.workflowProperties = workflowProperties;
@@ -956,6 +964,9 @@ public class BBMessageAgent {
                 + GetThreadContextAgentTool.TOOL_NAME
                 + " when asked about the last message or previously sent images in this thread. "
                 + "For group chats, you can rename the conversation or set a group icon when requested. "
+                + "When the user asks to log in, sign up, manage their web account, connect iMessage to the website, or see linked integrations on the website, call "
+                + LinkWebsiteAccountAgentTool.TOOL_NAME
+                + " and send the returned user_facing_text. Do not invent account links manually. "
                 + "Use "
                 + SendGiphyAgentTool.TOOL_NAME
                 + " to reply with a GIF when it would be more expressive than text. "
@@ -1279,6 +1290,9 @@ public class BBMessageAgent {
     }
     if (workflowCallbackService != null) {
       registerTool(new CreateWorkflowCallbackAgentTool(workflowCallbackService).getTool());
+    }
+    if (websiteAccountService != null) {
+      registerTool(new LinkWebsiteAccountAgentTool(websiteAccountService).getTool());
     }
     registerTool(new KubernetesReadOnlyAgentTool(objectMapper).getTool());
     registerTool(new KubernetesPodLogsAgentTool(objectMapper).getTool());

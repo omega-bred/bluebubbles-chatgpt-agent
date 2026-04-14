@@ -196,6 +196,12 @@ spec:
                   name: gcal-oauth-state-secret
             - name: AGENT_WORKFLOW_CALLBACK_BASE_URL
               value: "https://chatagent.bre.land"
+            - name: WEBSITE_BASE_URL
+              value: "https://chatagent.bre.land"
+            - name: KEYCLOAK_ISSUER_URI
+              value: "https://keycloak.bre.land/realms/bbagent"
+            - name: KEYCLOAK_JWK_SET_URI
+              value: "https://keycloak.bre.land/realms/bbagent/protocol/openid-connect/certs"
           image: ghcr.io/omega-bred/bluebubbles-chatgpt-agent:latest
           imagePullPolicy: Always
           securityContext:

@@ -16,6 +16,8 @@ tags:
     description: Coder MCP OAuth endpoints
   - name: workflowCallback
     description: Agent workflow callback endpoints
+  - name: websiteAccount
+    description: Website account management endpoints
 paths:
 
   /api/v1/bluebubbles/messageReceived.message:
@@ -217,10 +219,239 @@ paths:
             application/json:
               schema:
                 type: object
+  /api/v1/websiteAccount/get.websiteAccount:
+    get:
+      operationId: websiteAccountGet
+      tags:
+        - websiteAccount
+      summary: Gets the current website account
+      description: Returns the authenticated website account profile and linked iMessage identities.
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Current website account
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WebsiteAccountResponse'
+        '401':
+          description: Authentication required
+  /api/v1/websiteAccount/listLinkedAccounts.websiteAccountLinks:
+    get:
+      operationId: websiteAccountListLinkedAccounts
+      tags:
+        - websiteAccount
+      summary: Lists linked website account integrations
+      description: Lists linked iMessage identities and integration status derived from those identities.
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Linked account integrations
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WebsiteLinkedAccountsResponse'
+        '401':
+          description: Authentication required
+  /api/v1/websiteAccount/redeemLink.websiteAccountLinks:
+    post:
+      operationId: websiteAccountRedeemLink
+      tags:
+        - websiteAccount
+      summary: Redeems an iMessage sender link token
+      description: Links the authenticated website account to an iMessage identity using a short-lived single-use token.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WebsiteAccountRedeemLinkRequest'
+      responses:
+        '200':
+          description: Link redeemed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WebsiteAccountRedeemLinkResponse'
+        '400':
+          description: Missing or invalid token
+        '401':
+          description: Authentication required
+        '404':
+          description: Link token not found
+        '409':
+          description: Link token already redeemed by another account
+        '410':
+          description: Link token expired
+  /api/v1/websiteAccount/deleteLink.websiteAccountLinks:
+    delete:
+      operationId: websiteAccountDeleteLink
+      tags:
+        - websiteAccount
+      summary: Deletes an iMessage sender link
+      description: Unlinks an iMessage identity from the authenticated website account.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: link_id
+          in: query
+          description: Link identifier to remove.
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Link deleted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WebsiteAccountDeleteLinkResponse'
+        '401':
+          description: Authentication required
+        '404':
+          description: Link not found
 
 
 components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
   schemas:
+    WebsiteAccountProfile:
+      type: object
+      required:
+        - subject
+      properties:
+        subject:
+          type: string
+        email:
+          type: string
+          nullable: true
+        preferred_username:
+          type: string
+          nullable: true
+        display_name:
+          type: string
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+          nullable: true
+        updated_at:
+          type: string
+          format: date-time
+          nullable: true
+    WebsiteAccountLink:
+      type: object
+      required:
+        - link_id
+        - account_base
+        - coder_account_base
+        - gcal_account_base
+        - is_group
+      properties:
+        link_id:
+          type: string
+        account_base:
+          type: string
+          description: Stable display identity for the linked iMessage sender.
+        coder_account_base:
+          type: string
+          description: Account base used by Coder tools for this sender.
+        gcal_account_base:
+          type: string
+          description: Account base used by Google Calendar tools for this sender/chat.
+        chat_guid:
+          type: string
+          nullable: true
+        sender:
+          type: string
+          nullable: true
+        service:
+          type: string
+          nullable: true
+        is_group:
+          type: boolean
+        created_at:
+          type: string
+          format: date-time
+          nullable: true
+    WebsiteAccountResponse:
+      type: object
+      required:
+        - account
+        - links
+      properties:
+        account:
+          $ref: '#/components/schemas/WebsiteAccountProfile'
+        links:
+          type: array
+          items:
+            $ref: '#/components/schemas/WebsiteAccountLink'
+    WebsiteCalendarAccountSummary:
+      type: object
+      required:
+        - account_id
+      properties:
+        account_id:
+          type: string
+    WebsiteIntegrationSummary:
+      type: object
+      required:
+        - link
+        - coder_linked
+        - gcal_accounts
+      properties:
+        link:
+          $ref: '#/components/schemas/WebsiteAccountLink'
+        coder_linked:
+          type: boolean
+        gcal_accounts:
+          type: array
+          items:
+            $ref: '#/components/schemas/WebsiteCalendarAccountSummary'
+    WebsiteLinkedAccountsResponse:
+      type: object
+      required:
+        - account
+        - integrations
+      properties:
+        account:
+          $ref: '#/components/schemas/WebsiteAccountProfile'
+        integrations:
+          type: array
+          items:
+            $ref: '#/components/schemas/WebsiteIntegrationSummary'
+    WebsiteAccountRedeemLinkRequest:
+      type: object
+      required:
+        - token
+      properties:
+        token:
+          type: string
+    WebsiteAccountRedeemLinkResponse:
+      type: object
+      required:
+        - status
+        - link
+      properties:
+        status:
+          type: string
+        link:
+          $ref: '#/components/schemas/WebsiteAccountLink'
+    WebsiteAccountDeleteLinkResponse:
+      type: object
+      required:
+        - deleted
+      properties:
+        deleted:
+          type: boolean
     WorkflowCallbackPayload:
       type: object
       required:

@@ -175,8 +175,8 @@ dependencies {
 
     implementation 'de.codecentric:spring-boot-admin-starter-client:3.5.1'
 
-//	implementation("org.springframework.boot:spring-boot-starter-security")
-//	implementation("org.springframework.boot:spring-boot-starter-oauth2-resource-server")
+	implementation("org.springframework.boot:spring-boot-starter-security")
+	implementation("org.springframework.boot:spring-boot-starter-oauth2-resource-server")
 //	implementation 'com.juliusyolo:endpoint-security-clerk-spring-boot-starter:1.0.2-RELEASE'
 //	implementation 'com.clerk:backend-api:3.1.0'
 

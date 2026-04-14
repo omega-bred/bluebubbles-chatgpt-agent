@@ -15,6 +15,12 @@ export default defineConfig({
       port: 5174, // match your proxy
     },
     cors: true, // just in case
+    proxy: {
+      "/api": "http://localhost:8080",
+    },
+    fs: {
+      allow: [".."],
+    },
   },
   // server: {
   //   allowedHosts: true,

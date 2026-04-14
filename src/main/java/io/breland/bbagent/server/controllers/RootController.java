@@ -9,7 +9,9 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("${openapi.bbagent.base-path:}")
 public class RootController {
 
-  @RequestMapping(method = RequestMethod.GET, value = "/")
+  @RequestMapping(
+      method = RequestMethod.GET,
+      value = {"/", "/account", "/account/link"})
   public ResponseEntity<org.springframework.core.io.Resource> rootGet() {
     // Serve the static index.html bundled inside src/main/resources/static.
     org.springframework.core.io.ClassPathResource resource =

@@ -369,6 +369,7 @@ class BBMessageAgentTest {
             Mockito.mock(GcalClient.class),
             coderMcpClient,
             null,
+            null,
             Mockito.mock(GiphyClient.class),
             new InMemoryAgentSettingsStore(),
             new AgentWorkflowProperties(),
