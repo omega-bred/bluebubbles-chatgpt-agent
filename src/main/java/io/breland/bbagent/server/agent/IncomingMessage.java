@@ -20,8 +20,14 @@ public record IncomingMessage(
     boolean isSystemMessage) {
 
   public static IncomingMessage create(ApiV1ChatChatGuidMessageGet200ResponseDataInner message) {
+    if (message == null) {
+      return null;
+    }
     String chatGuid =
-        message.getChats().stream().findFirst().map(chat -> chat.getGuid()).orElse(null);
+        message.getChats() == null
+            ? null
+            : message.getChats().stream().findFirst().map(chat -> chat.getGuid()).orElse(null);
+    String sender = message.getHandle() == null ? null : message.getHandle().getAddress();
     return new IncomingMessage(
         chatGuid,
         message.getGuid(),
@@ -29,12 +35,22 @@ public record IncomingMessage(
         message.getText(),
         message.getIsFromMe(),
         BBMessageAgent.IMESSAGE_SERVICE,
-        message.getHandle().getAddress(),
+        sender,
         BluebubblesWebhookController.resolveIsGroup(message),
-        Instant.ofEpochSecond(message.getDateCreated()),
+        parseTimestamp(message.getDateCreated()),
         List.of(),
         (message.getIsSystemMessage() != null && message.getIsSystemMessage())
             || (message.getIsServiceMessage() != null && message.getIsServiceMessage()));
+  }
+
+  private static Instant parseTimestamp(Long value) {
+    if (value == null) {
+      return Instant.now();
+    }
+    if (value > 1_000_000_000_000L) {
+      return Instant.ofEpochMilli(value);
+    }
+    return Instant.ofEpochSecond(value);
   }
 
   public String computeMessageFingerprint() {

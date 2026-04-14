@@ -2,6 +2,7 @@ package io.breland.bbagent.server.agent.tools.scheduled;
 
 import static io.breland.bbagent.server.agent.tools.JsonSchemaUtilities.jsonSchema;
 
+import com.uber.cadence.WorkflowExecution;
 import io.breland.bbagent.server.agent.AgentWorkflowContext;
 import io.breland.bbagent.server.agent.BBMessageAgent;
 import io.breland.bbagent.server.agent.IncomingMessage;
@@ -51,8 +52,11 @@ public class ScheduledEventTool implements ToolProvider {
     return new AgentTool(
         TOOL_NAME,
         "Schedule a future task for the assistant. Provide a task plus either runAt or delaySeconds. "
-            + "For recurring tasks, include repeatInterval (ISO-8601 duration, e.g. PT24H). "
-            + "Use the task to describe what should happen and how the user should be notified.",
+            + "For recurring tasks, include repeatInterval only when recurrence is explicitly needed; "
+            + "repeatInterval must be representable as Unix cron, such as PT1M, PT5M, PT1H, or PT24H. "
+            + "Use this for reminders, follow-ups, and watching long-running work. "
+            + "After starting a long-running Coder task or workspace build, schedule a one-time status check with delaySeconds and no repeatInterval unless the user asks for repeated checks. "
+            + "Use the task to describe what should happen, include any IDs needed to continue, and say how the user should be notified.",
         jsonSchema(ScheduledEventRequest.class),
         false,
         (context, args) -> {
@@ -96,6 +100,9 @@ public class ScheduledEventTool implements ToolProvider {
               new AgentWorkflowContext(workflowId, source.chatGuid(), messageGuid, Instant.now());
           Duration delayStart = resolveDelayStart(scheduledAt);
           String cronSchedule = resolveCronSchedule(repeatInterval);
+          if (repeatInterval != null && cronSchedule == null) {
+            return "unsupported repeat interval: use a whole-minute interval that can be represented as Unix cron, such as PT1M, PT5M, PT1H, or PT24H";
+          }
           Map<String, Object> memo =
               Map.of(
                   "task",
@@ -106,11 +113,21 @@ public class ScheduledEventTool implements ToolProvider {
                   scheduledAt.toString(),
                   "repeatInterval",
                   repeatInterval == null ? "" : repeatInterval.toString());
-          cadenceWorkflowLauncher.startScheduledWorkflow(
-              new CadenceMessageWorkflowRequest(workflowContext, scheduledMessage, scheduledAt),
-              delayStart,
-              cronSchedule,
-              memo);
+          WorkflowExecution execution;
+          try {
+            execution =
+                cadenceWorkflowLauncher.startScheduledWorkflow(
+                    new CadenceMessageWorkflowRequest(
+                        workflowContext, scheduledMessage, scheduledAt),
+                    delayStart,
+                    cronSchedule,
+                    memo);
+          } catch (Exception e) {
+            return "failed to schedule: " + e.getMessage();
+          }
+          if (execution == null) {
+            return "failed to schedule";
+          }
           return repeatInterval != null ? "scheduled recurring task" : "scheduled";
         });
   }
@@ -161,22 +178,45 @@ public class ScheduledEventTool implements ToolProvider {
     }
   }
 
-  private static String resolveCronSchedule(@Nullable Duration repeatInterval) {
+  static String resolveCronSchedule(@Nullable Duration repeatInterval) {
     if (repeatInterval == null) {
       return null;
     }
     long seconds = repeatInterval.getSeconds();
-    if (seconds <= 0L) {
+    if (seconds <= 0L || seconds % 60L != 0L) {
       return null;
     }
-    return "@every " + seconds + "s";
+    long minutes = seconds / 60L;
+    if (minutes < 60L) {
+      if (60L % minutes != 0L) {
+        return null;
+      }
+      return "*/" + minutes + " * * * *";
+    }
+    if (minutes % 60L != 0L) {
+      return null;
+    }
+    long hours = minutes / 60L;
+    if (hours < 24L) {
+      if (24L % hours != 0L) {
+        return null;
+      }
+      return "0 */" + hours + " * * *";
+    }
+    if (hours == 24L) {
+      return "0 0 * * *";
+    }
+    if (hours == 168L) {
+      return "0 0 * * 0";
+    }
+    return null;
   }
 
   static String buildWorkflowIdPrefix(String chatGuid) {
     return WORKFLOW_ID_PREFIX + ":" + chatGuid + ":";
   }
 
-  static boolean isScheduledWorkflowId(String workflowId) {
+  public static boolean isScheduledWorkflowId(String workflowId) {
     return workflowId != null && workflowId.startsWith(WORKFLOW_ID_PREFIX + ":");
   }
 

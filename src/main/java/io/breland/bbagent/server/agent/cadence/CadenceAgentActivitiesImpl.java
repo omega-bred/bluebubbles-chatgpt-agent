@@ -12,7 +12,6 @@ import io.breland.bbagent.server.agent.cadence.models.CadenceToolCall;
 import io.breland.bbagent.server.agent.cadence.models.GeneratedImage;
 import io.breland.bbagent.server.agent.cadence.models.ImageSendResult;
 import io.breland.bbagent.server.blobstore.BlobStore;
-import java.time.Instant;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
@@ -203,15 +202,7 @@ public class CadenceAgentActivitiesImpl implements CadenceAgentActivities {
   @Override
   public void recordAssistantTurn(
       IncomingMessage message, String text, AgentWorkflowContext workflowContext) {
-    if (!messageAgent.canSendResponses(workflowContext)) {
-      return;
-    }
-    ConversationState state = messageAgent.getConversations().get(message.chatGuid());
-    if (state != null) {
-      synchronized (state) {
-        state.addTurn(ConversationTurn.assistant(text, Instant.now()));
-      }
-    }
+    messageAgent.recordAssistantTurnForCurrentMessage(message, text, workflowContext);
   }
 
   @Override
@@ -223,11 +214,9 @@ public class CadenceAgentActivitiesImpl implements CadenceAgentActivities {
     }
     synchronized (state) {
       if (responded) {
-        Instant timestamp = message.timestamp() != null ? message.timestamp() : Instant.now();
-        state.addTurn(ConversationTurn.user(message.summaryForHistory(), timestamp));
+        state.recordIncomingTurnIfAbsent(message);
       }
-      state.setLastProcessedMessageGuid(message.messageGuid());
-      state.setLastProcessedMessageFingerprint(message.computeMessageFingerprint());
+      state.markIncomingMessageSeen(message);
       messageAgent.updateThreadContext(state, message);
     }
   }

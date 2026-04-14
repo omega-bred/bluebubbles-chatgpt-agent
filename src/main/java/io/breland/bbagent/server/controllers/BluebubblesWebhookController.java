@@ -112,7 +112,10 @@ public class BluebubblesWebhookController extends BluebubblesApiController {
     if (request.getGroupTitle() != null && !request.getGroupTitle().isEmpty()) {
       return true;
     }
-    if (request.getChats().getFirst().getGuid().startsWith(GROUP_PREFIX)) {
+    if (chats != null
+        && !chats.isEmpty()
+        && chats.getFirst().getGuid() != null
+        && chats.getFirst().getGuid().startsWith(GROUP_PREFIX)) {
       return true;
     }
     return false;
@@ -122,13 +125,16 @@ public class BluebubblesWebhookController extends BluebubblesApiController {
     @NotNull
     @Valid
     List<@Valid BlueBubblesMessageReceivedRequestDataChatsInner> chats = data.getChats();
-    if (chats.size() > 1) {
+    if (chats != null && chats.size() > 1) {
       return true;
     }
     if (data.getGroupTitle() != null && !data.getGroupTitle().isEmpty()) {
       return true;
     }
-    if (data.getChats().getFirst().getGuid().startsWith(GROUP_PREFIX)) {
+    if (chats != null
+        && !chats.isEmpty()
+        && chats.getFirst().getGuid() != null
+        && chats.getFirst().getGuid().startsWith(GROUP_PREFIX)) {
       return true;
     }
     return false;

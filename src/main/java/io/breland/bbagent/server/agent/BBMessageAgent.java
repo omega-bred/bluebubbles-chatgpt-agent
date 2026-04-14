@@ -10,6 +10,7 @@ import com.openai.models.responses.*;
 import com.uber.cadence.WorkflowExecution;
 import com.uber.cadence.workflow.Workflow;
 import com.uber.cadence.workflow.WorkflowInfo;
+import io.breland.bbagent.generated.bluebubblesclient.model.ApiV1ChatChatGuidMessageGet200ResponseDataInner;
 import io.breland.bbagent.generated.bluebubblesclient.model.ApiV1MessageTextPostRequest;
 import io.breland.bbagent.server.agent.cadence.CadenceWorkflowLauncher;
 import io.breland.bbagent.server.agent.cadence.models.CadenceMessageWorkflowRequest;
@@ -27,6 +28,8 @@ import io.breland.bbagent.server.agent.tools.bb.SearchConvoHistoryAgentTool;
 import io.breland.bbagent.server.agent.tools.bb.SendReactionAgentTool;
 import io.breland.bbagent.server.agent.tools.bb.SendTextAgentTool;
 import io.breland.bbagent.server.agent.tools.bb.SetGroupIconAgentTool;
+import io.breland.bbagent.server.agent.tools.coder.CoderAuthAgentTool;
+import io.breland.bbagent.server.agent.tools.coder.CoderMcpClient;
 import io.breland.bbagent.server.agent.tools.gcal.*;
 import io.breland.bbagent.server.agent.tools.giphy.GiphyClient;
 import io.breland.bbagent.server.agent.tools.giphy.SendGiphyAgentTool;
@@ -36,6 +39,8 @@ import io.breland.bbagent.server.agent.tools.memory.*;
 import io.breland.bbagent.server.agent.tools.scheduled.ScheduledEventDeleteTool;
 import io.breland.bbagent.server.agent.tools.scheduled.ScheduledEventListTool;
 import io.breland.bbagent.server.agent.tools.scheduled.ScheduledEventTool;
+import io.breland.bbagent.server.agent.tools.workflowcallback.CreateWorkflowCallbackAgentTool;
+import io.breland.bbagent.server.agent.workflowcallback.WorkflowCallbackService;
 import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
 import java.net.URL;
@@ -113,6 +118,8 @@ public class BBMessageAgent {
   private BBHttpClientWrapper bbHttpClientWrapper;
   private Mem0Client mem0Client;
   private GcalClient gcalClient;
+  private CoderMcpClient coderMcpClient;
+  private WorkflowCallbackService workflowCallbackService;
   private GiphyClient giphyClient;
   private ModelPicker modelPicker;
 
@@ -121,6 +128,8 @@ public class BBMessageAgent {
       BBHttpClientWrapper bbHttpClientWrapper,
       Mem0Client mem0Client,
       GcalClient gcalClient,
+      CoderMcpClient coderMcpClient,
+      WorkflowCallbackService workflowCallbackService,
       GiphyClient giphyClient,
       AgentSettingsStore agentSettingsStore,
       AgentWorkflowProperties workflowProperties,
@@ -130,6 +139,8 @@ public class BBMessageAgent {
     this.bbHttpClientWrapper = bbHttpClientWrapper;
     this.mem0Client = mem0Client;
     this.gcalClient = gcalClient;
+    this.coderMcpClient = coderMcpClient;
+    this.workflowCallbackService = workflowCallbackService;
     this.giphyClient = giphyClient;
     this.agentSettingsStore = agentSettingsStore;
     this.workflowProperties = workflowProperties;
@@ -149,10 +160,38 @@ public class BBMessageAgent {
       AgentWorkflowProperties workflowProperties,
       @Nullable CadenceWorkflowLauncher cadenceWorkflowLauncher,
       ModelPicker modelPicker) {
+    this(
+        openAIClient,
+        bbHttpClientWrapper,
+        mem0Client,
+        gcalClient,
+        null,
+        null,
+        giphyClient,
+        agentSettingsStore,
+        workflowProperties,
+        cadenceWorkflowLauncher,
+        modelPicker);
+  }
+
+  BBMessageAgent(
+      OpenAIClient openAIClient,
+      BBHttpClientWrapper bbHttpClientWrapper,
+      Mem0Client mem0Client,
+      GcalClient gcalClient,
+      @Nullable CoderMcpClient coderMcpClient,
+      @Nullable WorkflowCallbackService workflowCallbackService,
+      GiphyClient giphyClient,
+      AgentSettingsStore agentSettingsStore,
+      AgentWorkflowProperties workflowProperties,
+      @Nullable CadenceWorkflowLauncher cadenceWorkflowLauncher,
+      ModelPicker modelPicker) {
     this.openAIClient = openAIClient;
     this.bbHttpClientWrapper = bbHttpClientWrapper;
     this.mem0Client = mem0Client;
     this.gcalClient = gcalClient;
+    this.coderMcpClient = coderMcpClient;
+    this.workflowCallbackService = workflowCallbackService;
     this.giphyClient = giphyClient;
     this.agentSettingsStore = agentSettingsStore;
     this.workflowProperties = workflowProperties;
@@ -167,39 +206,59 @@ public class BBMessageAgent {
     log.info("Hydrating conversation state for chat {}", chatId);
     try {
       var messages = bbHttpClientWrapper.getMessagesInChat(chatId);
-
-      messages
-          .reversed()
-          .forEach(
-              msg -> {
-                if (msg.getText() != null && msg.getText().length() > 0) {
-                  var turn =
-                      msg.getIsFromMe() != null && msg.getIsFromMe() == true
-                          ? ConversationTurn.assistant(
-                              msg.getText(), Instant.ofEpochSecond(msg.getDateCreated()))
-                          : ConversationTurn.user(
-                              msg.getText(), Instant.ofEpochSecond(msg.getDateCreated()));
-                  if (!msg.getGuid().equals(message.messageGuid())) {
-                    if (!msg.getIsFromMe()) {
-                      stateToHydrate.setLastProcessedMessageGuid(msg.getGuid());
-                      if (msg.getHandle() != null && msg.getHandle().getAddress() != null) {
-                        stateToHydrate.setLastProcessedMessageFingerprint(
-                            IncomingMessage.create(msg).computeMessageFingerprint());
-                      }
-                    }
-                    stateToHydrate.addTurn(turn);
+      if (messages != null) {
+        messages
+            .reversed()
+            .forEach(
+                msg -> {
+                  if (!shouldIncludeHydratedHistoryMessage(msg)) {
+                    return;
                   }
-                }
-              });
+                  if (isCurrentMessage(msg.getGuid(), message)) {
+                    return;
+                  }
+                  IncomingMessage hydratedMessage = IncomingMessage.create(msg);
+                  Instant timestamp =
+                      hydratedMessage != null && hydratedMessage.timestamp() != null
+                          ? hydratedMessage.timestamp()
+                          : Instant.now();
+                  if (Boolean.TRUE.equals(msg.getIsFromMe())) {
+                    stateToHydrate.addTurn(ConversationTurn.assistant(msg.getText(), timestamp));
+                  } else if (hydratedMessage != null) {
+                    stateToHydrate.recordIncomingTurnIfAbsent(hydratedMessage);
+                  }
+                });
+      }
 
       log.info(
-          "Hydrated conversation state for chat {} got {} messages from history",
+          "Hydrated conversation state for chat {} got {} messages from history latestIncomingTs={} lastIncomingGuid={}",
           chatId,
-          stateToHydrate.history().size());
+          stateToHydrate.history().size(),
+          stateToHydrate.getLatestProcessedMessageTimestamp(),
+          stateToHydrate.getLastProcessedMessageGuid());
     } catch (Exception e) {
       log.warn("Failed to hydrate conversation state for chat {}", chatId, e);
     }
     return stateToHydrate;
+  }
+
+  private boolean shouldIncludeHydratedHistoryMessage(
+      ApiV1ChatChatGuidMessageGet200ResponseDataInner msg) {
+    if (msg == null) {
+      return false;
+    }
+    if (Boolean.TRUE.equals(msg.getIsSystemMessage())
+        || Boolean.TRUE.equals(msg.getIsServiceMessage())) {
+      return false;
+    }
+    String text = msg.getText();
+    return text != null && !text.isBlank() && !isReactionMessage(text);
+  }
+
+  private boolean isCurrentMessage(String hydratedMessageGuid, IncomingMessage currentMessage) {
+    return currentMessage != null
+        && currentMessage.messageGuid() != null
+        && currentMessage.messageGuid().equals(hydratedMessageGuid);
   }
 
   // main invocation point from webhook
@@ -214,16 +273,28 @@ public class BBMessageAgent {
             message.chatGuid(), key -> this.computeConversationState(key, message));
 
     synchronized (state) {
-      String fingerprint = message.computeMessageFingerprint();
-      if (message.messageGuid() != null
-          && message.messageGuid().equals(state.getLastProcessedMessageGuid())) {
-        log.warn("Dropping message [ message guid ] {}", message);
+      if (state.hasSeenIncomingMessage(message)) {
+        log.info(
+            "Dropping already-seen incoming message chat={} guid={} fingerprint={} ts={} lastSeenGuid={} latestSeenTs={}",
+            message.chatGuid(),
+            message.messageGuid(),
+            message.computeMessageFingerprint(),
+            message.timestamp(),
+            state.getLastProcessedMessageGuid(),
+            state.getLatestProcessedMessageTimestamp());
         return;
       }
-      if (fingerprint != null && fingerprint.equals(state.getLastProcessedMessageFingerprint())) {
-        log.warn("Dropping duplicate message [ fingerprint ] {}", message);
+      if (state.isStaleIncomingMessage(message)) {
+        log.info(
+            "Dropping stale incoming message chat={} guid={} ts={} latestSeenTs={} lastSeenGuid={}",
+            message.chatGuid(),
+            message.messageGuid(),
+            message.timestamp(),
+            state.getLatestProcessedMessageTimestamp(),
+            state.getLastProcessedMessageGuid());
         return;
       }
+      state.markIncomingMessageSeen(message);
     }
     if (workflowProperties.useCadenceWorkflow()) {
       if (cadenceWorkflowLauncher == null) {
@@ -305,11 +376,9 @@ public class BBMessageAgent {
     } finally {
       synchronized (state) {
         if (response != null) {
-          Instant timestamp = message.timestamp() != null ? message.timestamp() : Instant.now();
-          state.addTurn(ConversationTurn.user(message.summaryForHistory(), timestamp));
+          state.recordIncomingTurnIfAbsent(message);
         }
-        state.setLastProcessedMessageGuid(message.messageGuid());
-        state.setLastProcessedMessageFingerprint(message.computeMessageFingerprint());
+        state.markIncomingMessageSeen(message);
         updateThreadContext(state, message);
       }
     }
@@ -319,32 +388,49 @@ public class BBMessageAgent {
     if (workflowContext == null) {
       return true;
     }
+    String currentRunId = null;
+    try {
+      WorkflowInfo info = Workflow.getWorkflowInfo();
+      if (info != null && info.getRunId() != null) {
+        currentRunId = info.getRunId();
+      }
+    } catch (Error e) {
+      if (e.getMessage() != null && e.getMessage().contains("non workflow")) {
+        currentRunId = null;
+      } else {
+        throw e;
+      }
+    }
+    return canSendResponsesForWorkflowRun(workflowContext, currentRunId);
+  }
+
+  boolean canSendResponsesForWorkflowRun(
+      AgentWorkflowContext workflowContext, @Nullable String currentRunId) {
+    if (workflowContext == null) {
+      return true;
+    }
+    if (ScheduledEventTool.isScheduledWorkflowId(workflowContext.workflowId())) {
+      return true;
+    }
+    if (WorkflowCallbackService.isCallbackWorkflowId(workflowContext.workflowId())) {
+      return true;
+    }
     if (workflowContext.chatGuid() == null || workflowContext.chatGuid().isBlank()) {
+      return true;
+    }
+    if (currentRunId == null || currentRunId.isBlank()) {
       return true;
     }
     ConversationState state = conversations.get(workflowContext.chatGuid());
     if (state == null) {
       return true;
     }
-    try {
-      WorkflowInfo info = Workflow.getWorkflowInfo();
-      if (info != null && info.getRunId() != null) {
-        synchronized (state) {
-          String latestWorkflowRunId = state.getLatestWorkflowRunId();
+    synchronized (state) {
+      String latestWorkflowRunId = state.getLatestWorkflowRunId();
 
-          // can be null until we persist state in a real db.
-          if (latestWorkflowRunId != null && !latestWorkflowRunId.equals(info.getRunId())) {
-            return false;
-          }
-        }
-      }
-    } catch (Error e) {
-      if (e.getMessage().contains("non workflow")) {
-        return true;
-      }
-      throw e;
+      // can be null until we persist state in a real db.
+      return latestWorkflowRunId == null || latestWorkflowRunId.equals(currentRunId);
     }
-    return true;
   }
 
   private boolean isSilentInvocation(String text) {
@@ -374,7 +460,25 @@ public class BBMessageAgent {
 
   Response runAssistant(
       ConversationState state, IncomingMessage message, AgentWorkflowContext workflowContext) {
-    List<ResponseInputItem> inputItems = buildConversationInput(state.history(), message);
+    List<ConversationTurn> historySnapshot;
+    Instant latestSeenTimestamp;
+    String lastSeenGuid;
+    synchronized (state) {
+      historySnapshot = state.history();
+      latestSeenTimestamp = state.getLatestProcessedMessageTimestamp();
+      lastSeenGuid = state.getLastProcessedMessageGuid();
+    }
+    log.info(
+        "Building LLM input chat={} messageGuid={} messageTs={} historyTurns={} oldestHistoryTs={} newestHistoryTs={} latestSeenTs={} lastSeenGuid={}",
+        message.chatGuid(),
+        message.messageGuid(),
+        message.timestamp(),
+        historySnapshot.size(),
+        oldestTurnTimestamp(historySnapshot),
+        newestTurnTimestamp(historySnapshot),
+        latestSeenTimestamp,
+        lastSeenGuid);
+    List<ResponseInputItem> inputItems = buildConversationInput(historySnapshot, message);
     log.trace("Getting response for {}", inputItems.toString());
     Response response = createResponse(inputItems, message, workflowContext);
     if (response == null) {
@@ -444,9 +548,8 @@ public class BBMessageAgent {
         log.debug("Skipping reaction text output since reaction tool already ran");
       } else if (canSendResponses(workflowContext)
           && bbHttpClientWrapper.sendReactionDirect(message, reaction)) {
-        synchronized (state) {
-          state.addTurn(ConversationTurn.assistant("[reaction: " + reaction + "]", Instant.now()));
-        }
+        recordAssistantTurnForCurrentMessage(
+            message, "[reaction: " + reaction + "]", workflowContext);
       } else {
         log.warn("Unable to send reaction for assistant text: {}", assistantText);
       }
@@ -460,22 +563,61 @@ public class BBMessageAgent {
         log.info("Skipping direct response send for outdated workflow {}", workflowContext);
       }
       if (canSendResponses(workflowContext)) {
-        synchronized (state) {
-          state.addTurn(ConversationTurn.assistant(assistantText.trim(), Instant.now()));
-        }
+        recordAssistantTurnForCurrentMessage(message, assistantText.trim(), workflowContext);
       }
     } else {
       if (sentImageByMultipart) {
         if (canSendResponses(workflowContext)) {
-          synchronized (state) {
-            state.addTurn(ConversationTurn.assistant("[image]", Instant.now()));
-          }
+          recordAssistantTurnForCurrentMessage(message, "[image]", workflowContext);
         }
       } else {
         log.info("No assistant reply generated");
       }
     }
     return response;
+  }
+
+  public void recordAssistantTurnForCurrentMessage(
+      IncomingMessage message, String content, AgentWorkflowContext workflowContext) {
+    if (message == null || message.chatGuid() == null || message.chatGuid().isBlank()) {
+      return;
+    }
+    if (content == null || content.isBlank()) {
+      return;
+    }
+    if (!canSendResponses(workflowContext)) {
+      return;
+    }
+    ConversationState state = conversations.get(message.chatGuid());
+    if (state == null) {
+      return;
+    }
+    synchronized (state) {
+      state.recordIncomingTurnIfAbsent(message);
+      state.addTurn(ConversationTurn.assistant(content, Instant.now()));
+    }
+  }
+
+  private Instant oldestTurnTimestamp(List<ConversationTurn> history) {
+    if (history == null || history.isEmpty()) {
+      return null;
+    }
+    return history.stream()
+        .map(ConversationTurn::timestamp)
+        .filter(Objects::nonNull)
+        .min(Instant::compareTo)
+        .orElse(null);
+  }
+
+  private Instant newestTurnTimestamp(List<ConversationTurn> history) {
+    if (history == null || history.isEmpty()) {
+      return null;
+    }
+    return history.stream()
+        .map(ConversationTurn::timestamp)
+        .filter(Objects::nonNull)
+        .max(Instant::compareTo)
+        .orElse(null);
   }
 
   public void sendThreadAwareText(IncomingMessage message, String text) {
@@ -505,7 +647,7 @@ public class BBMessageAgent {
     ResponseCreateParams.Builder params =
         ResponseCreateParams.builder().inputOfResponse(inputItems);
     modelPicker.applyResponsesModelParams(params, message, workflowContext);
-    for (AgentTool tool : tools.values()) {
+    for (AgentTool tool : availableTools(message)) {
       if (shouldIncludeTool(tool, message)) {
         params.addTool(Tool.ofFunction(tool.asFunctionTool()));
       }
@@ -541,10 +683,15 @@ public class BBMessageAgent {
     try {
       JsonNode args = objectMapper.readTree(toolCall.arguments());
       args = applyThreadReplyDefaults(toolCall.name(), args, message);
+      ToolContext toolContext = new ToolContext(this, message, workflowContext);
+      if (tool == null && coderMcpClient != null) {
+        String accountBase = CoderMcpClient.resolveAccountBase(message);
+        tool = coderMcpClient.getAgentTool(accountBase, toolCall.name()).orElse(null);
+      }
       if (tool == null) {
         output = "Unknown tool: " + toolCall.name();
       } else {
-        output = tool.handler().apply(new ToolContext(this, message, workflowContext), args);
+        output = tool.handler().apply(toolContext, args);
       }
     } catch (Exception e) {
       output = "Tool call failed: " + e.getMessage();
@@ -592,6 +739,15 @@ public class BBMessageAgent {
           && KUBERNETES_TOOL_ALLOWED_SENDER.equals(message.sender());
     }
     return true;
+  }
+
+  private List<AgentTool> availableTools(IncomingMessage message) {
+    List<AgentTool> available = new ArrayList<>(tools.values());
+    if (coderMcpClient != null) {
+      String accountBase = CoderMcpClient.resolveAccountBase(message);
+      available.addAll(coderMcpClient.getAgentTools(accountBase));
+    }
+    return available;
   }
 
   public List<GeneratedImage> extractGeneratedImages(Response response) {
@@ -830,6 +986,45 @@ public class BBMessageAgent {
                 + ManageAccountsAgentTool.TOOL_NAME
                 + " to get an auth_url and have the user complete the OAuth flow in their browser. "
                 + "If multiple calendar accounts are linked, pass account_key (the account id from manage_accounts list, or 'default') to the calendar tools to pick the right account; ask if ambiguous. "
+                + "Prefer taking action over asking for confirmation when the user's intent is clear and the action is reversible or low-risk; ask a clarifying question only when required information is missing or the action is destructive, expensive, or sensitive. "
+                + "For multi-step tasks, keep using tools in the same turn until the task is complete, blocked by a specific error, or waiting on external work. "
+                + "Before starting long-running external work, call "
+                + WorkflowCallbackService.TOOL_NAME
+                + " to create a signed callback URL and inject the returned callback_instructions into the external task prompt. "
+                + "For long-running work, first start or advance the work with tools, then use "
+                + ScheduledEventTool.TOOL_NAME
+                + " to create a concrete follow-up instead of merely saying you will check later. Include enough identifiers and context in the scheduled task to continue without asking the user again. "
+                + "When a tool starts external work that may not finish immediately, such as a Coder task, Coder workspace build, deployment, test run, or log wait, you must call "
+                + ScheduledEventTool.TOOL_NAME
+                + " in the same turn after the start succeeds if the user expects results or monitoring. Use a one-time delaySeconds follow-up by default. "
+                + "Use "
+                + ScheduledEventListTool.TOOL_NAME
+                + " to inspect pending follow-ups and "
+                + ScheduledEventDeleteTool.TOOL_NAME
+                + " to cancel them when requested. "
+                + "When the user asks whether Coder is linked or says Coder tools are missing, call "
+                + CoderAuthAgentTool.TOOL_NAME
+                + " with status before answering; do not infer Coder availability from prior turns or static tool names. "
+                + "When the user asks what Coder tools are available, answer from the currently available tool names whose names start with "
+                + CoderMcpClient.TOOL_PREFIX
+                + "; "
+                + CoderAuthAgentTool.TOOL_NAME
+                + " is only for auth/status/revoke, not Coder work. "
+                + "For Coder workspace, template, task, or file requests, use available Coder MCP tools whose names start with "
+                + CoderMcpClient.TOOL_PREFIX
+                + ". If Coder is needed but no Coder MCP tools are available, call "
+                + CoderAuthAgentTool.TOOL_NAME
+                + " with auth_url and ask the user to complete the login link. "
+                + "Before creating a long-running Coder task, call "
+                + WorkflowCallbackService.TOOL_NAME
+                + " and include the returned callback_instructions in the Coder task prompt so the task can wake you immediately when it finishes. "
+                + "For Coder task creation, use Coder template/version tools first and pass the exact template version UUID as template_version_id; never pass a template name, display name, or template ID for that field. "
+                + "For multi-step Coder requests, keep using tool calls in the current turn until the requested action is complete or blocked by a specific error. "
+                + "If a Coder tool returns a validation error and you have enough information to correct it, call the needed Coder tools and retry in the same turn. "
+                + "After starting a long-running Coder task or workspace build, use "
+                + ScheduledEventTool.TOOL_NAME
+                + " to check status/results later when the user expects you to watch it; include the task/workspace identifier, original request, and which Coder status/log tools to call in the scheduled task text. "
+                + "Do not say a Coder action is done, starting, or being watched until the matching Coder tool has succeeded; only promise future watching if you have created an explicit follow-up mechanism. "
                 + "When the user shares information about themselves, or information that is helpful to remember "
                 + "use the "
                 + MemorySaveAgentTool.TOOL_NAME
@@ -1074,6 +1269,12 @@ public class BBMessageAgent {
     registerTool(new ManageAccountsAgentTool(gcalClient).getTool());
     registerTool(new ListColorsAgentTool(gcalClient).getTool());
     registerTool(new GetCurrentTimeAgentTool(gcalClient).getTool());
+    if (coderMcpClient != null) {
+      registerTool(new CoderAuthAgentTool(coderMcpClient).getTool());
+    }
+    if (workflowCallbackService != null) {
+      registerTool(new CreateWorkflowCallbackAgentTool(workflowCallbackService).getTool());
+    }
     registerTool(new KubernetesReadOnlyAgentTool(objectMapper).getTool());
     registerTool(new KubernetesPodLogsAgentTool(objectMapper).getTool());
     registerTool(new GetThreadContextAgentTool(bbHttpClientWrapper).getTool());

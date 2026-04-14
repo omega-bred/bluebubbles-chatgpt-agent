@@ -3,9 +3,7 @@ package io.breland.bbagent.server.agent.tools;
 import io.breland.bbagent.server.agent.AgentWorkflowContext;
 import io.breland.bbagent.server.agent.BBMessageAgent;
 import io.breland.bbagent.server.agent.ConversationState;
-import io.breland.bbagent.server.agent.ConversationTurn;
 import io.breland.bbagent.server.agent.IncomingMessage;
-import java.time.Instant;
 
 public class ToolContext {
   private final BBMessageAgent bbMessageAgent;
@@ -46,15 +44,7 @@ public class ToolContext {
   }
 
   public void recordAssistantTurn(String content) {
-    if (!canSendResponses()) {
-      return;
-    }
-    ConversationState state = bbMessageAgent.getConversations().get(message.chatGuid());
-    if (state != null) {
-      synchronized (state) {
-        state.addTurn(ConversationTurn.assistant(content, Instant.now()));
-      }
-    }
+    bbMessageAgent.recordAssistantTurnForCurrentMessage(message, content, workflowContext);
   }
 
   public boolean canSendResponses() {

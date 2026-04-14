@@ -185,6 +185,17 @@ spec:
                 secretKeyRef:
                   key: "password"
                   name: gcal-oauth-state-secret
+            - name: CODER_MCP_SERVER_URL
+              value: "https://coder.breland.io/api/experimental/mcp/http"
+            - name: CODER_OAUTH_REDIRECT_URI
+              value: "https://chatagent.bre.land/api/v1/coder/completeOauth.coder"
+            - name: CODER_OAUTH_STATE_SECRET
+              valueFrom:
+                secretKeyRef:
+                  key: "password"
+                  name: gcal-oauth-state-secret
+            - name: AGENT_WORKFLOW_CALLBACK_BASE_URL
+              value: "https://chatagent.bre.land"
           image: ghcr.io/omega-bred/bluebubbles-chatgpt-agent:latest
           imagePullPolicy: Always
           securityContext:
