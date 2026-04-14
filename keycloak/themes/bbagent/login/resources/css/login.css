@@ -42,6 +42,38 @@ body {
   font-weight: 800;
 }
 
+#kc-register-form {
+  margin-top: 1rem;
+}
+
+#kc-register-form .pf-c-form__group,
+#kc-register-form .form-group {
+  margin-bottom: 1rem;
+}
+
+#kc-register-form label,
+#kc-form label {
+  color: var(--bb-text);
+  font-weight: 700;
+}
+
+#kc-register-form .pf-c-form__helper-text,
+#kc-register-form .instruction,
+#kc-form .instruction {
+  color: var(--bb-muted);
+  line-height: 1.45;
+}
+
+#kc-registration,
+#kc-registration-container {
+  color: var(--bb-muted);
+}
+
+#kc-registration a,
+#kc-registration-container a {
+  font-weight: 800;
+}
+
 .pf-c-button.pf-m-primary,
 .btn-primary {
   border-radius: 8px;

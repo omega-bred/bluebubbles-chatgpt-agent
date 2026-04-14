@@ -20,6 +20,38 @@ Google Calendar:
 BlueBubbles:
 - Outbound iMessage requires `BLUEBUBBLES_PASSWORD` and a reachable BlueBubbles server base URL.
 
+Website accounts / Keycloak:
+- Browser login uses Keycloak, not Clerk. The app realm is `bbagent` and the public SPA client is
+  `bbagent-web`.
+- The production issuer is `https://keycloak.bre.land/realms/bbagent`. Keep
+  `KEYCLOAK_ISSUER_URI` and `KEYCLOAK_JWK_SET_URI` aligned with the realm, and mirror test-safe
+  defaults into `src/test/resources/application.properties`.
+- Keycloak realm/client setup lives in `scripts/setup-keycloak-bbagent.sh`. Run
+  `kcadm config credentials` against the master realm first, then run the script. Only run it with
+  `APPLY_KEYCLOAK_THEME=true` after the `bbagent` theme is installed on the Keycloak pods.
+- Theme source lives in `keycloak/themes/bbagent`. Keycloak's `login` theme type covers login,
+  registration, reset password, and related auth screens.
+- In production, the theme is installed from the kube repo at
+  `/Users/breland/repos/kube/apps/keycloak`: Kustomize generates a ConfigMap from
+  `apps/keycloak/themes/bbagent`, and `keycloak-theme-mount-patch.yaml` mounts it at
+  `/opt/keycloak/themes/bbagent`. Push kube changes and let Flux reconcile/roll Keycloak before
+  setting `loginTheme=bbagent`.
+
+Website account linking:
+- Use the `link_website_account` agent tool when an iMessage user asks to log in, sign up, manage
+  their web account, connect iMessage to the website, or view linked integrations.
+- The tool infers the current iMessage sender/chat context, creates a short-lived pending link
+  token, stores only a token hash, and returns a safe `/account/link?token=...` URL for the user.
+  Link tokens default to 30 minutes and are single-use.
+- `/account/link` requires Keycloak login, then calls the protected redeem API with the Keycloak
+  access token. Redeeming links the Keycloak subject to the iMessage sender identity. Re-redeeming
+  by the same account should be idempotent; redeeming an already-used token from a different account
+  should conflict.
+- The account dashboard is read-only for integrations. It derives Coder status from the same
+  sender-based account base used by `CoderMcpClient`, and Google Calendar status from the existing
+  chat/sender account base used by calendar tools. Revoking underlying OAuth tokens remains handled
+  by the existing iMessage tools, not the website dashboard.
+
 If you add new configs:
 - Prefer environment variables with sensible defaults in `application.properties`.
 - Update `manifests/bluebubbles-chatgpt-agent/be-components.yaml` if needed for production deploys.
