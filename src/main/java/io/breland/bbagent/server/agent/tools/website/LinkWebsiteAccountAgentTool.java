@@ -13,6 +13,7 @@ import java.util.Map;
 
 public class LinkWebsiteAccountAgentTool implements ToolProvider {
   public static final String TOOL_NAME = "link_website_account";
+  private static final DateTimeFormatter INSTANT_FORMATTER = DateTimeFormatter.ISO_INSTANT;
 
   private final WebsiteAccountService accountService;
 
@@ -40,21 +41,26 @@ public class LinkWebsiteAccountAgentTool implements ToolProvider {
           try {
             WebsiteAccountService.CreatedLinkToken link =
                 accountService.createLinkToken(context.message());
-            String text =
-                "Open this link to log in or sign up and connect this iMessage sender to your web account: "
-                    + link.url()
-                    + "\nThis link expires at "
-                    + DateTimeFormatter.ISO_INSTANT.format(link.expiresAt())
-                    + ".";
-            Map<String, Object> response = new LinkedHashMap<>();
-            response.put("link_url", link.url());
-            response.put("expires_at", DateTimeFormatter.ISO_INSTANT.format(link.expiresAt()));
-            response.put("account_base", link.accountBase());
-            response.put("user_facing_text", text);
-            return context.getMapper().writeValueAsString(response);
+            return context.getMapper().writeValueAsString(toResponse(link));
           } catch (Exception e) {
             return "error: " + e.getMessage();
           }
         });
+  }
+
+  private Map<String, Object> toResponse(WebsiteAccountService.CreatedLinkToken link) {
+    String expiresAt = INSTANT_FORMATTER.format(link.expiresAt());
+    String text =
+        "Open this link to log in or sign up and connect this iMessage sender to your web account: "
+            + link.url()
+            + "\nThis link expires at "
+            + expiresAt
+            + ".";
+    Map<String, Object> response = new LinkedHashMap<>();
+    response.put("link_url", link.url());
+    response.put("expires_at", expiresAt);
+    response.put("account_base", link.accountBase());
+    response.put("user_facing_text", text);
+    return response;
   }
 }

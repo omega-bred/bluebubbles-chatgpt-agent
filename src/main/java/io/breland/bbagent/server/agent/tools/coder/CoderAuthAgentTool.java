@@ -55,17 +55,18 @@ public class CoderAuthAgentTool implements ToolProvider {
           }
           try {
             return switch (request.action()) {
-              case STATUS -> {
-                Map<String, Object> response = new LinkedHashMap<>();
-                response.put("linked", coderMcpClient.isLinked(accountBase));
-                response.put("tool_prefix", CoderMcpClient.TOOL_PREFIX);
-                yield context.getMapper().writeValueAsString(response);
-              }
+              case STATUS ->
+                  context
+                      .getMapper()
+                      .writeValueAsString(
+                          mapOf(
+                              "linked",
+                              coderMcpClient.isLinked(accountBase),
+                              "tool_prefix",
+                              CoderMcpClient.TOOL_PREFIX));
               case AUTH_URL -> {
                 if (coderMcpClient.isLinked(accountBase)) {
-                  Map<String, Object> response = new LinkedHashMap<>();
-                  response.put("linked", true);
-                  yield context.getMapper().writeValueAsString(response);
+                  yield context.getMapper().writeValueAsString(mapOf("linked", true));
                 }
                 String chatGuid = context.message() != null ? context.message().chatGuid() : null;
                 String messageGuid =
@@ -77,10 +78,9 @@ public class CoderAuthAgentTool implements ToolProvider {
                 if (authUrl.isEmpty()) {
                   yield "not configured";
                 }
-                Map<String, Object> response = new LinkedHashMap<>();
-                response.put("auth_url", authUrl.get());
-                response.put("linked", false);
-                yield context.getMapper().writeValueAsString(response);
+                yield context
+                    .getMapper()
+                    .writeValueAsString(mapOf("auth_url", authUrl.get(), "linked", false));
               }
               case REVOKE -> coderMcpClient.revoke(accountBase) ? "revoked" : "not found";
             };
@@ -88,5 +88,18 @@ public class CoderAuthAgentTool implements ToolProvider {
             return "error: " + e.getMessage();
           }
         });
+  }
+
+  private Map<String, Object> mapOf(String key1, Object value1) {
+    Map<String, Object> response = new LinkedHashMap<>();
+    response.put(key1, value1);
+    return response;
+  }
+
+  private Map<String, Object> mapOf(String key1, Object value1, String key2, Object value2) {
+    Map<String, Object> response = new LinkedHashMap<>();
+    response.put(key1, value1);
+    response.put(key2, value2);
+    return response;
   }
 }
