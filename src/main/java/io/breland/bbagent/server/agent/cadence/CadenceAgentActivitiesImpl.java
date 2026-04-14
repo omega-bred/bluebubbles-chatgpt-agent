@@ -104,7 +104,8 @@ public class CadenceAgentActivitiesImpl implements CadenceAgentActivities {
           AgentResponseHelper.extractFunctionCalls(response).stream()
               .map(call -> new CadenceToolCall(call.callId(), call.name(), call.arguments()))
               .collect(Collectors.toList());
-      String toolContextItemsJson = toJson(AgentResponseHelper.extractToolContextItems(response));
+      String toolContextItemsJson =
+          toJson(AgentResponseHelper.extractToolContextItems(response, toolCalls));
       return new CadenceResponseBundle(
           responseJson, assistantText, toolContextItemsJson, toolCalls);
     } catch (Exception e) {
