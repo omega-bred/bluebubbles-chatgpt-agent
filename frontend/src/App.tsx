@@ -284,14 +284,26 @@ function LinkedIdentity({
     return null;
   }
   const calendars = integration.gcal_accounts || [];
+  const modelAccess = integration.model_access;
   return (
     <article className="linked-item">
       <div>
         <p className="eyebrow">iMessage sender</p>
         <h2>{link.sender || link.account_base}</h2>
         <p className="muted">{link.chat_guid || "Direct sender link"}</p>
+        {modelAccess ? (
+          <p className="model-note">
+            {modelAccess.is_premium ? "Premium" : "Standard"} account · {modelAccess.current_model_label}
+            {modelAccess.model_selection_configurable ? "" : " · read only"}
+          </p>
+        ) : null}
       </div>
       <div className="integration-pills">
+        {modelAccess ? (
+          <span className={modelAccess.is_premium ? "pill premium" : "pill"}>
+            Model {modelAccess.current_model_label}
+          </span>
+        ) : null}
         <span className={integration.coder_linked ? "pill good" : "pill"}>
           Coder {integration.coder_linked ? "linked" : "not linked"}
         </span>

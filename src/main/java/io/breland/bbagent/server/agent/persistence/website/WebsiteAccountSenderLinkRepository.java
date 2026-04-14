@@ -9,6 +9,12 @@ public interface WebsiteAccountSenderLinkRepository
   List<WebsiteAccountSenderLinkEntity> findAllByAccountSubjectOrderByCreatedAtDesc(
       String accountSubject);
 
+  List<WebsiteAccountSenderLinkEntity> findAllByAccountBaseOrderByCreatedAtDesc(String accountBase);
+
+  List<WebsiteAccountSenderLinkEntity>
+      findAllByAccountBaseAndCoderAccountBaseAndGcalAccountBaseOrderByCreatedAtDesc(
+          String accountBase, String coderAccountBase, String gcalAccountBase);
+
   Optional<WebsiteAccountSenderLinkEntity>
       findByAccountSubjectAndCoderAccountBaseAndGcalAccountBase(
           String accountSubject, String coderAccountBase, String gcalAccountBase);

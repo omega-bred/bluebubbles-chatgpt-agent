@@ -7,7 +7,9 @@ import io.breland.bbagent.generated.model.WebsiteAccountResponse;
 import io.breland.bbagent.generated.model.WebsiteCalendarAccountSummary;
 import io.breland.bbagent.generated.model.WebsiteIntegrationSummary;
 import io.breland.bbagent.generated.model.WebsiteLinkedAccountsResponse;
+import io.breland.bbagent.generated.model.WebsiteModelAccessSummary;
 import io.breland.bbagent.server.agent.IncomingMessage;
+import io.breland.bbagent.server.agent.model_picker.ModelAccessService;
 import io.breland.bbagent.server.agent.persistence.website.WebsiteAccountEntity;
 import io.breland.bbagent.server.agent.persistence.website.WebsiteAccountLinkTokenEntity;
 import io.breland.bbagent.server.agent.persistence.website.WebsiteAccountLinkTokenRepository;
@@ -46,6 +48,7 @@ public class WebsiteAccountService {
   private final WebsiteAccountSenderLinkRepository linkRepository;
   private final GcalClient gcalClient;
   private final CoderMcpClient coderMcpClient;
+  private final ModelAccessService modelAccessService;
   private final String websiteBaseUrl;
   private final Duration linkTokenTtl;
   private final SecureRandom secureRandom = new SecureRandom();
@@ -56,6 +59,7 @@ public class WebsiteAccountService {
       WebsiteAccountSenderLinkRepository linkRepository,
       GcalClient gcalClient,
       CoderMcpClient coderMcpClient,
+      ModelAccessService modelAccessService,
       @Value("${website.base-url:http://localhost:8080}") String websiteBaseUrl,
       @Value("${website.account-link-token-ttl-minutes:30}") long linkTokenTtlMinutes) {
     this.accountRepository = accountRepository;
@@ -63,6 +67,7 @@ public class WebsiteAccountService {
     this.linkRepository = linkRepository;
     this.gcalClient = gcalClient;
     this.coderMcpClient = coderMcpClient;
+    this.modelAccessService = modelAccessService;
     this.websiteBaseUrl = stripTrailingSlash(websiteBaseUrl);
     this.linkTokenTtl = Duration.ofMinutes(linkTokenTtlMinutes);
   }
@@ -130,6 +135,44 @@ public class WebsiteAccountService {
             .build()
             .toUriString();
     return new CreatedLinkToken(url, expiresAt, identity.accountBase());
+  }
+
+  @Transactional(readOnly = true)
+  public SenderLinkStatus getLinkStatus(IncomingMessage message) {
+    if (message == null) {
+      return SenderLinkStatus.empty();
+    }
+    return getLinkStatus(message.sender(), message.chatGuid());
+  }
+
+  @Transactional(readOnly = true)
+  public SenderLinkStatus getLinkStatus(String sender, String chatGuid) {
+    LinkIdentity identity = resolveIdentity(sender, chatGuid);
+    if (identity.accountBase().isBlank()) {
+      return SenderLinkStatus.empty();
+    }
+    List<WebsiteAccountSenderLinkEntity> accountLinks =
+        linkRepository.findAllByAccountBaseOrderByCreatedAtDesc(identity.accountBase());
+    List<WebsiteAccountSenderLinkEntity> exactLinks =
+        linkRepository
+            .findAllByAccountBaseAndCoderAccountBaseAndGcalAccountBaseOrderByCreatedAtDesc(
+                identity.accountBase(), identity.coderAccountBase(), identity.gcalAccountBase());
+    Instant latestLinkedAt =
+        exactLinks.stream()
+            .findFirst()
+            .or(() -> accountLinks.stream().findFirst())
+            .map(WebsiteAccountSenderLinkEntity::getCreatedAt)
+            .orElse(null);
+    return new SenderLinkStatus(
+        identity.accountBase(),
+        identity.coderAccountBase(),
+        identity.gcalAccountBase(),
+        !accountLinks.isEmpty(),
+        !exactLinks.isEmpty(),
+        accountLinks.size(),
+        exactLinks.size(),
+        modelAccessService.toWebsiteSummary(identity.accountBase()),
+        latestLinkedAt);
   }
 
   @Transactional
@@ -234,7 +277,8 @@ public class WebsiteAccountService {
     return new WebsiteIntegrationSummary()
         .link(toLink(link))
         .coderLinked(coderMcpClient != null && coderMcpClient.isLinked(link.getCoderAccountBase()))
-        .gcalAccounts(gcalAccounts);
+        .gcalAccounts(gcalAccounts)
+        .modelAccess(modelAccessService.toWebsiteSummary(link.getAccountBase()));
   }
 
   private WebsiteAccountProfile toProfile(WebsiteAccountEntity account) {
@@ -279,8 +323,12 @@ public class WebsiteAccountService {
   }
 
   private LinkIdentity resolveIdentity(IncomingMessage message) {
-    String sender = clean(message.sender());
-    String chatGuid = clean(message.chatGuid());
+    return resolveIdentity(message.sender(), message.chatGuid());
+  }
+
+  private LinkIdentity resolveIdentity(String rawSender, String rawChatGuid) {
+    String sender = clean(rawSender);
+    String chatGuid = clean(rawChatGuid);
     String coderAccountBase = firstNonBlank(sender, chatGuid);
     String gcalAccountBase =
         sender != null && chatGuid != null
@@ -332,6 +380,21 @@ public class WebsiteAccountService {
   }
 
   public record CreatedLinkToken(String url, Instant expiresAt, String accountBase) {}
+
+  public record SenderLinkStatus(
+      String accountBase,
+      String coderAccountBase,
+      String gcalAccountBase,
+      boolean linked,
+      boolean exactChatLinked,
+      int linkCount,
+      int exactChatLinkCount,
+      WebsiteModelAccessSummary modelAccess,
+      Instant linkedAt) {
+    public static SenderLinkStatus empty() {
+      return new SenderLinkStatus(null, null, null, false, false, 0, 0, null, null);
+    }
+  }
 
   private record LinkIdentity(
       String accountBase, String coderAccountBase, String gcalAccountBase) {}

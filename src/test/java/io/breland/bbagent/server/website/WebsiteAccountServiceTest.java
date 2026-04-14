@@ -7,7 +7,9 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.when;
 
+import io.breland.bbagent.generated.model.WebsiteModelAccessSummary;
 import io.breland.bbagent.server.agent.IncomingMessage;
+import io.breland.bbagent.server.agent.model_picker.ModelAccessService;
 import io.breland.bbagent.server.agent.persistence.website.WebsiteAccountLinkTokenEntity;
 import io.breland.bbagent.server.agent.persistence.website.WebsiteAccountLinkTokenRepository;
 import io.breland.bbagent.server.agent.persistence.website.WebsiteAccountRepository;
@@ -35,6 +37,7 @@ class WebsiteAccountServiceTest {
       Mockito.mock(WebsiteAccountSenderLinkRepository.class);
   private final GcalClient gcalClient = Mockito.mock(GcalClient.class);
   private final CoderMcpClient coderMcpClient = Mockito.mock(CoderMcpClient.class);
+  private final ModelAccessService modelAccessService = Mockito.mock(ModelAccessService.class);
   private final WebsiteAccountService service =
       new WebsiteAccountService(
           accountRepository,
@@ -42,6 +45,7 @@ class WebsiteAccountServiceTest {
           linkRepository,
           gcalClient,
           coderMcpClient,
+          modelAccessService,
           "https://chatagent.example",
           30);
 
@@ -136,6 +140,7 @@ class WebsiteAccountServiceTest {
         .thenReturn(List.of(senderLink()));
     when(coderMcpClient.isLinked("Alice")).thenReturn(true);
     when(gcalClient.listAccountsFor("iMessage;+;chat-1|Alice")).thenReturn(List.of("primary"));
+    when(modelAccessService.toWebsiteSummary("Alice")).thenReturn(modelAccess());
 
     var response = service.listLinkedAccounts(jwt());
 
@@ -143,6 +148,62 @@ class WebsiteAccountServiceTest {
     assertTrue(response.getIntegrations().get(0).getCoderLinked());
     assertEquals(
         "primary", response.getIntegrations().get(0).getGcalAccounts().get(0).getAccountId());
+    assertEquals(
+        WebsiteModelAccessSummary.PlanEnum.STANDARD,
+        response.getIntegrations().get(0).getModelAccess().getPlan());
+  }
+
+  @Test
+  void getLinkStatusChecksCurrentSenderAndChat() {
+    when(linkRepository.findAllByAccountBaseOrderByCreatedAtDesc("Alice"))
+        .thenReturn(List.of(senderLink()));
+    when(linkRepository
+            .findAllByAccountBaseAndCoderAccountBaseAndGcalAccountBaseOrderByCreatedAtDesc(
+                "Alice", "Alice", "iMessage;+;chat-1|Alice"))
+        .thenReturn(List.of(senderLink()));
+    when(modelAccessService.toWebsiteSummary("Alice")).thenReturn(modelAccess());
+
+    WebsiteAccountService.SenderLinkStatus status = service.getLinkStatus(message());
+
+    assertTrue(status.linked());
+    assertTrue(status.exactChatLinked());
+    assertEquals("Alice", status.accountBase());
+    assertEquals("iMessage;+;chat-1|Alice", status.gcalAccountBase());
+    assertEquals(1, status.linkCount());
+    assertEquals(1, status.exactChatLinkCount());
+    assertEquals("local", status.modelAccess().getCurrentModel());
+  }
+
+  @Test
+  void getLinkStatusDistinguishesSenderLinkFromExactChatLink() {
+    when(linkRepository.findAllByAccountBaseOrderByCreatedAtDesc("Alice"))
+        .thenReturn(List.of(senderLink()));
+    when(linkRepository
+            .findAllByAccountBaseAndCoderAccountBaseAndGcalAccountBaseOrderByCreatedAtDesc(
+                "Alice", "Alice", "iMessage;+;chat-2|Alice"))
+        .thenReturn(List.of());
+    when(modelAccessService.toWebsiteSummary("Alice")).thenReturn(modelAccess());
+
+    WebsiteAccountService.SenderLinkStatus status =
+        service.getLinkStatus("Alice", "iMessage;+;chat-2");
+
+    assertTrue(status.linked());
+    assertFalse(status.exactChatLinked());
+    assertEquals(1, status.linkCount());
+    assertEquals(0, status.exactChatLinkCount());
+  }
+
+  private WebsiteModelAccessSummary modelAccess() {
+    return new WebsiteModelAccessSummary()
+        .accountBase("Alice")
+        .plan(WebsiteModelAccessSummary.PlanEnum.STANDARD)
+        .isPremium(false)
+        .currentModel("local")
+        .currentModelLabel("Local")
+        .modelSelectionAllowed(false)
+        .modelSelectionConfigurable(false)
+        .readOnlyReason("Standard accounts use the local model.")
+        .availableModels(List.of());
   }
 
   private void stubAccountUpsert() {

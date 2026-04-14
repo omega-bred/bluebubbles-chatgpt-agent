@@ -247,6 +247,13 @@ a {
   line-height: 1.55;
 }
 
+.model-note {
+  margin: 10px 0 0;
+  color: #3f3f3b;
+  font-size: 0.95rem;
+  font-weight: 700;
+}
+
 .account-main {
   padding: 72px 32px;
 }
@@ -299,6 +306,12 @@ a {
   border-color: #33d17a;
   color: #10562f;
   background: #e8faef;
+}
+
+.pill.premium {
+  border-color: #1d8cff;
+  color: #0b4786;
+  background: #eaf4ff;
 }
 
 .error-banner {

@@ -1,6 +1,5 @@
 package io.breland.bbagent.server.agent.model_picker;
 
-import com.openai.models.ChatModel;
 import com.openai.models.Reasoning;
 import com.openai.models.ReasoningEffort;
 import com.openai.models.responses.ResponseCreateParams;
@@ -8,24 +7,35 @@ import com.openai.models.responses.Tool;
 import com.openai.models.responses.WebSearchTool;
 import io.breland.bbagent.server.agent.AgentWorkflowContext;
 import io.breland.bbagent.server.agent.IncomingMessage;
-import java.util.Set;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.lang.Nullable;
 import org.springframework.stereotype.Component;
 
 @Component
 @Slf4j
 public class ModelPicker {
-  private Set<String> premiumUsers = Set.of();
+  private final ModelAccessService modelAccessService;
+
+  public ModelPicker() {
+    this(null);
+  }
+
+  @Autowired
+  public ModelPicker(@Nullable ModelAccessService modelAccessService) {
+    this.modelAccessService = modelAccessService;
+  }
 
   public ResponseCreateParams.Builder applyResponsesModelParams(
       ResponseCreateParams.Builder builder,
       IncomingMessage incomingMessage,
       AgentWorkflowContext agentWorkflowContext) {
-    if (isPremiumUser(incomingMessage)) {
+    ModelAccessService.ModelAccess modelAccess = resolveModelAccess(incomingMessage);
+    if (modelAccess.premium()) {
       log.info("User {} is a premium user", incomingMessage.sender());
       builder.maxOutputTokens(2500);
       builder.reasoning(Reasoning.builder().effort(ReasoningEffort.MEDIUM).build());
-      builder.model("openai/" + ChatModel.GPT_5_4.toString());
+      builder.model(modelAccess.responsesModel());
       builder
           .addTool(
               Tool.ImageGeneration.builder()
@@ -45,20 +55,23 @@ public class ModelPicker {
       log.info("User {} is a standard user", incomingMessage.sender());
       builder.maxOutputTokens(1500);
       builder.reasoning(Reasoning.builder().effort(ReasoningEffort.HIGH).build());
-      builder.model("google/gemma-4-31B-it");
+      builder.model(modelAccess.responsesModel());
     }
     return builder;
   }
 
-  public void setPremiumUsers(Set<String> premiumUsers) {
-    this.premiumUsers = premiumUsers == null ? Set.of() : Set.copyOf(premiumUsers);
-  }
-
-  private boolean isPremiumUser(IncomingMessage incomingMessage) {
-    if (incomingMessage == null || incomingMessage.sender() == null) {
-      return false;
+  private ModelAccessService.ModelAccess resolveModelAccess(IncomingMessage incomingMessage) {
+    if (modelAccessService == null) {
+      return new ModelAccessService.ModelAccess(
+          null,
+          false,
+          "standard",
+          ModelAccessService.STANDARD_MODEL_KEY,
+          ModelAccessService.STANDARD_MODEL_LABEL,
+          ModelAccessService.STANDARD_RESPONSES_MODEL,
+          false,
+          java.util.List.of());
     }
-    return true;
-    //      return premiumUsers.contains(incomingMessage.sender());
+    return modelAccessService.resolve(incomingMessage);
   }
 }

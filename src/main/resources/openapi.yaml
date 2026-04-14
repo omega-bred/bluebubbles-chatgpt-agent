@@ -401,12 +401,71 @@ components:
       properties:
         account_id:
           type: string
+    WebsiteModelOption:
+      type: object
+      required:
+        - model
+        - label
+        - provider
+        - enabled
+      properties:
+        model:
+          type: string
+          description: Stable model option key, such as local, chatgpt, claude, or gemini.
+        label:
+          type: string
+        provider:
+          type: string
+        enabled:
+          type: boolean
+          description: Whether this option can currently be used by the model picker.
+    WebsiteModelAccessSummary:
+      type: object
+      required:
+        - plan
+        - is_premium
+        - current_model
+        - current_model_label
+        - model_selection_allowed
+        - model_selection_configurable
+        - available_models
+      properties:
+        account_base:
+          type: string
+          nullable: true
+          description: Sender/account base used by the model picker.
+        plan:
+          type: string
+          enum:
+            - standard
+            - premium
+        is_premium:
+          type: boolean
+        current_model:
+          type: string
+          description: Read-only current model key exposed to the website.
+        current_model_label:
+          type: string
+        model_selection_allowed:
+          type: boolean
+          description: Whether this plan is allowed to choose models once model selection is enabled.
+        model_selection_configurable:
+          type: boolean
+          description: Whether model selection can currently be changed from the website.
+        read_only_reason:
+          type: string
+          nullable: true
+        available_models:
+          type: array
+          items:
+            $ref: '#/components/schemas/WebsiteModelOption'
     WebsiteIntegrationSummary:
       type: object
       required:
         - link
         - coder_linked
         - gcal_accounts
+        - model_access
       properties:
         link:
           $ref: '#/components/schemas/WebsiteAccountLink'
@@ -416,6 +475,8 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/WebsiteCalendarAccountSummary'
+        model_access:
+          $ref: '#/components/schemas/WebsiteModelAccessSummary'
     WebsiteLinkedAccountsResponse:
       type: object
       required:

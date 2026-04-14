@@ -39,6 +39,7 @@ import io.breland.bbagent.server.agent.tools.memory.*;
 import io.breland.bbagent.server.agent.tools.scheduled.ScheduledEventDeleteTool;
 import io.breland.bbagent.server.agent.tools.scheduled.ScheduledEventListTool;
 import io.breland.bbagent.server.agent.tools.scheduled.ScheduledEventTool;
+import io.breland.bbagent.server.agent.tools.website.GetWebsiteAccountLinkStatusAgentTool;
 import io.breland.bbagent.server.agent.tools.website.LinkWebsiteAccountAgentTool;
 import io.breland.bbagent.server.agent.tools.workflowcallback.CreateWorkflowCallbackAgentTool;
 import io.breland.bbagent.server.agent.workflowcallback.WorkflowCallbackService;
@@ -967,6 +968,9 @@ public class BBMessageAgent {
                 + "When the user asks to log in, sign up, manage their web account, connect iMessage to the website, or see linked integrations on the website, call "
                 + LinkWebsiteAccountAgentTool.TOOL_NAME
                 + " and send the returned user_facing_text. Do not invent account links manually. "
+                + "Incoming message context may include websiteAccountLinked and websiteAccountExactChatLinked for the current sender. When the user asks whether the current sender or another sender is linked to a website account, call "
+                + GetWebsiteAccountLinkStatusAgentTool.TOOL_NAME
+                + " before answering if the context is absent, ambiguous, or the user names a different sender. "
                 + "Use "
                 + SendGiphyAgentTool.TOOL_NAME
                 + " to reply with a GIF when it would be more expressive than text. "
@@ -1086,6 +1090,7 @@ public class BBMessageAgent {
     if (message.chatGuid() != null && !message.chatGuid().isBlank()) {
       text.append(" [chatGuid=").append(message.chatGuid()).append("]");
     }
+    appendWebsiteAccountLinkContext(text, message);
     if (message.messageGuid() != null && !message.messageGuid().isBlank()) {
       text.append(" [messageGuid=").append(message.messageGuid()).append("]");
     }
@@ -1210,6 +1215,27 @@ public class BBMessageAgent {
         .collect(Collectors.toList());
   }
 
+  private void appendWebsiteAccountLinkContext(StringBuilder text, IncomingMessage message) {
+    if (websiteAccountService == null || message == null) {
+      return;
+    }
+    try {
+      WebsiteAccountService.SenderLinkStatus status = websiteAccountService.getLinkStatus(message);
+      if (status.accountBase() == null || status.accountBase().isBlank()) {
+        return;
+      }
+      text.append(" [websiteAccountLinked=").append(status.linked()).append("]");
+      text.append(" [websiteAccountExactChatLinked=").append(status.exactChatLinked()).append("]");
+      if (status.modelAccess() != null) {
+        text.append(" [modelPlan=").append(status.modelAccess().getPlan()).append("]");
+        text.append(" [modelPremium=").append(status.modelAccess().getIsPremium()).append("]");
+        text.append(" [currentModel=").append(status.modelAccess().getCurrentModel()).append("]");
+      }
+    } catch (Exception e) {
+      log.debug("Failed to load website account link context", e);
+    }
+  }
+
   private Optional<ResponseInputFile> resolveAttachmentFile(IncomingAttachment attachment) {
     if (attachment == null) {
       return Optional.empty();
@@ -1293,6 +1319,7 @@ public class BBMessageAgent {
     }
     if (websiteAccountService != null) {
       registerTool(new LinkWebsiteAccountAgentTool(websiteAccountService).getTool());
+      registerTool(new GetWebsiteAccountLinkStatusAgentTool(websiteAccountService).getTool());
     }
     registerTool(new KubernetesReadOnlyAgentTool(objectMapper).getTool());
     registerTool(new KubernetesPodLogsAgentTool(objectMapper).getTool());
