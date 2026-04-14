@@ -2,6 +2,7 @@ package io.breland.bbagent.server.agent.model_picker;
 
 import io.breland.bbagent.generated.model.WebsiteModelAccessSummary;
 import io.breland.bbagent.generated.model.WebsiteModelOption;
+import io.breland.bbagent.server.StringValueUtils;
 import io.breland.bbagent.server.agent.IncomingMessage;
 import io.breland.bbagent.server.agent.persistence.model.ModelAccountSettingsEntity;
 import io.breland.bbagent.server.agent.persistence.model.ModelAccountSettingsRepository;
@@ -29,7 +30,7 @@ public class ModelAccessService {
   }
 
   public ModelAccess resolve(@Nullable String accountBase) {
-    String cleanAccountBase = clean(accountBase);
+    String cleanAccountBase = StringValueUtils.clean(accountBase);
     if (cleanAccountBase == null) {
       return standard(null);
     }
@@ -67,16 +68,16 @@ public class ModelAccessService {
     if (message == null) {
       return null;
     }
-    String sender = clean(message.sender());
+    String sender = StringValueUtils.clean(message.sender());
     if (sender != null) {
       return sender;
     }
-    return clean(message.chatGuid());
+    return StringValueUtils.clean(message.chatGuid());
   }
 
   private ModelAccess fromEntity(ModelAccountSettingsEntity entity) {
     if (entity.isPremium()) {
-      String selected = clean(entity.getSelectedModel());
+      String selected = StringValueUtils.clean(entity.getSelectedModel());
       String modelKey = selected == null ? PREMIUM_MODEL_KEY : selected;
       return new ModelAccess(
           entity.getAccountBase(),
@@ -132,10 +133,6 @@ public class ModelAccessService {
       return STANDARD_RESPONSES_MODEL;
     }
     return PREMIUM_RESPONSES_MODEL;
-  }
-
-  private String clean(String value) {
-    return value == null || value.isBlank() ? null : value;
   }
 
   public record ModelAccess(

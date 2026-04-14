@@ -8,6 +8,7 @@ import io.breland.bbagent.generated.model.WebsiteCalendarAccountSummary;
 import io.breland.bbagent.generated.model.WebsiteIntegrationSummary;
 import io.breland.bbagent.generated.model.WebsiteLinkedAccountsResponse;
 import io.breland.bbagent.generated.model.WebsiteModelAccessSummary;
+import io.breland.bbagent.server.StringValueUtils;
 import io.breland.bbagent.server.agent.IncomingMessage;
 import io.breland.bbagent.server.agent.model_picker.ModelAccessService;
 import io.breland.bbagent.server.agent.persistence.website.WebsiteAccountEntity;
@@ -327,31 +328,18 @@ public class WebsiteAccountService {
   }
 
   private LinkIdentity resolveIdentity(String rawSender, String rawChatGuid) {
-    String sender = clean(rawSender);
-    String chatGuid = clean(rawChatGuid);
-    String coderAccountBase = firstNonBlank(sender, chatGuid);
+    String sender = StringValueUtils.clean(rawSender);
+    String chatGuid = StringValueUtils.clean(rawChatGuid);
+    String coderAccountBase = StringValueUtils.firstNonBlank(sender, chatGuid);
     String gcalAccountBase =
         sender != null && chatGuid != null
             ? chatGuid + "|" + sender
-            : firstNonBlank(sender, chatGuid);
-    String accountBase = firstNonBlank(sender, chatGuid);
+            : StringValueUtils.firstNonBlank(sender, chatGuid);
+    String accountBase = StringValueUtils.firstNonBlank(sender, chatGuid);
     return new LinkIdentity(
         accountBase == null ? "" : accountBase,
         coderAccountBase == null ? "" : coderAccountBase,
         gcalAccountBase == null ? "" : gcalAccountBase);
-  }
-
-  private String firstNonBlank(String... values) {
-    for (String value : values) {
-      if (value != null && !value.isBlank()) {
-        return value;
-      }
-    }
-    return null;
-  }
-
-  private String clean(String value) {
-    return value == null || value.isBlank() ? null : value;
   }
 
   private String newToken() {

@@ -3,6 +3,7 @@ package io.breland.bbagent.server.agent.tools.website;
 import static io.breland.bbagent.server.agent.tools.JsonSchemaUtilities.jsonSchema;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
+import io.breland.bbagent.server.StringValueUtils;
 import io.breland.bbagent.server.agent.IncomingMessage;
 import io.breland.bbagent.server.agent.tools.AgentTool;
 import io.breland.bbagent.server.agent.tools.ToolProvider;
@@ -47,9 +48,11 @@ public class GetWebsiteAccountLinkStatusAgentTool implements ToolProvider {
                 context.getMapper().convertValue(args, GetWebsiteAccountLinkStatusRequest.class);
             IncomingMessage message = context.message();
             String sender =
-                firstNonBlank(request.sender(), message == null ? null : message.sender());
+                StringValueUtils.firstNonBlank(
+                    request.sender(), message == null ? null : message.sender());
             String chatGuid =
-                firstNonBlank(request.chatGuid(), message == null ? null : message.chatGuid());
+                StringValueUtils.firstNonBlank(
+                    request.chatGuid(), message == null ? null : message.chatGuid());
             WebsiteAccountService.SenderLinkStatus status =
                 accountService.getLinkStatus(sender, chatGuid);
             Map<String, Object> response = new LinkedHashMap<>();
@@ -98,15 +101,5 @@ public class GetWebsiteAccountLinkStatusAgentTool implements ToolProvider {
         + ", current model: "
         + status.modelAccess().getCurrentModelLabel()
         + ".";
-  }
-
-  private String firstNonBlank(String first, String second) {
-    if (first != null && !first.isBlank()) {
-      return first;
-    }
-    if (second != null && !second.isBlank()) {
-      return second;
-    }
-    return null;
   }
 }
