@@ -56,7 +56,8 @@ public class ScheduledEventTool implements ToolProvider {
             + "repeatInterval must be representable as Unix cron, such as PT1M, PT5M, PT1H, or PT24H. "
             + "Use this for reminders, follow-ups, and watching long-running work. "
             + "After starting a long-running Coder task or workspace build, schedule a one-time status check with delaySeconds and no repeatInterval unless the user asks for repeated checks. "
-            + "Use the task to describe what should happen, include any IDs needed to continue, and say how the user should be notified.",
+            + "For long-running work checks, write the task so that if the work is still pending or running, the assistant must call schedule_event again for another one-time check before ending the turn, unless the work is complete, failed, canceled, expired, or the task's max attempts/deadline has been reached. "
+            + "Use the task to describe what should happen, include any IDs needed to continue, attempt count, deadline or callback expiration, and say how the user should be notified.",
         jsonSchema(ScheduledEventRequest.class),
         false,
         (context, args) -> {
@@ -235,7 +236,11 @@ public class ScheduledEventTool implements ToolProvider {
       builder.append(" Repeat interval: ").append(repeatInterval).append('.');
     }
     builder.append(" Task: ").append(task.trim());
-    builder.append(" Execute now and notify the user as needed.");
+    builder.append(
+        " Execute now and notify the user as needed. If this is checking long-running work and the work is still pending or running, call ");
+    builder.append(TOOL_NAME);
+    builder.append(
+        " again before ending this turn to create another one-time check, unless the work is complete, failed, canceled, expired, or the max attempts/deadline in the task has been reached.");
     return builder.toString();
   }
 }

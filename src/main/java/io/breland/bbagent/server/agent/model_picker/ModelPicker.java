@@ -25,7 +25,7 @@ public class ModelPicker {
       log.info("User {} is a premium user", incomingMessage.sender());
       builder.maxOutputTokens(2500);
       builder.reasoning(Reasoning.builder().effort(ReasoningEffort.MEDIUM).build());
-      builder.model("openai/" + ChatModel.GPT_5_3_CHAT_LATEST.toString());
+      builder.model("openai/" + ChatModel.GPT_5_4.toString());
       builder
           .addTool(
               Tool.ImageGeneration.builder()
@@ -43,9 +43,9 @@ public class ModelPicker {
                   .build());
     } else {
       log.info("User {} is a standard user", incomingMessage.sender());
-      builder.maxOutputTokens(1000);
-      //      builder.reasoning(Reasoning.builder().effort(ReasoningEffort.HIGH).build());
-      builder.model("mistral/mistral-medium");
+      builder.maxOutputTokens(1500);
+      builder.reasoning(Reasoning.builder().effort(ReasoningEffort.HIGH).build());
+      builder.model("google/gemma-4-31B-it");
     }
     return builder;
   }
@@ -59,6 +59,6 @@ public class ModelPicker {
       return false;
     }
     return true;
-    //    return premiumUsers.contains(incomingMessage.sender());
+    //      return premiumUsers.contains(incomingMessage.sender());
   }
 }

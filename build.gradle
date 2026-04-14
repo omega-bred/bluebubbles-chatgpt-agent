@@ -219,8 +219,8 @@ dependencies {
     implementation 'io.modelcontextprotocol.sdk:mcp-core:1.1.1'
     implementation 'io.modelcontextprotocol.sdk:mcp-json-jackson2:1.1.1'
 
-    implementation("com.openai:openai-java-spring-boot-starter:4.26.0")
-    implementation("com.uber.cadence:cadence-client:3.10.0")
+    implementation("com.openai:openai-java-spring-boot-starter:4.31.0")
+    implementation("com.uber.cadence:cadence-client:3.13.1")
 
     implementation 'io.micrometer:micrometer-core'
     runtimeOnly 'io.micrometer:micrometer-registry-influx'

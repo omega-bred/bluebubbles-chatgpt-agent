@@ -3,6 +3,7 @@ package io.breland.bbagent.server.agent.tools.scheduled;
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.uber.cadence.client.WorkflowOptions;
 import java.time.Duration;
@@ -24,6 +25,15 @@ class ScheduledEventToolTest {
     assertNull(ScheduledEventTool.resolveCronSchedule(Duration.ofSeconds(30)));
     assertNull(ScheduledEventTool.resolveCronSchedule(Duration.ofMinutes(45)));
     assertNull(ScheduledEventTool.resolveCronSchedule(Duration.ofHours(5)));
+  }
+
+  @Test
+  void toolDescriptionTellsLongRunningChecksToRescheduleThemselves() {
+    String description = new ScheduledEventTool(null).getTool().description();
+
+    assertTrue(description.contains("pending or running"));
+    assertTrue(description.contains("schedule_event again"));
+    assertTrue(description.contains("max attempts/deadline"));
   }
 
   private static void assertCadenceAccepts(String expectedCron, Duration interval) {

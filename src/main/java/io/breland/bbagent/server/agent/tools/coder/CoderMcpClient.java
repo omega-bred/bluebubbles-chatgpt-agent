@@ -254,22 +254,6 @@ public class CoderMcpClient {
         .findFirst();
   }
 
-  public List<String> listToolNames(String accountBase) {
-    try {
-      Optional<String> linkedAccountBase = resolveLinkedAccountBase(accountBase);
-      if (linkedAccountBase.isEmpty()) {
-        return List.of();
-      }
-      return getToolDefinitions(linkedAccountBase.get()).stream()
-          .map(CoderToolDefinition::mcpName)
-          .sorted()
-          .toList();
-    } catch (Exception e) {
-      log.warn("Failed to list Coder MCP tool names", e);
-      return List.of();
-    }
-  }
-
   private AgentTool toAgentTool(
       String requestedAccountBase, String credentialAccountBase, CoderToolDefinition definition) {
     return new AgentTool(

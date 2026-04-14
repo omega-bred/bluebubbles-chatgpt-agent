@@ -214,6 +214,8 @@ class BBMessageAgentTest {
     assertTrue(prompt.contains("callback_instructions"));
     assertTrue(prompt.contains("Coder task prompt"));
     assertTrue(prompt.contains("schedule_event"));
+    assertTrue(prompt.contains("still pending or running"));
+    assertTrue(prompt.contains("again before ending the turn"));
   }
 
   @Test
