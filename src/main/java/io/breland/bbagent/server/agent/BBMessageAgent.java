@@ -513,7 +513,7 @@ public class BBMessageAgent {
       }
       List<ResponseInputItem> toolContinuation = new ArrayList<>(inputItems);
       log.debug(toolContinuation.toString());
-      toolContinuation.addAll(AgentResponseHelper.extractToolContextItems(response));
+      toolContinuation.addAll(AgentResponseHelper.extractToolContextItems(response, toolCalls));
       toolContinuation.addAll(executeToolCalls(toolCalls, message, workflowContext));
       response = createResponse(toolContinuation, message, workflowContext);
       inputItems = toolContinuation;
