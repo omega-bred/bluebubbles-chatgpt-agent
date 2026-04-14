@@ -67,10 +67,18 @@ public class BBMessageAgent {
   public static final int MAX_HISTORY = 50;
   public static final String NO_RESPONSE_TEXT = "NO_RESPONSE";
   private static final int MAX_TOOL_LOOPS = 50;
+  private static final int MAX_CONSECUTIVE_BLOCKED_TOOL_LOOPS = 2;
   private static final int MAX_IMAGE_ATTACHMENTS = 4;
   private static final int MAX_FILE_ATTACHMENTS = 4;
   private static final int MAX_GENERATED_IMAGES = 1;
   public static final String IMESSAGE_SERVICE = "iMessage";
+  private static final Map<String, Integer> MAX_TOOL_CALLS_PER_TURN =
+      Map.of(
+          SendGiphyAgentTool.TOOL_NAME, 1,
+          SendTextAgentTool.TOOL_NAME, 2,
+          SendReactionAgentTool.TOOL_NAME, 2,
+          RenameConversationAgentTool.TOOL_NAME, 1,
+          SetGroupIconAgentTool.TOOL_NAME, 1);
 
   public enum AssistantResponsiveness {
     DEFAULT,
@@ -498,6 +506,9 @@ public class BBMessageAgent {
     boolean sentTextByTool = false;
     boolean sentReactionByTool = false;
     int loops = 0;
+    int blockedLoops = 0;
+    Map<String, Integer> toolCallsByName = new HashMap<>();
+    Map<String, Integer> toolCallsBySignature = new HashMap<>();
     while (loops < MAX_TOOL_LOOPS) {
       List<ResponseFunctionToolCall> toolCalls = AgentResponseHelper.extractFunctionCalls(response);
       log.debug(toolCalls.toString());
@@ -514,9 +525,29 @@ public class BBMessageAgent {
       List<ResponseInputItem> toolContinuation = new ArrayList<>(inputItems);
       log.debug(toolContinuation.toString());
       toolContinuation.addAll(AgentResponseHelper.extractToolContextItems(response, toolCalls));
-      toolContinuation.addAll(executeToolCalls(toolCalls, message, workflowContext));
+      boolean blockedAnyToolCall = false;
+      int executedToolCalls = 0;
+      for (ResponseFunctionToolCall toolCall : toolCalls) {
+        if (shouldBlockToolCall(toolCall, toolCallsByName, toolCallsBySignature)) {
+          blockedAnyToolCall = true;
+          toolContinuation.add(blockedToolCallOutput(toolCall));
+          continue;
+        }
+        toolContinuation.add(runToolActivity(toolCall, message, workflowContext));
+        executedToolCalls++;
+      }
       response = createResponse(toolContinuation, message, workflowContext);
       inputItems = toolContinuation;
+      boolean onlyBlockedToolCalls = blockedAnyToolCall && executedToolCalls == 0;
+      blockedLoops = onlyBlockedToolCalls ? blockedLoops + 1 : 0;
+      if (blockedLoops >= MAX_CONSECUTIVE_BLOCKED_TOOL_LOOPS) {
+        log.warn(
+            "Stopping tool loop after {} consecutive blocked iterations for chat={} messageGuid={}",
+            blockedLoops,
+            message.chatGuid(),
+            message.messageGuid());
+        break;
+      }
       loops++;
     }
     String assistantText =
@@ -680,6 +711,47 @@ public class BBMessageAgent {
       outputs.add(runToolActivity(toolCall, message, workflowContext));
     }
     return outputs;
+  }
+
+  private boolean shouldBlockToolCall(
+      ResponseFunctionToolCall toolCall,
+      Map<String, Integer> toolCallsByName,
+      Map<String, Integer> toolCallsBySignature) {
+    String toolName = toolCall.name();
+    int toolNameCalls = toolCallsByName.getOrDefault(toolName, 0) + 1;
+    toolCallsByName.put(toolName, toolNameCalls);
+    String signature = toolCallSignature(toolCall);
+    int signatureCalls = toolCallsBySignature.getOrDefault(signature, 0) + 1;
+    toolCallsBySignature.put(signature, signatureCalls);
+
+    Integer maxCalls = MAX_TOOL_CALLS_PER_TURN.get(toolName);
+    if (maxCalls != null && toolNameCalls > maxCalls) {
+      log.warn(
+          "Blocking repeated tool call for {} after {} calls in one turn", toolName, toolNameCalls);
+      return true;
+    }
+    if (signatureCalls > 2) {
+      log.warn("Blocking repeated tool call signature {}", signature);
+      return true;
+    }
+    return false;
+  }
+
+  private String toolCallSignature(ResponseFunctionToolCall toolCall) {
+    String args = toolCall.arguments() == null ? "" : toolCall.arguments().trim();
+    return toolCall.name() + "|" + args;
+  }
+
+  private ResponseInputItem blockedToolCallOutput(ResponseFunctionToolCall toolCall) {
+    String output =
+        "Tool call blocked to prevent repeated loops in one turn. "
+            + "Summarize the current status to the user without calling this tool again unless the user explicitly asks.";
+    ResponseInputItem.FunctionCallOutput toolOutput =
+        ResponseInputItem.FunctionCallOutput.builder()
+            .callId(toolCall.callId())
+            .output(output)
+            .build();
+    return ResponseInputItem.ofFunctionCallOutput(toolOutput);
   }
 
   public ResponseInputItem runToolActivity(
