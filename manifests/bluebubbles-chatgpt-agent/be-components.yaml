@@ -302,6 +302,8 @@ spec:
     size: 50Gi
     storageClass: freenas-iscsi-csi-3646
   numberOfInstances: 1
+  enableLogicalBackup: true
+  logicalBackupSchedule: "5 9 * * *"
   users:
     bb_chatgpt_agent_admin:
       - superuser
