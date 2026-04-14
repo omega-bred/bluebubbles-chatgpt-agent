@@ -15,6 +15,7 @@ import java.util.Map;
 
 public class GetWebsiteAccountLinkStatusAgentTool implements ToolProvider {
   public static final String TOOL_NAME = "get_website_account_link_status";
+  private static final DateTimeFormatter INSTANT_FORMATTER = DateTimeFormatter.ISO_INSTANT;
 
   private final WebsiteAccountService accountService;
 
@@ -55,26 +56,28 @@ public class GetWebsiteAccountLinkStatusAgentTool implements ToolProvider {
                     request.chatGuid(), message == null ? null : message.chatGuid());
             WebsiteAccountService.SenderLinkStatus status =
                 accountService.getLinkStatus(sender, chatGuid);
-            Map<String, Object> response = new LinkedHashMap<>();
-            response.put("linked", status.linked());
-            response.put("exact_chat_linked", status.exactChatLinked());
-            response.put("account_base", status.accountBase());
-            response.put("coder_account_base", status.coderAccountBase());
-            response.put("gcal_account_base", status.gcalAccountBase());
-            response.put("link_count", status.linkCount());
-            response.put("exact_chat_link_count", status.exactChatLinkCount());
-            response.put("model_access", status.modelAccess());
-            response.put(
-                "linked_at",
-                status.linkedAt() == null
-                    ? null
-                    : DateTimeFormatter.ISO_INSTANT.format(status.linkedAt()));
-            response.put("user_facing_text", userFacingText(status));
-            return context.getMapper().writeValueAsString(response);
+            return context.getMapper().writeValueAsString(toResponse(status));
           } catch (Exception e) {
             return "error: " + e.getMessage();
           }
         });
+  }
+
+  private Map<String, Object> toResponse(WebsiteAccountService.SenderLinkStatus status) {
+    Map<String, Object> response = new LinkedHashMap<>();
+    response.put("linked", status.linked());
+    response.put("exact_chat_linked", status.exactChatLinked());
+    response.put("account_base", status.accountBase());
+    response.put("coder_account_base", status.coderAccountBase());
+    response.put("gcal_account_base", status.gcalAccountBase());
+    response.put("link_count", status.linkCount());
+    response.put("exact_chat_link_count", status.exactChatLinkCount());
+    response.put("model_access", status.modelAccess());
+    response.put(
+        "linked_at",
+        status.linkedAt() == null ? null : INSTANT_FORMATTER.format(status.linkedAt()));
+    response.put("user_facing_text", userFacingText(status));
+    return response;
   }
 
   private String userFacingText(WebsiteAccountService.SenderLinkStatus status) {

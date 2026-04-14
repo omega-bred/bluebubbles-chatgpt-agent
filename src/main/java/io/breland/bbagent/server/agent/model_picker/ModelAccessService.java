@@ -7,6 +7,9 @@ import io.breland.bbagent.server.agent.IncomingMessage;
 import io.breland.bbagent.server.agent.persistence.model.ModelAccountSettingsEntity;
 import io.breland.bbagent.server.agent.persistence.model.ModelAccountSettingsRepository;
 import java.util.List;
+import java.util.Map;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 import org.springframework.lang.Nullable;
 import org.springframework.stereotype.Service;
 
@@ -18,6 +21,17 @@ public class ModelAccessService {
   public static final String PREMIUM_MODEL_KEY = "chatgpt";
   public static final String PREMIUM_MODEL_LABEL = "ChatGPT";
   public static final String PREMIUM_RESPONSES_MODEL = "openai/gpt-5.4";
+  private static final List<ModelOption> STANDARD_OPTIONS =
+      List.of(new ModelOption(STANDARD_MODEL_KEY, STANDARD_MODEL_LABEL, "local", true));
+  private static final List<ModelOption> PREMIUM_OPTIONS =
+      List.of(
+          new ModelOption(PREMIUM_MODEL_KEY, PREMIUM_MODEL_LABEL, "openai", true),
+          new ModelOption("claude", "Claude", "anthropic", false),
+          new ModelOption("gemini", "Gemini", "google", false),
+          new ModelOption(STANDARD_MODEL_KEY, STANDARD_MODEL_LABEL, "local", true));
+  private static final Map<String, ModelOption> PREMIUM_OPTIONS_BY_KEY =
+      PREMIUM_OPTIONS.stream()
+          .collect(Collectors.toUnmodifiableMap(ModelOption::modelKey, Function.identity()));
 
   private final ModelAccountSettingsRepository repository;
 
@@ -87,7 +101,7 @@ public class ModelAccessService {
           displayNameFor(modelKey),
           responsesModelFor(modelKey),
           true,
-          premiumOptions());
+          PREMIUM_OPTIONS);
     }
     return standard(entity.getAccountBase());
   }
@@ -101,15 +115,7 @@ public class ModelAccessService {
         STANDARD_MODEL_LABEL,
         STANDARD_RESPONSES_MODEL,
         false,
-        List.of(new ModelOption(STANDARD_MODEL_KEY, STANDARD_MODEL_LABEL, "local", true)));
-  }
-
-  private List<ModelOption> premiumOptions() {
-    return List.of(
-        new ModelOption(PREMIUM_MODEL_KEY, PREMIUM_MODEL_LABEL, "openai", true),
-        new ModelOption("claude", "Claude", "anthropic", false),
-        new ModelOption("gemini", "Gemini", "google", false),
-        new ModelOption(STANDARD_MODEL_KEY, STANDARD_MODEL_LABEL, "local", true));
+        STANDARD_OPTIONS);
   }
 
   private WebsiteModelOption toWebsiteOption(ModelOption option) {
@@ -121,11 +127,9 @@ public class ModelAccessService {
   }
 
   private String displayNameFor(String modelKey) {
-    return premiumOptions().stream()
-        .filter(option -> option.modelKey().equals(modelKey))
-        .map(ModelOption::label)
-        .findFirst()
-        .orElse(PREMIUM_MODEL_LABEL);
+    return PREMIUM_OPTIONS_BY_KEY
+        .getOrDefault(modelKey, PREMIUM_OPTIONS_BY_KEY.get(PREMIUM_MODEL_KEY))
+        .label();
   }
 
   private String responsesModelFor(String modelKey) {

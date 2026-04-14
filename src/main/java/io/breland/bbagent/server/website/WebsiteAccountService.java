@@ -44,6 +44,10 @@ import org.springframework.web.util.UriComponentsBuilder;
 
 @Service
 public class WebsiteAccountService {
+  private static final String DEFAULT_WEBSITE_BASE_URL = "http://localhost:8080";
+  private static final int LINK_TOKEN_BYTES = 32;
+  private static final String TOKEN_HASH_ALGORITHM = "SHA-256";
+
   private final WebsiteAccountRepository accountRepository;
   private final WebsiteAccountLinkTokenRepository tokenRepository;
   private final WebsiteAccountSenderLinkRepository linkRepository;
@@ -61,7 +65,7 @@ public class WebsiteAccountService {
       GcalClient gcalClient,
       CoderMcpClient coderMcpClient,
       ModelAccessService modelAccessService,
-      @Value("${website.base-url:http://localhost:8080}") String websiteBaseUrl,
+      @Value("${website.base-url:" + DEFAULT_WEBSITE_BASE_URL + "}") String websiteBaseUrl,
       @Value("${website.account-link-token-ttl-minutes:30}") long linkTokenTtlMinutes) {
     this.accountRepository = accountRepository;
     this.tokenRepository = tokenRepository;
@@ -129,12 +133,7 @@ public class WebsiteAccountService {
             now,
             now);
     tokenRepository.save(entity);
-    String url =
-        UriComponentsBuilder.fromUriString(websiteBaseUrl)
-            .path("/account/link")
-            .queryParam("token", token)
-            .build()
-            .toUriString();
+    String url = buildLinkUrl(token);
     return new CreatedLinkToken(url, expiresAt, identity.accountBase());
   }
 
@@ -188,14 +187,7 @@ public class WebsiteAccountService {
             .findById(tokenHash)
             .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Link not found"));
     Instant now = Instant.now();
-    if (tokenEntity.getExpiresAt().isBefore(now)) {
-      throw new ResponseStatusException(HttpStatus.GONE, "Link expired");
-    }
-    if (tokenEntity.getRedeemedAccountSubject() != null
-        && !tokenEntity.getRedeemedAccountSubject().equals(account.getKeycloakSubject())) {
-      throw new ResponseStatusException(
-          HttpStatus.CONFLICT, "Link already redeemed by another account");
-    }
+    validateToken(tokenEntity, account, now);
 
     boolean tokenAlreadyRedeemed = tokenEntity.getRedeemedAccountSubject() != null;
     Optional<WebsiteAccountSenderLinkEntity> existingLink =
@@ -212,11 +204,7 @@ public class WebsiteAccountService {
     link.setUpdatedAt(now);
     link = linkRepository.save(link);
 
-    tokenEntity.setRedeemedAt(
-        tokenEntity.getRedeemedAt() == null ? now : tokenEntity.getRedeemedAt());
-    tokenEntity.setRedeemedAccountSubject(account.getKeycloakSubject());
-    tokenEntity.setUpdatedAt(now);
-    tokenRepository.save(tokenEntity);
+    markTokenRedeemed(tokenEntity, account, now);
 
     WebsiteAccountRedeemLinkResponse response = new WebsiteAccountRedeemLinkResponse();
     response.setStatus(alreadyLinked ? "already_linked" : "linked");
@@ -343,23 +331,52 @@ public class WebsiteAccountService {
   }
 
   private String newToken() {
-    byte[] bytes = new byte[32];
+    byte[] bytes = new byte[LINK_TOKEN_BYTES];
     secureRandom.nextBytes(bytes);
     return Base64.getUrlEncoder().withoutPadding().encodeToString(bytes);
   }
 
   private String hashToken(String token) {
     try {
-      MessageDigest digest = MessageDigest.getInstance("SHA-256");
+      MessageDigest digest = MessageDigest.getInstance(TOKEN_HASH_ALGORITHM);
       byte[] hash = digest.digest(token.getBytes(StandardCharsets.UTF_8));
       return HexFormat.of().formatHex(hash).toLowerCase(Locale.ROOT);
     } catch (NoSuchAlgorithmException e) {
-      throw new IllegalStateException("SHA-256 not available", e);
+      throw new IllegalStateException(TOKEN_HASH_ALGORITHM + " not available", e);
     }
   }
 
+  private String buildLinkUrl(String token) {
+    return UriComponentsBuilder.fromUriString(websiteBaseUrl)
+        .path("/account/link")
+        .queryParam("token", token)
+        .build()
+        .toUriString();
+  }
+
+  private void validateToken(
+      WebsiteAccountLinkTokenEntity tokenEntity, WebsiteAccountEntity account, Instant now) {
+    if (tokenEntity.getExpiresAt().isBefore(now)) {
+      throw new ResponseStatusException(HttpStatus.GONE, "Link expired");
+    }
+    if (tokenEntity.getRedeemedAccountSubject() != null
+        && !tokenEntity.getRedeemedAccountSubject().equals(account.getKeycloakSubject())) {
+      throw new ResponseStatusException(
+          HttpStatus.CONFLICT, "Link already redeemed by another account");
+    }
+  }
+
+  private void markTokenRedeemed(
+      WebsiteAccountLinkTokenEntity tokenEntity, WebsiteAccountEntity account, Instant now) {
+    tokenEntity.setRedeemedAt(
+        tokenEntity.getRedeemedAt() == null ? now : tokenEntity.getRedeemedAt());
+    tokenEntity.setRedeemedAccountSubject(account.getKeycloakSubject());
+    tokenEntity.setUpdatedAt(now);
+    tokenRepository.save(tokenEntity);
+  }
+
   private String stripTrailingSlash(String value) {
-    String base = value == null || value.isBlank() ? "http://localhost:8080" : value.trim();
+    String base = value == null || value.isBlank() ? DEFAULT_WEBSITE_BASE_URL : value.trim();
     URI.create(base);
     while (base.endsWith("/")) {
       base = base.substring(0, base.length() - 1);
