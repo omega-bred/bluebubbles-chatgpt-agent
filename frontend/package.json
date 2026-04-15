@@ -30,6 +30,6 @@
     "source-map-js": "^1.2.1",
     "tailwindcss": "3.4.17",
     "typescript": "5.7.3",
-    "vite": "^6.0.11"
+    "vite": "^6.4.2"
   }
 }
