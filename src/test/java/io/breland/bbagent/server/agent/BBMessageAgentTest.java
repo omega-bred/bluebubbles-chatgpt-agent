@@ -4,7 +4,9 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anySet;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -34,14 +36,17 @@ import io.breland.bbagent.server.agent.tools.ToolContext;
 import io.breland.bbagent.server.agent.tools.bb.RenameConversationAgentTool;
 import io.breland.bbagent.server.agent.tools.coder.CoderAuthAgentTool;
 import io.breland.bbagent.server.agent.tools.coder.CoderMcpClient;
+import io.breland.bbagent.server.agent.tools.coder.StartCoderAsyncTaskAgentTool;
 import io.breland.bbagent.server.agent.tools.gcal.GcalClient;
 import io.breland.bbagent.server.agent.tools.giphy.GiphyClient;
 import io.breland.bbagent.server.agent.tools.memory.Mem0Client;
+import io.breland.bbagent.server.agent.workflowcallback.WorkflowCallbackService;
 import java.time.Instant;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -199,7 +204,7 @@ class BBMessageAgentTest {
   }
 
   @Test
-  void agentInstructionsTellModelToUseCallbacksAndScheduledFallbackForCoderTasks() {
+  void agentInstructionsTellModelToUseAllInOneToolForCoderTasks() {
     BBMessageAgent agent =
         newAgent(Mockito.mock(OpenAIClient.class), new StubBBHttpClientWrapper());
 
@@ -210,12 +215,12 @@ class BBMessageAgentTest {
                 incomingMessage("iMessage;+;chat-coder", "msg-coder", "start a coder task", 1_000L))
             .toString();
 
-    assertTrue(prompt.contains("create_workflow_callback"));
-    assertTrue(prompt.contains("callback_instructions"));
-    assertTrue(prompt.contains("Coder task prompt"));
+    assertTrue(prompt.contains(StartCoderAsyncTaskAgentTool.TOOL_NAME));
+    assertTrue(prompt.contains("creates the callback"));
+    assertTrue(prompt.contains("starts the Coder task"));
     assertTrue(prompt.contains("schedule_event"));
     assertTrue(prompt.contains("still pending or running"));
-    assertTrue(prompt.contains("again before ending the turn"));
+    assertTrue(prompt.contains("do not call create_workflow_callback"));
   }
 
   @Test
@@ -358,7 +363,7 @@ class BBMessageAgentTest {
     when(openAIClient.responses()).thenReturn(responseService);
     when(responseService.create(any(ResponseCreateParams.class)))
         .thenReturn(responseWithNoToolCalls());
-    when(coderMcpClient.getAgentTools("Alice"))
+    when(coderMcpClient.getAgentTools(eq("Alice"), anySet()))
         .thenReturn(List.of(testTool("coder__coder_list_templates_abc123")));
 
     BBMessageAgent agent =
@@ -385,6 +390,50 @@ class BBMessageAgentTest {
     String request = paramsCaptor.getValue().toString();
     assertTrue(request.contains(CoderAuthAgentTool.TOOL_NAME));
     assertTrue(request.contains("coder__coder_list_templates_abc123"));
+  }
+
+  @Test
+  void injectsAllInOneCoderTaskToolAndHidesDirectCreateTaskTool() {
+    OpenAIClient openAIClient = Mockito.mock(OpenAIClient.class);
+    var responseService = Mockito.mock(com.openai.services.blocking.ResponseService.class);
+    StubBBHttpClientWrapper bbHttpClientWrapper = new StubBBHttpClientWrapper();
+    CoderMcpClient coderMcpClient = Mockito.mock(CoderMcpClient.class);
+
+    when(openAIClient.responses()).thenReturn(responseService);
+    when(responseService.create(any(ResponseCreateParams.class)))
+        .thenReturn(responseWithNoToolCalls());
+    when(coderMcpClient.getAgentTools(eq("Alice"), anySet()))
+        .thenReturn(List.of(testTool("coder__coder_list_templates_abc123")));
+
+    BBMessageAgent agent =
+        new BBMessageAgent(
+            openAIClient,
+            bbHttpClientWrapper,
+            Mockito.mock(Mem0Client.class),
+            Mockito.mock(GcalClient.class),
+            coderMcpClient,
+            Mockito.mock(WorkflowCallbackService.class),
+            null,
+            Mockito.mock(GiphyClient.class),
+            new InMemoryAgentSettingsStore(),
+            new AgentWorkflowProperties(),
+            null,
+            new ModelPicker());
+
+    agent.handleIncomingMessage(
+        incomingMessage("iMessage;+;chat-coder", "msg-coder-task", "start a coder task", 1_000L));
+
+    ArgumentCaptor<ResponseCreateParams> paramsCaptor =
+        ArgumentCaptor.forClass(ResponseCreateParams.class);
+    verify(responseService).create(paramsCaptor.capture());
+    String request = paramsCaptor.getValue().toString();
+    assertTrue(request.contains(StartCoderAsyncTaskAgentTool.TOOL_NAME));
+
+    @SuppressWarnings("unchecked")
+    ArgumentCaptor<Set<String>> hiddenToolsCaptor = ArgumentCaptor.forClass((Class) Set.class);
+    verify(coderMcpClient).getAgentTools(eq("Alice"), hiddenToolsCaptor.capture());
+    assertTrue(
+        hiddenToolsCaptor.getValue().contains(StartCoderAsyncTaskAgentTool.CREATE_TASK_MCP_TOOL));
   }
 
   @Test

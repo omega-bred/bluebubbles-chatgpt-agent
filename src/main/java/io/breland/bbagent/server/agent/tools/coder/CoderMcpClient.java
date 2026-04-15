@@ -214,6 +214,10 @@ public class CoderMcpClient {
   }
 
   public List<AgentTool> getAgentTools(String accountBase) {
+    return getAgentTools(accountBase, java.util.Set.of());
+  }
+
+  public List<AgentTool> getAgentTools(String accountBase, java.util.Set<String> excludedMcpNames) {
     if (!isConfigured()) {
       return List.of();
     }
@@ -226,6 +230,9 @@ public class CoderMcpClient {
       List<CoderToolDefinition> definitions = getToolDefinitions(credentialAccountBase);
       List<AgentTool> result = new ArrayList<>();
       for (CoderToolDefinition definition : definitions) {
+        if (excludedMcpNames != null && excludedMcpNames.contains(definition.mcpName())) {
+          continue;
+        }
         result.add(toAgentTool(accountBase, credentialAccountBase, definition));
       }
       return result;
@@ -236,12 +243,43 @@ public class CoderMcpClient {
   }
 
   public Optional<AgentTool> getAgentTool(String accountBase, String agentToolName) {
+    return getAgentTool(accountBase, agentToolName, java.util.Set.of());
+  }
+
+  public Optional<AgentTool> getAgentTool(
+      String accountBase, String agentToolName, java.util.Set<String> excludedMcpNames) {
     if (agentToolName == null || !agentToolName.startsWith(TOOL_PREFIX)) {
       return Optional.empty();
     }
-    return getAgentTools(accountBase).stream()
+    return getAgentTools(accountBase, excludedMcpNames).stream()
         .filter(tool -> agentToolName.equals(tool.name()))
         .findFirst();
+  }
+
+  public String callMcpTool(String accountBase, String mcpToolName, Map<String, Object> arguments)
+      throws IOException {
+    if (mcpToolName == null || mcpToolName.isBlank()) {
+      throw new IOException("missing Coder MCP tool name");
+    }
+    Optional<String> linkedAccountBase = resolveLinkedAccountBase(accountBase);
+    if (linkedAccountBase.isEmpty()) {
+      throw new IOException("Coder account is not linked");
+    }
+    String credentialAccountBase = linkedAccountBase.get();
+    CoderToolDefinition definition =
+        getToolDefinitions(credentialAccountBase).stream()
+            .filter(tool -> mcpToolName.equals(tool.mcpName()))
+            .findFirst()
+            .orElseThrow(() -> new IOException("Unknown Coder MCP tool: " + mcpToolName));
+    McpSchema.CallToolResult result =
+        withClient(
+            credentialAccountBase,
+            client ->
+                client.callTool(
+                    new McpSchema.CallToolRequest(
+                        definition.mcpName(),
+                        arguments == null ? Map.of() : Map.copyOf(arguments))));
+    return toolResultFormatter.format(result);
   }
 
   private AgentTool toAgentTool(

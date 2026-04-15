@@ -30,6 +30,7 @@ import io.breland.bbagent.server.agent.tools.bb.SendTextAgentTool;
 import io.breland.bbagent.server.agent.tools.bb.SetGroupIconAgentTool;
 import io.breland.bbagent.server.agent.tools.coder.CoderAuthAgentTool;
 import io.breland.bbagent.server.agent.tools.coder.CoderMcpClient;
+import io.breland.bbagent.server.agent.tools.coder.StartCoderAsyncTaskAgentTool;
 import io.breland.bbagent.server.agent.tools.gcal.*;
 import io.breland.bbagent.server.agent.tools.giphy.GiphyClient;
 import io.breland.bbagent.server.agent.tools.giphy.SendGiphyAgentTool;
@@ -41,7 +42,6 @@ import io.breland.bbagent.server.agent.tools.scheduled.ScheduledEventListTool;
 import io.breland.bbagent.server.agent.tools.scheduled.ScheduledEventTool;
 import io.breland.bbagent.server.agent.tools.website.GetWebsiteAccountLinkStatusAgentTool;
 import io.breland.bbagent.server.agent.tools.website.LinkWebsiteAccountAgentTool;
-import io.breland.bbagent.server.agent.tools.workflowcallback.CreateWorkflowCallbackAgentTool;
 import io.breland.bbagent.server.agent.workflowcallback.WorkflowCallbackService;
 import io.breland.bbagent.server.website.WebsiteAccountService;
 import java.io.ByteArrayOutputStream;
@@ -82,6 +82,8 @@ public class BBMessageAgent {
 
   private static final Set<String> GROUP_ONLY_TOOLS =
       Set.of(RenameConversationAgentTool.TOOL_NAME, SetGroupIconAgentTool.TOOL_NAME);
+  private static final Set<String> HIDDEN_CODER_MCP_TOOL_NAMES =
+      Set.of(StartCoderAsyncTaskAgentTool.CREATE_TASK_MCP_TOOL);
   public static final Set<String> SUPPORTED_REACTIONS =
       Set.of(
           "love",
@@ -719,7 +721,10 @@ public class BBMessageAgent {
       ToolContext toolContext = new ToolContext(this, message, workflowContext);
       if (tool == null && coderMcpClient != null) {
         String accountBase = CoderMcpClient.resolveAccountBase(message);
-        tool = coderMcpClient.getAgentTool(accountBase, toolCall.name()).orElse(null);
+        tool =
+            coderMcpClient
+                .getAgentTool(accountBase, toolCall.name(), HIDDEN_CODER_MCP_TOOL_NAMES)
+                .orElse(null);
       }
       if (tool == null) {
         output = "Unknown tool: " + toolCall.name();
@@ -778,7 +783,7 @@ public class BBMessageAgent {
     List<AgentTool> available = new ArrayList<>(tools.values());
     if (coderMcpClient != null) {
       String accountBase = CoderMcpClient.resolveAccountBase(message);
-      available.addAll(coderMcpClient.getAgentTools(accountBase));
+      available.addAll(coderMcpClient.getAgentTools(accountBase, HIDDEN_CODER_MCP_TOOL_NAMES));
     }
     return available;
   }
@@ -1027,9 +1032,6 @@ public class BBMessageAgent {
                 + "If multiple calendar accounts are linked, pass account_key (the account id from manage_accounts list, or 'default') to the calendar tools to pick the right account; ask if ambiguous. "
                 + "Prefer taking action over asking for confirmation when the user's intent is clear and the action is reversible or low-risk; ask a clarifying question only when required information is missing or the action is destructive, expensive, or sensitive. "
                 + "For multi-step tasks, keep using tools in the same turn until the task is complete, blocked by a specific error, or waiting on external work. "
-                + "Before starting long-running external work, call "
-                + WorkflowCallbackService.TOOL_NAME
-                + " to create a signed callback URL and inject the returned callback_instructions into the external task prompt. "
                 + "For long-running work, first start or advance the work with tools, then use "
                 + ScheduledEventTool.TOOL_NAME
                 + " to create a concrete follow-up instead of merely saying you will check later. Include enough identifiers and context in the scheduled task to continue without asking the user again. "
@@ -1049,21 +1051,28 @@ public class BBMessageAgent {
                 + " with status before answering; do not infer Coder availability from prior turns or static tool names. "
                 + "When the user asks what Coder tools are available, answer from the currently available tool names whose names start with "
                 + CoderMcpClient.TOOL_PREFIX
+                + " plus "
+                + StartCoderAsyncTaskAgentTool.TOOL_NAME
                 + "; "
                 + CoderAuthAgentTool.TOOL_NAME
                 + " is only for auth/status/revoke, not Coder work. "
-                + "For Coder workspace, template, task, or file requests, use available Coder MCP tools whose names start with "
+                + "When the user asks to start, run, kick off, or watch a Coder AI/dev task, call "
+                + StartCoderAsyncTaskAgentTool.TOOL_NAME
+                + " with the full task prompt. This one tool creates the callback, selects the task template, starts the Coder task, and schedules a fallback check; do not call "
+                + WorkflowCallbackService.TOOL_NAME
+                + ", "
+                + StartCoderAsyncTaskAgentTool.CREATE_TASK_MCP_TOOL
+                + ", or "
+                + ScheduledEventTool.TOOL_NAME
+                + " separately for initial Coder AI task startup. "
+                + "For other Coder workspace, template, file, shell, status, or log requests, use available Coder MCP tools whose names start with "
                 + CoderMcpClient.TOOL_PREFIX
-                + ". If Coder is needed but no Coder MCP tools are available, call "
+                + ". If Coder is needed but no Coder task/tool path is available, call "
                 + CoderAuthAgentTool.TOOL_NAME
                 + " with auth_url and ask the user to complete the login link. "
-                + "Before creating a long-running Coder task, call "
-                + WorkflowCallbackService.TOOL_NAME
-                + " and include the returned callback_instructions in the Coder task prompt so the task can wake you immediately when it finishes. "
-                + "For Coder task creation, use Coder template/version tools first and pass the exact template version UUID as template_version_id; never pass a template name, display name, or template ID for that field. "
                 + "For multi-step Coder requests, keep using tool calls in the current turn until the requested action is complete or blocked by a specific error. "
                 + "If a Coder tool returns a validation error and you have enough information to correct it, call the needed Coder tools and retry in the same turn. "
-                + "After starting a long-running Coder task or workspace build, use "
+                + "After starting a long-running Coder workspace build or other non-task Coder work, use "
                 + ScheduledEventTool.TOOL_NAME
                 + " to check status/results later when the user expects you to watch it; include the task/workspace identifier, original request, callback id when available, maximum watch deadline, attempt count, which Coder status/log tools to call, and an instruction to call "
                 + ScheduledEventTool.TOOL_NAME
@@ -1338,8 +1347,11 @@ public class BBMessageAgent {
     if (coderMcpClient != null) {
       registerTool(new CoderAuthAgentTool(coderMcpClient).getTool());
     }
-    if (workflowCallbackService != null) {
-      registerTool(new CreateWorkflowCallbackAgentTool(workflowCallbackService).getTool());
+    if (coderMcpClient != null && workflowCallbackService != null) {
+      registerTool(
+          new StartCoderAsyncTaskAgentTool(
+                  coderMcpClient, workflowCallbackService, cadenceWorkflowLauncher)
+              .getTool());
     }
     if (websiteAccountService != null) {
       registerTool(new LinkWebsiteAccountAgentTool(websiteAccountService).getTool());
