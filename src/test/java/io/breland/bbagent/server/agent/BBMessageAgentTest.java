@@ -34,6 +34,7 @@ import io.breland.bbagent.server.agent.model_picker.ModelPicker;
 import io.breland.bbagent.server.agent.tools.AgentTool;
 import io.breland.bbagent.server.agent.tools.ToolContext;
 import io.breland.bbagent.server.agent.tools.bb.RenameConversationAgentTool;
+import io.breland.bbagent.server.agent.tools.coder.CoderAsyncTaskStartStore;
 import io.breland.bbagent.server.agent.tools.coder.CoderAuthAgentTool;
 import io.breland.bbagent.server.agent.tools.coder.CoderMcpClient;
 import io.breland.bbagent.server.agent.tools.coder.StartCoderAsyncTaskAgentTool;
@@ -375,6 +376,7 @@ class BBMessageAgentTest {
             coderMcpClient,
             null,
             null,
+            null,
             Mockito.mock(GiphyClient.class),
             new InMemoryAgentSettingsStore(),
             new AgentWorkflowProperties(),
@@ -413,6 +415,7 @@ class BBMessageAgentTest {
             Mockito.mock(GcalClient.class),
             coderMcpClient,
             Mockito.mock(WorkflowCallbackService.class),
+            Mockito.mock(CoderAsyncTaskStartStore.class),
             null,
             Mockito.mock(GiphyClient.class),
             new InMemoryAgentSettingsStore(),

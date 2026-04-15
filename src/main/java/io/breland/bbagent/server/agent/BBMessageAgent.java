@@ -28,6 +28,7 @@ import io.breland.bbagent.server.agent.tools.bb.SearchConvoHistoryAgentTool;
 import io.breland.bbagent.server.agent.tools.bb.SendReactionAgentTool;
 import io.breland.bbagent.server.agent.tools.bb.SendTextAgentTool;
 import io.breland.bbagent.server.agent.tools.bb.SetGroupIconAgentTool;
+import io.breland.bbagent.server.agent.tools.coder.CoderAsyncTaskStartStore;
 import io.breland.bbagent.server.agent.tools.coder.CoderAuthAgentTool;
 import io.breland.bbagent.server.agent.tools.coder.CoderMcpClient;
 import io.breland.bbagent.server.agent.tools.coder.StartCoderAsyncTaskAgentTool;
@@ -126,6 +127,7 @@ public class BBMessageAgent {
   private GcalClient gcalClient;
   private CoderMcpClient coderMcpClient;
   private WorkflowCallbackService workflowCallbackService;
+  private CoderAsyncTaskStartStore coderAsyncTaskStartStore;
   private WebsiteAccountService websiteAccountService;
   private GiphyClient giphyClient;
   private ModelPicker modelPicker;
@@ -137,6 +139,7 @@ public class BBMessageAgent {
       GcalClient gcalClient,
       CoderMcpClient coderMcpClient,
       WorkflowCallbackService workflowCallbackService,
+      CoderAsyncTaskStartStore coderAsyncTaskStartStore,
       WebsiteAccountService websiteAccountService,
       GiphyClient giphyClient,
       AgentSettingsStore agentSettingsStore,
@@ -149,6 +152,7 @@ public class BBMessageAgent {
     this.gcalClient = gcalClient;
     this.coderMcpClient = coderMcpClient;
     this.workflowCallbackService = workflowCallbackService;
+    this.coderAsyncTaskStartStore = coderAsyncTaskStartStore;
     this.websiteAccountService = websiteAccountService;
     this.giphyClient = giphyClient;
     this.agentSettingsStore = agentSettingsStore;
@@ -177,6 +181,7 @@ public class BBMessageAgent {
         null,
         null,
         null,
+        null,
         giphyClient,
         agentSettingsStore,
         workflowProperties,
@@ -191,6 +196,7 @@ public class BBMessageAgent {
       GcalClient gcalClient,
       @Nullable CoderMcpClient coderMcpClient,
       @Nullable WorkflowCallbackService workflowCallbackService,
+      @Nullable CoderAsyncTaskStartStore coderAsyncTaskStartStore,
       @Nullable WebsiteAccountService websiteAccountService,
       GiphyClient giphyClient,
       AgentSettingsStore agentSettingsStore,
@@ -203,6 +209,7 @@ public class BBMessageAgent {
     this.gcalClient = gcalClient;
     this.coderMcpClient = coderMcpClient;
     this.workflowCallbackService = workflowCallbackService;
+    this.coderAsyncTaskStartStore = coderAsyncTaskStartStore;
     this.websiteAccountService = websiteAccountService;
     this.giphyClient = giphyClient;
     this.agentSettingsStore = agentSettingsStore;
@@ -1347,10 +1354,15 @@ public class BBMessageAgent {
     if (coderMcpClient != null) {
       registerTool(new CoderAuthAgentTool(coderMcpClient).getTool());
     }
-    if (coderMcpClient != null && workflowCallbackService != null) {
+    if (coderMcpClient != null
+        && workflowCallbackService != null
+        && coderAsyncTaskStartStore != null) {
       registerTool(
           new StartCoderAsyncTaskAgentTool(
-                  coderMcpClient, workflowCallbackService, cadenceWorkflowLauncher)
+                  coderMcpClient,
+                  workflowCallbackService,
+                  coderAsyncTaskStartStore,
+                  cadenceWorkflowLauncher)
               .getTool());
     }
     if (websiteAccountService != null) {

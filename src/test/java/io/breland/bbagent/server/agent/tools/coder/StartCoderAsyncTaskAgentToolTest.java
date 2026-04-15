@@ -6,6 +6,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyMap;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -18,6 +19,7 @@ import io.breland.bbagent.server.agent.BBMessageAgent;
 import io.breland.bbagent.server.agent.IncomingMessage;
 import io.breland.bbagent.server.agent.cadence.CadenceWorkflowLauncher;
 import io.breland.bbagent.server.agent.cadence.models.CadenceMessageWorkflowRequest;
+import io.breland.bbagent.server.agent.persistence.coder.CoderAsyncTaskStartEntity;
 import io.breland.bbagent.server.agent.tools.AgentTool;
 import io.breland.bbagent.server.agent.tools.ToolContext;
 import io.breland.bbagent.server.agent.workflowcallback.WorkflowCallbackService;
@@ -35,9 +37,25 @@ class StartCoderAsyncTaskAgentToolTest {
   void startsCoderTaskWithCallbackAndFallbackSchedule() throws Exception {
     CoderMcpClient coder = Mockito.mock(CoderMcpClient.class);
     WorkflowCallbackService callbacks = Mockito.mock(WorkflowCallbackService.class);
+    CoderAsyncTaskStartStore taskStarts = Mockito.mock(CoderAsyncTaskStartStore.class);
     CadenceWorkflowLauncher launcher = Mockito.mock(CadenceWorkflowLauncher.class);
     when(coder.isConfigured()).thenReturn(true);
     when(coder.isLinked("+18035551212")).thenReturn(true);
+    when(taskStarts.reserve(
+            anyString(), anyString(), anyString(), anyString(), anyString(), anyString()))
+        .thenAnswer(
+            invocation ->
+                CoderAsyncTaskStartStore.Reservation.newStart(
+                    new CoderAsyncTaskStartEntity(
+                        invocation.getArgument(0),
+                        invocation.getArgument(1),
+                        invocation.getArgument(2),
+                        invocation.getArgument(3),
+                        invocation.getArgument(4),
+                        invocation.getArgument(5),
+                        CoderAsyncTaskStartStore.STATUS_STARTING,
+                        Instant.now(),
+                        Instant.now())));
     when(coder.callMcpTool(
             eq("+18035551212"), eq(StartCoderAsyncTaskAgentTool.LIST_TEMPLATES_MCP_TOOL), anyMap()))
         .thenReturn(templateListResult());
@@ -59,7 +77,8 @@ class StartCoderAsyncTaskAgentToolTest {
             any(CadenceMessageWorkflowRequest.class), any(), any(), anyMap()))
         .thenReturn(scheduledExecution);
 
-    AgentTool tool = new StartCoderAsyncTaskAgentTool(coder, callbacks, launcher).getTool();
+    AgentTool tool =
+        new StartCoderAsyncTaskAgentTool(coder, callbacks, taskStarts, launcher).getTool();
     ObjectNode request = mapper.createObjectNode();
     request.put(
         "task", "clone omega-bred/bluebubbles-chatgpt-agent and summarize the last 10 commits");
@@ -85,6 +104,51 @@ class StartCoderAsyncTaskAgentToolTest {
     assertEquals("6c085203-a06d-4295-b754-c82c8b3bd124", createArgs.get("template_version_id"));
     assertTrue(createArgs.get("input").toString().contains("CALLBACK INSTRUCTIONS"));
     verify(launcher)
+        .startScheduledWorkflow(any(CadenceMessageWorkflowRequest.class), any(), any(), anyMap());
+    verify(taskStarts).markStarted(anyString(), anyString());
+  }
+
+  @Test
+  void replaysExistingStartWithoutCallingCoderAgain() throws Exception {
+    CoderMcpClient coder = Mockito.mock(CoderMcpClient.class);
+    WorkflowCallbackService callbacks = Mockito.mock(WorkflowCallbackService.class);
+    CoderAsyncTaskStartStore taskStarts = Mockito.mock(CoderAsyncTaskStartStore.class);
+    CadenceWorkflowLauncher launcher = Mockito.mock(CadenceWorkflowLauncher.class);
+    when(coder.isConfigured()).thenReturn(true);
+    when(coder.isLinked("+18035551212")).thenReturn(true);
+    CoderAsyncTaskStartEntity existing =
+        new CoderAsyncTaskStartEntity(
+            "coder-task-existing",
+            "+18035551212",
+            "any;-;+18035551212",
+            "msg-1",
+            "task-hash",
+            "summarize commits",
+            CoderAsyncTaskStartStore.STATUS_STARTED,
+            Instant.now(),
+            Instant.now());
+    existing.setResponseJson(
+        """
+        {"started":true,"callback_id":"callback-1","coder_result":{"is_error":false}}
+        """);
+    when(taskStarts.reserve(
+            anyString(), anyString(), anyString(), anyString(), anyString(), anyString()))
+        .thenReturn(CoderAsyncTaskStartStore.Reservation.existing(existing));
+
+    AgentTool tool =
+        new StartCoderAsyncTaskAgentTool(coder, callbacks, taskStarts, launcher).getTool();
+    ObjectNode request = mapper.createObjectNode();
+    request.put("task", "summarize commits");
+
+    String output = tool.handler().apply(context(), request);
+
+    JsonNode result = mapper.readTree(output);
+    assertTrue(result.path("started").asBoolean());
+    assertTrue(result.path("deduplicated").asBoolean());
+    assertEquals("STARTED", result.path("start_status").asText());
+    verify(coder, never()).callMcpTool(anyString(), anyString(), anyMap());
+    verify(callbacks, never()).createCallback(any(), anyString(), anyString(), any());
+    verify(launcher, never())
         .startScheduledWorkflow(any(CadenceMessageWorkflowRequest.class), any(), any(), anyMap());
   }
 

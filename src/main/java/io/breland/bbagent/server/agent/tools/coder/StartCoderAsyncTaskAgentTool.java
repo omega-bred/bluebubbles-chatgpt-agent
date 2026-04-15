@@ -7,14 +7,18 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import io.breland.bbagent.server.agent.cadence.CadenceWorkflowLauncher;
+import io.breland.bbagent.server.agent.persistence.coder.CoderAsyncTaskStartEntity;
 import io.breland.bbagent.server.agent.tools.AgentTool;
 import io.breland.bbagent.server.agent.tools.ToolContext;
 import io.breland.bbagent.server.agent.tools.ToolProvider;
 import io.breland.bbagent.server.agent.tools.scheduled.ScheduledEventTool;
 import io.breland.bbagent.server.agent.workflowcallback.WorkflowCallbackService;
 import io.swagger.v3.oas.annotations.media.Schema;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.HexFormat;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
@@ -34,6 +38,7 @@ public class StartCoderAsyncTaskAgentTool implements ToolProvider {
 
   private final CoderMcpClient coderMcpClient;
   private final WorkflowCallbackService callbackService;
+  private final CoderAsyncTaskStartStore taskStartStore;
   private final @Nullable CadenceWorkflowLauncher cadenceWorkflowLauncher;
 
   @Schema(description = "Start a long-running Coder AI task with callback and fallback watching.")
@@ -62,9 +67,11 @@ public class StartCoderAsyncTaskAgentTool implements ToolProvider {
   public StartCoderAsyncTaskAgentTool(
       CoderMcpClient coderMcpClient,
       WorkflowCallbackService callbackService,
+      CoderAsyncTaskStartStore taskStartStore,
       @Nullable CadenceWorkflowLauncher cadenceWorkflowLauncher) {
     this.coderMcpClient = coderMcpClient;
     this.callbackService = callbackService;
+    this.taskStartStore = taskStartStore;
     this.cadenceWorkflowLauncher = cadenceWorkflowLauncher;
   }
 
@@ -87,6 +94,8 @@ public class StartCoderAsyncTaskAgentTool implements ToolProvider {
   private String startTask(ToolContext context, StartCoderAsyncTaskRequest request) {
     ObjectMapper mapper = context.getMapper();
     Map<String, Object> response = new LinkedHashMap<>();
+    String idempotencyKey = null;
+    boolean reservedStart = false;
     try {
       if (request == null || isBlank(request.task())) {
         return "missing task";
@@ -110,6 +119,20 @@ public class StartCoderAsyncTaskAgentTool implements ToolProvider {
         response.put("message", "Coder is not linked. Ask the user to complete the auth_url.");
         return mapper.writeValueAsString(response);
       }
+
+      idempotencyKey = idempotencyKey(context, accountBase, request);
+      CoderAsyncTaskStartStore.Reservation reservation =
+          taskStartStore.reserve(
+              idempotencyKey,
+              accountBase,
+              context.message() == null ? "" : valueOrDefault(context.message().chatGuid(), ""),
+              context.message() == null ? null : context.message().messageGuid(),
+              sha256(normalizeTask(request.task())),
+              request.task().trim());
+      if (!reservation.shouldStart()) {
+        return replayExistingStart(reservation.entity(), mapper);
+      }
+      reservedStart = true;
 
       TemplateSelection template =
           selectTemplate(accountBase, request.templateVersionId(), request.templateName(), mapper);
@@ -149,11 +172,47 @@ public class StartCoderAsyncTaskAgentTool implements ToolProvider {
       response.put(
           "message",
           "Coder task start flow completed. Do not reveal callback secrets; summarize status to the user.");
-      return mapper.writeValueAsString(response);
+      String responseJson = mapper.writeValueAsString(response);
+      taskStartStore.markStarted(idempotencyKey, responseJson);
+      return responseJson;
     } catch (Exception e) {
       log.warn("Failed to start Coder async task", e);
+      if (idempotencyKey != null && reservedStart) {
+        taskStartStore.markFailed(idempotencyKey, e.getMessage());
+      }
       return "failed to start Coder async task: " + e.getMessage();
     }
+  }
+
+  private String replayExistingStart(CoderAsyncTaskStartEntity entity, ObjectMapper mapper)
+      throws Exception {
+    Map<String, Object> response = new LinkedHashMap<>();
+    if (CoderAsyncTaskStartStore.STATUS_STARTED.equals(entity.getStatus())
+        && !isBlank(entity.getResponseJson())) {
+      JsonNode original = mapper.readTree(entity.getResponseJson());
+      ObjectNode replay =
+          original.isObject() ? (ObjectNode) original.deepCopy() : mapper.createObjectNode();
+      replay.put("deduplicated", true);
+      replay.put("start_status", entity.getStatus());
+      replay.put(
+          "message",
+          "This Coder task was already started for the current iMessage. Do not call start_coder_async_task again; summarize the existing status to the user.");
+      return mapper.writeValueAsString(replay);
+    }
+    response.put("deduplicated", true);
+    response.put("start_status", entity.getStatus());
+    response.put("started", CoderAsyncTaskStartStore.STATUS_STARTING.equals(entity.getStatus()));
+    if (CoderAsyncTaskStartStore.STATUS_FAILED.equals(entity.getStatus())) {
+      response.put("error", valueOrDefault(entity.getErrorMessage(), "previous start failed"));
+      response.put(
+          "message",
+          "This iMessage already attempted to start a Coder task and failed. Do not call start_coder_async_task again unless the user sends a new retry request.");
+    } else {
+      response.put(
+          "message",
+          "This Coder task is already being started for the current iMessage. Do not call start_coder_async_task again; tell the user startup is in progress.");
+    }
+    return mapper.writeValueAsString(response);
   }
 
   private TemplateSelection selectTemplate(
@@ -365,6 +424,40 @@ public class StartCoderAsyncTaskAgentTool implements ToolProvider {
 
   private static String valueOrDefault(String value, String defaultValue) {
     return isBlank(value) ? defaultValue : value;
+  }
+
+  private static String idempotencyKey(
+      ToolContext context, String accountBase, StartCoderAsyncTaskRequest request) {
+    String chatGuid =
+        context.message() != null
+            ? context.message().chatGuid()
+            : context.workflowContext() == null ? "" : context.workflowContext().chatGuid();
+    String messageGuid =
+        context.message() != null
+            ? context.message().messageGuid()
+            : context.workflowContext() == null ? "" : context.workflowContext().messageGuid();
+    String naturalKey =
+        !isBlank(messageGuid)
+            ? accountBase + "|" + valueOrDefault(chatGuid, "") + "|" + messageGuid
+            : accountBase
+                + "|"
+                + valueOrDefault(chatGuid, "")
+                + "|"
+                + normalizeTask(request.task());
+    return "coder-task-" + sha256(naturalKey);
+  }
+
+  private static String normalizeTask(String task) {
+    return task == null ? "" : task.replaceAll("\\s+", " ").trim().toLowerCase(Locale.ROOT);
+  }
+
+  private static String sha256(String value) {
+    try {
+      MessageDigest digest = MessageDigest.getInstance("SHA-256");
+      return HexFormat.of().formatHex(digest.digest(value.getBytes(StandardCharsets.UTF_8)));
+    } catch (Exception e) {
+      throw new IllegalStateException("SHA-256 is unavailable", e);
+    }
   }
 
   private static String lower(String text) {
