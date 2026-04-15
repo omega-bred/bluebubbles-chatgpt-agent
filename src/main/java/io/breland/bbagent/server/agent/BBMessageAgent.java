@@ -743,15 +743,7 @@ public class BBMessageAgent {
   }
 
   private ResponseInputItem blockedToolCallOutput(ResponseFunctionToolCall toolCall) {
-    String output =
-        "Tool call blocked to prevent repeated loops in one turn. "
-            + "Summarize the current status to the user without calling this tool again unless the user explicitly asks.";
-    ResponseInputItem.FunctionCallOutput toolOutput =
-        ResponseInputItem.FunctionCallOutput.builder()
-            .callId(toolCall.callId())
-            .output(output)
-            .build();
-    return ResponseInputItem.ofFunctionCallOutput(toolOutput);
+    return AgentResponseHelper.blockedToolCallOutput(toolCall.callId());
   }
 
   public ResponseInputItem runToolActivity(

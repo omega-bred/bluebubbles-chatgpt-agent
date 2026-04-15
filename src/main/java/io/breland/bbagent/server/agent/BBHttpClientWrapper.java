@@ -177,9 +177,7 @@ public class BBHttpClientWrapper {
       log.warn("Cannot send multipart message without chatGuid");
       return false;
     }
-    log.info(
-        String.format(
-            "Sending multipart message with chatGuid %s - message %s", chatGuid, message));
+    log.info("Sending multipart message with chatGuid {} - message {}", chatGuid, message);
     List<Map<String, Object>> parts = new ArrayList<>();
     int partIndex = 0;
     if (message != null && !message.isBlank()) {
@@ -322,7 +320,7 @@ public class BBHttpClientWrapper {
                   new ParameterizedTypeReference<JsonNode>() {})
               .bodyToMono(JsonNode.class)
               .block(API_TIMEOUT);
-      System.out.println(response.toString());
+      log.debug("Set conversation icon response: {}", response);
       return true;
     } catch (Exception e) {
       log.warn("Failed to set conversation icon {}", chatGuid, e);

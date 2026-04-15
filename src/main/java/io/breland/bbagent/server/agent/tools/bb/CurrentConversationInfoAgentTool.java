@@ -51,8 +51,6 @@ public class CurrentConversationInfoAgentTool implements ToolProvider {
                     entry.put("handle", participant.getAddress());
                     entry.put("country", participant.getCountry());
                     participants.add(entry);
-                    // TODO: build a genric db that (respecting user prefs) support globally getting
-                    // the user name
                   });
           result.put("participants", participants);
 

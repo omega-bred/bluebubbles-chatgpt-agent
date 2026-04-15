@@ -22,7 +22,7 @@ class ModelAccessServiceTest {
   private final ModelAccessService service = new ModelAccessService(repository);
 
   @Test
-  void defaultsUnconfiguredSenderToStandardLocalModel() {
+  void defaultsUnconfiguredSenderToStandardFreePlan() {
     when(repository.findById("Alice")).thenReturn(Optional.empty());
 
     ModelAccessService.ModelAccess access = service.resolve(message());
@@ -30,6 +30,7 @@ class ModelAccessServiceTest {
     assertFalse(access.premium());
     assertEquals("standard", access.plan());
     assertEquals("local", access.currentModelKey());
+    assertEquals("Free", access.currentModelLabel());
     assertEquals(ModelAccessService.STANDARD_RESPONSES_MODEL, access.responsesModel());
   }
 

@@ -1,14 +1,25 @@
 package io.breland.bbagent.server.agent.cadence;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.uber.cadence.activity.ActivityOptions;
 import com.uber.cadence.workflow.Workflow;
+import io.breland.bbagent.server.agent.AgentResponseHelper;
 import io.breland.bbagent.server.agent.BBMessageAgent;
 import io.breland.bbagent.server.agent.IncomingMessage;
 import io.breland.bbagent.server.agent.cadence.models.CadenceMessageWorkflowRequest;
 import io.breland.bbagent.server.agent.cadence.models.CadenceResponseBundle;
 import io.breland.bbagent.server.agent.cadence.models.CadenceToolCall;
 import io.breland.bbagent.server.agent.cadence.models.ImageSendResult;
+import io.breland.bbagent.server.agent.tools.bb.SendReactionAgentTool;
+import io.breland.bbagent.server.agent.tools.bb.SendTextAgentTool;
+import java.io.IOException;
 import java.time.Duration;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import lombok.extern.slf4j.Slf4j;
 
@@ -16,6 +27,8 @@ import lombok.extern.slf4j.Slf4j;
 public class CadenceMessageWorkflowImpl implements CadenceMessageWorkflow {
 
   private static final int MAX_TOOL_LOOPS = 50;
+  private static final int MAX_CONSECUTIVE_BLOCKED_TOOL_LOOPS = 2;
+  private static final ObjectMapper JSON = new ObjectMapper();
 
   private final CadenceAgentActivities activities =
       Workflow.newActivityStub(
@@ -48,28 +61,48 @@ public class CadenceMessageWorkflowImpl implements CadenceMessageWorkflow {
     }
     boolean sentTextByTool = false;
     boolean sentReactionByTool = false;
+    int blockedLoops = 0;
+    Map<String, Integer> toolCallsBySignature = new HashMap<>();
     for (int loops = 0; loops < MAX_TOOL_LOOPS; loops++) {
       if (bundle.toolCalls() == null || bundle.toolCalls().isEmpty()) {
         break;
       }
       sentTextByTool =
-          sentTextByTool
-              || hasToolCall(
-                  bundle.toolCalls(),
-                  io.breland.bbagent.server.agent.tools.bb.SendTextAgentTool.TOOL_NAME);
+          sentTextByTool || hasToolCall(bundle.toolCalls(), SendTextAgentTool.TOOL_NAME);
       sentReactionByTool =
-          sentReactionByTool
-              || hasToolCall(
-                  bundle.toolCalls(),
-                  io.breland.bbagent.server.agent.tools.bb.SendReactionAgentTool.TOOL_NAME);
+          sentReactionByTool || hasToolCall(bundle.toolCalls(), SendReactionAgentTool.TOOL_NAME);
+      List<CadenceToolCall> executableToolCalls = new ArrayList<>();
+      List<CadenceToolCall> blockedToolCalls = new ArrayList<>();
+      for (CadenceToolCall toolCall : bundle.toolCalls()) {
+        if (shouldBlockToolCall(toolCall, toolCallsBySignature)) {
+          blockedToolCalls.add(toolCall);
+        } else {
+          executableToolCalls.add(toolCall);
+        }
+      }
       String toolOutputsJson =
-          activities.executeToolCallsJson(bundle.toolCalls(), message, request.workflowContext());
+          executableToolCalls.isEmpty()
+              ? "[]"
+              : activities.executeToolCallsJson(
+                  executableToolCalls, message, request.workflowContext());
+      String blockedOutputsJson =
+          blockedToolCalls.isEmpty() ? "[]" : activities.blockedToolCallsJson(blockedToolCalls);
       inputItemsJson =
-          mergeJsonArrays(inputItemsJson, bundle.toolContextItemsJson(), toolOutputsJson);
+          mergeJsonArrays(
+              inputItemsJson, bundle.toolContextItemsJson(), toolOutputsJson, blockedOutputsJson);
       bundle = activities.createResponseBundle(inputItemsJson, message);
       if (bundle == null) {
         activities.finalizeWorkflow(message, request.workflowContext(), false);
         return;
+      }
+      boolean onlyBlockedToolCalls = !blockedToolCalls.isEmpty() && executableToolCalls.isEmpty();
+      blockedLoops = onlyBlockedToolCalls ? blockedLoops + 1 : 0;
+      if (blockedLoops >= MAX_CONSECUTIVE_BLOCKED_TOOL_LOOPS) {
+        log.warn(
+            "Stopping cadence tool loop after {} consecutive blocked iterations for {}",
+            blockedLoops,
+            request.workflowContext());
+        break;
       }
     }
     String assistantText = bundle.assistantText();
@@ -80,8 +113,7 @@ public class CadenceMessageWorkflowImpl implements CadenceMessageWorkflow {
     if (imageResult.captionSent()) {
       sentTextByTool = true;
     }
-    Optional<String> parsedReaction =
-        io.breland.bbagent.server.agent.AgentResponseHelper.parseReactionText(assistantText);
+    Optional<String> parsedReaction = AgentResponseHelper.parseReactionText(assistantText);
     if (parsedReaction.isPresent()) {
       if (!sentReactionByTool) {
         activities.sendReaction(message, parsedReaction.get(), request.workflowContext());
@@ -102,7 +134,24 @@ public class CadenceMessageWorkflowImpl implements CadenceMessageWorkflow {
     activities.finalizeWorkflow(message, request.workflowContext(), true);
   }
 
-  private static boolean hasToolCall(java.util.List<CadenceToolCall> toolCalls, String name) {
+  private static boolean shouldBlockToolCall(
+      CadenceToolCall toolCall, Map<String, Integer> toolCallsBySignature) {
+    String signature = toolCallSignature(toolCall);
+    int signatureCalls = toolCallsBySignature.getOrDefault(signature, 0) + 1;
+    toolCallsBySignature.put(signature, signatureCalls);
+    if (signatureCalls <= 2) {
+      return false;
+    }
+    log.warn("Blocking repeated cadence tool call signature {}", signature);
+    return true;
+  }
+
+  private static String toolCallSignature(CadenceToolCall toolCall) {
+    String args = toolCall.arguments() == null ? "" : toolCall.arguments().trim();
+    return toolCall.name() + "|" + args;
+  }
+
+  private static boolean hasToolCall(List<CadenceToolCall> toolCalls, String name) {
     if (toolCalls == null || toolCalls.isEmpty() || name == null) {
       return false;
     }
@@ -116,34 +165,28 @@ public class CadenceMessageWorkflowImpl implements CadenceMessageWorkflow {
 
   private static String mergeJsonArrays(String baseJson, String... extraJson) {
     try {
-      com.fasterxml.jackson.databind.ObjectMapper mapper =
-          new com.fasterxml.jackson.databind.ObjectMapper();
-      com.fasterxml.jackson.databind.node.ArrayNode merged = mapper.createArrayNode();
-      appendArrayJson(mapper, merged, baseJson);
+      ArrayNode merged = JSON.createArrayNode();
+      appendArrayJson(merged, baseJson);
       if (extraJson != null) {
         for (String json : extraJson) {
-          appendArrayJson(mapper, merged, json);
+          appendArrayJson(merged, json);
         }
       }
-      return mapper.writeValueAsString(merged);
+      return JSON.writeValueAsString(merged);
     } catch (Exception e) {
       throw new RuntimeException("Failed to merge response input arrays", e);
     }
   }
 
-  private static void appendArrayJson(
-      com.fasterxml.jackson.databind.ObjectMapper mapper,
-      com.fasterxml.jackson.databind.node.ArrayNode target,
-      String json)
-      throws java.io.IOException {
+  private static void appendArrayJson(ArrayNode target, String json) throws IOException {
     if (json == null || json.isBlank()) {
       return;
     }
-    com.fasterxml.jackson.databind.JsonNode node = mapper.readTree(json);
+    JsonNode node = JSON.readTree(json);
     if (node == null || !node.isArray()) {
       return;
     }
-    for (com.fasterxml.jackson.databind.JsonNode item : node) {
+    for (JsonNode item : node) {
       target.add(item);
     }
   }

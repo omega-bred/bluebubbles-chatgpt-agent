@@ -46,7 +46,6 @@ public class BluebubblesWebhookController extends BluebubblesApiController {
       return ResponseEntity.badRequest().build();
     }
     if (!isMessageEvent(requestBody)) {
-      // doesn't really matter
       return ResponseEntity.ok(Map.of("status", "ok"));
     }
     IncomingMessage message = parseWebhookMessage(requestBody.getData());
@@ -71,7 +70,8 @@ public class BluebubblesWebhookController extends BluebubblesApiController {
     List<IncomingAttachment> attachments = parseAttachments(data.getAttachments());
     String chatGuid = data.getChats().getFirst().getGuid();
     boolean isGroup = resolveIsGroup(data);
-    boolean isSystem = false; // TODO: determine how to get isSystem correctly here
+    // BlueBubbles does not currently provide a reliable system-message signal here.
+    boolean isSystem = false;
 
     return new IncomingMessage(
         chatGuid,

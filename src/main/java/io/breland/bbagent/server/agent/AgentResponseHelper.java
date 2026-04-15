@@ -20,6 +20,11 @@ import java.util.regex.Pattern;
 public final class AgentResponseHelper {
   private static final Pattern TEXT_TOOL_CALL_PATTERN =
       Pattern.compile("(?im)^\\s*call:([a-zA-Z0-9_\\-.]+)\\s*\\{(.*)}\\s*$");
+  private static final Pattern TEXT_TOOL_ARG_DELIMITER =
+      Pattern.compile(",\\s*(?=[a-zA-Z_][a-zA-Z0-9_\\-.]*\\s*:)");
+  private static final String REPEATED_TOOL_CALL_BLOCKED_OUTPUT =
+      "Tool call blocked to prevent repeated loops in one turn. "
+          + "Summarize the current status to the user without calling this tool again unless the user explicitly asks.";
 
   private AgentResponseHelper() {}
 
@@ -103,13 +108,31 @@ public final class AgentResponseHelper {
         JsonNode node = objectMapper.readTree(trimmed);
         JsonNode messageNode = node.get("message");
         if (messageNode != null && messageNode.isTextual()) {
-          return messageNode.asText().trim();
+          return stripTextFunctionCallLines(messageNode.asText()).trim();
         }
       } catch (Exception ignored) {
-        return trimmed;
+        return stripTextFunctionCallLines(trimmed).trim();
       }
     }
-    return trimmed;
+    return stripTextFunctionCallLines(trimmed).trim();
+  }
+
+  public static String stripTextFunctionCallLines(String text) {
+    if (text == null || text.isBlank()) {
+      return "";
+    }
+    StringBuilder builder = new StringBuilder();
+    String[] lines = text.split("\\R", -1);
+    for (String line : lines) {
+      if (TEXT_TOOL_CALL_PATTERN.matcher(line).matches()) {
+        continue;
+      }
+      if (builder.length() > 0) {
+        builder.append(System.lineSeparator());
+      }
+      builder.append(line);
+    }
+    return builder.toString().trim();
   }
 
   public static Optional<String> parseReactionText(String text) {
@@ -129,6 +152,15 @@ public final class AgentResponseHelper {
       return Optional.empty();
     }
     return Optional.of(reaction);
+  }
+
+  public static ResponseInputItem blockedToolCallOutput(String callId) {
+    ResponseInputItem.FunctionCallOutput toolOutput =
+        ResponseInputItem.FunctionCallOutput.builder()
+            .callId(callId)
+            .output(REPEATED_TOOL_CALL_BLOCKED_OUTPUT)
+            .build();
+    return ResponseInputItem.ofFunctionCallOutput(toolOutput);
   }
 
   static List<ResponseFunctionToolCall> parseTextFunctionCalls(String text) {
@@ -157,8 +189,7 @@ public final class AgentResponseHelper {
     if (rawArgs == null || rawArgs.isBlank()) {
       return values;
     }
-    String[] pairs = rawArgs.split("\\s*,\\s*");
-    for (String pair : pairs) {
+    for (String pair : TEXT_TOOL_ARG_DELIMITER.split(rawArgs)) {
       String[] parts = pair.split("\\s*:\\s*", 2);
       if (parts.length != 2) {
         continue;

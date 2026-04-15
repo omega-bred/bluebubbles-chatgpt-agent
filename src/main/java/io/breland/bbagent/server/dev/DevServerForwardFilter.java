@@ -10,10 +10,18 @@ import java.net.InetSocketAddress;
 import java.net.Socket;
 import java.util.Collections;
 import java.util.Optional;
-import org.apache.hc.client5.http.classic.methods.*;
-import org.apache.hc.client5.http.impl.classic.*;
-import org.apache.hc.core5.http.*;
-// import org.apache.http.HttpEntityEnclosingRequest;
+import org.apache.hc.client5.http.classic.methods.HttpDelete;
+import org.apache.hc.client5.http.classic.methods.HttpGet;
+import org.apache.hc.client5.http.classic.methods.HttpPatch;
+import org.apache.hc.client5.http.classic.methods.HttpPost;
+import org.apache.hc.client5.http.classic.methods.HttpPut;
+import org.apache.hc.client5.http.impl.classic.CloseableHttpClient;
+import org.apache.hc.client5.http.impl.classic.CloseableHttpResponse;
+import org.apache.hc.client5.http.impl.classic.HttpClients;
+import org.apache.hc.core5.http.ClassicHttpRequest;
+import org.apache.hc.core5.http.ContentType;
+import org.apache.hc.core5.http.Header;
+import org.apache.hc.core5.http.HttpEntityContainer;
 import org.apache.hc.core5.http.io.entity.InputStreamEntity;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Profile;
@@ -46,7 +54,6 @@ public class DevServerForwardFilter extends OncePerRequestFilter {
     try {
       httpClient.close();
     } catch (Exception ignored) {
-
     }
   }
 
@@ -72,40 +79,26 @@ public class DevServerForwardFilter extends OncePerRequestFilter {
 
   private void proxyHttp(HttpServletRequest request, HttpServletResponse response)
       throws IOException {
-    // build target URI
     String uri =
         DEV_SERVER_URL
             + request.getRequestURI()
             + (request.getQueryString() != null ? "?" + request.getQueryString() : "");
 
-    // choose the right Apache request
-    ClassicHttpRequest proxyReq;
-    switch (request.getMethod()) {
-      case "GET":
-        proxyReq = new HttpGet(uri);
-        break;
-      case "POST":
-        proxyReq = new HttpPost(uri);
-        break;
-      case "PUT":
-        proxyReq = new HttpPut(uri);
-        break;
-      case "DELETE":
-        proxyReq = new HttpDelete(uri);
-        break;
-      default:
-        proxyReq = new HttpGet(uri);
-        break;
-    }
+    ClassicHttpRequest proxyReq =
+        switch (request.getMethod()) {
+          case "POST" -> new HttpPost(uri);
+          case "PUT" -> new HttpPut(uri);
+          case "PATCH" -> new HttpPatch(uri);
+          case "DELETE" -> new HttpDelete(uri);
+          default -> new HttpGet(uri);
+        };
 
-    // copy headers
     Collections.list(request.getHeaderNames())
         .forEach(
             name ->
                 Collections.list(request.getHeaders(name))
                     .forEach(value -> proxyReq.addHeader(name, value)));
 
-    // copy body if needed
     if (proxyReq instanceof HttpEntityContainer) {
       ((HttpEntityContainer) proxyReq)
           .setEntity(
@@ -115,15 +108,11 @@ public class DevServerForwardFilter extends OncePerRequestFilter {
                   ContentType.create(request.getContentType())));
     }
 
-    // execute
     try (CloseableHttpResponse proxied = httpClient.execute(proxyReq)) {
-      // status
       response.setStatus(proxied.getCode());
-      // headers
       for (Header h : proxied.getHeaders()) {
         response.setHeader(h.getName(), h.getValue());
       }
-      // body
       if (proxied.getEntity() != null) {
         proxied.getEntity().writeTo(response.getOutputStream());
       }
@@ -145,7 +134,6 @@ public class DevServerForwardFilter extends OncePerRequestFilter {
       }
       return mapping != null;
     } catch (IllegalStateException ex) {
-      // nothing
       return false;
     } catch (Exception ex) {
       throw new ServletException(ex);

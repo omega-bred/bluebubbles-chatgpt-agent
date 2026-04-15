@@ -16,7 +16,7 @@ import org.springframework.stereotype.Service;
 @Service
 public class ModelAccessService {
   public static final String STANDARD_MODEL_KEY = "local";
-  public static final String STANDARD_MODEL_LABEL = "Local";
+  public static final String STANDARD_MODEL_LABEL = "Free";
   public static final String STANDARD_RESPONSES_MODEL = "google/gemma-4-31B-it";
   public static final String PREMIUM_MODEL_KEY = "chatgpt";
   public static final String PREMIUM_MODEL_LABEL = "ChatGPT";
@@ -74,7 +74,7 @@ public class ModelAccessService {
         .readOnlyReason(
             access.premium()
                 ? "Model choices for premium accounts are coming soon."
-                : "Standard accounts use the local model.")
+                : "Free accounts use the included model.")
         .availableModels(access.availableModels().stream().map(this::toWebsiteOption).toList());
   }
 

@@ -199,10 +199,10 @@ class WebsiteAccountServiceTest {
         .plan(WebsiteModelAccessSummary.PlanEnum.STANDARD)
         .isPremium(false)
         .currentModel("local")
-        .currentModelLabel("Local")
+        .currentModelLabel("Free")
         .modelSelectionAllowed(false)
         .modelSelectionConfigurable(false)
-        .readOnlyReason("Standard accounts use the local model.")
+        .readOnlyReason("Free accounts use the included model.")
         .availableModels(List.of());
   }
 

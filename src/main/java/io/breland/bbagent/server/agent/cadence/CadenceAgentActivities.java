@@ -20,6 +20,8 @@ public interface CadenceAgentActivities {
       IncomingMessage message,
       AgentWorkflowContext workflowContext);
 
+  String blockedToolCallsJson(List<CadenceToolCall> toolCalls);
+
   ImageSendResult handleGeneratedImages(
       String responseJson,
       String assistantText,

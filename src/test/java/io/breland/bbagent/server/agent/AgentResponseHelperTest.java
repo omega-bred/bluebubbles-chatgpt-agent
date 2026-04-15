@@ -23,6 +23,45 @@ class AgentResponseHelperTest {
   }
 
   @Test
+  void parseTextFunctionCalls_preservesCommasInsideArgumentValues() throws Exception {
+    List<com.openai.models.responses.ResponseFunctionToolCall> calls =
+        AgentResponseHelper.parseTextFunctionCalls(
+            "call:create_workflow_callback{purpose:Clone repos, cherry-pick commit, and push to GitHub.,resume_instructions:Notify Breland once the cherry-pick and push are complete.}");
+
+    assertEquals(1, calls.size());
+    assertEquals("create_workflow_callback", calls.getFirst().name());
+    var args = new ObjectMapper().readTree(calls.getFirst().arguments());
+    assertEquals(
+        "Clone repos, cherry-pick commit, and push to GitHub.", args.get("purpose").asText());
+    assertEquals(
+        "Notify Breland once the cherry-pick and push are complete.",
+        args.get("resume_instructions").asText());
+  }
+
+  @Test
+  void normalizeAssistantText_stripsTextToolCallLines() {
+    String normalized =
+        AgentResponseHelper.normalizeAssistantText(
+            new ObjectMapper(),
+            """
+            I'll start that now.
+            call:create_workflow_callback{purpose:Clone repos, cherry-pick commit, and push to GitHub.,resume_instructions:Notify Breland once complete.}
+            """);
+
+    assertEquals("I'll start that now.", normalized);
+  }
+
+  @Test
+  void normalizeAssistantText_removesOnlyTextToolCallResponse() {
+    String normalized =
+        AgentResponseHelper.normalizeAssistantText(
+            new ObjectMapper(),
+            "call:create_workflow_callback{purpose:Clone repos, cherry-pick commit, and push to GitHub.,resume_instructions:Notify Breland once complete.}");
+
+    assertEquals("", normalized);
+  }
+
+  @Test
   void extractFunctionCalls_fallsBackToTextWhenNoNativeToolCalls() {
     Response response = responseWithText("call:send_giphy{query:artist painting}");
 

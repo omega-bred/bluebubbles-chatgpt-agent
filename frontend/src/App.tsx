@@ -285,15 +285,19 @@ function LinkedIdentity({
   }
   const calendars = integration.gcal_accounts || [];
   const modelAccess = integration.model_access;
+  const modelLabel = modelAccess ? displayModelLabel(modelAccess.current_model_label) : "";
+  const planLabel = modelAccess?.is_premium ? "Premium" : "Free";
+  const accessNote =
+    modelAccess && modelAccess.is_premium ? `${planLabel} account · ${modelLabel}` : `${planLabel} account`;
   return (
     <article className="linked-item">
       <div>
         <p className="eyebrow">iMessage sender</p>
-        <h2>{link.sender || link.account_base}</h2>
-        <p className="muted">{link.chat_guid || "Direct sender link"}</p>
+        <h2>{link.is_group ? "Group iMessage chat" : "Direct iMessage sender"}</h2>
+        <p className="muted">{link.service || "iMessage"} linked to this account.</p>
         {modelAccess ? (
           <p className="model-note">
-            {modelAccess.is_premium ? "Premium" : "Standard"} account · {modelAccess.current_model_label}
+            {accessNote}
             {modelAccess.model_selection_configurable ? "" : " · read only"}
           </p>
         ) : null}
@@ -301,7 +305,7 @@ function LinkedIdentity({
       <div className="integration-pills">
         {modelAccess ? (
           <span className={modelAccess.is_premium ? "pill premium" : "pill"}>
-            Model {modelAccess.current_model_label}
+            {modelLabel === "Free" ? "Free" : `Model ${modelLabel}`}
           </span>
         ) : null}
         <span className={integration.coder_linked ? "pill good" : "pill"}>
@@ -325,6 +329,17 @@ function LinkedIdentity({
       </button>
     </article>
   );
+}
+
+function displayModelLabel(label?: string | null) {
+  if (!label) {
+    return "Free";
+  }
+  const normalized = label.trim().toLowerCase();
+  if (normalized === "local" || normalized === "model local") {
+    return "Free";
+  }
+  return label;
 }
 
 function EmptyLinks() {
