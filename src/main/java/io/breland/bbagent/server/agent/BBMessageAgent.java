@@ -72,13 +72,6 @@ public class BBMessageAgent {
   private static final int MAX_FILE_ATTACHMENTS = 4;
   private static final int MAX_GENERATED_IMAGES = 1;
   public static final String IMESSAGE_SERVICE = "iMessage";
-  private static final Map<String, Integer> MAX_TOOL_CALLS_PER_TURN =
-      Map.of(
-          SendGiphyAgentTool.TOOL_NAME, 1,
-          SendTextAgentTool.TOOL_NAME, 2,
-          SendReactionAgentTool.TOOL_NAME, 2,
-          RenameConversationAgentTool.TOOL_NAME, 1,
-          SetGroupIconAgentTool.TOOL_NAME, 1);
 
   public enum AssistantResponsiveness {
     DEFAULT,
@@ -507,8 +500,7 @@ public class BBMessageAgent {
     boolean sentReactionByTool = false;
     int loops = 0;
     int blockedLoops = 0;
-    Map<String, Integer> toolCallsByName = new HashMap<>();
-    Map<String, Integer> toolCallsBySignature = new HashMap<>();
+    AgentToolLoopGuard toolLoopGuard = AgentToolLoopGuard.standard();
     while (loops < MAX_TOOL_LOOPS) {
       List<ResponseFunctionToolCall> toolCalls = AgentResponseHelper.extractFunctionCalls(response);
       log.debug(toolCalls.toString());
@@ -528,9 +520,10 @@ public class BBMessageAgent {
       boolean blockedAnyToolCall = false;
       int executedToolCalls = 0;
       for (ResponseFunctionToolCall toolCall : toolCalls) {
-        if (shouldBlockToolCall(toolCall, toolCallsByName, toolCallsBySignature)) {
+        if (toolLoopGuard.shouldBlock(toolCall.name(), toolCall.arguments())) {
           blockedAnyToolCall = true;
-          toolContinuation.add(blockedToolCallOutput(toolCall));
+          toolContinuation.add(
+              AgentResponseHelper.blockedToolCallOutput(toolCall.callId(), toolCall.name()));
           continue;
         }
         toolContinuation.add(runToolActivity(toolCall, message, workflowContext));
@@ -711,39 +704,6 @@ public class BBMessageAgent {
       outputs.add(runToolActivity(toolCall, message, workflowContext));
     }
     return outputs;
-  }
-
-  private boolean shouldBlockToolCall(
-      ResponseFunctionToolCall toolCall,
-      Map<String, Integer> toolCallsByName,
-      Map<String, Integer> toolCallsBySignature) {
-    String toolName = toolCall.name();
-    int toolNameCalls = toolCallsByName.getOrDefault(toolName, 0) + 1;
-    toolCallsByName.put(toolName, toolNameCalls);
-    String signature = toolCallSignature(toolCall);
-    int signatureCalls = toolCallsBySignature.getOrDefault(signature, 0) + 1;
-    toolCallsBySignature.put(signature, signatureCalls);
-
-    Integer maxCalls = MAX_TOOL_CALLS_PER_TURN.get(toolName);
-    if (maxCalls != null && toolNameCalls > maxCalls) {
-      log.warn(
-          "Blocking repeated tool call for {} after {} calls in one turn", toolName, toolNameCalls);
-      return true;
-    }
-    if (signatureCalls > 2) {
-      log.warn("Blocking repeated tool call signature {}", signature);
-      return true;
-    }
-    return false;
-  }
-
-  private String toolCallSignature(ResponseFunctionToolCall toolCall) {
-    String args = toolCall.arguments() == null ? "" : toolCall.arguments().trim();
-    return toolCall.name() + "|" + args;
-  }
-
-  private ResponseInputItem blockedToolCallOutput(ResponseFunctionToolCall toolCall) {
-    return AgentResponseHelper.blockedToolCallOutput(toolCall.callId());
   }
 
   public ResponseInputItem runToolActivity(

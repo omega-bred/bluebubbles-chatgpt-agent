@@ -7,6 +7,7 @@ import com.openai.models.responses.ResponseFunctionToolCall;
 import com.openai.models.responses.ResponseInputItem;
 import com.openai.models.responses.ResponseOutputItem;
 import com.openai.models.responses.ResponseOutputMessage;
+import io.breland.bbagent.server.agent.workflowcallback.WorkflowCallbackService;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -25,6 +26,10 @@ public final class AgentResponseHelper {
   private static final String REPEATED_TOOL_CALL_BLOCKED_OUTPUT =
       "Tool call blocked to prevent repeated loops in one turn. "
           + "Summarize the current status to the user without calling this tool again unless the user explicitly asks.";
+  private static final String REPEATED_WORKFLOW_CALLBACK_BLOCKED_OUTPUT =
+      "Workflow callback creation was blocked because one callback has already been created in this turn. "
+          + "Use the earlier callback_id and callback_instructions from the previous tool result, then continue with the next tool call. "
+          + "For Coder async tasks, create or start the Coder task now; do not call create_workflow_callback again.";
 
   private AgentResponseHelper() {}
 
@@ -155,11 +160,16 @@ public final class AgentResponseHelper {
   }
 
   public static ResponseInputItem blockedToolCallOutput(String callId) {
+    return blockedToolCallOutput(callId, null);
+  }
+
+  public static ResponseInputItem blockedToolCallOutput(String callId, String toolName) {
+    String output =
+        WorkflowCallbackService.TOOL_NAME.equals(toolName)
+            ? REPEATED_WORKFLOW_CALLBACK_BLOCKED_OUTPUT
+            : REPEATED_TOOL_CALL_BLOCKED_OUTPUT;
     ResponseInputItem.FunctionCallOutput toolOutput =
-        ResponseInputItem.FunctionCallOutput.builder()
-            .callId(callId)
-            .output(REPEATED_TOOL_CALL_BLOCKED_OUTPUT)
-            .build();
+        ResponseInputItem.FunctionCallOutput.builder().callId(callId).output(output).build();
     return ResponseInputItem.ofFunctionCallOutput(toolOutput);
   }
 

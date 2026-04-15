@@ -19,12 +19,18 @@ import java.util.Base64;
 import java.util.Optional;
 import java.util.UUID;
 import javax.annotation.Nullable;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.core.task.SimpleAsyncTaskExecutor;
+import org.springframework.core.task.TaskExecutor;
 import org.springframework.http.HttpHeaders;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.util.UriComponentsBuilder;
 
 @Service
+@Slf4j
 public class WorkflowCallbackService {
   public static final String TOOL_NAME = "create_workflow_callback";
   private static final String CALLBACK_WORKFLOW_ID_PREFIX = "callback:";
@@ -38,6 +44,9 @@ public class WorkflowCallbackService {
   private final ObjectMapper objectMapper;
   private final @Nullable CadenceWorkflowLauncher cadenceWorkflowLauncher;
   private final SecureRandom secureRandom = new SecureRandom();
+  private final TaskExecutor inlineCallbackExecutor =
+      new SimpleAsyncTaskExecutor("workflow-callback-");
+  private @Nullable ObjectProvider<BBMessageAgent> messageAgentProvider;
 
   public WorkflowCallbackService(
       AgentWorkflowCallbackRepository repository,
@@ -50,6 +59,11 @@ public class WorkflowCallbackService {
     this.workflowProperties = workflowProperties;
     this.objectMapper = objectMapper;
     this.cadenceWorkflowLauncher = cadenceWorkflowLauncher;
+  }
+
+  @Autowired
+  void setMessageAgentProvider(ObjectProvider<BBMessageAgent> messageAgentProvider) {
+    this.messageAgentProvider = messageAgentProvider;
   }
 
   public static boolean isCallbackWorkflowId(String workflowId) {
@@ -165,9 +179,6 @@ public class WorkflowCallbackService {
 
   private WorkflowExecution startCallbackWorkflow(
       AgentWorkflowCallbackEntity entity, JsonNode payload, byte[] rawBody) {
-    if (cadenceWorkflowLauncher == null) {
-      throw new IllegalStateException("Cadence workflow launcher is not configured");
-    }
     String workflowId = CALLBACK_WORKFLOW_ID_PREFIX + entity.getCallbackId();
     String messageGuid = "callback-" + entity.getCallbackId();
     String text = callbackMessageText(entity, payload, rawBody);
@@ -184,10 +195,44 @@ public class WorkflowCallbackService {
             Instant.now(),
             java.util.List.of(),
             false);
-    AgentWorkflowContext workflowContext =
-        new AgentWorkflowContext(workflowId, entity.getChatGuid(), messageGuid, Instant.now());
-    return cadenceWorkflowLauncher.startWorkflow(
-        new CadenceMessageWorkflowRequest(workflowContext, callbackMessage, null));
+    if (cadenceWorkflowLauncher != null) {
+      try {
+        WorkflowExecution execution =
+            cadenceWorkflowLauncher.startWorkflow(
+                new CadenceMessageWorkflowRequest(
+                    new AgentWorkflowContext(
+                        workflowId, entity.getChatGuid(), messageGuid, Instant.now()),
+                    callbackMessage,
+                    null));
+        if (execution != null) {
+          return execution;
+        }
+      } catch (Exception e) {
+        log.warn("Cadence callback workflow failed for {}; falling back to inline", workflowId, e);
+      }
+    }
+    return startInlineCallbackWorkflow(workflowId, callbackMessage);
+  }
+
+  private WorkflowExecution startInlineCallbackWorkflow(
+      String workflowId, IncomingMessage callbackMessage) {
+    BBMessageAgent messageAgent =
+        messageAgentProvider == null ? null : messageAgentProvider.getIfAvailable();
+    if (messageAgent == null) {
+      throw new IllegalStateException("No workflow processor is configured for callbacks");
+    }
+    inlineCallbackExecutor.execute(
+        () -> {
+          try {
+            messageAgent.handleIncomingMessage(callbackMessage);
+          } catch (Exception e) {
+            log.warn("Inline callback workflow failed for {}", workflowId, e);
+          }
+        });
+    WorkflowExecution execution = new WorkflowExecution();
+    execution.setWorkflowId(workflowId);
+    execution.setRunId("inline");
+    return execution;
   }
 
   private String callbackMessageText(
@@ -229,7 +274,7 @@ public class WorkflowCallbackService {
         + "POST "
         + callbackUrl
         + "\n"
-        + "Use headers: webhook-id=<unique stable id>, webhook-timestamp=<unix seconds>, webhook-signature=v1,<base64 HMAC-SHA256>.\n"
+        + "Use headers: Content-Type=application/json, webhook-id=<unique stable id>, webhook-timestamp=<unix seconds>, webhook-signature=v1,<base64 HMAC-SHA256>.\n"
         + "Signing secret: "
         + signingSecret
         + "\n"

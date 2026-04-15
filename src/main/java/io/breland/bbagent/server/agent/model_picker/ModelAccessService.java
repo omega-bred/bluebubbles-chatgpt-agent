@@ -3,6 +3,7 @@ package io.breland.bbagent.server.agent.model_picker;
 import io.breland.bbagent.generated.model.WebsiteModelAccessSummary;
 import io.breland.bbagent.generated.model.WebsiteModelOption;
 import io.breland.bbagent.server.StringValueUtils;
+import io.breland.bbagent.server.agent.AgentAccountIdentity;
 import io.breland.bbagent.server.agent.IncomingMessage;
 import io.breland.bbagent.server.agent.persistence.model.ModelAccountSettingsEntity;
 import io.breland.bbagent.server.agent.persistence.model.ModelAccountSettingsRepository;
@@ -79,14 +80,8 @@ public class ModelAccessService {
   }
 
   public String resolveAccountBase(IncomingMessage message) {
-    if (message == null) {
-      return null;
-    }
-    String sender = StringValueUtils.clean(message.sender());
-    if (sender != null) {
-      return sender;
-    }
-    return StringValueUtils.clean(message.chatGuid());
+    AgentAccountIdentity identity = AgentAccountIdentity.from(message);
+    return identity.hasAccountBase() ? identity.accountBase() : null;
   }
 
   private ModelAccess fromEntity(ModelAccountSettingsEntity entity) {

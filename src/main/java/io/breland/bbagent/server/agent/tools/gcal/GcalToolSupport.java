@@ -1,6 +1,7 @@
 package io.breland.bbagent.server.agent.tools.gcal;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import io.breland.bbagent.server.agent.AgentAccountIdentity;
 import io.breland.bbagent.server.agent.tools.ToolContext;
 import java.time.ZoneId;
 import java.util.Optional;
@@ -36,18 +37,8 @@ public class GcalToolSupport {
     if (context == null || context.message() == null) {
       return null;
     }
-    String chatGuid = context.message().chatGuid();
-    String sender = context.message().sender();
-    if (chatGuid != null && !chatGuid.isBlank() && sender != null && !sender.isBlank()) {
-      return chatGuid + "|" + sender;
-    }
-    if (sender != null && !sender.isBlank()) {
-      return sender;
-    }
-    if (chatGuid != null && !chatGuid.isBlank()) {
-      return chatGuid;
-    }
-    return null;
+    AgentAccountIdentity identity = AgentAccountIdentity.from(context.message());
+    return identity.hasAccountBase() ? identity.gcalAccountBase() : null;
   }
 
   protected String resolveCalendarId(String calendarId) {

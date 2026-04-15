@@ -144,7 +144,7 @@ paths:
       tags:
         - workflowCallback
       summary: Receives signed async workflow callbacks
-      description: Receives Standard Webhooks-compatible callbacks for agent async workflow completion.
+      description: Receives Standard Webhooks-compatible callbacks for agent async workflow completion. The request body is verified as raw bytes before JSON parsing; application/json is recommended, and raw JSON posts without a content type are also accepted.
       parameters:
         - name: callback_id
           in: query

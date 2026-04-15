@@ -1,0 +1,40 @@
+package io.breland.bbagent.server.agent;
+
+import io.breland.bbagent.server.StringValueUtils;
+
+public record AgentAccountIdentity(
+    String accountBase,
+    String coderAccountBase,
+    String gcalAccountBase,
+    String sender,
+    String chatGuid) {
+
+  public static AgentAccountIdentity from(IncomingMessage message) {
+    if (message == null) {
+      return empty();
+    }
+    return from(message.sender(), message.chatGuid());
+  }
+
+  public static AgentAccountIdentity from(String rawSender, String rawChatGuid) {
+    String sender = StringValueUtils.clean(rawSender);
+    String chatGuid = StringValueUtils.clean(rawChatGuid);
+    String accountBase = StringValueUtils.firstNonBlank(sender, chatGuid);
+    String gcalAccountBase =
+        sender != null && chatGuid != null ? chatGuid + "|" + sender : accountBase;
+    return new AgentAccountIdentity(
+        accountBase == null ? "" : accountBase,
+        accountBase == null ? "" : accountBase,
+        gcalAccountBase == null ? "" : gcalAccountBase,
+        sender,
+        chatGuid);
+  }
+
+  public static AgentAccountIdentity empty() {
+    return new AgentAccountIdentity("", "", "", null, null);
+  }
+
+  public boolean hasAccountBase() {
+    return accountBase != null && !accountBase.isBlank();
+  }
+}

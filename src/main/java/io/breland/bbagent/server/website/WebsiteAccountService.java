@@ -8,7 +8,7 @@ import io.breland.bbagent.generated.model.WebsiteCalendarAccountSummary;
 import io.breland.bbagent.generated.model.WebsiteIntegrationSummary;
 import io.breland.bbagent.generated.model.WebsiteLinkedAccountsResponse;
 import io.breland.bbagent.generated.model.WebsiteModelAccessSummary;
-import io.breland.bbagent.server.StringValueUtils;
+import io.breland.bbagent.server.agent.AgentAccountIdentity;
 import io.breland.bbagent.server.agent.IncomingMessage;
 import io.breland.bbagent.server.agent.model_picker.ModelAccessService;
 import io.breland.bbagent.server.agent.persistence.website.WebsiteAccountEntity;
@@ -109,7 +109,7 @@ public class WebsiteAccountService {
     if (message == null) {
       throw new IllegalArgumentException("missing message context");
     }
-    LinkIdentity identity = resolveIdentity(message);
+    AgentAccountIdentity identity = AgentAccountIdentity.from(message);
     if (identity.accountBase().isBlank()) {
       throw new IllegalArgumentException("missing iMessage identity");
     }
@@ -147,7 +147,7 @@ public class WebsiteAccountService {
 
   @Transactional(readOnly = true)
   public SenderLinkStatus getLinkStatus(String sender, String chatGuid) {
-    LinkIdentity identity = resolveIdentity(sender, chatGuid);
+    AgentAccountIdentity identity = AgentAccountIdentity.from(sender, chatGuid);
     if (identity.accountBase().isBlank()) {
       return SenderLinkStatus.empty();
     }
@@ -311,25 +311,6 @@ public class WebsiteAccountService {
     return jwt.getClaimAsString("preferred_username");
   }
 
-  private LinkIdentity resolveIdentity(IncomingMessage message) {
-    return resolveIdentity(message.sender(), message.chatGuid());
-  }
-
-  private LinkIdentity resolveIdentity(String rawSender, String rawChatGuid) {
-    String sender = StringValueUtils.clean(rawSender);
-    String chatGuid = StringValueUtils.clean(rawChatGuid);
-    String coderAccountBase = StringValueUtils.firstNonBlank(sender, chatGuid);
-    String gcalAccountBase =
-        sender != null && chatGuid != null
-            ? chatGuid + "|" + sender
-            : StringValueUtils.firstNonBlank(sender, chatGuid);
-    String accountBase = StringValueUtils.firstNonBlank(sender, chatGuid);
-    return new LinkIdentity(
-        accountBase == null ? "" : accountBase,
-        coderAccountBase == null ? "" : coderAccountBase,
-        gcalAccountBase == null ? "" : gcalAccountBase);
-  }
-
   private String newToken() {
     byte[] bytes = new byte[LINK_TOKEN_BYTES];
     secureRandom.nextBytes(bytes);
@@ -400,7 +381,4 @@ public class WebsiteAccountService {
       return new SenderLinkStatus(null, null, null, false, false, 0, 0, null, null);
     }
   }
-
-  private record LinkIdentity(
-      String accountBase, String coderAccountBase, String gcalAccountBase) {}
 }

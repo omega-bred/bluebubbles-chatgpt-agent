@@ -77,6 +77,24 @@ public class BBHttpClientWrapper {
 
   public record AttachmentData(String filename, byte[] bytes) {}
 
+  private static void requireSuccessfulResponse(Integer status, String message, String operation) {
+    if (status != null
+        && status == 200
+        && message != null
+        && message.toLowerCase().contains("success")) {
+      return;
+    }
+    throw new IllegalStateException(
+        "BlueBubbles " + operation + " failed with status=" + status + " message=" + message);
+  }
+
+  private static <T> T requirePresent(T value, String operation) {
+    if (value == null) {
+      throw new IllegalStateException("BlueBubbles " + operation + " returned no data");
+    }
+    return value;
+  }
+
   public Path getAttachment(String attachmentGuid) {
     try {
       Path tempPath = Files.createTempFile("bb-attachment-", ".bin");
@@ -110,12 +128,9 @@ public class BBHttpClientWrapper {
         this.messageApi
             .apiV1MessageMessageGuidGet(messageGuid, password, "chats,participants")
             .block(API_TIMEOUT);
-    assert response != null;
-    assert response.getMessage() != null;
-    assert response.getStatus() != null;
-    assert response.getStatus() == 200;
-    assert response.getMessage().toLowerCase().contains("success");
-    return response.getData();
+    response = requirePresent(response, "get message");
+    requireSuccessfulResponse(response.getStatus(), response.getMessage(), "get message");
+    return requirePresent(response.getData(), "get message");
   }
 
   public String uploadAttachment(Path path) {
@@ -249,13 +264,10 @@ public class BBHttpClientWrapper {
         this.messageApi
             .apiV1MessageQueryPost(password, requestBuilder.build())
             .block(Duration.of(120, ChronoUnit.SECONDS));
-    assert response != null;
-    assert response.getStatus() != null;
-    assert response.getStatus() == 200;
-    assert response.getData() != null;
-    assert response.getMessage() != null;
-    assert response.getMessage().toLowerCase().contains("success");
-    return response.getData();
+    response = requirePresent(response, "search conversation history");
+    requireSuccessfulResponse(
+        response.getStatus(), response.getMessage(), "search conversation history");
+    return requirePresent(response.getData(), "search conversation history");
   }
 
   public Chat getConversationInfo(String chatGuid) {
@@ -264,10 +276,9 @@ public class BBHttpClientWrapper {
     }
     ApiResponseGetChat chat =
         chatApi.apiV1ChatChatGuidGet(chatGuid, password, "participants").block(API_TIMEOUT);
-    assert chat != null;
-    assert chat.getStatus() == 200;
-    assert chat.getMessage().toLowerCase().contains("success");
-    return chat.getData();
+    chat = requirePresent(chat, "get conversation info");
+    requireSuccessfulResponse(chat.getStatus(), chat.getMessage(), "get conversation info");
+    return requirePresent(chat.getData(), "get conversation info");
   }
 
   public boolean renameConversation(String chatGuid, String displayName) {
@@ -281,9 +292,8 @@ public class BBHttpClientWrapper {
                 password,
                 ApiV1ChatChatGuidPutRequest.builder().displayName(displayName).build())
             .block(API_TIMEOUT);
-    assert result != null;
-    assert result.getStatus() == 200;
-    assert result.getMessage().toLowerCase().contains("success");
+    result = requirePresent(result, "rename conversation");
+    requireSuccessfulResponse(result.getStatus(), result.getMessage(), "rename conversation");
     return true;
   }
 
@@ -416,8 +426,8 @@ public class BBHttpClientWrapper {
             .apiV1ChatChatGuidMessageGet(
                 chatGuid, password, "handle", null, null, null, 100, "DESC")
             .block(API_TIMEOUT);
-    assert response != null;
-    return response.getData();
+    response = requirePresent(response, "get messages in chat");
+    return requirePresent(response.getData(), "get messages in chat");
   }
 
   public boolean ping() {
@@ -433,12 +443,8 @@ public class BBHttpClientWrapper {
   public IcloudAccountInfo getAccount() {
     ApiResponseIcloudAccount account =
         this.icloudApi.apiV1IcloudAccountGet(password).block(API_TIMEOUT);
-    assert account != null;
-    assert account.getStatus() != null;
-    assert account.getStatus() == 200;
-    assert account.getMessage() != null;
-    assert account.getMessage().toLowerCase().contains("success");
-    assert account.getData() != null;
-    return account.getData();
+    account = requirePresent(account, "get iCloud account");
+    requireSuccessfulResponse(account.getStatus(), account.getMessage(), "get iCloud account");
+    return requirePresent(account.getData(), "get iCloud account");
   }
 }

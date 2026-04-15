@@ -4,6 +4,7 @@ import static io.breland.bbagent.server.agent.tools.JsonSchemaUtilities.jsonSche
 
 import com.fasterxml.jackson.annotation.JsonProperty;
 import io.breland.bbagent.server.agent.tools.AgentTool;
+import io.breland.bbagent.server.agent.tools.ToolJson;
 import io.breland.bbagent.server.agent.tools.ToolProvider;
 import io.breland.bbagent.server.website.WebsiteAccountService;
 import io.swagger.v3.oas.annotations.media.Schema;
@@ -41,7 +42,8 @@ public class LinkWebsiteAccountAgentTool implements ToolProvider {
           try {
             WebsiteAccountService.CreatedLinkToken link =
                 accountService.createLinkToken(context.message());
-            return context.getMapper().writeValueAsString(toResponse(link));
+            return ToolJson.stringify(
+                context.getMapper(), toResponse(link), "error: unable to encode link");
           } catch (Exception e) {
             return "error: " + e.getMessage();
           }

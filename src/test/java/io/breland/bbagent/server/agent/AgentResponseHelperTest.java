@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.openai.models.responses.Response;
+import io.breland.bbagent.server.agent.workflowcallback.WorkflowCallbackService;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 
@@ -71,6 +72,18 @@ class AgentResponseHelperTest {
     assertEquals(1, calls.size());
     assertEquals("send_giphy", calls.getFirst().name());
     assertTrue(calls.getFirst().callId().startsWith("text-call-"));
+  }
+
+  @Test
+  void blockedWorkflowCallbackOutputTellsModelToUseExistingCallback() throws Exception {
+    String outputJson =
+        new ObjectMapper()
+            .writeValueAsString(
+                AgentResponseHelper.blockedToolCallOutput(
+                    "call-1", WorkflowCallbackService.TOOL_NAME));
+
+    assertTrue(outputJson.contains("already been created in this turn"));
+    assertTrue(outputJson.contains("create or start the Coder task now"));
   }
 
   private static Response responseWithText(String text) {

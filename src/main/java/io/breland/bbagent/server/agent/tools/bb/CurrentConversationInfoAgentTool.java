@@ -6,6 +6,7 @@ import io.breland.bbagent.generated.bluebubblesclient.model.Chat;
 import io.breland.bbagent.server.agent.BBHttpClientWrapper;
 import io.breland.bbagent.server.agent.IncomingMessage;
 import io.breland.bbagent.server.agent.tools.AgentTool;
+import io.breland.bbagent.server.agent.tools.ToolJson;
 import io.breland.bbagent.server.agent.tools.ToolProvider;
 import io.swagger.v3.oas.annotations.media.Schema;
 import java.util.ArrayList;
@@ -54,11 +55,8 @@ public class CurrentConversationInfoAgentTool implements ToolProvider {
                   });
           result.put("participants", participants);
 
-          try {
-            return bbHttpClientWrapper.getObjectMapper().writeValueAsString(result);
-          } catch (Exception e) {
-            return response.toString();
-          }
+          return ToolJson.stringify(
+              bbHttpClientWrapper.getObjectMapper(), result, response.toString());
         });
   }
 }

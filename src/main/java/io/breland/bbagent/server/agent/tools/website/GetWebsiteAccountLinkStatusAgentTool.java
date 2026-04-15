@@ -6,6 +6,7 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 import io.breland.bbagent.server.StringValueUtils;
 import io.breland.bbagent.server.agent.IncomingMessage;
 import io.breland.bbagent.server.agent.tools.AgentTool;
+import io.breland.bbagent.server.agent.tools.ToolJson;
 import io.breland.bbagent.server.agent.tools.ToolProvider;
 import io.breland.bbagent.server.website.WebsiteAccountService;
 import io.swagger.v3.oas.annotations.media.Schema;
@@ -56,7 +57,8 @@ public class GetWebsiteAccountLinkStatusAgentTool implements ToolProvider {
                     request.chatGuid(), message == null ? null : message.chatGuid());
             WebsiteAccountService.SenderLinkStatus status =
                 accountService.getLinkStatus(sender, chatGuid);
-            return context.getMapper().writeValueAsString(toResponse(status));
+            return ToolJson.stringify(
+                context.getMapper(), toResponse(status), "error: unable to encode link status");
           } catch (Exception e) {
             return "error: " + e.getMessage();
           }

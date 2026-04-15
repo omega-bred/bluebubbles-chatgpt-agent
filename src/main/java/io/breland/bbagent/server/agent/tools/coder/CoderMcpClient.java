@@ -1,17 +1,12 @@
 package io.breland.bbagent.server.agent.tools.coder;
 
-import com.auth0.jwt.JWT;
-import com.auth0.jwt.JWTVerifier;
-import com.auth0.jwt.algorithms.Algorithm;
-import com.auth0.jwt.exceptions.JWTVerificationException;
-import com.auth0.jwt.interfaces.DecodedJWT;
 import com.fasterxml.jackson.annotation.JsonProperty;
-import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.openai.core.JsonValue;
 import com.openai.models.responses.FunctionTool;
+import io.breland.bbagent.server.agent.AgentAccountIdentity;
 import io.breland.bbagent.server.agent.persistence.coder.CoderOauthClientEntity;
 import io.breland.bbagent.server.agent.persistence.coder.CoderOauthClientRepository;
 import io.breland.bbagent.server.agent.persistence.coder.CoderOauthCredentialEntity;
@@ -27,17 +22,11 @@ import io.modelcontextprotocol.spec.McpError;
 import io.modelcontextprotocol.spec.McpSchema;
 import java.io.IOException;
 import java.net.URI;
-import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
-import java.security.SecureRandom;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
-import java.util.Base64;
-import java.util.Date;
 import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
@@ -60,10 +49,11 @@ public class CoderMcpClient {
 
   private static final Duration OAUTH_STATE_TTL = Duration.ofMinutes(10);
   private static final Duration TOKEN_REFRESH_LEEWAY = Duration.ofMinutes(1);
-  private static final int MAX_TOOL_NAME_LENGTH = 64;
   private static final TypeReference<Map<String, Object>> MAP_TYPE = new TypeReference<>() {};
 
   private final ObjectMapper objectMapper;
+  private final CoderToolNameMapper toolNameMapper = new CoderToolNameMapper();
+  private final CoderToolResultFormatter toolResultFormatter;
   private final RestClient restClient;
   private final CoderOauthClientRepository clientRepository;
   private final CoderOauthCredentialRepository credentialRepository;
@@ -76,8 +66,7 @@ public class CoderMcpClient {
   private final String clientName;
   private final Duration requestTimeout;
   private final Duration toolCacheTtl;
-  private final Algorithm stateAlgorithm;
-  private final SecureRandom secureRandom = new SecureRandom();
+  private final CoderOauthStateCodec stateCodec;
   private final Map<String, CachedTools> toolsCache = new ConcurrentHashMap<>();
 
   private volatile ProtectedResourceMetadata protectedResourceMetadata;
@@ -100,8 +89,7 @@ public class CoderMcpClient {
       ObjectMapper objectMapper) {
     this.serverUrl = serverUrl;
     this.redirectUri = redirectUri;
-    this.stateAlgorithm =
-        stateSecret == null || stateSecret.isBlank() ? null : Algorithm.HMAC256(stateSecret);
+    this.stateCodec = new CoderOauthStateCodec(stateSecret, OAUTH_STATE_TTL);
     this.configuredClientId = configuredClientId;
     this.configuredClientSecret = configuredClientSecret;
     this.scopes = scopes;
@@ -113,6 +101,7 @@ public class CoderMcpClient {
     this.credentialRepository = credentialRepository;
     this.pendingAuthorizationRepository = pendingAuthorizationRepository;
     this.objectMapper = objectMapper;
+    this.toolResultFormatter = new CoderToolResultFormatter(objectMapper);
   }
 
   public boolean isConfigured() {
@@ -120,7 +109,7 @@ public class CoderMcpClient {
         && !serverUrl.isBlank()
         && redirectUri != null
         && !redirectUri.isBlank()
-        && stateAlgorithm != null;
+        && stateCodec.isConfigured();
   }
 
   public boolean isLinked(String accountBase) {
@@ -137,9 +126,10 @@ public class CoderMcpClient {
       AuthorizationServerMetadata authMetadata = getAuthorizationServerMetadata();
       ProtectedResourceMetadata resourceMetadata = getProtectedResourceMetadata();
       String pendingId = UUID.randomUUID().toString();
-      String codeVerifier = generateCodeVerifier();
-      String state = createOauthState(accountBase, pendingId, chatGuid, messageGuid);
-      if (state == null || state.isBlank()) {
+      String codeVerifier = stateCodec.generateCodeVerifier();
+      Optional<String> state =
+          stateCodec.createState(accountBase, pendingId, chatGuid, messageGuid);
+      if (state.isEmpty()) {
         return Optional.empty();
       }
       Instant now = Instant.now();
@@ -158,8 +148,8 @@ public class CoderMcpClient {
               .queryParam("client_id", registration.clientId())
               .queryParam("redirect_uri", redirectUri)
               .queryParam("scope", scopes)
-              .queryParam("state", state)
-              .queryParam("code_challenge", codeChallenge(codeVerifier))
+              .queryParam("state", state.get())
+              .queryParam("code_challenge", stateCodec.codeChallenge(codeVerifier))
               .queryParam("code_challenge_method", "S256")
               .queryParam("resource", resourceMetadata.resource())
               .build()
@@ -176,11 +166,11 @@ public class CoderMcpClient {
     if (!isConfigured() || code == null || code.isBlank() || state == null || state.isBlank()) {
       return Optional.empty();
     }
-    Optional<OauthState> parsedState = parseOauthState(state);
+    Optional<CoderOauthStateCodec.OauthState> parsedState = stateCodec.parseState(state);
     if (parsedState.isEmpty()) {
       return Optional.empty();
     }
-    OauthState oauthState = parsedState.get();
+    CoderOauthStateCodec.OauthState oauthState = parsedState.get();
     Optional<CoderOauthPendingAuthorizationEntity> pending =
         pendingAuthorizationRepository.findById(oauthState.pendingId());
     if (pending.isEmpty()) {
@@ -289,7 +279,7 @@ public class CoderMcpClient {
             accountBase,
             client ->
                 client.callTool(new McpSchema.CallToolRequest(definition.mcpName(), arguments)));
-    return formatToolResult(result);
+    return toolResultFormatter.format(result);
   }
 
   private List<CoderToolDefinition> getToolDefinitions(String accountBase) throws IOException {
@@ -317,10 +307,10 @@ public class CoderMcpClient {
     if (mcpTools != null) {
       Map<String, Integer> nameCounts = new LinkedHashMap<>();
       for (McpSchema.Tool tool : mcpTools) {
-        String agentName = toAgentToolName(tool.name());
+        String agentName = toolNameMapper.toAgentToolName(tool.name());
         int count = nameCounts.merge(agentName, 1, Integer::sum);
         if (count > 1) {
-          agentName = disambiguateAgentToolName(tool.name(), count);
+          agentName = toolNameMapper.disambiguateAgentToolName(tool.name(), count);
         }
         definitions.add(new CoderToolDefinition(agentName, tool.name(), tool));
       }
@@ -655,105 +645,6 @@ public class CoderMcpClient {
     return uri.getScheme() + "://" + uri.getAuthority();
   }
 
-  private String createOauthState(
-      String accountBase, String pendingId, String chatGuid, String messageGuid) {
-    if (stateAlgorithm == null) {
-      return null;
-    }
-    try {
-      Instant now = Instant.now();
-      return JWT.create()
-          .withIssuedAt(Date.from(now))
-          .withExpiresAt(Date.from(now.plus(OAUTH_STATE_TTL)))
-          .withClaim("account_base", accountBase)
-          .withClaim("pending_id", pendingId)
-          .withClaim("chat_guid", chatGuid)
-          .withClaim("message_guid", messageGuid)
-          .sign(stateAlgorithm);
-    } catch (Exception e) {
-      log.warn("Failed to build Coder OAuth state", e);
-      return null;
-    }
-  }
-
-  private Optional<OauthState> parseOauthState(String state) {
-    if (state == null || state.isBlank() || stateAlgorithm == null) {
-      return Optional.empty();
-    }
-    try {
-      JWTVerifier verifier = JWT.require(stateAlgorithm).build();
-      DecodedJWT jwt = verifier.verify(state);
-      String accountBase = jwt.getClaim("account_base").asString();
-      String pendingId = jwt.getClaim("pending_id").asString();
-      String chatGuid = jwt.getClaim("chat_guid").asString();
-      String messageGuid = jwt.getClaim("message_guid").asString();
-      if (accountBase == null
-          || accountBase.isBlank()
-          || pendingId == null
-          || pendingId.isBlank()) {
-        return Optional.empty();
-      }
-      return Optional.of(new OauthState(accountBase, pendingId, chatGuid, messageGuid));
-    } catch (JWTVerificationException e) {
-      log.warn("Failed to parse Coder OAuth state", e);
-      return Optional.empty();
-    }
-  }
-
-  private String generateCodeVerifier() {
-    byte[] bytes = new byte[32];
-    secureRandom.nextBytes(bytes);
-    return Base64.getUrlEncoder().withoutPadding().encodeToString(bytes);
-  }
-
-  private String codeChallenge(String verifier) {
-    try {
-      MessageDigest digest = MessageDigest.getInstance("SHA-256");
-      byte[] hashed = digest.digest(verifier.getBytes(StandardCharsets.US_ASCII));
-      return Base64.getUrlEncoder().withoutPadding().encodeToString(hashed);
-    } catch (Exception e) {
-      throw new IllegalStateException("Failed to create PKCE code challenge", e);
-    }
-  }
-
-  private String toAgentToolName(String mcpToolName) {
-    String normalized =
-        mcpToolName == null
-            ? "tool"
-            : mcpToolName.replaceAll("[^A-Za-z0-9_-]", "_").replaceAll("_+", "_");
-    if (normalized.isBlank()) {
-      normalized = "tool";
-    }
-    String hash = shortHash(mcpToolName);
-    int maxBaseLength = MAX_TOOL_NAME_LENGTH - TOOL_PREFIX.length() - hash.length() - 1;
-    String truncated =
-        normalized.length() > maxBaseLength ? normalized.substring(0, maxBaseLength) : normalized;
-    return TOOL_PREFIX + truncated + "_" + hash;
-  }
-
-  private String disambiguateAgentToolName(String mcpToolName, int count) {
-    String suffix = "_" + count;
-    String base = toAgentToolName(mcpToolName);
-    if (base.length() + suffix.length() <= MAX_TOOL_NAME_LENGTH) {
-      return base + suffix;
-    }
-    return base.substring(0, MAX_TOOL_NAME_LENGTH - suffix.length()) + suffix;
-  }
-
-  private String shortHash(String value) {
-    try {
-      MessageDigest digest = MessageDigest.getInstance("SHA-256");
-      byte[] hashed = digest.digest(String.valueOf(value).getBytes(StandardCharsets.UTF_8));
-      StringBuilder builder = new StringBuilder();
-      for (int i = 0; i < 6; i++) {
-        builder.append(String.format(Locale.ROOT, "%02x", hashed[i]));
-      }
-      return builder.toString();
-    } catch (Exception e) {
-      return Integer.toHexString(String.valueOf(value).hashCode());
-    }
-  }
-
   private String toolDescription(CoderToolDefinition definition) {
     String description = definition.tool().description();
     if (description == null || description.isBlank()) {
@@ -802,39 +693,6 @@ public class CoderMcpClient {
     return builder.build();
   }
 
-  private String formatToolResult(McpSchema.CallToolResult result) throws JsonProcessingException {
-    Map<String, Object> response = new LinkedHashMap<>();
-    response.put("is_error", result != null && Boolean.TRUE.equals(result.isError()));
-    if (result != null && result.structuredContent() != null) {
-      response.put("structured_content", result.structuredContent());
-    }
-    List<Map<String, Object>> content = new ArrayList<>();
-    if (result != null && result.content() != null) {
-      for (McpSchema.Content item : result.content()) {
-        content.add(contentToMap(item));
-      }
-    }
-    response.put("content", content);
-    return objectMapper.writeValueAsString(response);
-  }
-
-  private Map<String, Object> contentToMap(McpSchema.Content content) {
-    Map<String, Object> item = new LinkedHashMap<>();
-    item.put("type", content.type());
-    if (content instanceof McpSchema.TextContent textContent) {
-      item.put("text", textContent.text());
-    } else if (content instanceof McpSchema.ImageContent imageContent) {
-      item.put("mime_type", imageContent.mimeType());
-      item.put("data", "[base64 image data omitted]");
-    } else if (content instanceof McpSchema.AudioContent audioContent) {
-      item.put("mime_type", audioContent.mimeType());
-      item.put("data", "[base64 audio data omitted]");
-    } else {
-      item.put("value", content.toString());
-    }
-    return item;
-  }
-
   public static String resolveAccountBase(
       io.breland.bbagent.server.agent.tools.ToolContext context) {
     if (context == null || context.message() == null) {
@@ -844,24 +702,11 @@ public class CoderMcpClient {
   }
 
   public static String resolveAccountBase(io.breland.bbagent.server.agent.IncomingMessage message) {
-    if (message == null) {
-      return null;
-    }
-    String chatGuid = message.chatGuid();
-    String sender = message.sender();
-    if (sender != null && !sender.isBlank()) {
-      return sender;
-    }
-    if (chatGuid != null && !chatGuid.isBlank()) {
-      return chatGuid;
-    }
-    return null;
+    AgentAccountIdentity identity = AgentAccountIdentity.from(message);
+    return identity.hasAccountBase() ? identity.accountBase() : null;
   }
 
   public record OauthCompletion(String accountBase, String chatGuid, String messageGuid) {}
-
-  private record OauthState(
-      String accountBase, String pendingId, String chatGuid, String messageGuid) {}
 
   private record OAuthClientRegistration(
       String issuer, String clientId, String clientSecret, String tokenEndpointAuthMethod) {}

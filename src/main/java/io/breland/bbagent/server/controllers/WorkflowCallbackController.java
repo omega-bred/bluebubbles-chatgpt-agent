@@ -25,7 +25,6 @@ public class WorkflowCallbackController {
 
   @PostMapping(
       path = "/api/v1/workflowCallback/receive.workflowCallbacks",
-      consumes = MediaType.APPLICATION_JSON_VALUE,
       produces = MediaType.APPLICATION_JSON_VALUE)
   public ResponseEntity<Map<String, Object>> receiveWorkflowCallback(
       @RequestParam("callback_id") String callbackId,

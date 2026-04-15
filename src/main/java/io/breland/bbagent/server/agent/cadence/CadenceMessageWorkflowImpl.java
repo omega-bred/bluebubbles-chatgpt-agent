@@ -6,6 +6,7 @@ import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.uber.cadence.activity.ActivityOptions;
 import com.uber.cadence.workflow.Workflow;
 import io.breland.bbagent.server.agent.AgentResponseHelper;
+import io.breland.bbagent.server.agent.AgentToolLoopGuard;
 import io.breland.bbagent.server.agent.BBMessageAgent;
 import io.breland.bbagent.server.agent.IncomingMessage;
 import io.breland.bbagent.server.agent.cadence.models.CadenceMessageWorkflowRequest;
@@ -17,9 +18,7 @@ import io.breland.bbagent.server.agent.tools.bb.SendTextAgentTool;
 import java.io.IOException;
 import java.time.Duration;
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.Optional;
 import lombok.extern.slf4j.Slf4j;
 
@@ -62,7 +61,7 @@ public class CadenceMessageWorkflowImpl implements CadenceMessageWorkflow {
     boolean sentTextByTool = false;
     boolean sentReactionByTool = false;
     int blockedLoops = 0;
-    Map<String, Integer> toolCallsBySignature = new HashMap<>();
+    AgentToolLoopGuard toolLoopGuard = AgentToolLoopGuard.standard();
     for (int loops = 0; loops < MAX_TOOL_LOOPS; loops++) {
       if (bundle.toolCalls() == null || bundle.toolCalls().isEmpty()) {
         break;
@@ -74,7 +73,7 @@ public class CadenceMessageWorkflowImpl implements CadenceMessageWorkflow {
       List<CadenceToolCall> executableToolCalls = new ArrayList<>();
       List<CadenceToolCall> blockedToolCalls = new ArrayList<>();
       for (CadenceToolCall toolCall : bundle.toolCalls()) {
-        if (shouldBlockToolCall(toolCall, toolCallsBySignature)) {
+        if (toolLoopGuard.shouldBlock(toolCall.name(), toolCall.arguments())) {
           blockedToolCalls.add(toolCall);
         } else {
           executableToolCalls.add(toolCall);
@@ -132,23 +131,6 @@ public class CadenceMessageWorkflowImpl implements CadenceMessageWorkflow {
       activities.recordAssistantTurn(message, "[image]", request.workflowContext());
     }
     activities.finalizeWorkflow(message, request.workflowContext(), true);
-  }
-
-  private static boolean shouldBlockToolCall(
-      CadenceToolCall toolCall, Map<String, Integer> toolCallsBySignature) {
-    String signature = toolCallSignature(toolCall);
-    int signatureCalls = toolCallsBySignature.getOrDefault(signature, 0) + 1;
-    toolCallsBySignature.put(signature, signatureCalls);
-    if (signatureCalls <= 2) {
-      return false;
-    }
-    log.warn("Blocking repeated cadence tool call signature {}", signature);
-    return true;
-  }
-
-  private static String toolCallSignature(CadenceToolCall toolCall) {
-    String args = toolCall.arguments() == null ? "" : toolCall.arguments().trim();
-    return toolCall.name() + "|" + args;
   }
 
   private static boolean hasToolCall(List<CadenceToolCall> toolCalls, String name) {
