@@ -12,6 +12,8 @@ import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.openai.client.OpenAIClient;
 import com.openai.core.JsonValue;
 import com.openai.models.ChatModel;
@@ -250,6 +252,75 @@ class BBMessageAgentTest {
     String systemText = systemMessage.content().asTextInput();
     assertTrue(systemText.contains("You are a chat assistant for iMessage via BlueBubbles."));
     assertTrue(systemText.contains("All outgoing iMessage text must be plain text only."));
+  }
+
+  @Test
+  void squashesDeveloperMessagesIntoSystemAfterCadenceJsonRoundTrip() throws Exception {
+    OpenAIClient openAIClient = Mockito.mock(OpenAIClient.class);
+    var responseService = Mockito.mock(com.openai.services.blocking.ResponseService.class);
+    when(openAIClient.responses()).thenReturn(responseService);
+    when(responseService.create(any(ResponseCreateParams.class)))
+        .thenReturn(responseWithNoToolCalls());
+    BBMessageAgent agent = newAgent(openAIClient, new StubBBHttpClientWrapper());
+    IncomingMessage incoming =
+        incomingMessage("iMessage;+;chat-qwen-cadence", "msg-qwen-cadence", "hello", 1_000L);
+    List<ResponseInputItem> originalInput = agent.buildConversationInput(List.of(), incoming);
+    JsonNode inputNode = JsonValue.from(originalInput).convert(JsonNode.class);
+    List<ResponseInputItem> roundTrippedInput =
+        JsonValue.fromJsonNode(inputNode).convert(new TypeReference<List<ResponseInputItem>>() {});
+
+    agent.createResponse(roundTrippedInput, incoming, null);
+
+    ArgumentCaptor<ResponseCreateParams> paramsCaptor =
+        ArgumentCaptor.forClass(ResponseCreateParams.class);
+    verify(responseService).create(paramsCaptor.capture());
+    List<ResponseInputItem> inputItems = paramsCaptor.getValue().input().orElseThrow().asResponse();
+    JsonNode requestInputNode = JsonValue.from(inputItems).convert(JsonNode.class);
+    assertFalse(
+        inputItems.stream().anyMatch(this::isDeveloperInputMessage),
+        requestInputNode.toPrettyString());
+    assertTrue(isSystemInputMessage(inputItems.get(0)), requestInputNode.toPrettyString());
+    assertTrue(
+        extractText(inputItems.get(0))
+            .contains("All outgoing iMessage text must be plain text only."));
+  }
+
+  @Test
+  void squashesDeveloperMessagesIntoSystemAfterCadenceJsonRoundTripWithHistory() throws Exception {
+    OpenAIClient openAIClient = Mockito.mock(OpenAIClient.class);
+    var responseService = Mockito.mock(com.openai.services.blocking.ResponseService.class);
+    when(openAIClient.responses()).thenReturn(responseService);
+    when(responseService.create(any(ResponseCreateParams.class)))
+        .thenReturn(responseWithNoToolCalls());
+    BBMessageAgent agent = newAgent(openAIClient, new StubBBHttpClientWrapper());
+    IncomingMessage incoming =
+        incomingMessage("iMessage;+;chat-qwen-history", "msg-qwen-history", "hello", 3_000L);
+    List<ResponseInputItem> originalInput =
+        agent.buildConversationInput(
+            List.of(
+                ConversationTurn.user("Alice: older user text", Instant.ofEpochSecond(1_000L)),
+                ConversationTurn.assistant("older assistant text", Instant.ofEpochSecond(2_000L))),
+            incoming);
+    JsonNode inputNode = JsonValue.from(originalInput).convert(JsonNode.class);
+    List<ResponseInputItem> roundTrippedInput =
+        JsonValue.fromJsonNode(inputNode).convert(new TypeReference<List<ResponseInputItem>>() {});
+
+    agent.createResponse(roundTrippedInput, incoming, null);
+
+    ArgumentCaptor<ResponseCreateParams> paramsCaptor =
+        ArgumentCaptor.forClass(ResponseCreateParams.class);
+    verify(responseService).create(paramsCaptor.capture());
+    List<ResponseInputItem> inputItems = paramsCaptor.getValue().input().orElseThrow().asResponse();
+    JsonNode requestInputNode = JsonValue.from(inputItems).convert(JsonNode.class);
+    assertFalse(
+        requestInputNode.toString().contains("\"role\":\"developer\""),
+        requestInputNode.toPrettyString());
+    assertTrue(requestInputNode.toString().contains("\"role\":\"assistant\""));
+    assertTrue(requestInputNode.toString().contains("\"role\":\"system\""));
+    assertTrue(
+        requestInputNode
+            .toString()
+            .contains("All outgoing iMessage text must be plain text only."));
   }
 
   @Test
@@ -571,6 +642,42 @@ class BBMessageAgentTest {
   private boolean isDeveloperEasyInputMessage(ResponseInputItem item) {
     return item.isEasyInputMessage()
         && EasyInputMessage.Role.DEVELOPER.equals(item.asEasyInputMessage().role());
+  }
+
+  private boolean isDeveloperInputMessage(ResponseInputItem item) {
+    if (item.isEasyInputMessage()) {
+      return EasyInputMessage.Role.DEVELOPER.equals(item.asEasyInputMessage().role());
+    }
+    if (item.isMessage()) {
+      return ResponseInputItem.Message.Role.DEVELOPER.equals(item.asMessage().role());
+    }
+    return false;
+  }
+
+  private boolean isSystemInputMessage(ResponseInputItem item) {
+    if (item.isEasyInputMessage()) {
+      return EasyInputMessage.Role.SYSTEM.equals(item.asEasyInputMessage().role());
+    }
+    if (item.isMessage()) {
+      return ResponseInputItem.Message.Role.SYSTEM.equals(item.asMessage().role());
+    }
+    return false;
+  }
+
+  private String extractText(ResponseInputItem item) {
+    if (item.isEasyInputMessage()) {
+      EasyInputMessage.Content content = item.asEasyInputMessage().content();
+      if (content.isTextInput()) {
+        return content.asTextInput();
+      }
+      if (content.isResponseInputMessageContentList()) {
+        return content.asResponseInputMessageContentList().toString();
+      }
+    }
+    if (item.isMessage()) {
+      return item.asMessage().content().toString();
+    }
+    return item.toString();
   }
 
   private static BBMessageAgent newAgent(

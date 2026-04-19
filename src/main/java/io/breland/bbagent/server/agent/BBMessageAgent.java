@@ -6,6 +6,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.openai.client.OpenAIClient;
 import com.openai.client.okhttp.OpenAIOkHttpClient;
+import com.openai.core.JsonValue;
 import com.openai.models.responses.*;
 import com.uber.cadence.WorkflowExecution;
 import com.uber.cadence.workflow.Workflow;
@@ -739,29 +740,36 @@ public class BBMessageAgent {
   }
 
   private boolean isDeveloperInputMessage(ResponseInputItem item) {
-    if (item == null) {
-      return false;
-    }
-    if (item.isEasyInputMessage()) {
-      return EasyInputMessage.Role.DEVELOPER.equals(item.asEasyInputMessage().role());
-    }
-    if (item.isMessage()) {
-      return ResponseInputItem.Message.Role.DEVELOPER.equals(item.asMessage().role());
-    }
-    return false;
+    return "developer".equals(inputMessageRole(item).orElse(null));
   }
 
   private boolean isSystemInputMessage(ResponseInputItem item) {
+    return "system".equals(inputMessageRole(item).orElse(null));
+  }
+
+  private Optional<String> inputMessageRole(ResponseInputItem item) {
     if (item == null) {
-      return false;
+      return Optional.empty();
     }
     if (item.isEasyInputMessage()) {
-      return EasyInputMessage.Role.SYSTEM.equals(item.asEasyInputMessage().role());
+      return Optional.ofNullable(item.asEasyInputMessage().role().asString());
     }
     if (item.isMessage()) {
-      return ResponseInputItem.Message.Role.SYSTEM.equals(item.asMessage().role());
+      return Optional.ofNullable(item.asMessage().role().asString());
     }
-    return false;
+    return responseInputItemJson(item).map(node -> node.path("role").asText(null));
+  }
+
+  private Optional<JsonNode> responseInputItemJson(ResponseInputItem item) {
+    if (item == null) {
+      return Optional.empty();
+    }
+    try {
+      return Optional.ofNullable(JsonValue.from(item).convert(JsonNode.class));
+    } catch (RuntimeException e) {
+      log.debug("Unable to inspect response input item JSON while squashing roles", e);
+      return Optional.empty();
+    }
   }
 
   private ResponseInputItem mergeSystemInputMessage(
@@ -773,9 +781,12 @@ public class BBMessageAgent {
           systemItem.asMessage().toBuilder().content(inputTextContentList(mergedText)).build();
       return ResponseInputItem.ofMessage(message);
     }
-    EasyInputMessage message =
-        systemItem.asEasyInputMessage().toBuilder().content(mergedText).build();
-    return ResponseInputItem.ofEasyInputMessage(message);
+    if (systemItem.isEasyInputMessage()) {
+      EasyInputMessage message =
+          systemItem.asEasyInputMessage().toBuilder().content(mergedText).build();
+      return ResponseInputItem.ofEasyInputMessage(message);
+    }
+    return systemInputItem(mergedText);
   }
 
   private ResponseInputItem systemInputItem(String text) {
@@ -793,7 +804,7 @@ public class BBMessageAgent {
     if (item.isMessage()) {
       return extractInputContentText(item.asMessage().content());
     }
-    return Optional.empty();
+    return responseInputItemJson(item).flatMap(this::extractInputMessageJsonText);
   }
 
   private Optional<String> extractEasyInputMessageText(EasyInputMessage message) {
@@ -821,6 +832,28 @@ public class BBMessageAgent {
             .map(ResponseInputText::text)
             .filter(Objects::nonNull)
             .collect(Collectors.joining("\n"));
+    return text.isBlank() ? Optional.empty() : Optional.of(text);
+  }
+
+  private Optional<String> extractInputMessageJsonText(JsonNode node) {
+    if (node == null || !node.has("content")) {
+      return Optional.empty();
+    }
+    JsonNode content = node.get("content");
+    if (content.isTextual()) {
+      return Optional.of(content.asText());
+    }
+    if (!content.isArray()) {
+      return Optional.empty();
+    }
+    List<String> textParts = new ArrayList<>();
+    for (JsonNode item : content) {
+      JsonNode text = item.get("text");
+      if (text != null && text.isTextual()) {
+        textParts.add(text.asText());
+      }
+    }
+    String text = String.join("\n", textParts);
     return text.isBlank() ? Optional.empty() : Optional.of(text);
   }
 
