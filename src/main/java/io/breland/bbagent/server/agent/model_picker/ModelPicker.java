@@ -60,6 +60,13 @@ public class ModelPicker {
     return builder;
   }
 
+  public boolean shouldSquashDeveloperMessagesIntoSystem(IncomingMessage incomingMessage) {
+    String responsesModel = resolveModelAccess(incomingMessage).responsesModel();
+    return responsesModel != null
+        && ModelAccessService.DEVELOPER_MESSAGE_SYSTEM_SQUASH_MODELS.contains(
+            responsesModel.trim());
+  }
+
   private ModelAccessService.ModelAccess resolveModelAccess(IncomingMessage incomingMessage) {
     if (modelAccessService == null) {
       return new ModelAccessService.ModelAccess(

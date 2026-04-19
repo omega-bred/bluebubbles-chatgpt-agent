@@ -9,6 +9,7 @@ import io.breland.bbagent.server.agent.persistence.model.ModelAccountSettingsEnt
 import io.breland.bbagent.server.agent.persistence.model.ModelAccountSettingsRepository;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 import org.springframework.lang.Nullable;
@@ -22,6 +23,8 @@ public class ModelAccessService {
   public static final String PREMIUM_MODEL_KEY = "chatgpt";
   public static final String PREMIUM_MODEL_LABEL = "ChatGPT";
   public static final String PREMIUM_RESPONSES_MODEL = "openai/gpt-5.4";
+  public static final Set<String> DEVELOPER_MESSAGE_SYSTEM_SQUASH_MODELS =
+      Set.of(STANDARD_RESPONSES_MODEL);
   private static final List<ModelOption> STANDARD_OPTIONS =
       List.of(new ModelOption(STANDARD_MODEL_KEY, STANDARD_MODEL_LABEL, "local", true));
   private static final List<ModelOption> PREMIUM_OPTIONS =

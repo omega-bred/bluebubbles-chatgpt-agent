@@ -15,12 +15,14 @@ import static org.mockito.Mockito.when;
 import com.openai.client.OpenAIClient;
 import com.openai.core.JsonValue;
 import com.openai.models.ChatModel;
+import com.openai.models.responses.EasyInputMessage;
 import com.openai.models.responses.FunctionTool;
 import com.openai.models.responses.Response;
 import com.openai.models.responses.Response.ToolChoice;
 import com.openai.models.responses.ResponseCreateParams;
 import com.openai.models.responses.ResponseError;
 import com.openai.models.responses.ResponseFunctionToolCall;
+import com.openai.models.responses.ResponseInputItem;
 import com.openai.models.responses.ResponseOutputItem;
 import com.openai.models.responses.ToolChoiceOptions;
 import io.breland.bbagent.generated.bluebubblesclient.api.V1ContactApi;
@@ -30,6 +32,7 @@ import io.breland.bbagent.generated.bluebubblesclient.model.ApiV1ChatChatGuidMes
 import io.breland.bbagent.generated.bluebubblesclient.model.ApiV1ChatChatGuidMessageGet200ResponseDataInnerHandle;
 import io.breland.bbagent.generated.bluebubblesclient.model.ApiV1MessageReactPostRequest;
 import io.breland.bbagent.generated.bluebubblesclient.model.ApiV1MessageTextPostRequest;
+import io.breland.bbagent.server.agent.model_picker.ModelAccessService;
 import io.breland.bbagent.server.agent.model_picker.ModelPicker;
 import io.breland.bbagent.server.agent.tools.AgentTool;
 import io.breland.bbagent.server.agent.tools.ToolContext;
@@ -222,6 +225,63 @@ class BBMessageAgentTest {
     assertTrue(prompt.contains("schedule_event"));
     assertTrue(prompt.contains("still pending or running"));
     assertTrue(prompt.contains("do not call create_workflow_callback"));
+  }
+
+  @Test
+  void squashesDeveloperMessagesIntoSystemForWhitelistedModels() {
+    OpenAIClient openAIClient = Mockito.mock(OpenAIClient.class);
+    var responseService = Mockito.mock(com.openai.services.blocking.ResponseService.class);
+    when(openAIClient.responses()).thenReturn(responseService);
+    when(responseService.create(any(ResponseCreateParams.class)))
+        .thenReturn(responseWithNoToolCalls());
+    BBMessageAgent agent = newAgent(openAIClient, new StubBBHttpClientWrapper());
+    IncomingMessage incoming = incomingMessage("iMessage;+;chat-qwen", "msg-qwen", "hello", 1_000L);
+
+    agent.createResponse(agent.buildConversationInput(List.of(), incoming), incoming, null);
+
+    ArgumentCaptor<ResponseCreateParams> paramsCaptor =
+        ArgumentCaptor.forClass(ResponseCreateParams.class);
+    verify(responseService).create(paramsCaptor.capture());
+    List<ResponseInputItem> inputItems = paramsCaptor.getValue().input().orElseThrow().asResponse();
+    assertFalse(inputItems.stream().anyMatch(this::isDeveloperEasyInputMessage));
+    assertTrue(inputItems.get(0).isEasyInputMessage());
+    EasyInputMessage systemMessage = inputItems.get(0).asEasyInputMessage();
+    assertEquals(EasyInputMessage.Role.SYSTEM, systemMessage.role());
+    String systemText = systemMessage.content().asTextInput();
+    assertTrue(systemText.contains("You are a chat assistant for iMessage via BlueBubbles."));
+    assertTrue(systemText.contains("All outgoing iMessage text must be plain text only."));
+  }
+
+  @Test
+  void keepsDeveloperMessagesForNonWhitelistedModels() {
+    OpenAIClient openAIClient = Mockito.mock(OpenAIClient.class);
+    var responseService = Mockito.mock(com.openai.services.blocking.ResponseService.class);
+    ModelAccessService modelAccessService = Mockito.mock(ModelAccessService.class);
+    when(openAIClient.responses()).thenReturn(responseService);
+    when(responseService.create(any(ResponseCreateParams.class)))
+        .thenReturn(responseWithNoToolCalls());
+    when(modelAccessService.resolve(any(IncomingMessage.class)))
+        .thenReturn(
+            new ModelAccessService.ModelAccess(
+                "Alice",
+                true,
+                "premium",
+                ModelAccessService.PREMIUM_MODEL_KEY,
+                ModelAccessService.PREMIUM_MODEL_LABEL,
+                ModelAccessService.PREMIUM_RESPONSES_MODEL,
+                true,
+                List.of()));
+    BBMessageAgent agent =
+        newAgent(openAIClient, new StubBBHttpClientWrapper(), new ModelPicker(modelAccessService));
+    IncomingMessage incoming = incomingMessage("iMessage;+;chat-gpt", "msg-gpt", "hello", 1_000L);
+
+    agent.createResponse(agent.buildConversationInput(List.of(), incoming), incoming, null);
+
+    ArgumentCaptor<ResponseCreateParams> paramsCaptor =
+        ArgumentCaptor.forClass(ResponseCreateParams.class);
+    verify(responseService).create(paramsCaptor.capture());
+    List<ResponseInputItem> inputItems = paramsCaptor.getValue().input().orElseThrow().asResponse();
+    assertTrue(inputItems.stream().anyMatch(this::isDeveloperEasyInputMessage));
   }
 
   @Test
@@ -508,8 +568,18 @@ class BBMessageAgentTest {
     assertEquals(0, bbHttpClientWrapper.renameCalls);
   }
 
+  private boolean isDeveloperEasyInputMessage(ResponseInputItem item) {
+    return item.isEasyInputMessage()
+        && EasyInputMessage.Role.DEVELOPER.equals(item.asEasyInputMessage().role());
+  }
+
   private static BBMessageAgent newAgent(
       OpenAIClient openAIClient, BBHttpClientWrapper bbHttpClientWrapper) {
+    return newAgent(openAIClient, bbHttpClientWrapper, new ModelPicker());
+  }
+
+  private static BBMessageAgent newAgent(
+      OpenAIClient openAIClient, BBHttpClientWrapper bbHttpClientWrapper, ModelPicker modelPicker) {
     return new BBMessageAgent(
         openAIClient,
         bbHttpClientWrapper,
@@ -519,7 +589,7 @@ class BBMessageAgentTest {
         new InMemoryAgentSettingsStore(),
         new AgentWorkflowProperties(),
         null,
-        new ModelPicker());
+        modelPicker);
   }
 
   private static class StubBBHttpClientWrapper extends BBHttpClientWrapper {

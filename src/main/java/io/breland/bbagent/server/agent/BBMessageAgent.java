@@ -686,8 +686,12 @@ public class BBMessageAgent {
       List<ResponseInputItem> inputItems,
       IncomingMessage message,
       AgentWorkflowContext workflowContext) {
+    List<ResponseInputItem> requestInputItems =
+        modelPicker.shouldSquashDeveloperMessagesIntoSystem(message)
+            ? squashDeveloperMessagesIntoSystem(inputItems)
+            : inputItems;
     ResponseCreateParams.Builder params =
-        ResponseCreateParams.builder().inputOfResponse(inputItems);
+        ResponseCreateParams.builder().inputOfResponse(requestInputItems);
     modelPicker.applyResponsesModelParams(params, message, workflowContext);
     for (AgentTool tool : availableTools(message)) {
       if (shouldIncludeTool(tool, message)) {
@@ -702,6 +706,138 @@ public class BBMessageAgent {
       log.warn("OpenAI response failed", e);
       return null;
     }
+  }
+
+  List<ResponseInputItem> squashDeveloperMessagesIntoSystem(List<ResponseInputItem> inputItems) {
+    if (inputItems == null || inputItems.isEmpty()) {
+      return inputItems;
+    }
+    List<String> developerTexts = new ArrayList<>();
+    List<ResponseInputItem> squashedItems = new ArrayList<>();
+    int systemIndex = -1;
+    for (ResponseInputItem item : inputItems) {
+      if (isDeveloperInputMessage(item)) {
+        developerTexts.add(extractInputMessageText(item).orElseGet(item::toString));
+        continue;
+      }
+      if (systemIndex < 0 && isSystemInputMessage(item)) {
+        systemIndex = squashedItems.size();
+      }
+      squashedItems.add(item);
+    }
+    String developerText = joinedText(developerTexts);
+    if (developerText.isBlank()) {
+      return squashedItems;
+    }
+    if (systemIndex >= 0) {
+      ResponseInputItem systemItem = squashedItems.get(systemIndex);
+      squashedItems.set(systemIndex, mergeSystemInputMessage(systemItem, developerText));
+    } else {
+      squashedItems.add(0, systemInputItem(developerText));
+    }
+    return squashedItems;
+  }
+
+  private boolean isDeveloperInputMessage(ResponseInputItem item) {
+    if (item == null) {
+      return false;
+    }
+    if (item.isEasyInputMessage()) {
+      return EasyInputMessage.Role.DEVELOPER.equals(item.asEasyInputMessage().role());
+    }
+    if (item.isMessage()) {
+      return ResponseInputItem.Message.Role.DEVELOPER.equals(item.asMessage().role());
+    }
+    return false;
+  }
+
+  private boolean isSystemInputMessage(ResponseInputItem item) {
+    if (item == null) {
+      return false;
+    }
+    if (item.isEasyInputMessage()) {
+      return EasyInputMessage.Role.SYSTEM.equals(item.asEasyInputMessage().role());
+    }
+    if (item.isMessage()) {
+      return ResponseInputItem.Message.Role.SYSTEM.equals(item.asMessage().role());
+    }
+    return false;
+  }
+
+  private ResponseInputItem mergeSystemInputMessage(
+      ResponseInputItem systemItem, String developerText) {
+    String systemText = extractInputMessageText(systemItem).orElse("");
+    String mergedText = joinedText(List.of(systemText, developerText));
+    if (systemItem.isMessage()) {
+      ResponseInputItem.Message message =
+          systemItem.asMessage().toBuilder().content(inputTextContentList(mergedText)).build();
+      return ResponseInputItem.ofMessage(message);
+    }
+    EasyInputMessage message =
+        systemItem.asEasyInputMessage().toBuilder().content(mergedText).build();
+    return ResponseInputItem.ofEasyInputMessage(message);
+  }
+
+  private ResponseInputItem systemInputItem(String text) {
+    return ResponseInputItem.ofEasyInputMessage(
+        EasyInputMessage.builder().role(EasyInputMessage.Role.SYSTEM).content(text).build());
+  }
+
+  private Optional<String> extractInputMessageText(ResponseInputItem item) {
+    if (item == null) {
+      return Optional.empty();
+    }
+    if (item.isEasyInputMessage()) {
+      return extractEasyInputMessageText(item.asEasyInputMessage());
+    }
+    if (item.isMessage()) {
+      return extractInputContentText(item.asMessage().content());
+    }
+    return Optional.empty();
+  }
+
+  private Optional<String> extractEasyInputMessageText(EasyInputMessage message) {
+    if (message == null) {
+      return Optional.empty();
+    }
+    EasyInputMessage.Content content = message.content();
+    if (content.isTextInput()) {
+      return Optional.ofNullable(content.asTextInput());
+    }
+    if (content.isResponseInputMessageContentList()) {
+      return extractInputContentText(content.asResponseInputMessageContentList());
+    }
+    return Optional.empty();
+  }
+
+  private Optional<String> extractInputContentText(List<ResponseInputContent> content) {
+    if (content == null || content.isEmpty()) {
+      return Optional.empty();
+    }
+    String text =
+        content.stream()
+            .filter(ResponseInputContent::isInputText)
+            .map(ResponseInputContent::asInputText)
+            .map(ResponseInputText::text)
+            .filter(Objects::nonNull)
+            .collect(Collectors.joining("\n"));
+    return text.isBlank() ? Optional.empty() : Optional.of(text);
+  }
+
+  private List<ResponseInputContent> inputTextContentList(String text) {
+    return List.of(
+        ResponseInputContent.ofInputText(ResponseInputText.builder().text(text).build()));
+  }
+
+  private String joinedText(List<String> texts) {
+    if (texts == null || texts.isEmpty()) {
+      return "";
+    }
+    return texts.stream()
+        .filter(Objects::nonNull)
+        .map(String::trim)
+        .filter(text -> !text.isBlank())
+        .collect(Collectors.joining("\n\n"));
   }
 
   public List<ResponseInputItem> executeToolCalls(
