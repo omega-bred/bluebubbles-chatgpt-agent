@@ -31,6 +31,7 @@ class ModelAccessServiceTest {
     assertEquals("standard", access.plan());
     assertEquals("local", access.currentModelKey());
     assertEquals("Free", access.currentModelLabel());
+    assertEquals("Qwen/Qwen3.6-35B-A3B", ModelAccessService.STANDARD_RESPONSES_MODEL);
     assertEquals(ModelAccessService.STANDARD_RESPONSES_MODEL, access.responsesModel());
   }
 
