@@ -19,7 +19,7 @@ import org.springframework.stereotype.Service;
 public class ModelAccessService {
   public static final String STANDARD_MODEL_KEY = "local";
   public static final String STANDARD_MODEL_LABEL = "Free";
-  public static final String STANDARD_RESPONSES_MODEL = "Qwen/Qwen3.6-35B-A3B";
+  public static final String STANDARD_RESPONSES_MODEL = "Qwen/Qwen3.6-27B";
   public static final String PREMIUM_MODEL_KEY = "chatgpt";
   public static final String PREMIUM_MODEL_LABEL = "ChatGPT";
   public static final String PREMIUM_RESPONSES_MODEL = "openai/gpt-5.4";
