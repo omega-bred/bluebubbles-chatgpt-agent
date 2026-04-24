@@ -74,6 +74,11 @@ public class BBMessageAgent {
   private static final int MAX_FILE_ATTACHMENTS = 4;
   private static final int MAX_GENERATED_IMAGES = 1;
   public static final String IMESSAGE_SERVICE = "iMessage";
+  private static final String IMESSAGE_FORMATTING_INSTRUCTION =
+      "iMessage supports basic text formatting, specifically bold, italic, underline, and"
+          + " strikethrough. Bold is delimited with **, underline with __, strikethrough with ~~, and"
+          + " italic with *. Constrain output to those formatting markers, plain text, and emojis."
+          + " Do not use unsupported markdown such as backticks, headings, tables, or lists. ";
 
   public enum AssistantResponsiveness {
     DEFAULT,
@@ -1123,8 +1128,7 @@ public class BBMessageAgent {
                     ? "Only respond when it is helpful or requested - this is a group message and not all messages are for you. You MUST ONLY respond if the message was directed to you or if your response will add useful and helpful information."
                     : "This is a one on one message with a user. You should respond to messages unless no reply is needed.")
                 + "You can use reactions for quick acknowledgements and avoid spamming. "
-                + "iMessage does not support markdown - so do not use markdown semantics. You MUST constrain your output to plain text and emojis only. "
-                + "DO NOT USE ** FOR EMPHASIS - IT IS NOT SUPPORTED. "
+                + IMESSAGE_FORMATTING_INSTRUCTION
                 + "Never reply to your own messages."
                 + responsivenessInstruction
                 + "Use the "
@@ -1139,15 +1143,11 @@ public class BBMessageAgent {
   }
 
   private EasyInputMessage developerMessage() {
-    /**
-     * new Delimiter("**", STYLE_BOLD), new Delimiter("__", STYLE_UNDERLINE), new Delimiter("~~",
-     * STYLE_STRIKETHROUGH), new Delimiter("*", STYLE_ITALIC), new Delimiter("_", STYLE_ITALIC));
-     */
     return EasyInputMessage.builder()
         .role(EasyInputMessage.Role.DEVELOPER)
         .content(
             "You may respond with plain text if that is sufficient. "
-                + "iMessage support basic text formatting, specifically bold, italic, underline, strikethrough. Bold is delimited with **, underline is delimited with __, strikethrough is delimited with ~~, italic is delimited with *. You must constrain all output to those or plain text. No other formatting supprted."
+                + IMESSAGE_FORMATTING_INSTRUCTION
                 + "Only call "
                 + SendTextAgentTool.TOOL_NAME
                 + " or "

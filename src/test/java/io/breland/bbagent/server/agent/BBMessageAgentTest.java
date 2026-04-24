@@ -60,6 +60,7 @@ import org.mockito.Mockito;
 import reactor.core.publisher.Mono;
 
 class BBMessageAgentTest {
+  private static final String DEVELOPER_PROMPT_MARKER = "Only call send_text";
 
   @Test
   void handlesSimpleTextConversationEndToEnd() {
@@ -251,7 +252,7 @@ class BBMessageAgentTest {
     assertEquals(EasyInputMessage.Role.SYSTEM, systemMessage.role());
     String systemText = systemMessage.content().asTextInput();
     assertTrue(systemText.contains("You are a chat assistant for iMessage via BlueBubbles."));
-    assertTrue(systemText.contains("All outgoing iMessage text must be plain text only."));
+    assertTrue(systemText.contains(DEVELOPER_PROMPT_MARKER));
   }
 
   @Test
@@ -280,9 +281,7 @@ class BBMessageAgentTest {
         inputItems.stream().anyMatch(this::isDeveloperInputMessage),
         requestInputNode.toPrettyString());
     assertTrue(isSystemInputMessage(inputItems.get(0)), requestInputNode.toPrettyString());
-    assertTrue(
-        extractText(inputItems.get(0))
-            .contains("All outgoing iMessage text must be plain text only."));
+    assertTrue(extractText(inputItems.get(0)).contains(DEVELOPER_PROMPT_MARKER));
   }
 
   @Test
@@ -317,10 +316,7 @@ class BBMessageAgentTest {
         requestInputNode.toPrettyString());
     assertTrue(requestInputNode.toString().contains("\"role\":\"assistant\""));
     assertTrue(requestInputNode.toString().contains("\"role\":\"system\""));
-    assertTrue(
-        requestInputNode
-            .toString()
-            .contains("All outgoing iMessage text must be plain text only."));
+    assertTrue(requestInputNode.toString().contains(DEVELOPER_PROMPT_MARKER));
   }
 
   @Test
