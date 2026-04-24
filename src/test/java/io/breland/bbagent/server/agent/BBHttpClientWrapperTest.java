@@ -13,7 +13,6 @@ import io.breland.bbagent.generated.bluebubblesclient.api.V1ICloudApi;
 import io.breland.bbagent.generated.bluebubblesclient.api.V1MessageApi;
 import io.breland.bbagent.generated.bluebubblesclient.model.ApiResponseFindMyFriendsLocations;
 import io.breland.bbagent.generated.bluebubblesclient.model.FindMyFriendLocation;
-import io.breland.bbagent.generated.bluebubblesclient.model.FindMyFriendLocationIsLocatingInProgress;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
@@ -66,6 +65,36 @@ class BBHttpClientWrapperTest {
     assertThrows(IllegalStateException.class, () -> wrapper.getFindMyLocation("alice@example.com"));
   }
 
+  @Test
+  void findMyFriendsResponseDeserializesBooleanLocatingFlag() throws Exception {
+    String json =
+        """
+        {
+          "status": 200,
+          "message": "Successfully refreshed Find My friends locations",
+          "data": [
+            {
+              "handle": "+15555550123",
+              "coordinates": [37.33182, -122.03118],
+              "long_address": "1 Apple Park Way, Cupertino, CA 95014, United States",
+              "short_address": "Apple Park",
+              "subtitle": "Apple Park",
+              "title": "+15555550123",
+              "last_updated": 1777050691000,
+              "is_locating_in_progress": false,
+              "status": "shallow"
+            }
+          ]
+        }
+        """;
+
+    ApiResponseFindMyFriendsLocations response =
+        new com.fasterxml.jackson.databind.ObjectMapper()
+            .readValue(json, ApiResponseFindMyFriendsLocations.class);
+
+    assertEquals(false, response.getData().getFirst().getIsLocatingInProgress());
+  }
+
   private static BBHttpClientWrapper wrapper(V1ICloudApi icloudApi) {
     return new BBHttpClientWrapper(
         "pw", Mockito.mock(V1MessageApi.class), Mockito.mock(V1ContactApi.class), icloudApi);
@@ -88,7 +117,7 @@ class BBHttpClientWrapperTest {
         .subtitle("Apple Park")
         .title(handle)
         .lastUpdated(1777050691000L)
-        .isLocatingInProgress(new FindMyFriendLocationIsLocatingInProgress())
+        .isLocatingInProgress(false)
         .status(FindMyFriendLocation.StatusEnum.SHALLOW)
         .build();
   }

@@ -1124,7 +1124,7 @@ public class BBMessageAgent {
       }
       return Optional.of(
           EasyInputMessage.builder()
-              .role(EasyInputMessage.Role.SYSTEM)
+              .role(EasyInputMessage.Role.DEVELOPER)
               .content(locationContext)
               .build());
     } catch (Exception e) {
@@ -1135,7 +1135,7 @@ public class BBMessageAgent {
           e);
       return Optional.of(
           EasyInputMessage.builder()
-              .role(EasyInputMessage.Role.SYSTEM)
+              .role(EasyInputMessage.Role.DEVELOPER)
               .content(missingFindMyLocationContext())
               .build());
     }

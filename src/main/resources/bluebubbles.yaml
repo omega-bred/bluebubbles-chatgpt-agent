@@ -3584,10 +3584,7 @@ components:
           description: Milliseconds since Unix epoch.
           example: 1777050691000
         is_locating_in_progress:
-          oneOf:
-            - type: boolean
-            - type: integer
-              enum: [0, 1]
+          type: boolean
           description: Whether Find My is still locating this friend.
           example: false
         status:

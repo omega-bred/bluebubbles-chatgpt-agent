@@ -35,7 +35,6 @@ import io.breland.bbagent.generated.bluebubblesclient.model.ApiV1ChatChatGuidMes
 import io.breland.bbagent.generated.bluebubblesclient.model.ApiV1MessageReactPostRequest;
 import io.breland.bbagent.generated.bluebubblesclient.model.ApiV1MessageTextPostRequest;
 import io.breland.bbagent.generated.bluebubblesclient.model.FindMyFriendLocation;
-import io.breland.bbagent.generated.bluebubblesclient.model.FindMyFriendLocationIsLocatingInProgress;
 import io.breland.bbagent.server.agent.model_picker.ModelAccessService;
 import io.breland.bbagent.server.agent.model_picker.ModelPicker;
 import io.breland.bbagent.server.agent.tools.AgentTool;
@@ -255,7 +254,7 @@ class BBMessageAgentTest {
     List<ResponseInputItem> input = agent.buildConversationInput(List.of(), incoming);
 
     ResponseInputItem locationContext = input.get(input.size() - 1);
-    assertTrue(isSystemInputMessage(locationContext));
+    assertTrue(isDeveloperEasyInputMessage(locationContext));
     String contextText = extractText(locationContext);
     assertTrue(contextText.contains("Current Find My location context"));
     assertTrue(contextText.contains("latitude=37.33182"));
@@ -272,9 +271,9 @@ class BBMessageAgentTest {
     verify(responseService).create(paramsCaptor.capture());
     List<ResponseInputItem> requestInput =
         paramsCaptor.getValue().input().orElseThrow().asResponse();
-    ResponseInputItem trailingRequestContext = requestInput.get(requestInput.size() - 1);
-    assertTrue(isSystemInputMessage(trailingRequestContext));
-    assertTrue(extractText(trailingRequestContext).contains("Current Find My location context"));
+    assertTrue(extractText(requestInput.get(0)).contains("Current Find My location context"));
+    assertFalse(
+        requestInput.subList(1, requestInput.size()).stream().anyMatch(this::isSystemInputMessage));
   }
 
   @Test
@@ -288,7 +287,7 @@ class BBMessageAgentTest {
     List<ResponseInputItem> input = agent.buildConversationInput(List.of(), incoming);
 
     ResponseInputItem locationContext = input.get(input.size() - 1);
-    assertTrue(isSystemInputMessage(locationContext));
+    assertTrue(isDeveloperEasyInputMessage(locationContext));
     String contextText = extractText(locationContext);
     assertTrue(contextText.contains("No current Find My location is available"));
     assertTrue(contextText.contains("do not guess"));
@@ -902,7 +901,7 @@ class BBMessageAgentTest {
         .subtitle(shortAddress)
         .title(handle)
         .lastUpdated(lastUpdated)
-        .isLocatingInProgress(new FindMyFriendLocationIsLocatingInProgress())
+        .isLocatingInProgress(false)
         .status(FindMyFriendLocation.StatusEnum.SHALLOW)
         .build();
   }
