@@ -278,6 +278,26 @@ class BBMessageAgentTest {
   }
 
   @Test
+  void injectsFindMySharingHintWhenDirectMessageHasNoLocation() {
+    StubBBHttpClientWrapper bbHttpClientWrapper = new StubBBHttpClientWrapper();
+    BBMessageAgent agent = newAgent(Mockito.mock(OpenAIClient.class), bbHttpClientWrapper);
+    IncomingMessage incoming =
+        incomingMessage(
+            "iMessage;+;chat-no-location", "msg-no-location", "what is near me?", 1_000L);
+
+    List<ResponseInputItem> input = agent.buildConversationInput(List.of(), incoming);
+
+    ResponseInputItem locationContext = input.get(input.size() - 1);
+    assertTrue(isSystemInputMessage(locationContext));
+    String contextText = extractText(locationContext);
+    assertTrue(contextText.contains("No current Find My location is available"));
+    assertTrue(contextText.contains("do not guess"));
+    assertTrue(contextText.contains("share their location via Find My"));
+    assertEquals(1, bbHttpClientWrapper.findMyLookupCalls);
+    assertEquals("Alice", bbHttpClientWrapper.lastFindMyUserId);
+  }
+
+  @Test
   void doesNotInjectFindMyLocationContextForGroupMessages() {
     StubBBHttpClientWrapper bbHttpClientWrapper = new StubBBHttpClientWrapper();
     bbHttpClientWrapper.setFindMyLocation(

@@ -1120,7 +1120,7 @@ public class BBMessageAgent {
       FindMyFriendLocation location = bbHttpClientWrapper.getFindMyLocation(message.sender());
       String locationContext = formatFindMyLocationContext(location);
       if (locationContext == null || locationContext.isBlank()) {
-        return Optional.empty();
+        locationContext = missingFindMyLocationContext();
       }
       return Optional.of(
           EasyInputMessage.builder()
@@ -1133,8 +1133,19 @@ public class BBMessageAgent {
           message.chatGuid(),
           message.sender(),
           e);
-      return Optional.empty();
+      return Optional.of(
+          EasyInputMessage.builder()
+              .role(EasyInputMessage.Role.SYSTEM)
+              .content(missingFindMyLocationContext())
+              .build());
     }
+  }
+
+  private String missingFindMyLocationContext() {
+    return "No current Find My location is available for the current iMessage sender. "
+        + "If the user asks where they are, asks for real-time location-based information or updates, "
+        + "or asks something that would benefit from knowing their current location, do not guess. "
+        + "Tell them they can share their location via Find My if they want real-time location-based information or updates.";
   }
 
   private String formatFindMyLocationContext(FindMyFriendLocation location) {
