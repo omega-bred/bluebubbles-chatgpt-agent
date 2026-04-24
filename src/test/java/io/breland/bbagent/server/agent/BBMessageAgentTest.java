@@ -34,6 +34,8 @@ import io.breland.bbagent.generated.bluebubblesclient.model.ApiV1ChatChatGuidMes
 import io.breland.bbagent.generated.bluebubblesclient.model.ApiV1ChatChatGuidMessageGet200ResponseDataInnerHandle;
 import io.breland.bbagent.generated.bluebubblesclient.model.ApiV1MessageReactPostRequest;
 import io.breland.bbagent.generated.bluebubblesclient.model.ApiV1MessageTextPostRequest;
+import io.breland.bbagent.generated.bluebubblesclient.model.FindMyFriendLocation;
+import io.breland.bbagent.generated.bluebubblesclient.model.FindMyFriendLocationIsLocatingInProgress;
 import io.breland.bbagent.server.agent.model_picker.ModelAccessService;
 import io.breland.bbagent.server.agent.model_picker.ModelPicker;
 import io.breland.bbagent.server.agent.tools.AgentTool;
@@ -228,6 +230,83 @@ class BBMessageAgentTest {
     assertTrue(prompt.contains("schedule_event"));
     assertTrue(prompt.contains("still pending or running"));
     assertTrue(prompt.contains("do not call create_workflow_callback"));
+  }
+
+  @Test
+  void injectsFindMyLocationContextForDirectMessages() {
+    OpenAIClient openAIClient = Mockito.mock(OpenAIClient.class);
+    var responseService = Mockito.mock(com.openai.services.blocking.ResponseService.class);
+    StubBBHttpClientWrapper bbHttpClientWrapper = new StubBBHttpClientWrapper();
+    bbHttpClientWrapper.setFindMyLocation(
+        "Alice",
+        findMyLocation(
+            "+15555550123",
+            List.of(37.33182, -122.03118),
+            "Apple Park",
+            "1 Apple Park Way, Cupertino, CA 95014, United States",
+            1777050691000L));
+    when(openAIClient.responses()).thenReturn(responseService);
+    when(responseService.create(any(ResponseCreateParams.class)))
+        .thenReturn(responseWithNoToolCalls());
+    BBMessageAgent agent = newAgent(openAIClient, bbHttpClientWrapper);
+    IncomingMessage incoming =
+        incomingMessage("iMessage;+;chat-location", "msg-location", "where am I?", 1_000L);
+
+    List<ResponseInputItem> input = agent.buildConversationInput(List.of(), incoming);
+
+    ResponseInputItem locationContext = input.get(input.size() - 1);
+    assertTrue(isSystemInputMessage(locationContext));
+    String contextText = extractText(locationContext);
+    assertTrue(contextText.contains("Current Find My location context"));
+    assertTrue(contextText.contains("latitude=37.33182"));
+    assertTrue(contextText.contains("longitude=-122.03118"));
+    assertTrue(contextText.contains("short_address=Apple Park"));
+    assertTrue(contextText.contains("last_updated=2026-04-24T17:11:31Z"));
+    assertEquals(1, bbHttpClientWrapper.findMyLookupCalls);
+    assertEquals("Alice", bbHttpClientWrapper.lastFindMyUserId);
+
+    agent.createResponse(input, incoming, null);
+
+    ArgumentCaptor<ResponseCreateParams> paramsCaptor =
+        ArgumentCaptor.forClass(ResponseCreateParams.class);
+    verify(responseService).create(paramsCaptor.capture());
+    List<ResponseInputItem> requestInput =
+        paramsCaptor.getValue().input().orElseThrow().asResponse();
+    ResponseInputItem trailingRequestContext = requestInput.get(requestInput.size() - 1);
+    assertTrue(isSystemInputMessage(trailingRequestContext));
+    assertTrue(extractText(trailingRequestContext).contains("Current Find My location context"));
+  }
+
+  @Test
+  void doesNotInjectFindMyLocationContextForGroupMessages() {
+    StubBBHttpClientWrapper bbHttpClientWrapper = new StubBBHttpClientWrapper();
+    bbHttpClientWrapper.setFindMyLocation(
+        "Alice",
+        findMyLocation(
+            "+15555550123",
+            List.of(37.33182, -122.03118),
+            "Apple Park",
+            "1 Apple Park Way, Cupertino, CA 95014, United States",
+            1777050691000L));
+    BBMessageAgent agent = newAgent(Mockito.mock(OpenAIClient.class), bbHttpClientWrapper);
+    IncomingMessage groupMessage =
+        new IncomingMessage(
+            "iMessage;+;chat-group-location",
+            "msg-group-location",
+            null,
+            "where are we meeting?",
+            false,
+            "iMessage",
+            "Alice",
+            true,
+            Instant.ofEpochSecond(1_000L),
+            List.of(),
+            false);
+
+    List<ResponseInputItem> input = agent.buildConversationInput(List.of(), groupMessage);
+
+    assertFalse(input.stream().map(this::extractText).anyMatch(text -> text.contains("Find My")));
+    assertEquals(0, bbHttpClientWrapper.findMyLookupCalls);
   }
 
   @Test
@@ -702,6 +781,9 @@ class BBMessageAgentTest {
     private String renamedChatGuid;
     private String renamedDisplayName;
     private boolean renameResult = true;
+    private final Map<String, FindMyFriendLocation> findMyLocations = new ConcurrentHashMap<>();
+    private int findMyLookupCalls;
+    private String lastFindMyUserId;
 
     StubBBHttpClientWrapper() {
       super("pw", Mockito.mock(V1MessageApi.class), Mockito.mock(V1ContactApi.class));
@@ -712,10 +794,21 @@ class BBMessageAgentTest {
       this.messages.put(chatGuid, messages);
     }
 
+    void setFindMyLocation(String userId, FindMyFriendLocation location) {
+      this.findMyLocations.put(userId, location);
+    }
+
     @Override
     public List<ApiV1ChatChatGuidMessageGet200ResponseDataInner> getMessagesInChat(
         String chatGuid) {
       return messages.getOrDefault(chatGuid, List.of());
+    }
+
+    @Override
+    public FindMyFriendLocation getFindMyLocation(String userId) {
+      findMyLookupCalls++;
+      lastFindMyUserId = userId;
+      return findMyLocations.get(userId);
     }
 
     @Override
@@ -773,6 +866,25 @@ class BBMessageAgentTest {
         .handle(handle)
         .chats(List.of(chat))
         .dateCreated(epochSecond);
+  }
+
+  private static FindMyFriendLocation findMyLocation(
+      String handle,
+      List<Double> coordinates,
+      String shortAddress,
+      String longAddress,
+      long lastUpdated) {
+    return FindMyFriendLocation.builder()
+        .handle(handle)
+        .coordinates(coordinates)
+        .shortAddress(shortAddress)
+        .longAddress(longAddress)
+        .subtitle(shortAddress)
+        .title(handle)
+        .lastUpdated(lastUpdated)
+        .isLocatingInProgress(new FindMyFriendLocationIsLocatingInProgress())
+        .status(FindMyFriendLocation.StatusEnum.SHALLOW)
+        .build();
   }
 
   private static Response responseWithFunctionCall(String name, String argsJson, String callId) {

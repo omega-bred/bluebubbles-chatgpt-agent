@@ -1,0 +1,95 @@
+package io.breland.bbagent.server.agent;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
+
+import io.breland.bbagent.generated.bluebubblesclient.api.V1ContactApi;
+import io.breland.bbagent.generated.bluebubblesclient.api.V1ICloudApi;
+import io.breland.bbagent.generated.bluebubblesclient.api.V1MessageApi;
+import io.breland.bbagent.generated.bluebubblesclient.model.ApiResponseFindMyFriendsLocations;
+import io.breland.bbagent.generated.bluebubblesclient.model.FindMyFriendLocation;
+import io.breland.bbagent.generated.bluebubblesclient.model.FindMyFriendLocationIsLocatingInProgress;
+import java.util.List;
+import org.junit.jupiter.api.Test;
+import org.mockito.Mockito;
+import reactor.core.publisher.Mono;
+
+class BBHttpClientWrapperTest {
+
+  @Test
+  void getFindMyLocationRefreshesAndReturnsMatchingUserLocation() {
+    V1ICloudApi icloudApi = Mockito.mock(V1ICloudApi.class);
+    BBHttpClientWrapper wrapper = wrapper(icloudApi);
+    FindMyFriendLocation bob = location("bob@example.com");
+    FindMyFriendLocation alice = location("+15555550123");
+
+    when(icloudApi.apiV1IcloudFindmyFriendsRefreshPost("pw"))
+        .thenReturn(Mono.just(success(List.of(bob, alice))));
+
+    FindMyFriendLocation result = wrapper.getFindMyLocation("tel:+1 (555) 555-0123");
+
+    assertEquals(alice, result);
+    verify(icloudApi).apiV1IcloudFindmyFriendsRefreshPost("pw");
+    verify(icloudApi, never()).apiV1IcloudFindmyFriendsGet(anyString());
+  }
+
+  @Test
+  void getFindMyLocationReturnsNullWhenUserIsMissing() {
+    V1ICloudApi icloudApi = Mockito.mock(V1ICloudApi.class);
+    BBHttpClientWrapper wrapper = wrapper(icloudApi);
+
+    when(icloudApi.apiV1IcloudFindmyFriendsRefreshPost("pw"))
+        .thenReturn(Mono.just(success(List.of(location("bob@example.com")))));
+
+    assertNull(wrapper.getFindMyLocation("alice@example.com"));
+  }
+
+  @Test
+  void getFindMyLocationRequiresSuccessfulBlueBubblesResponse() {
+    V1ICloudApi icloudApi = Mockito.mock(V1ICloudApi.class);
+    BBHttpClientWrapper wrapper = wrapper(icloudApi);
+
+    when(icloudApi.apiV1IcloudFindmyFriendsRefreshPost("pw"))
+        .thenReturn(
+            Mono.just(
+                ApiResponseFindMyFriendsLocations.builder()
+                    .status(500)
+                    .message("Failed to fetch Find My friends locations")
+                    .data(List.of())
+                    .build()));
+
+    assertThrows(IllegalStateException.class, () -> wrapper.getFindMyLocation("alice@example.com"));
+  }
+
+  private static BBHttpClientWrapper wrapper(V1ICloudApi icloudApi) {
+    return new BBHttpClientWrapper(
+        "pw", Mockito.mock(V1MessageApi.class), Mockito.mock(V1ContactApi.class), icloudApi);
+  }
+
+  private static ApiResponseFindMyFriendsLocations success(List<FindMyFriendLocation> locations) {
+    return ApiResponseFindMyFriendsLocations.builder()
+        .status(200)
+        .message("Successfully refreshed Find My friends locations")
+        .data(locations)
+        .build();
+  }
+
+  private static FindMyFriendLocation location(String handle) {
+    return FindMyFriendLocation.builder()
+        .handle(handle)
+        .coordinates(List.of(37.33182, -122.03118))
+        .longAddress("1 Apple Park Way, Cupertino, CA 95014, United States")
+        .shortAddress("Apple Park")
+        .subtitle("Apple Park")
+        .title(handle)
+        .lastUpdated(1777050691000L)
+        .isLocatingInProgress(new FindMyFriendLocationIsLocatingInProgress())
+        .status(FindMyFriendLocation.StatusEnum.SHALLOW)
+        .build();
+  }
+}

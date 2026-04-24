@@ -13,6 +13,7 @@ import com.uber.cadence.workflow.Workflow;
 import com.uber.cadence.workflow.WorkflowInfo;
 import io.breland.bbagent.generated.bluebubblesclient.model.ApiV1ChatChatGuidMessageGet200ResponseDataInner;
 import io.breland.bbagent.generated.bluebubblesclient.model.ApiV1MessageTextPostRequest;
+import io.breland.bbagent.generated.bluebubblesclient.model.FindMyFriendLocation;
 import io.breland.bbagent.server.agent.cadence.CadenceWorkflowLauncher;
 import io.breland.bbagent.server.agent.cadence.models.CadenceMessageWorkflowRequest;
 import io.breland.bbagent.server.agent.cadence.models.GeneratedImage;
@@ -1102,7 +1103,75 @@ public class BBMessageAgent {
       }
     }
     items.add(ResponseInputItem.ofEasyInputMessage(userMessage(message)));
+    findMyLocationContextMessage(message)
+        .ifPresent(
+            locationMessage -> items.add(ResponseInputItem.ofEasyInputMessage(locationMessage)));
     return items;
+  }
+
+  private Optional<EasyInputMessage> findMyLocationContextMessage(IncomingMessage message) {
+    if (message == null || message.isGroup()) {
+      return Optional.empty();
+    }
+    if (message.sender() == null || message.sender().isBlank()) {
+      return Optional.empty();
+    }
+    try {
+      FindMyFriendLocation location = bbHttpClientWrapper.getFindMyLocation(message.sender());
+      String locationContext = formatFindMyLocationContext(location);
+      if (locationContext == null || locationContext.isBlank()) {
+        return Optional.empty();
+      }
+      return Optional.of(
+          EasyInputMessage.builder()
+              .role(EasyInputMessage.Role.SYSTEM)
+              .content(locationContext)
+              .build());
+    } catch (Exception e) {
+      log.warn(
+          "Failed to fetch Find My location context for chat={} sender={}",
+          message.chatGuid(),
+          message.sender(),
+          e);
+      return Optional.empty();
+    }
+  }
+
+  private String formatFindMyLocationContext(FindMyFriendLocation location) {
+    if (location == null) {
+      return null;
+    }
+    List<Double> coordinates = location.getCoordinates();
+    if (coordinates == null || coordinates.size() < 2) {
+      return null;
+    }
+    Double latitude = coordinates.get(0);
+    Double longitude = coordinates.get(1);
+    if (latitude == null || longitude == null) {
+      return null;
+    }
+
+    StringBuilder text =
+        new StringBuilder(
+            "Current Find My location context for the current iMessage sender. "
+                + "Use this as background for location-aware answers, but do not mention it unless relevant. ");
+    text.append("latitude=").append(latitude).append(" longitude=").append(longitude);
+    appendFindMyLocationField(text, "short_address", location.getShortAddress());
+    appendFindMyLocationField(text, "long_address", location.getLongAddress());
+    appendFindMyLocationField(text, "title", location.getTitle());
+    if (location.getStatus() != null) {
+      text.append(" status=").append(location.getStatus().getValue());
+    }
+    if (location.getLastUpdated() != null) {
+      text.append(" last_updated=").append(Instant.ofEpochMilli(location.getLastUpdated()));
+    }
+    return text.toString();
+  }
+
+  private void appendFindMyLocationField(StringBuilder text, String name, String value) {
+    if (value != null && !value.isBlank()) {
+      text.append(" ").append(name).append("=").append(value);
+    }
   }
 
   private EasyInputMessage systemMessage(boolean groupMessage, IncomingMessage message) {

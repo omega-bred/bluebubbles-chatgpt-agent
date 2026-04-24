@@ -65,14 +65,39 @@ public class BBHttpClientWrapper {
   }
 
   BBHttpClientWrapper(String password, V1MessageApi messageApi, V1ContactApi contactApi) {
+    this(
+        password,
+        messageApi,
+        contactApi,
+        new V1ICloudApi(new ApiClient()),
+        new ObjectMapper().registerModule(new JavaTimeModule()));
+  }
+
+  BBHttpClientWrapper(
+      String password, V1MessageApi messageApi, V1ContactApi contactApi, V1ICloudApi icloudApi) {
+    this(
+        password,
+        messageApi,
+        contactApi,
+        icloudApi,
+        new ObjectMapper().registerModule(new JavaTimeModule()));
+  }
+
+  private BBHttpClientWrapper(
+      String password,
+      V1MessageApi messageApi,
+      V1ContactApi contactApi,
+      V1ICloudApi icloudApi,
+      ObjectMapper objectMapper) {
     this.password = password;
+    this.apiClient = new ApiClient();
     this.messageApi = messageApi;
     this.contactApi = contactApi;
-    this.attachmentApi = new V1AttachmentApi(new ApiClient());
-    this.chatApi = new V1ChatApi(new ApiClient());
-    this.otherApi = new V1OtherApi(new ApiClient());
-    this.icloudApi = new V1ICloudApi(new ApiClient());
-    this.objectMapper = new ObjectMapper().registerModule(new JavaTimeModule());
+    this.attachmentApi = new V1AttachmentApi(apiClient);
+    this.chatApi = new V1ChatApi(apiClient);
+    this.otherApi = new V1OtherApi(apiClient);
+    this.icloudApi = icloudApi;
+    this.objectMapper = objectMapper;
   }
 
   public record AttachmentData(String filename, byte[] bytes) {}
@@ -93,6 +118,74 @@ public class BBHttpClientWrapper {
       throw new IllegalStateException("BlueBubbles " + operation + " returned no data");
     }
     return value;
+  }
+
+  public FindMyFriendLocation getFindMyLocation(String userId) {
+    if (userId == null || userId.isBlank()) {
+      return null;
+    }
+    ApiResponseFindMyFriendsLocations response =
+        this.icloudApi.apiV1IcloudFindmyFriendsRefreshPost(password).block(API_TIMEOUT);
+    response = requirePresent(response, "refresh Find My friends locations");
+    requireSuccessfulResponse(
+        response.getStatus(), response.getMessage(), "refresh Find My friends locations");
+    return findFindMyLocation(response.getData(), userId).orElse(null);
+  }
+
+  private static Optional<FindMyFriendLocation> findFindMyLocation(
+      List<FindMyFriendLocation> locations, String userId) {
+    if (locations == null || locations.isEmpty()) {
+      return Optional.empty();
+    }
+    String normalizedUserId = normalizeFindMyIdentifier(userId);
+    String normalizedUserPhone = normalizePhoneIdentifier(userId);
+    return locations.stream()
+        .filter(Objects::nonNull)
+        .filter(
+            location ->
+                matchesFindMyIdentifier(
+                    location.getHandle(), normalizedUserId, normalizedUserPhone))
+        .findFirst();
+  }
+
+  private static boolean matchesFindMyIdentifier(
+      String candidate, String normalizedUserId, String normalizedUserPhone) {
+    String normalizedCandidate = normalizeFindMyIdentifier(candidate);
+    if (normalizedCandidate == null) {
+      return false;
+    }
+    if (normalizedCandidate.equals(normalizedUserId)) {
+      return true;
+    }
+    String normalizedCandidatePhone = normalizePhoneIdentifier(candidate);
+    return normalizedCandidatePhone != null
+        && normalizedUserPhone != null
+        && normalizedCandidatePhone.equals(normalizedUserPhone);
+  }
+
+  private static String normalizeFindMyIdentifier(String value) {
+    if (value == null) {
+      return null;
+    }
+    String normalized = value.trim().toLowerCase(Locale.ROOT);
+    if (normalized.isBlank()) {
+      return null;
+    }
+    if (normalized.startsWith("mailto:")) {
+      normalized = normalized.substring("mailto:".length());
+    } else if (normalized.startsWith("tel:")) {
+      normalized = normalized.substring("tel:".length());
+    }
+    normalized = normalized.replaceAll("\\s+", "");
+    return normalized.isBlank() ? null : normalized;
+  }
+
+  private static String normalizePhoneIdentifier(String value) {
+    if (value == null) {
+      return null;
+    }
+    String digits = value.replaceAll("\\D+", "");
+    return digits.isBlank() ? null : digits;
   }
 
   public Path getAttachment(String attachmentGuid) {
