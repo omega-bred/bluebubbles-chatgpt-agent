@@ -1139,11 +1139,15 @@ public class BBMessageAgent {
   }
 
   private EasyInputMessage developerMessage() {
+    /**
+     * new Delimiter("**", STYLE_BOLD), new Delimiter("__", STYLE_UNDERLINE), new Delimiter("~~",
+     * STYLE_STRIKETHROUGH), new Delimiter("*", STYLE_ITALIC), new Delimiter("_", STYLE_ITALIC));
+     */
     return EasyInputMessage.builder()
         .role(EasyInputMessage.Role.DEVELOPER)
         .content(
             "You may respond with plain text if that is sufficient. "
-                + "All outgoing iMessage text must be plain text only. Do not use markdown or formatting markers such as **, __, backticks, or markdown lists. "
+                + "iMessage support basic text formatting, specifically bold, italic, underline, strikethrough. Bold is delimited with **, underline is delimited with __, strikethrough is delimited with ~~, italic is delimited with *. You must constrain all output to those or plain text. No other formatting supprted."
                 + "Only call "
                 + SendTextAgentTool.TOOL_NAME
                 + " or "
