@@ -185,9 +185,10 @@ paths:
         - v1 > iCloud
       summary: Get FindMy Friends Locations
       description: >-
-        Fetch your FindMy Friends locations. If your macOS version doesn't
-        support it, or you've never opened the FindMy app, this endpoint may
-        *not* return `data`.
+        Fetch cached FindMy Friends locations. The response always uses the
+        standard BlueBubbles envelope, and `data` is an array of friend location
+        records. If no friend locations are currently available, `data` may be
+        an empty array.
       parameters:
         - name: password
           in: query
@@ -199,7 +200,9 @@ paths:
         '200':
           description: Successful response
           content:
-            application/json: {}
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponse_FindMyFriendsLocations'
   /api/v1/icloud/contact:
     get:
       tags:
@@ -275,9 +278,10 @@ paths:
         - v1 > iCloud
       summary: Refresh FindMy Friends
       description: >-
-        Refresh your FindMy Friends locations by using Accessibility to open the
-        FindMy app. This endpoint returns the location data after the locations
-        update.
+        Refresh your FindMy Friends locations and return the latest friend
+        location records. The response always uses the standard BlueBubbles
+        envelope, and `data` is an array of friend location records. If no
+        friend locations are currently available, `data` may be an empty array.
       parameters:
         - name: password
           in: query
@@ -289,7 +293,9 @@ paths:
         '200':
           description: Successful response
           content:
-            application/json: {}
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponse_FindMyFriendsLocations'
   /ap/v1/icloud/account/alias:
     post:
       tags:
@@ -3491,6 +3497,104 @@ components:
           example: Successfully fetched account info!
         data:
           $ref: '#/components/schemas/IcloudAccountInfo'
+
+    ApiResponse_FindMyFriendsLocations:
+      type: object
+      additionalProperties: false
+      required: [ status, message, data ]
+      properties:
+        status:
+          type: integer
+          format: int32
+          example: 200
+        message:
+          type: string
+          example: Successfully fetched Find My friends locations!
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/FindMyFriendLocation'
+          example:
+            - handle: '+15555550123'
+              coordinates: [37.33182, -122.03118]
+              long_address: 1 Apple Park Way, Cupertino, CA 95014, United States
+              short_address: Apple Park
+              subtitle: Apple Park
+              title: '+15555550123'
+              last_updated: 1777050691000
+              is_locating_in_progress: false
+              status: shallow
+
+    FindMyFriendLocation:
+      type: object
+      additionalProperties: false
+      required:
+        - handle
+        - coordinates
+        - long_address
+        - short_address
+        - subtitle
+        - title
+        - last_updated
+        - is_locating_in_progress
+        - status
+      properties:
+        handle:
+          oneOf:
+            - type: string
+            - type: "null"
+          description: The Find My handle identifier, usually a phone number or email address.
+          example: '+15555550123'
+        coordinates:
+          type: array
+          minItems: 2
+          maxItems: 2
+          description: Coordinates as `[latitude, longitude]`.
+          items:
+            type: number
+            format: double
+          example: [37.33182, -122.03118]
+        long_address:
+          oneOf:
+            - type: string
+            - type: "null"
+          description: Reverse-geocoded full address when available.
+          example: 1 Apple Park Way, Cupertino, CA 95014, United States
+        short_address:
+          oneOf:
+            - type: string
+            - type: "null"
+          description: Short or coarse address label when available.
+          example: Apple Park
+        subtitle:
+          oneOf:
+            - type: string
+            - type: "null"
+          description: Display subtitle supplied by Find My when available.
+          example: Apple Park
+        title:
+          oneOf:
+            - type: string
+            - type: "null"
+          description: Display title supplied by Find My when available.
+          example: '+15555550123'
+        last_updated:
+          type: integer
+          format: int64
+          description: Milliseconds since Unix epoch.
+          example: 1777050691000
+        is_locating_in_progress:
+          oneOf:
+            - type: boolean
+            - type: integer
+              enum: [0, 1]
+          description: Whether Find My is still locating this friend.
+          example: false
+        status:
+          type: string
+          enum: [ legacy, live, shallow ]
+          description: Location precision/status reported by Find My.
+          example: shallow
 
     IcloudAlias:
       type: object
