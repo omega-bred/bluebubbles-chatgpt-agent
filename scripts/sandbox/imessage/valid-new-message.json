@@ -1,0 +1,24 @@
+{
+  "type": "new-message",
+  "data": {
+    "originalROWID": 12,
+    "guid": "A1B2C3",
+    "text": "hello from sandbox",
+    "isFromMe": false,
+    "dateCreated": 1730000000,
+    "handle": {
+      "address": "+15551234567",
+      "service": "iMessage"
+    },
+    "chats": [
+      {
+        "originalROWID": 99,
+        "guid": "iMessage;+;chat-123",
+        "style": 43,
+        "chatIdentifier": "+15551234567",
+        "isArchived": false,
+        "displayName": "Alice"
+      }
+    ]
+  }
+}
