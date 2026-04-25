@@ -18,6 +18,7 @@ import io.breland.bbagent.server.agent.cadence.CadenceWorkflowLauncher;
 import io.breland.bbagent.server.agent.cadence.models.CadenceMessageWorkflowRequest;
 import io.breland.bbagent.server.agent.cadence.models.GeneratedImage;
 import io.breland.bbagent.server.agent.cadence.models.IncomingAttachment;
+import io.breland.bbagent.server.agent.location.ReverseLocationLookup;
 import io.breland.bbagent.server.agent.model_picker.ModelPicker;
 import io.breland.bbagent.server.agent.tools.AgentTool;
 import io.breland.bbagent.server.agent.tools.ToolContext;
@@ -138,6 +139,7 @@ public class BBMessageAgent {
   private WebsiteAccountService websiteAccountService;
   private GiphyClient giphyClient;
   private ModelPicker modelPicker;
+  private final ReverseLocationLookup reverseLocationLookup;
 
   @Autowired
   public BBMessageAgent(
@@ -149,6 +151,7 @@ public class BBMessageAgent {
       CoderAsyncTaskStartStore coderAsyncTaskStartStore,
       WebsiteAccountService websiteAccountService,
       GiphyClient giphyClient,
+      ReverseLocationLookup reverseLocationLookup,
       AgentSettingsStore agentSettingsStore,
       AgentWorkflowProperties workflowProperties,
       ObjectMapper objectMapper,
@@ -162,6 +165,8 @@ public class BBMessageAgent {
     this.coderAsyncTaskStartStore = coderAsyncTaskStartStore;
     this.websiteAccountService = websiteAccountService;
     this.giphyClient = giphyClient;
+    this.reverseLocationLookup =
+        reverseLocationLookup == null ? ReverseLocationLookup.noop() : reverseLocationLookup;
     this.agentSettingsStore = agentSettingsStore;
     this.workflowProperties = workflowProperties;
     this.objectMapper = objectMapper;
@@ -190,6 +195,7 @@ public class BBMessageAgent {
         null,
         null,
         giphyClient,
+        ReverseLocationLookup.noop(),
         agentSettingsStore,
         workflowProperties,
         cadenceWorkflowLauncher,
@@ -210,6 +216,38 @@ public class BBMessageAgent {
       AgentWorkflowProperties workflowProperties,
       @Nullable CadenceWorkflowLauncher cadenceWorkflowLauncher,
       ModelPicker modelPicker) {
+    this(
+        openAIClient,
+        bbHttpClientWrapper,
+        mem0Client,
+        gcalClient,
+        coderMcpClient,
+        workflowCallbackService,
+        coderAsyncTaskStartStore,
+        websiteAccountService,
+        giphyClient,
+        ReverseLocationLookup.noop(),
+        agentSettingsStore,
+        workflowProperties,
+        cadenceWorkflowLauncher,
+        modelPicker);
+  }
+
+  BBMessageAgent(
+      OpenAIClient openAIClient,
+      BBHttpClientWrapper bbHttpClientWrapper,
+      Mem0Client mem0Client,
+      GcalClient gcalClient,
+      @Nullable CoderMcpClient coderMcpClient,
+      @Nullable WorkflowCallbackService workflowCallbackService,
+      @Nullable CoderAsyncTaskStartStore coderAsyncTaskStartStore,
+      @Nullable WebsiteAccountService websiteAccountService,
+      GiphyClient giphyClient,
+      ReverseLocationLookup reverseLocationLookup,
+      AgentSettingsStore agentSettingsStore,
+      AgentWorkflowProperties workflowProperties,
+      @Nullable CadenceWorkflowLauncher cadenceWorkflowLauncher,
+      ModelPicker modelPicker) {
     this.openAIClient = openAIClient;
     this.bbHttpClientWrapper = bbHttpClientWrapper;
     this.mem0Client = mem0Client;
@@ -219,6 +257,8 @@ public class BBMessageAgent {
     this.coderAsyncTaskStartStore = coderAsyncTaskStartStore;
     this.websiteAccountService = websiteAccountService;
     this.giphyClient = giphyClient;
+    this.reverseLocationLookup =
+        reverseLocationLookup == null ? ReverseLocationLookup.noop() : reverseLocationLookup;
     this.agentSettingsStore = agentSettingsStore;
     this.workflowProperties = workflowProperties;
     this.objectMapper = new ObjectMapper();
@@ -1167,6 +1207,7 @@ public class BBMessageAgent {
             "Current Find My location context for the current iMessage sender. "
                 + "Use this as background for location-aware answers, but do not mention it unless relevant. ");
     text.append("latitude=").append(latitude).append(" longitude=").append(longitude);
+    appendReverseLocationLookupField(text, latitude, longitude);
     appendFindMyLocationField(text, "short_address", location.getShortAddress());
     appendFindMyLocationField(text, "long_address", location.getLongAddress());
     appendFindMyLocationField(text, "title", location.getTitle());
@@ -1179,9 +1220,24 @@ public class BBMessageAgent {
     return text.toString();
   }
 
+  private void appendReverseLocationLookupField(
+      StringBuilder text, double latitude, double longitude) {
+    try {
+      reverseLocationLookup
+          .reverseLookup(latitude, longitude)
+          .map(location -> location.approximateAddress())
+          .filter(address -> address != null && !address.isBlank())
+          .ifPresent(
+              address ->
+                  appendFindMyLocationField(text, "reverse_geocoded_approximate_address", address));
+    } catch (Exception e) {
+      log.warn("Failed to append reverse geocoded location context", e);
+    }
+  }
+
   private void appendFindMyLocationField(StringBuilder text, String name, String value) {
     if (value != null && !value.isBlank()) {
-      text.append(" ").append(name).append("=").append(value);
+      text.append(" ").append(name).append("=").append(value.replaceAll("\\s+", " ").trim());
     }
   }
 

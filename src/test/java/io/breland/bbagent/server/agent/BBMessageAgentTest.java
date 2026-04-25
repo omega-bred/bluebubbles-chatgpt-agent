@@ -35,6 +35,8 @@ import io.breland.bbagent.generated.bluebubblesclient.model.ApiV1ChatChatGuidMes
 import io.breland.bbagent.generated.bluebubblesclient.model.ApiV1MessageReactPostRequest;
 import io.breland.bbagent.generated.bluebubblesclient.model.ApiV1MessageTextPostRequest;
 import io.breland.bbagent.generated.bluebubblesclient.model.FindMyFriendLocation;
+import io.breland.bbagent.server.agent.location.ReverseLocationLookup;
+import io.breland.bbagent.server.agent.location.ReverseLocationLookupResult;
 import io.breland.bbagent.server.agent.model_picker.ModelAccessService;
 import io.breland.bbagent.server.agent.model_picker.ModelPicker;
 import io.breland.bbagent.server.agent.tools.AgentTool;
@@ -236,6 +238,7 @@ class BBMessageAgentTest {
     OpenAIClient openAIClient = Mockito.mock(OpenAIClient.class);
     var responseService = Mockito.mock(com.openai.services.blocking.ResponseService.class);
     StubBBHttpClientWrapper bbHttpClientWrapper = new StubBBHttpClientWrapper();
+    StubReverseLocationLookup reverseLocationLookup = new StubReverseLocationLookup();
     bbHttpClientWrapper.setFindMyLocation(
         "Alice",
         findMyLocation(
@@ -244,10 +247,11 @@ class BBMessageAgentTest {
             "Apple Park",
             "1 Apple Park Way, Cupertino, CA 95014, United States",
             1777050691000L));
+    reverseLocationLookup.setResult("Cupertino, Santa Clara County, California, United States");
     when(openAIClient.responses()).thenReturn(responseService);
     when(responseService.create(any(ResponseCreateParams.class)))
         .thenReturn(responseWithNoToolCalls());
-    BBMessageAgent agent = newAgent(openAIClient, bbHttpClientWrapper);
+    BBMessageAgent agent = newAgent(openAIClient, bbHttpClientWrapper, reverseLocationLookup);
     IncomingMessage incoming =
         incomingMessage("iMessage;+;chat-location", "msg-location", "where am I?", 1_000L);
 
@@ -259,10 +263,16 @@ class BBMessageAgentTest {
     assertTrue(contextText.contains("Current Find My location context"));
     assertTrue(contextText.contains("latitude=37.33182"));
     assertTrue(contextText.contains("longitude=-122.03118"));
+    assertTrue(
+        contextText.contains(
+            "reverse_geocoded_approximate_address=Cupertino, Santa Clara County, California, United States"));
     assertTrue(contextText.contains("short_address=Apple Park"));
     assertTrue(contextText.contains("last_updated=2026-04-24T17:11:31Z"));
     assertEquals(1, bbHttpClientWrapper.findMyLookupCalls);
     assertEquals("Alice", bbHttpClientWrapper.lastFindMyUserId);
+    assertEquals(1, reverseLocationLookup.reverseLookupCalls);
+    assertEquals(37.33182, reverseLocationLookup.lastLatitude);
+    assertEquals(-122.03118, reverseLocationLookup.lastLongitude);
 
     agent.createResponse(input, incoming, null);
 
@@ -780,6 +790,27 @@ class BBMessageAgentTest {
   }
 
   private static BBMessageAgent newAgent(
+      OpenAIClient openAIClient,
+      BBHttpClientWrapper bbHttpClientWrapper,
+      ReverseLocationLookup reverseLocationLookup) {
+    return new BBMessageAgent(
+        openAIClient,
+        bbHttpClientWrapper,
+        Mockito.mock(Mem0Client.class),
+        Mockito.mock(GcalClient.class),
+        null,
+        null,
+        null,
+        null,
+        Mockito.mock(GiphyClient.class),
+        reverseLocationLookup,
+        new InMemoryAgentSettingsStore(),
+        new AgentWorkflowProperties(),
+        null,
+        new ModelPicker());
+  }
+
+  private static BBMessageAgent newAgent(
       OpenAIClient openAIClient, BBHttpClientWrapper bbHttpClientWrapper, ModelPicker modelPicker) {
     return new BBMessageAgent(
         openAIClient,
@@ -791,6 +822,25 @@ class BBMessageAgentTest {
         new AgentWorkflowProperties(),
         null,
         modelPicker);
+  }
+
+  private static class StubReverseLocationLookup implements ReverseLocationLookup {
+    private Optional<ReverseLocationLookupResult> result = Optional.empty();
+    private int reverseLookupCalls;
+    private double lastLatitude;
+    private double lastLongitude;
+
+    void setResult(String displayName) {
+      this.result = Optional.of(new ReverseLocationLookupResult(displayName, Map.of()));
+    }
+
+    @Override
+    public Optional<ReverseLocationLookupResult> reverseLookup(double latitude, double longitude) {
+      reverseLookupCalls++;
+      lastLatitude = latitude;
+      lastLongitude = longitude;
+      return result;
+    }
   }
 
   private static class StubBBHttpClientWrapper extends BBHttpClientWrapper {
