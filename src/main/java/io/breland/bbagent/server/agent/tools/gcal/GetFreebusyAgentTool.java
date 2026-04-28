@@ -4,7 +4,6 @@ import static io.breland.bbagent.server.agent.tools.JsonSchemaUtilities.jsonSche
 
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.google.api.client.util.DateTime;
-import com.google.api.services.calendar.Calendar;
 import com.google.api.services.calendar.model.FreeBusyRequest;
 import com.google.api.services.calendar.model.FreeBusyRequestItem;
 import com.google.api.services.calendar.model.FreeBusyResponse;
@@ -42,57 +41,48 @@ public class GetFreebusyAgentTool extends GcalToolSupport implements ToolProvide
         jsonSchema(GetFreebusyRequest.class),
         false,
         (context, args) -> {
-          if (!gcalClient.isConfigured()) {
-            return "not configured";
-          }
           GetFreebusyRequest request =
               context.getMapper().convertValue(args, GetFreebusyRequest.class);
-          String accountKey = resolveAccountKey(context, request.accountKey());
-          if (accountKey == null || accountKey.isBlank()) {
-            return "no account";
-          }
-          ZoneId zone = resolveZone(request.timezone());
-          String timeMinText = request.timeMin();
-          String timeMaxText = request.timeMax();
-          if (timeMinText == null || timeMinText.isBlank()) {
-            return "missing time_min";
-          }
-          if (timeMaxText == null || timeMaxText.isBlank()) {
-            return "missing time_max";
-          }
-          DateTime min = gcalClient.parseDateTime(timeMinText, zone);
-          DateTime max = gcalClient.parseDateTime(timeMaxText, zone);
-          if (min == null || max == null) {
-            return "invalid time";
-          }
-          List<String> calendarIds = request.calendars();
-          if (calendarIds == null || calendarIds.isEmpty()) {
-            return "missing calendars";
-          }
-          List<FreeBusyRequestItem> items = new ArrayList<>();
-          for (String calendarId : calendarIds) {
-            if (calendarId != null && !calendarId.isBlank()) {
-              items.add(new FreeBusyRequestItem().setId(calendarId));
-            }
-          }
-          if (items.isEmpty()) {
-            return "missing calendars";
-          }
-          try {
-            Calendar client = gcalClient.getCalendarService(accountKey);
-            FreeBusyRequest gRequest = new FreeBusyRequest();
-            gRequest.setTimeMin(min);
-            gRequest.setTimeMax(max);
-            gRequest.setItems(items);
-            String timezone = request.timezone();
-            if (timezone != null && !timezone.isBlank()) {
-              gRequest.setTimeZone(timezone);
-            }
-            FreeBusyResponse response = client.freebusy().query(gRequest).execute();
-            return gcalClient.mapper().writeValueAsString(response);
-          } catch (Exception e) {
-            return "error: " + e.getMessage();
-          }
+          return withCalendar(
+              context,
+              request.accountKey(),
+              (client, accountKey) -> {
+                ZoneId zone = resolveZone(request.timezone());
+                if (isBlank(request.timeMin())) {
+                  return "missing time_min";
+                }
+                if (isBlank(request.timeMax())) {
+                  return "missing time_max";
+                }
+                DateTime min = gcalClient.parseDateTime(request.timeMin(), zone);
+                DateTime max = gcalClient.parseDateTime(request.timeMax(), zone);
+                if (min == null || max == null) {
+                  return "invalid time";
+                }
+                List<String> calendarIds = request.calendars();
+                if (calendarIds == null || calendarIds.isEmpty()) {
+                  return "missing calendars";
+                }
+                List<FreeBusyRequestItem> items = new ArrayList<>();
+                for (String calendarId : calendarIds) {
+                  if (!isBlank(calendarId)) {
+                    items.add(new FreeBusyRequestItem().setId(calendarId));
+                  }
+                }
+                if (items.isEmpty()) {
+                  return "missing calendars";
+                }
+                FreeBusyRequest gRequest = new FreeBusyRequest();
+                gRequest.setTimeMin(min);
+                gRequest.setTimeMax(max);
+                gRequest.setItems(items);
+                String timezone = request.timezone();
+                if (!isBlank(timezone)) {
+                  gRequest.setTimeZone(timezone);
+                }
+                FreeBusyResponse response = client.freebusy().query(gRequest).execute();
+                return toJson(response);
+              });
         });
   }
 }

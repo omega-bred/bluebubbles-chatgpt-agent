@@ -1,4 +1,4 @@
-package io.breland.bbagent.server.agent.lxmf;
+package io.breland.bbagent.server.agent.transport.lxmf;
 
 import java.util.LinkedHashMap;
 import java.util.Map;

@@ -1,7 +1,8 @@
 package io.breland.bbagent.server.agent.transport;
 
-import io.breland.bbagent.server.agent.BBHttpClientWrapper;
 import io.breland.bbagent.server.agent.IncomingMessage;
+import io.breland.bbagent.server.agent.transport.bb.BBHttpClientWrapper;
+import io.breland.bbagent.server.agent.transport.bb.BlueBubblesMessageTransport;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;

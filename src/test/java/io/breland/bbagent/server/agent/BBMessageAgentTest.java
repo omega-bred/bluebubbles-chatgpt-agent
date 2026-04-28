@@ -47,6 +47,7 @@ import io.breland.bbagent.server.agent.tools.coder.StartCoderAsyncTaskAgentTool;
 import io.breland.bbagent.server.agent.tools.gcal.GcalClient;
 import io.breland.bbagent.server.agent.tools.giphy.GiphyClient;
 import io.breland.bbagent.server.agent.tools.memory.Mem0Client;
+import io.breland.bbagent.server.agent.transport.bb.BBHttpClientWrapper;
 import io.breland.bbagent.server.agent.workflowcallback.WorkflowCallbackService;
 import java.time.Instant;
 import java.util.LinkedHashMap;

@@ -2,8 +2,8 @@ package io.breland.bbagent.server.controllers;
 
 import io.breland.bbagent.generated.api.GcalApiController;
 import io.breland.bbagent.generated.bluebubblesclient.model.ApiV1MessageTextPostRequest;
-import io.breland.bbagent.server.agent.BBHttpClientWrapper;
 import io.breland.bbagent.server.agent.tools.gcal.GcalClient;
+import io.breland.bbagent.server.agent.transport.bb.BBHttpClientWrapper;
 import java.util.Optional;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;

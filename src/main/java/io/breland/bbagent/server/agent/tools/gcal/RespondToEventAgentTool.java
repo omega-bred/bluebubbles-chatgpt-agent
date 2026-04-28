@@ -3,7 +3,6 @@ package io.breland.bbagent.server.agent.tools.gcal;
 import static io.breland.bbagent.server.agent.tools.JsonSchemaUtilities.jsonSchema;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
-import com.google.api.services.calendar.Calendar;
 import com.google.api.services.calendar.model.Event;
 import com.google.api.services.calendar.model.EventAttendee;
 import io.breland.bbagent.server.agent.tools.AgentTool;
@@ -55,55 +54,48 @@ public class RespondToEventAgentTool extends GcalToolSupport implements ToolProv
         jsonSchema(RespondToEventRequest.class),
         false,
         (context, args) -> {
-          if (!gcalClient.isConfigured()) {
-            return "not configured";
-          }
           RespondToEventRequest request =
               context.getMapper().convertValue(args, RespondToEventRequest.class);
-          String accountKey = resolveAccountKey(context, request.accountKey());
-          if (accountKey == null || accountKey.isBlank()) {
-            return "no account";
-          }
-          String calendarId = resolveCalendarId(request.calendarId());
-          String eventId = request.eventId();
-          String attendeeEmail = request.attendeeEmail();
-          ResponseStatus responseStatus = request.responseStatus();
-          if (eventId == null || eventId.isBlank()) {
-            return "missing event_id";
-          }
-          if (attendeeEmail == null || attendeeEmail.isBlank()) {
-            return "missing attendee_email";
-          }
-          if (responseStatus == null) {
-            return "missing response_status";
-          }
-          try {
-            Calendar client = gcalClient.getCalendarService(accountKey);
-            Event event = client.events().get(calendarId, eventId).execute();
-            List<EventAttendee> attendees = event.getAttendees();
-            if (attendees == null) {
-              attendees = new ArrayList<>();
-            }
-            boolean updated = false;
-            for (EventAttendee attendee : attendees) {
-              if (attendeeEmail.equalsIgnoreCase(attendee.getEmail())) {
-                attendee.setResponseStatus(responseStatusString(responseStatus));
-                updated = true;
-                break;
-              }
-            }
-            if (!updated) {
-              attendees.add(
-                  new EventAttendee()
-                      .setEmail(attendeeEmail)
-                      .setResponseStatus(responseStatusString(responseStatus)));
-            }
-            event.setAttendees(attendees);
-            Event patched = client.events().patch(calendarId, eventId, event).execute();
-            return gcalClient.mapper().writeValueAsString(patched);
-          } catch (Exception e) {
-            return "error: " + e.getMessage();
-          }
+          return withCalendar(
+              context,
+              request.accountKey(),
+              (client, accountKey) -> {
+                String calendarId = resolveCalendarId(request.calendarId());
+                String eventId = request.eventId();
+                String attendeeEmail = request.attendeeEmail();
+                ResponseStatus responseStatus = request.responseStatus();
+                if (isBlank(eventId)) {
+                  return "missing event_id";
+                }
+                if (isBlank(attendeeEmail)) {
+                  return "missing attendee_email";
+                }
+                if (responseStatus == null) {
+                  return "missing response_status";
+                }
+                Event event = client.events().get(calendarId, eventId).execute();
+                List<EventAttendee> attendees = event.getAttendees();
+                if (attendees == null) {
+                  attendees = new ArrayList<>();
+                }
+                boolean updated = false;
+                for (EventAttendee attendee : attendees) {
+                  if (attendeeEmail.equalsIgnoreCase(attendee.getEmail())) {
+                    attendee.setResponseStatus(responseStatusString(responseStatus));
+                    updated = true;
+                    break;
+                  }
+                }
+                if (!updated) {
+                  attendees.add(
+                      new EventAttendee()
+                          .setEmail(attendeeEmail)
+                          .setResponseStatus(responseStatusString(responseStatus)));
+                }
+                event.setAttendees(attendees);
+                Event patched = client.events().patch(calendarId, eventId, event).execute();
+                return toJson(patched);
+              });
         });
   }
 

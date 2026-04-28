@@ -3,6 +3,7 @@ package io.breland.bbagent.server.agent;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import io.breland.bbagent.generated.bluebubblesclient.model.TextFormattingRange;
+import io.breland.bbagent.server.agent.transport.bb.TextFormattingParser;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 

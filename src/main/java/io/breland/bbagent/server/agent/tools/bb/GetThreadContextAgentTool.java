@@ -5,12 +5,12 @@ import static io.breland.bbagent.server.agent.tools.JsonSchemaUtilities.jsonSche
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
-import io.breland.bbagent.server.agent.BBHttpClientWrapper;
 import io.breland.bbagent.server.agent.ConversationState;
 import io.breland.bbagent.server.agent.cadence.models.IncomingAttachment;
 import io.breland.bbagent.server.agent.tools.AgentTool;
 import io.breland.bbagent.server.agent.tools.ToolContext;
 import io.breland.bbagent.server.agent.tools.ToolProvider;
+import io.breland.bbagent.server.agent.transport.bb.BBHttpClientWrapper;
 import io.swagger.v3.oas.annotations.media.Schema;
 import java.util.LinkedHashMap;
 import java.util.List;

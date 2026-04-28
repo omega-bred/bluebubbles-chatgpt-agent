@@ -13,6 +13,7 @@ import io.breland.bbagent.generated.bluebubblesclient.api.V1ICloudApi;
 import io.breland.bbagent.generated.bluebubblesclient.api.V1MessageApi;
 import io.breland.bbagent.generated.bluebubblesclient.model.ApiResponseFindMyFriendsLocations;
 import io.breland.bbagent.generated.bluebubblesclient.model.FindMyFriendLocation;
+import io.breland.bbagent.server.agent.transport.bb.BBHttpClientWrapper;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;

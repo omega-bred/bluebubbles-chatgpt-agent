@@ -6,6 +6,7 @@ import io.breland.bbagent.generated.bluebubblesclient.model.ApiV1ChatChatGuidMes
 import io.breland.bbagent.generated.bluebubblesclient.model.Chat;
 import io.breland.bbagent.generated.bluebubblesclient.model.FindMyFriendLocation;
 import io.breland.bbagent.generated.bluebubblesclient.model.Message;
+import io.breland.bbagent.server.agent.transport.bb.BBHttpClientWrapper;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.UUID;

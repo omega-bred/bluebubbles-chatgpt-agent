@@ -1,4 +1,4 @@
-package io.breland.bbagent.server.agent;
+package io.breland.bbagent.server.agent.transport.bb;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -6,6 +6,8 @@ import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import io.breland.bbagent.generated.bluebubblesclient.ApiClient;
 import io.breland.bbagent.generated.bluebubblesclient.api.*;
 import io.breland.bbagent.generated.bluebubblesclient.model.*;
+import io.breland.bbagent.server.agent.BBMessageAgent;
+import io.breland.bbagent.server.agent.IncomingMessage;
 import java.io.IOException;
 import java.nio.channels.AsynchronousFileChannel;
 import java.nio.file.Files;
@@ -64,7 +66,7 @@ public class BBHttpClientWrapper {
     this.objectMapper = objectMapper;
   }
 
-  BBHttpClientWrapper(String password, V1MessageApi messageApi, V1ContactApi contactApi) {
+  public BBHttpClientWrapper(String password, V1MessageApi messageApi, V1ContactApi contactApi) {
     this(
         password,
         messageApi,
@@ -73,7 +75,7 @@ public class BBHttpClientWrapper {
         new ObjectMapper().registerModule(new JavaTimeModule()));
   }
 
-  BBHttpClientWrapper(
+  public BBHttpClientWrapper(
       String password, V1MessageApi messageApi, V1ContactApi contactApi, V1ICloudApi icloudApi) {
     this(
         password,

@@ -1,8 +1,8 @@
 package io.breland.bbagent.server.agent.transport;
 
-import io.breland.bbagent.server.agent.BBHttpClientWrapper;
 import io.breland.bbagent.server.agent.ConversationState;
 import io.breland.bbagent.server.agent.IncomingMessage;
+import io.breland.bbagent.server.agent.transport.bb.BBHttpClientWrapper;
 import java.util.List;
 
 public interface MessageTransport {

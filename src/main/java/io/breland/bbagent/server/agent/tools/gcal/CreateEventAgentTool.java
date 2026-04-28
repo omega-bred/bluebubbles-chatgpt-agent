@@ -4,15 +4,11 @@ import static io.breland.bbagent.server.agent.tools.JsonSchemaUtilities.jsonSche
 
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.google.api.client.util.DateTime;
-import com.google.api.services.calendar.Calendar;
 import com.google.api.services.calendar.model.Event;
-import com.google.api.services.calendar.model.EventAttendee;
-import com.google.api.services.calendar.model.EventDateTime;
 import io.breland.bbagent.server.agent.tools.AgentTool;
 import io.breland.bbagent.server.agent.tools.ToolProvider;
 import io.swagger.v3.oas.annotations.media.Schema;
 import java.time.ZoneId;
-import java.util.ArrayList;
 import java.util.List;
 
 public class CreateEventAgentTool extends GcalToolSupport implements ToolProvider {
@@ -45,74 +41,50 @@ public class CreateEventAgentTool extends GcalToolSupport implements ToolProvide
         jsonSchema(CreateEventRequest.class),
         false,
         (context, args) -> {
-          if (!gcalClient.isConfigured()) {
-            return "not configured";
-          }
           CreateEventRequest request =
               context.getMapper().convertValue(args, CreateEventRequest.class);
-          String accountKey = resolveAccountKey(context, request.accountKey());
-          if (accountKey == null || accountKey.isBlank()) {
-            return "no account";
-          }
-          String calendarId = resolveCalendarId(request.calendarId());
-          ZoneId zone = resolveZone(request.timezone());
-          String startText = request.start();
-          String endText = request.end();
-          if (startText == null || startText.isBlank()) {
-            return "missing start";
-          }
-          if (endText == null || endText.isBlank()) {
-            return "missing end";
-          }
-          DateTime start = gcalClient.parseDateTime(startText, zone);
-          DateTime end = gcalClient.parseDateTime(endText, zone);
-          if (start == null || end == null) {
-            return "invalid time";
-          }
-          try {
-            Calendar client = gcalClient.getCalendarService(accountKey);
-            Event event = new Event();
-            String summary = request.summary();
-            if (summary == null || summary.isBlank()) {
-              return "missing summary";
-            }
-            event.setSummary(summary);
-            String description = request.description();
-            if (description != null && !description.isBlank()) {
-              event.setDescription(description);
-            }
-            String location = request.location();
-            if (location != null && !location.isBlank()) {
-              event.setLocation(location);
-            }
-            EventDateTime startTime = new EventDateTime().setDateTime(start);
-            EventDateTime endTime = new EventDateTime().setDateTime(end);
-            String timezone = request.timezone();
-            if (timezone != null && !timezone.isBlank()) {
-              startTime.setTimeZone(timezone);
-              endTime.setTimeZone(timezone);
-            }
-            event.setStart(startTime);
-            event.setEnd(endTime);
-
-            List<String> attendeeEmails = request.attendees();
-            if (attendeeEmails != null && !attendeeEmails.isEmpty()) {
-              List<EventAttendee> attendees = new ArrayList<>();
-              for (String email : attendeeEmails) {
-                if (email != null && !email.isBlank()) {
-                  attendees.add(new EventAttendee().setEmail(email));
+          return withCalendar(
+              context,
+              request.accountKey(),
+              (client, accountKey) -> {
+                String calendarId = resolveCalendarId(request.calendarId());
+                ZoneId zone = resolveZone(request.timezone());
+                if (isBlank(request.start())) {
+                  return "missing start";
                 }
-              }
-              if (!attendees.isEmpty()) {
-                event.setAttendees(attendees);
-              }
-            }
+                if (isBlank(request.end())) {
+                  return "missing end";
+                }
+                DateTime start = gcalClient.parseDateTime(request.start(), zone);
+                DateTime end = gcalClient.parseDateTime(request.end(), zone);
+                if (start == null || end == null) {
+                  return "invalid time";
+                }
+                Event event = new Event();
+                String summary = request.summary();
+                if (isBlank(summary)) {
+                  return "missing summary";
+                }
+                event.setSummary(summary);
+                String description = request.description();
+                if (!isBlank(description)) {
+                  event.setDescription(description);
+                }
+                String location = request.location();
+                if (!isBlank(location)) {
+                  event.setLocation(location);
+                }
+                event.setStart(eventDateTime(start, request.timezone()));
+                event.setEnd(eventDateTime(end, request.timezone()));
 
-            Event created = client.events().insert(calendarId, event).execute();
-            return gcalClient.mapper().writeValueAsString(created);
-          } catch (Exception e) {
-            return "error: " + e.getMessage();
-          }
+                var attendees = attendeesFromEmails(request.attendees());
+                if (!attendees.isEmpty()) {
+                  event.setAttendees(attendees);
+                }
+
+                Event created = client.events().insert(calendarId, event).execute();
+                return toJson(created);
+              });
         });
   }
 }
