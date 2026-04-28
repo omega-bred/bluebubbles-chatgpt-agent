@@ -42,63 +42,61 @@ public class ManageAccountsAgentTool extends GcalToolSupport implements ToolProv
         jsonSchema(ManageAccountsRequest.class),
         false,
         (context, args) -> {
-          if (!gcalClient.isConfigured()) {
-            return "not configured";
-          }
           ManageAccountsRequest request =
               context.getMapper().convertValue(args, ManageAccountsRequest.class);
           if (request.action() == null) {
             return "missing action";
           }
-          try {
-            switch (request.action()) {
-              case LIST -> {
-                String accountBase = resolveAccountBase(context);
-                if (accountBase == null || accountBase.isBlank()) {
-                  return "no account";
+          return withConfigured(
+              () -> {
+                switch (request.action()) {
+                  case LIST -> {
+                    String accountBase = resolveAccountBase(context);
+                    if (isBlank(accountBase)) {
+                      return "no account";
+                    }
+                    Map<String, Object> response = new LinkedHashMap<>();
+                    response.put("accounts", gcalClient.listAccountsFor(accountBase));
+                    return toJson(response);
+                  }
+                  case AUTH_URL -> {
+                    String accountBase = resolveAccountBase(context);
+                    if (isBlank(accountBase)) {
+                      return "no account";
+                    }
+                    String accountKey = accountBase;
+                    String chatGuid =
+                        context.message() != null ? context.message().chatGuid() : null;
+                    String messageGuid =
+                        context.message() != null ? context.message().messageGuid() : null;
+                    if (isBlank(chatGuid)) {
+                      return "missing chat";
+                    }
+                    String url = gcalClient.getAuthUrl(accountKey, chatGuid, messageGuid);
+                    if (url == null) {
+                      return "not configured";
+                    }
+                    Map<String, Object> response = new LinkedHashMap<>();
+                    response.put("auth_url", url);
+                    response.put("account_key", "new");
+                    return toJson(response);
+                  }
+                  case REVOKE -> {
+                    String accountBase = resolveAccountBase(context);
+                    if (isBlank(accountBase)) {
+                      return "no account";
+                    }
+                    String requestedAccountKey = request.accountKey();
+                    String accountKey =
+                        gcalClient.scopeAccountKey(accountBase, requestedAccountKey);
+                    boolean success = gcalClient.revokeAccount(accountKey);
+                    return success ? "revoked" : "not found";
+                  }
+                  default -> {
+                    return "unknown action";
+                  }
                 }
-                Map<String, Object> response = new LinkedHashMap<>();
-                response.put("accounts", gcalClient.listAccountsFor(accountBase));
-                return gcalClient.mapper().writeValueAsString(response);
-              }
-              case AUTH_URL -> {
-                String accountBase = resolveAccountBase(context);
-                if (accountBase == null || accountBase.isBlank()) {
-                  return "no account";
-                }
-                String accountKey = accountBase;
-                String chatGuid = context.message() != null ? context.message().chatGuid() : null;
-                String messageGuid =
-                    context.message() != null ? context.message().messageGuid() : null;
-                if (chatGuid == null || chatGuid.isBlank()) {
-                  return "missing chat";
-                }
-                String url = gcalClient.getAuthUrl(accountKey, chatGuid, messageGuid);
-                if (url == null) {
-                  return "not configured";
-                }
-                Map<String, Object> response = new LinkedHashMap<>();
-                response.put("auth_url", url);
-                response.put("account_key", "new");
-                return gcalClient.mapper().writeValueAsString(response);
-              }
-              case REVOKE -> {
-                String accountBase = resolveAccountBase(context);
-                if (accountBase == null || accountBase.isBlank()) {
-                  return "no account";
-                }
-                String requestedAccountKey = request.accountKey();
-                String accountKey = gcalClient.scopeAccountKey(accountBase, requestedAccountKey);
-                boolean success = gcalClient.revokeAccount(accountKey);
-                return success ? "revoked" : "not found";
-              }
-              default -> {
-                return "unknown action";
-              }
-            }
-          } catch (Exception e) {
-            return "error: " + e.getMessage();
-          }
+              });
         });
   }
 }

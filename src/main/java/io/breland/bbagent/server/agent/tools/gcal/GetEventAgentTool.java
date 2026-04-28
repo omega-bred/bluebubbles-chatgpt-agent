@@ -3,7 +3,6 @@ package io.breland.bbagent.server.agent.tools.gcal;
 import static io.breland.bbagent.server.agent.tools.JsonSchemaUtilities.jsonSchema;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
-import com.google.api.services.calendar.Calendar;
 import com.google.api.services.calendar.model.Event;
 import io.breland.bbagent.server.agent.tools.AgentTool;
 import io.breland.bbagent.server.agent.tools.ToolProvider;
@@ -32,26 +31,19 @@ public class GetEventAgentTool extends GcalToolSupport implements ToolProvider {
         jsonSchema(GetEventRequest.class),
         false,
         (context, args) -> {
-          if (!gcalClient.isConfigured()) {
-            return "not configured";
-          }
           GetEventRequest request = context.getMapper().convertValue(args, GetEventRequest.class);
-          String accountKey = resolveAccountKey(context, request.accountKey());
-          if (accountKey == null || accountKey.isBlank()) {
-            return "no account";
-          }
-          String calendarId = resolveCalendarId(request.calendarId());
-          String eventId = request.eventId();
-          if (eventId == null || eventId.isBlank()) {
-            return "missing event_id";
-          }
-          try {
-            Calendar client = gcalClient.getCalendarService(accountKey);
-            Event event = client.events().get(calendarId, eventId).execute();
-            return gcalClient.mapper().writeValueAsString(event);
-          } catch (Exception e) {
-            return "error: " + e.getMessage();
-          }
+          return withCalendar(
+              context,
+              request.accountKey(),
+              (client, accountKey) -> {
+                String calendarId = resolveCalendarId(request.calendarId());
+                String eventId = request.eventId();
+                if (isBlank(eventId)) {
+                  return "missing event_id";
+                }
+                Event event = client.events().get(calendarId, eventId).execute();
+                return toJson(event);
+              });
         });
   }
 }

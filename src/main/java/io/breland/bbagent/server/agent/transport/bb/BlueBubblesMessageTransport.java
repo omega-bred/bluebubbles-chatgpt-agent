@@ -1,13 +1,14 @@
-package io.breland.bbagent.server.agent.transport;
+package io.breland.bbagent.server.agent.transport.bb;
 
 import io.breland.bbagent.generated.bluebubblesclient.model.ApiV1ChatChatGuidMessageGet200ResponseDataInner;
 import io.breland.bbagent.generated.bluebubblesclient.model.ApiV1MessageReactPostRequest;
 import io.breland.bbagent.generated.bluebubblesclient.model.ApiV1MessageTextPostRequest;
-import io.breland.bbagent.server.agent.BBHttpClientWrapper;
 import io.breland.bbagent.server.agent.BBMessageAgent;
 import io.breland.bbagent.server.agent.ConversationState;
 import io.breland.bbagent.server.agent.ConversationTurn;
 import io.breland.bbagent.server.agent.IncomingMessage;
+import io.breland.bbagent.server.agent.transport.MessageTransport;
+import io.breland.bbagent.server.agent.transport.OutgoingTextMessage;
 import java.time.Instant;
 import java.util.List;
 import org.springframework.stereotype.Component;

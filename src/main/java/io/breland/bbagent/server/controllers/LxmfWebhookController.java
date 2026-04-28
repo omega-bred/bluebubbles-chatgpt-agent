@@ -11,6 +11,7 @@ import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.lang3.StringUtils;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -45,8 +46,8 @@ public class LxmfWebhookController extends LxmfApiController {
       return ResponseEntity.status(401).body(Map.of("status", "unauthorized"));
     }
     if (requestBody == null
-        || isBlank(requestBody.getMessageId())
-        || isBlank(requestBody.getSourceHash())) {
+        || StringUtils.isBlank(requestBody.getMessageId())
+        || StringUtils.isBlank(requestBody.getSourceHash())) {
       return ResponseEntity.badRequest().body(Map.of("status", "bad_request"));
     }
     IncomingMessage message = parseWebhookMessage(requestBody);
@@ -76,7 +77,7 @@ public class LxmfWebhookController extends LxmfApiController {
   }
 
   private boolean isAuthorized(String providedSecret) {
-    if (isBlank(webhookSecret)) {
+    if (StringUtils.isBlank(webhookSecret)) {
       log.warn("LXMF webhook secret is blank; rejecting bridge webhook");
       return false;
     }
@@ -90,9 +91,5 @@ public class LxmfWebhookController extends LxmfApiController {
 
   private static String normalizeHash(String value) {
     return value == null ? null : value.trim().toLowerCase();
-  }
-
-  private static boolean isBlank(String value) {
-    return value == null || value.isBlank();
   }
 }

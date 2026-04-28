@@ -3,7 +3,6 @@ package io.breland.bbagent.server.agent.tools.gcal;
 import static io.breland.bbagent.server.agent.tools.JsonSchemaUtilities.jsonSchema;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
-import com.google.api.services.calendar.Calendar;
 import io.breland.bbagent.server.agent.tools.AgentTool;
 import io.breland.bbagent.server.agent.tools.ToolProvider;
 import io.swagger.v3.oas.annotations.media.Schema;
@@ -31,27 +30,20 @@ public class DeleteEventAgentTool extends GcalToolSupport implements ToolProvide
         jsonSchema(DeleteEventRequest.class),
         false,
         (context, args) -> {
-          if (!gcalClient.isConfigured()) {
-            return "not configured";
-          }
           DeleteEventRequest request =
               context.getMapper().convertValue(args, DeleteEventRequest.class);
-          String accountKey = resolveAccountKey(context, request.accountKey());
-          if (accountKey == null || accountKey.isBlank()) {
-            return "no account";
-          }
-          String calendarId = resolveCalendarId(request.calendarId());
-          String eventId = request.eventId();
-          if (eventId == null || eventId.isBlank()) {
-            return "missing event_id";
-          }
-          try {
-            Calendar client = gcalClient.getCalendarService(accountKey);
-            client.events().delete(calendarId, eventId).execute();
-            return "deleted";
-          } catch (Exception e) {
-            return "error: " + e.getMessage();
-          }
+          return withCalendar(
+              context,
+              request.accountKey(),
+              (client, accountKey) -> {
+                String calendarId = resolveCalendarId(request.calendarId());
+                String eventId = request.eventId();
+                if (isBlank(eventId)) {
+                  return "missing event_id";
+                }
+                client.events().delete(calendarId, eventId).execute();
+                return "deleted";
+              });
         });
   }
 }

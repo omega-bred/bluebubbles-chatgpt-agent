@@ -13,6 +13,7 @@ import io.breland.bbagent.server.agent.cadence.models.CadenceToolCall;
 import io.breland.bbagent.server.agent.cadence.models.GeneratedImage;
 import io.breland.bbagent.server.agent.cadence.models.ImageSendResult;
 import io.breland.bbagent.server.agent.transport.MessageTransport;
+import io.breland.bbagent.server.agent.transport.bb.BBHttpClientWrapper;
 import io.breland.bbagent.server.blobstore.BlobStore;
 import java.util.ArrayList;
 import java.util.HashSet;

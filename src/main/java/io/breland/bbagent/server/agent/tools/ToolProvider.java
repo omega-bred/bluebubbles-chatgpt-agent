@@ -1,5 +1,6 @@
 package io.breland.bbagent.server.agent.tools;
 
+@FunctionalInterface
 public interface ToolProvider {
-  public AgentTool getTool();
+  AgentTool getTool();
 }

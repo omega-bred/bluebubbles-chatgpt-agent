@@ -1,6 +1,6 @@
 package io.breland.bbagent.server.actuators;
 
-import io.breland.bbagent.server.agent.BBHttpClientWrapper;
+import io.breland.bbagent.server.agent.transport.bb.BBHttpClientWrapper;
 import java.util.concurrent.atomic.AtomicReference;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.actuate.health.Health;

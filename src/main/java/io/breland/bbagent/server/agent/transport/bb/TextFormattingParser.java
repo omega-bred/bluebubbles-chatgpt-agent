@@ -1,4 +1,4 @@
-package io.breland.bbagent.server.agent;
+package io.breland.bbagent.server.agent.transport.bb;
 
 import io.breland.bbagent.generated.bluebubblesclient.model.TextFormattingRange;
 import java.util.ArrayDeque;
@@ -8,9 +8,9 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-final class TextFormattingParser {
+public final class TextFormattingParser {
 
-  record Result(String text, List<TextFormattingRange> formatting) {}
+  public record Result(String text, List<TextFormattingRange> formatting) {}
 
   private static final int STYLE_BOLD = 1;
   private static final int STYLE_ITALIC = 1 << 1;
@@ -27,7 +27,7 @@ final class TextFormattingParser {
 
   private TextFormattingParser() {}
 
-  static Result parse(String input) {
+  public static Result parse(String input) {
     if (input == null || input.isEmpty()) {
       return new Result(input, List.of());
     }

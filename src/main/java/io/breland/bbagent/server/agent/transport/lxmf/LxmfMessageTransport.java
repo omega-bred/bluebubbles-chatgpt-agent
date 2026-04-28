@@ -1,7 +1,8 @@
-package io.breland.bbagent.server.agent.transport;
+package io.breland.bbagent.server.agent.transport.lxmf;
 
 import io.breland.bbagent.server.agent.IncomingMessage;
-import io.breland.bbagent.server.agent.lxmf.LxmfBridgeClient;
+import io.breland.bbagent.server.agent.transport.MessageTransport;
+import io.breland.bbagent.server.agent.transport.OutgoingTextMessage;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.stereotype.Component;
 
