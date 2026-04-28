@@ -17,8 +17,8 @@ def env(name, default=""):
     return os.environ.get(name, default)
 
 
-BRIDGE_HOST = env("LXMF_BRIDGE_HOST", "0.0.0.0")
-BRIDGE_PORT = int(env("LXMF_BRIDGE_PORT", "8091"))
+BRIDGE_HOST = env("LXMF_BRIDGE_LISTEN_HOST", env("LXMF_BRIDGE_HOST", "0.0.0.0"))
+BRIDGE_PORT = int(env("LXMF_BRIDGE_LISTEN_PORT", "8091"))
 BRIDGE_SECRET = env("LXMF_BRIDGE_WEBHOOK_SECRET", "")
 AGENT_BASE_URL = env(
     "AGENT_BASE_URL",

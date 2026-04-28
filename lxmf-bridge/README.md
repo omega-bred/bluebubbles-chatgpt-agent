@@ -9,6 +9,8 @@ agent replies.
 Important environment variables:
 
 - `LXMF_BRIDGE_WEBHOOK_SECRET`: shared secret for both bridge directions.
+- `LXMF_BRIDGE_LISTEN_HOST`: HTTP listen host, defaulting to `0.0.0.0`.
+- `LXMF_BRIDGE_LISTEN_PORT`: HTTP listen port, defaulting to `8091`.
 - `AGENT_BASE_URL`: base URL of the Spring agent service.
 - `RNS_CONFIG_DIR`: Reticulum config directory.
 - `LXMF_STORAGE_DIR`: LXMF router storage directory.

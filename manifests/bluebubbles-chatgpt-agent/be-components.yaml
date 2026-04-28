@@ -111,6 +111,7 @@ spec:
       labels:
         app: bluebubbles-chatgpt-agent
     spec:
+      enableServiceLinks: false
       serviceAccountName: bluebubbles-chatgpt-agent
       containers:
         - name: bluebubbles-chatgpt-agent
@@ -292,6 +293,7 @@ spec:
       labels:
         app: lxmf-bridge
     spec:
+      enableServiceLinks: false
       containers:
         - name: lxmf-bridge
           env:
@@ -300,6 +302,8 @@ spec:
                 secretKeyRef:
                   key: "password"
                   name: lxmf-bridge-webhook-secret
+            - name: LXMF_BRIDGE_LISTEN_PORT
+              value: "8091"
             - name: AGENT_BASE_URL
               value: "http://bluebubbles-chatgpt-agent.bluebubbles-chatgpt-agent.svc.cluster.local"
             - name: RNS_BACKBONE_REMOTE
