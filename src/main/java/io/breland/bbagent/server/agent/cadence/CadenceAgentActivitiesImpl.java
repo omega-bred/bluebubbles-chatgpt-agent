@@ -12,6 +12,7 @@ import io.breland.bbagent.server.agent.cadence.models.CadenceResponseBundle;
 import io.breland.bbagent.server.agent.cadence.models.CadenceToolCall;
 import io.breland.bbagent.server.agent.cadence.models.GeneratedImage;
 import io.breland.bbagent.server.agent.cadence.models.ImageSendResult;
+import io.breland.bbagent.server.agent.transport.MessageTransport;
 import io.breland.bbagent.server.blobstore.BlobStore;
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -25,13 +26,10 @@ import org.springframework.stereotype.Component;
 public class CadenceAgentActivitiesImpl implements CadenceAgentActivities {
 
   private final BBMessageAgent messageAgent;
-  private final BBHttpClientWrapper httpClient;
   private final BlobStore blobStore;
 
-  public CadenceAgentActivitiesImpl(
-      BBMessageAgent messageAgent, BBHttpClientWrapper httpClient, BlobStore blobStore) {
+  public CadenceAgentActivitiesImpl(BBMessageAgent messageAgent, BlobStore blobStore) {
     this.messageAgent = messageAgent;
-    this.httpClient = httpClient;
     this.blobStore = blobStore;
   }
 
@@ -174,6 +172,10 @@ public class CadenceAgentActivitiesImpl implements CadenceAgentActivities {
     if (generatedImages.isEmpty()) {
       return new ImageSendResult(false, false);
     }
+    MessageTransport transport = messageAgent.transportFor(message);
+    if (!transport.supportsGeneratedImages()) {
+      return new ImageSendResult(false, false);
+    }
     String caption = assistantText;
     if (caption != null) {
       String trimmed = caption.trim();
@@ -190,7 +192,7 @@ public class CadenceAgentActivitiesImpl implements CadenceAgentActivities {
     if (!messageAgent.canSendResponses(workflowContext)) {
       return new ImageSendResult(false, false);
     }
-    boolean sent = this.httpClient.sendMultipartMessage(message.chatGuid(), caption, attachments);
+    boolean sent = transport.sendMultipartMessage(message.chatGuid(), caption, attachments);
     boolean captionSent = sent && caption != null && !caption.isBlank();
     return new ImageSendResult(sent, captionSent);
   }
@@ -201,7 +203,11 @@ public class CadenceAgentActivitiesImpl implements CadenceAgentActivities {
     if (!messageAgent.canSendResponses(workflowContext)) {
       return false;
     }
-    boolean sent = this.httpClient.sendReactionDirect(message, reaction);
+    MessageTransport transport = messageAgent.transportFor(message);
+    if (!transport.supportsReactions()) {
+      return false;
+    }
+    boolean sent = transport.sendReaction(message, reaction);
     if (sent) {
       recordAssistantTurn(message, "[reaction: " + reaction + "]", workflowContext);
     }

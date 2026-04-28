@@ -4,6 +4,7 @@ import io.breland.bbagent.server.agent.AgentWorkflowContext;
 import io.breland.bbagent.server.agent.BBMessageAgent;
 import io.breland.bbagent.server.agent.ConversationState;
 import io.breland.bbagent.server.agent.IncomingMessage;
+import io.breland.bbagent.server.agent.transport.OutgoingTextMessage;
 
 public class ToolContext {
   private final BBMessageAgent bbMessageAgent;
@@ -45,6 +46,20 @@ public class ToolContext {
 
   public void recordAssistantTurn(String content) {
     bbMessageAgent.recordAssistantTurnForCurrentMessage(message, content, workflowContext);
+  }
+
+  public boolean sendText(OutgoingTextMessage outgoingMessage) {
+    return bbMessageAgent.sendTextFromTool(message, outgoingMessage);
+  }
+
+  public boolean sendReaction(String reaction) {
+    return bbMessageAgent.sendReactionFromTool(message, reaction);
+  }
+
+  public boolean sendReaction(
+      String conversationId, String selectedMessageGuid, String reaction, Integer partIndex) {
+    return bbMessageAgent.sendReactionFromTool(
+        message, conversationId, selectedMessageGuid, reaction, partIndex);
   }
 
   public boolean canSendResponses() {

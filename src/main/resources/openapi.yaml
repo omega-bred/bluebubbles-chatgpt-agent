@@ -10,6 +10,8 @@ tags:
     description: endpoints related to ping
   - name: bluebubbles
     description: BlueBubbles webhook endpoints
+  - name: lxmf
+    description: LXMF bridge webhook endpoints
   - name: gcal
     description: Google Calendar OAuth endpoints
   - name: coder
@@ -36,6 +38,39 @@ paths:
       responses:
         '200':
           description: Message processed
+          content:
+            application/json:
+              schema:
+                type: object
+  /api/v1/lxmf/receive.messages:
+    post:
+      operationId: lxmfReceiveMessages
+      tags:
+        - lxmf
+      summary: LXMF bridge message webhook
+      description: Receives normalized inbound LXMF messages from the LXMF bridge.
+      parameters:
+        - name: X-LXMF-Bridge-Secret
+          in: header
+          description: Shared secret used by the LXMF bridge to authenticate webhook calls.
+          required: false
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LxmfMessageReceivedRequest'
+      responses:
+        '200':
+          description: Message processed
+          content:
+            application/json:
+              schema:
+                type: object
+        '401':
+          description: Missing or invalid bridge secret
           content:
             application/json:
               schema:
@@ -531,6 +566,43 @@ components:
           type: object
           description: Thin callback data with status, summary, IDs, links, artifacts, or errors.
           additionalProperties: true
+      additionalProperties: true
+    LxmfMessageReceivedRequest:
+      type: object
+      required:
+        - message_id
+        - source_hash
+        - content
+      properties:
+        message_id:
+          type: string
+          description: Stable LXMF message identifier from the bridge.
+        source_hash:
+          type: string
+          description: Hex destination hash of the sender.
+        destination_hash:
+          type: string
+          nullable: true
+          description: Hex destination hash that received the message.
+        title:
+          type: string
+          nullable: true
+        content:
+          type: string
+        timestamp:
+          type: string
+          format: date-time
+          nullable: true
+        fields:
+          type: object
+          nullable: true
+          additionalProperties: true
+        signature_validated:
+          type: boolean
+          nullable: true
+        stamp_valid:
+          type: boolean
+          nullable: true
       additionalProperties: true
     BlueBubblesMessageReceivedRequest:
       type: object

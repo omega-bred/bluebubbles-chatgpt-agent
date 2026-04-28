@@ -34,14 +34,15 @@ jobs:
         env: {}
 
   build_and_push:
-    name: Build and Push Docker Image
+    name: Build and Push Docker Images
     needs: test
     # Only build/push on push events (not PRs)
     if: ${{ github.event_name == 'push' }}
     runs-on: ubuntu-latest
     env:
       REGISTRY: ghcr.io
-      IMAGE_NAME: ${{ github.repository }}
+      APP_IMAGE_NAME: ${{ github.repository }}
+      LXMF_BRIDGE_IMAGE_NAME: ${{ github.repository }}-lxmf-bridge
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -59,24 +60,43 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Extract metadata (tags, labels)
-        id: meta
+      - name: Extract app metadata (tags, labels)
+        id: app_meta
         uses: docker/metadata-action@v5
         with:
-          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          images: ${{ env.REGISTRY }}/${{ env.APP_IMAGE_NAME }}
           tags: |
             type=sha,format=long
             type=raw,value=${{ github.sha }}-${{ github.run_number }}
             type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
 
-      - name: Build and push
+      - name: Build and push app image
         uses: docker/build-push-action@v6
         with:
           context: .
           push: true
           platforms: linux/amd64
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
+          tags: ${{ steps.app_meta.outputs.tags }}
+          labels: ${{ steps.app_meta.outputs.labels }}
+
+      - name: Extract LXMF bridge metadata (tags, labels)
+        id: lxmf_bridge_meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.LXMF_BRIDGE_IMAGE_NAME }}
+          tags: |
+            type=sha,format=long
+            type=raw,value=${{ github.sha }}-${{ github.run_number }}
+            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
+
+      - name: Build and push LXMF bridge image
+        uses: docker/build-push-action@v6
+        with:
+          context: ./lxmf-bridge
+          push: true
+          platforms: linux/amd64
+          tags: ${{ steps.lxmf_bridge_meta.outputs.tags }}
+          labels: ${{ steps.lxmf_bridge_meta.outputs.labels }}
 
   update_manifest:
     name: Update Kube Manifest
@@ -104,6 +124,7 @@ jobs:
           # Set this secret to the image name used in your manifests, e.g. "registry.breland.io/omega-bred/bluebubbles-chatgpt-agent"
           # If not set, it falls back to "ghcr.io/${{ github.repository }}"
           KUSTOMIZE_IMAGE_NAME: ${{ secrets.KUSTOMIZE_IMAGE_NAME }}
+          KUSTOMIZE_LXMF_BRIDGE_IMAGE_NAME: ${{ secrets.KUSTOMIZE_LXMF_BRIDGE_IMAGE_NAME }}
           BUILD_SHA: ${{ github.sha }}
           BUILD_RUN_NUMBER: ${{ github.run_number }}
         run: |
@@ -112,9 +133,15 @@ jobs:
           if [ -z "$IMAGE_NAME" ]; then
             IMAGE_NAME="ghcr.io/${{ github.repository }}"
           fi
+          LXMF_BRIDGE_IMAGE_NAME="${KUSTOMIZE_LXMF_BRIDGE_IMAGE_NAME:-}"
+          if [ -z "$LXMF_BRIDGE_IMAGE_NAME" ]; then
+            LXMF_BRIDGE_IMAGE_NAME="ghcr.io/${{ github.repository }}-lxmf-bridge"
+          fi
           NEW_TAG="${BUILD_SHA}-${BUILD_RUN_NUMBER}"
           echo "Setting image ${IMAGE_NAME} to tag ${NEW_TAG}"
           kustomize edit set image "${IMAGE_NAME}=${IMAGE_NAME}:${NEW_TAG}"
+          echo "Setting image ${LXMF_BRIDGE_IMAGE_NAME} to tag ${NEW_TAG}"
+          kustomize edit set image "${LXMF_BRIDGE_IMAGE_NAME}=${LXMF_BRIDGE_IMAGE_NAME}:${NEW_TAG}"
 
       - name: Commit changes (if any)
         run: |

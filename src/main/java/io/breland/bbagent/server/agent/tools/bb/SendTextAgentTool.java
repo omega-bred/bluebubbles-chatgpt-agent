@@ -2,22 +2,21 @@ package io.breland.bbagent.server.agent.tools.bb;
 
 import static io.breland.bbagent.server.agent.tools.JsonSchemaUtilities.jsonSchema;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
-import io.breland.bbagent.generated.bluebubblesclient.model.ApiV1MessageTextPostRequest;
-import io.breland.bbagent.server.agent.BBHttpClientWrapper;
 import io.breland.bbagent.server.agent.tools.AgentTool;
 import io.breland.bbagent.server.agent.tools.ToolProvider;
+import io.breland.bbagent.server.agent.transport.OutgoingTextMessage;
 import io.swagger.v3.oas.annotations.media.Schema;
 import java.util.Locale;
 import java.util.Optional;
-import java.util.UUID;
 
 public class SendTextAgentTool implements ToolProvider {
 
   public static final String TOOL_NAME = "send_text";
-  private final BBHttpClientWrapper bbHttpClientWrapper;
 
-  @Schema(description = "Send a text message via iMessage.")
+  @Schema(description = "Send a text message via the current chat transport.")
+  @JsonIgnoreProperties(ignoreUnknown = true)
   public record SendTextRequest(
       @Schema(description = "Text message to send.", requiredMode = Schema.RequiredMode.REQUIRED)
           String message,
@@ -78,21 +77,15 @@ public class SendTextAgentTool implements ToolProvider {
     SPOTLIGHT
   }
 
-  public SendTextAgentTool(BBHttpClientWrapper bbHttpClientWrapper) {
-    this.bbHttpClientWrapper = bbHttpClientWrapper;
-  }
-
   public AgentTool getTool() {
     return new AgentTool(
         TOOL_NAME,
-        "Send a plain-text reply via iMessage (no markdown or formatting markers). You may optionally apply an iMessage effect sparingly (e.g. happy_birthday for birthday wishes).",
+        "Send a plain-text reply via the current chat transport (no markdown or formatting markers). You may optionally apply an iMessage effect when the current transport supports it.",
         jsonSchema(SendTextRequest.class),
         false,
         (context, args) -> {
-          ApiV1MessageTextPostRequest request = new ApiV1MessageTextPostRequest();
           SendTextRequest toolRequest =
               context.getMapper().convertValue(args, SendTextRequest.class);
-          String chatGuid = context.message().chatGuid();
           String message = toolRequest.message();
           if (message == null || message.isBlank()) {
             return "missing message";
@@ -100,62 +93,38 @@ public class SendTextAgentTool implements ToolProvider {
           if (!context.canSendResponses()) {
             return "skipped: outdated workflow";
           }
-          request.setChatGuid(chatGuid);
-          request.setMessage(message);
-          request.setTempGuid(UUID.randomUUID().toString());
-
-          Optional.ofNullable(toolRequest.selectedMessageGuid())
-              .ifPresent(request::selectedMessageGuid);
-
-          Optional.ofNullable(toolRequest.effect())
-              .map(
-                  effect -> {
-                    // https://docs.rs/imessage-database/latest/imessage_database/message_types/expressives/enum.Expressive.html
-                    // com.apple.MobileSMS.expressivesend.gentle
-                    // com.apple.MobileSMS.expressivesend.impact
-                    // com.apple.MobileSMS.expressivesend.invisibleink
-                    // com.apple.MobileSMS.expressivesend.loud
-                    // com.apple.messages.effect.CKConfettiEffect
-                    // com.apple.messages.effect.CKEchoEffect
-                    // com.apple.messages.effect.CKFireworksEffect
-                    // com.apple.messages.effect.CKHappyBirthdayEffect
-                    // com.apple.messages.effect.CKHeartEffect
-                    // com.apple.messages.effect.CKLasersEffect
-                    // com.apple.messages.effect.CKShootingStarEffect
-                    // com.apple.messages.effect.CKSparklesEffect
-                    // com.apple.messages.effect.CKSpotlightEffect
-                    String normalized =
-                        effect
-                            .name()
-                            .trim()
-                            .toLowerCase(Locale.ROOT)
-                            .replace("-", "_")
-                            .replace(" ", "_");
-                    return switch (normalized) {
-                      case "slam", "impact" -> "com.apple.MobileSMS.expressivesend.impact";
-                      case "gentle" -> "com.apple.MobileSMS.expressivesend.gentle";
-                      case "invisible", "invisible_ink" ->
-                          "com.apple.MobileSMS.expressivesend.invisibleink";
-                      case "loud" -> "com.apple.MobileSMS.expressivesend.loud";
-                      case "confetti" -> "com.apple.messages.effect.CKConfettiEffect";
-                      case "echo" -> "com.apple.messages.effect.CKEchoEffect";
-                      case "fireworks" -> "com.apple.messages.effect.CKFireworksEffect";
-                      case "happy_birthday" -> "com.apple.messages.effect.CKHappyBirthdayEffect";
-                      case "heart", "love" -> "com.apple.messages.effect.CKHeartEffect";
-                      case "lasers" -> "com.apple.messages.effect.CKLasersEffect";
-                      case "shooting_star" -> "com.apple.messages.effect.CKShootingStarEffect";
-                      case "sparkles" -> "com.apple.messages.effect.CKSparklesEffect";
-                      case "spotlight" -> "com.apple.messages.effect.CKSpotlightEffect";
-                      default -> null;
-                    };
-                  })
-              .ifPresent(request::effectId);
-
-          Optional.ofNullable(toolRequest.partIndex()).ifPresent(request::partIndex);
-
-          bbHttpClientWrapper.sendTextDirect(request);
+          String effectId =
+              Optional.ofNullable(toolRequest.effect()).map(this::effectId).orElse(null);
+          context.sendText(
+              new OutgoingTextMessage(
+                  message, toolRequest.selectedMessageGuid(), effectId, toolRequest.partIndex()));
           context.recordAssistantTurn(message);
           return "sent";
         });
+  }
+
+  private String effectId(Effect effect) {
+    if (effect == null) {
+      return null;
+    }
+    // https://docs.rs/imessage-database/latest/imessage_database/message_types/expressives/enum.Expressive.html
+    String normalized =
+        effect.name().trim().toLowerCase(Locale.ROOT).replace("-", "_").replace(" ", "_");
+    return switch (normalized) {
+      case "slam", "impact" -> "com.apple.MobileSMS.expressivesend.impact";
+      case "gentle" -> "com.apple.MobileSMS.expressivesend.gentle";
+      case "invisible", "invisible_ink" -> "com.apple.MobileSMS.expressivesend.invisibleink";
+      case "loud" -> "com.apple.MobileSMS.expressivesend.loud";
+      case "confetti" -> "com.apple.messages.effect.CKConfettiEffect";
+      case "echo" -> "com.apple.messages.effect.CKEchoEffect";
+      case "fireworks" -> "com.apple.messages.effect.CKFireworksEffect";
+      case "happy_birthday" -> "com.apple.messages.effect.CKHappyBirthdayEffect";
+      case "heart", "love" -> "com.apple.messages.effect.CKHeartEffect";
+      case "lasers" -> "com.apple.messages.effect.CKLasersEffect";
+      case "shooting_star" -> "com.apple.messages.effect.CKShootingStarEffect";
+      case "sparkles" -> "com.apple.messages.effect.CKSparklesEffect";
+      case "spotlight" -> "com.apple.messages.effect.CKSpotlightEffect";
+      default -> null;
+    };
   }
 }

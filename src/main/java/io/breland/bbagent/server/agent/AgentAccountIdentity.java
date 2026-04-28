@@ -13,6 +13,11 @@ public record AgentAccountIdentity(
     if (message == null) {
       return empty();
     }
+    if (message.isLxmfTransport()) {
+      return from(
+          IncomingMessage.transportPrefix(IncomingMessage.TRANSPORT_LXMF, message.sender()),
+          IncomingMessage.transportPrefix(IncomingMessage.TRANSPORT_LXMF, message.chatGuid()));
+    }
     return from(message.sender(), message.chatGuid());
   }
 

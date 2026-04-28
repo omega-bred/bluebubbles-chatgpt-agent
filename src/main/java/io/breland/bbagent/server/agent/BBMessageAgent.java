@@ -11,8 +11,6 @@ import com.openai.models.responses.*;
 import com.uber.cadence.WorkflowExecution;
 import com.uber.cadence.workflow.Workflow;
 import com.uber.cadence.workflow.WorkflowInfo;
-import io.breland.bbagent.generated.bluebubblesclient.model.ApiV1ChatChatGuidMessageGet200ResponseDataInner;
-import io.breland.bbagent.generated.bluebubblesclient.model.ApiV1MessageTextPostRequest;
 import io.breland.bbagent.generated.bluebubblesclient.model.FindMyFriendLocation;
 import io.breland.bbagent.server.agent.cadence.CadenceWorkflowLauncher;
 import io.breland.bbagent.server.agent.cadence.models.CadenceMessageWorkflowRequest;
@@ -45,6 +43,9 @@ import io.breland.bbagent.server.agent.tools.scheduled.ScheduledEventListTool;
 import io.breland.bbagent.server.agent.tools.scheduled.ScheduledEventTool;
 import io.breland.bbagent.server.agent.tools.website.GetWebsiteAccountLinkStatusAgentTool;
 import io.breland.bbagent.server.agent.tools.website.LinkWebsiteAccountAgentTool;
+import io.breland.bbagent.server.agent.transport.MessageTransport;
+import io.breland.bbagent.server.agent.transport.MessageTransportRegistry;
+import io.breland.bbagent.server.agent.transport.OutgoingTextMessage;
 import io.breland.bbagent.server.agent.workflowcallback.WorkflowCallbackService;
 import io.breland.bbagent.server.website.WebsiteAccountService;
 import java.io.ByteArrayOutputStream;
@@ -90,6 +91,14 @@ public class BBMessageAgent {
 
   private static final Set<String> GROUP_ONLY_TOOLS =
       Set.of(RenameConversationAgentTool.TOOL_NAME, SetGroupIconAgentTool.TOOL_NAME);
+  private static final Set<String> BLUEBUBBLES_ONLY_TOOLS =
+      Set.of(
+          SearchConvoHistoryAgentTool.TOOL_NAME,
+          CurrentConversationInfoAgentTool.TOOL_NAME,
+          RenameConversationAgentTool.TOOL_NAME,
+          SetGroupIconAgentTool.TOOL_NAME,
+          SendGiphyAgentTool.TOOL_NAME,
+          GetThreadContextAgentTool.TOOL_NAME);
   private static final Set<String> HIDDEN_CODER_MCP_TOOL_NAMES =
       Set.of(StartCoderAsyncTaskAgentTool.CREATE_TASK_MCP_TOOL);
   public static final Set<String> SUPPORTED_REACTIONS =
@@ -116,6 +125,7 @@ public class BBMessageAgent {
   @Getter private final Map<String, ConversationState> conversations = new ConcurrentHashMap<>();
   private final AgentSettingsStore agentSettingsStore;
   private final AgentWorkflowProperties workflowProperties;
+  private final MessageTransportRegistry transportRegistry;
   private final CadenceWorkflowLauncher cadenceWorkflowLauncher;
   private final Map<String, AgentTool> tools = new ConcurrentHashMap<>();
 
@@ -151,6 +161,7 @@ public class BBMessageAgent {
       GiphyClient giphyClient,
       AgentSettingsStore agentSettingsStore,
       AgentWorkflowProperties workflowProperties,
+      MessageTransportRegistry transportRegistry,
       ObjectMapper objectMapper,
       @Nullable CadenceWorkflowLauncher cadenceWorkflowLauncher,
       ModelPicker modelPicker) {
@@ -164,6 +175,10 @@ public class BBMessageAgent {
     this.giphyClient = giphyClient;
     this.agentSettingsStore = agentSettingsStore;
     this.workflowProperties = workflowProperties;
+    this.transportRegistry =
+        transportRegistry != null
+            ? transportRegistry
+            : MessageTransportRegistry.blueBubblesOnly(bbHttpClientWrapper);
     this.objectMapper = objectMapper;
     this.cadenceWorkflowLauncher = cadenceWorkflowLauncher;
     this.modelPicker = modelPicker;
@@ -192,6 +207,7 @@ public class BBMessageAgent {
         giphyClient,
         agentSettingsStore,
         workflowProperties,
+        null,
         cadenceWorkflowLauncher,
         modelPicker);
   }
@@ -208,6 +224,7 @@ public class BBMessageAgent {
       GiphyClient giphyClient,
       AgentSettingsStore agentSettingsStore,
       AgentWorkflowProperties workflowProperties,
+      @Nullable MessageTransportRegistry transportRegistry,
       @Nullable CadenceWorkflowLauncher cadenceWorkflowLauncher,
       ModelPicker modelPicker) {
     this.openAIClient = openAIClient;
@@ -221,6 +238,10 @@ public class BBMessageAgent {
     this.giphyClient = giphyClient;
     this.agentSettingsStore = agentSettingsStore;
     this.workflowProperties = workflowProperties;
+    this.transportRegistry =
+        transportRegistry != null
+            ? transportRegistry
+            : MessageTransportRegistry.blueBubblesOnly(bbHttpClientWrapper);
     this.objectMapper = new ObjectMapper();
     this.cadenceWorkflowLauncher = cadenceWorkflowLauncher;
     this.modelPicker = modelPicker;
@@ -228,34 +249,11 @@ public class BBMessageAgent {
   }
 
   public ConversationState computeConversationState(String chatId, IncomingMessage message) {
+    MessageTransport transport = transportFor(message);
     ConversationState stateToHydrate = new ConversationState();
-    log.info("Hydrating conversation state for chat {}", chatId);
+    log.info("Hydrating conversation state for chat {} via {}", chatId, transport.displayName());
     try {
-      var messages = bbHttpClientWrapper.getMessagesInChat(chatId);
-      if (messages != null) {
-        messages
-            .reversed()
-            .forEach(
-                msg -> {
-                  if (!shouldIncludeHydratedHistoryMessage(msg)) {
-                    return;
-                  }
-                  if (isCurrentMessage(msg.getGuid(), message)) {
-                    return;
-                  }
-                  IncomingMessage hydratedMessage = IncomingMessage.create(msg);
-                  Instant timestamp =
-                      hydratedMessage != null && hydratedMessage.timestamp() != null
-                          ? hydratedMessage.timestamp()
-                          : Instant.now();
-                  if (Boolean.TRUE.equals(msg.getIsFromMe())) {
-                    stateToHydrate.addTurn(ConversationTurn.assistant(msg.getText(), timestamp));
-                  } else if (hydratedMessage != null) {
-                    stateToHydrate.recordIncomingTurnIfAbsent(hydratedMessage);
-                  }
-                });
-      }
-
+      stateToHydrate = transport.hydrateConversationState(chatId, message);
       log.info(
           "Hydrated conversation state for chat {} got {} messages from history latestIncomingTs={} lastIncomingGuid={}",
           chatId,
@@ -266,25 +264,6 @@ public class BBMessageAgent {
       log.warn("Failed to hydrate conversation state for chat {}", chatId, e);
     }
     return stateToHydrate;
-  }
-
-  private boolean shouldIncludeHydratedHistoryMessage(
-      ApiV1ChatChatGuidMessageGet200ResponseDataInner msg) {
-    if (msg == null) {
-      return false;
-    }
-    if (Boolean.TRUE.equals(msg.getIsSystemMessage())
-        || Boolean.TRUE.equals(msg.getIsServiceMessage())) {
-      return false;
-    }
-    String text = msg.getText();
-    return text != null && !text.isBlank() && !isReactionMessage(text);
-  }
-
-  private boolean isCurrentMessage(String hydratedMessageGuid, IncomingMessage currentMessage) {
-    return currentMessage != null
-        && currentMessage.messageGuid() != null
-        && currentMessage.messageGuid().equals(hydratedMessageGuid);
   }
 
   // main invocation point from webhook
@@ -356,7 +335,9 @@ public class BBMessageAgent {
     if (message.chatGuid() == null || message.chatGuid().isBlank()) {
       return false;
     }
-    if (message.service() != null && !IMESSAGE_SERVICE.equalsIgnoreCase(message.service())) {
+    if (message.isBlueBubblesTransport()
+        && message.service() != null
+        && !IMESSAGE_SERVICE.equalsIgnoreCase(message.service())) {
       return false;
     }
     if (isReactionMessage(message.text())) {
@@ -467,7 +448,7 @@ public class BBMessageAgent {
     return trimmed.regionMatches(true, 0, "Chat", 0, 4);
   }
 
-  static boolean isReactionMessage(String text) {
+  public static boolean isReactionMessage(String text) {
     if (text == null) {
       return false;
     }
@@ -563,9 +544,10 @@ public class BBMessageAgent {
         AgentResponseHelper.normalizeAssistantText(
             objectMapper, AgentResponseHelper.extractResponseText(response));
     List<GeneratedImage> generatedImages = extractGeneratedImages(response);
+    MessageTransport transport = transportFor(message);
     log.info("Extracted " + generatedImages.size() + " images from assistant response");
     boolean sentImageByMultipart = false;
-    if (!generatedImages.isEmpty()) {
+    if (!generatedImages.isEmpty() && transport.supportsGeneratedImages()) {
       log.info("Found {} image for multipart requests", generatedImages.size());
       String caption = assistantText;
       if (caption != null) {
@@ -582,21 +564,22 @@ public class BBMessageAgent {
       }
       if (canSendResponses(workflowContext)) {
         sentImageByMultipart =
-            bbHttpClientWrapper.sendMultipartMessage(message.chatGuid(), caption, attachments);
+            transport.sendMultipartMessage(message.chatGuid(), caption, attachments);
         if (sentImageByMultipart && caption != null && !caption.isBlank()) {
           sentTextByTool = true;
         }
       } else {
         log.info("Skipping multipart image send for outdated workflow {}", workflowContext);
       }
+    } else if (!generatedImages.isEmpty()) {
+      log.info("Skipping generated image send for unsupported transport {}", transport.id());
     }
     Optional<String> parsedReaction = parseReactionText(assistantText);
-    if (parsedReaction.isPresent()) {
+    if (parsedReaction.isPresent() && transport.supportsReactions()) {
       String reaction = parsedReaction.get();
       if (sentReactionByTool) {
         log.debug("Skipping reaction text output since reaction tool already ran");
-      } else if (canSendResponses(workflowContext)
-          && bbHttpClientWrapper.sendReactionDirect(message, reaction)) {
+      } else if (canSendResponses(workflowContext) && transport.sendReaction(message, reaction)) {
         recordAssistantTurnForCurrentMessage(
             message, "[reaction: " + reaction + "]", workflowContext);
       } else {
@@ -673,20 +656,52 @@ public class BBMessageAgent {
     if (message == null || text == null || text.isBlank()) {
       return;
     }
-    String replyTarget = resolveThreadRootGuid(message);
-    if (replyTarget == null || replyTarget.isBlank()) {
-      bbHttpClientWrapper.sendTextDirect(message, text);
-      return;
-    }
-    ApiV1MessageTextPostRequest request = new ApiV1MessageTextPostRequest();
-    request.setChatGuid(message.chatGuid());
-    request.setMessage(text);
-    request.setSelectedMessageGuid(replyTarget);
-    bbHttpClientWrapper.sendTextDirect(request);
+    MessageTransport transport = transportFor(message);
+    String replyTarget = transport.supportsThreadReplies() ? resolveThreadRootGuid(message) : null;
+    transport.sendText(message, new OutgoingTextMessage(text, replyTarget, null, null));
   }
 
   BBHttpClientWrapper getBbHttpClientWrapper() {
     return bbHttpClientWrapper;
+  }
+
+  public boolean sendTextFromTool(IncomingMessage message, OutgoingTextMessage outgoingMessage) {
+    if (message == null || outgoingMessage == null || outgoingMessage.text() == null) {
+      return false;
+    }
+    return transportFor(message).sendText(message, outgoingMessage);
+  }
+
+  public boolean sendReactionFromTool(IncomingMessage message, String reaction) {
+    if (message == null || reaction == null || reaction.isBlank()) {
+      return false;
+    }
+    MessageTransport transport = transportFor(message);
+    if (!transport.supportsReactions()) {
+      return false;
+    }
+    return transport.sendReaction(message, reaction);
+  }
+
+  public boolean sendReactionFromTool(
+      IncomingMessage message,
+      String conversationId,
+      String selectedMessageGuid,
+      String reaction,
+      Integer partIndex) {
+    if (message == null || reaction == null || reaction.isBlank()) {
+      return false;
+    }
+    MessageTransport transport = transportFor(message);
+    if (!transport.supportsReactions()) {
+      return false;
+    }
+    return transport.sendReaction(
+        message, conversationId, selectedMessageGuid, reaction, partIndex);
+  }
+
+  public MessageTransport transportFor(IncomingMessage message) {
+    return transportRegistry.resolve(message);
   }
 
   public Response createResponse(
@@ -949,6 +964,14 @@ public class BBMessageAgent {
   }
 
   private boolean shouldIncludeTool(AgentTool tool, IncomingMessage message) {
+    MessageTransport transport = transportFor(message);
+    if (SendReactionAgentTool.TOOL_NAME.equals(tool.name())) {
+      return transport.supportsReactions();
+    }
+    if (BLUEBUBBLES_ONLY_TOOLS.contains(tool.name())
+        && !IncomingMessage.TRANSPORT_BLUEBUBBLES.equals(transport.id())) {
+      return false;
+    }
     if (GROUP_ONLY_TOOLS.contains(tool.name())) {
       return message != null && message.isGroup();
     }
@@ -1096,7 +1119,7 @@ public class BBMessageAgent {
     List<ResponseInputItem> items = new ArrayList<>();
     boolean isGroupMessage = message.isGroup();
     items.add(ResponseInputItem.ofEasyInputMessage(systemMessage(isGroupMessage, message)));
-    items.add(ResponseInputItem.ofEasyInputMessage(developerMessage()));
+    items.add(ResponseInputItem.ofEasyInputMessage(developerMessage(message)));
     if (history != null) {
       for (ConversationTurn turn : history) {
         items.add(ResponseInputItem.ofEasyInputMessage(turn.toEasyInputMessage()));
@@ -1110,7 +1133,7 @@ public class BBMessageAgent {
   }
 
   private Optional<EasyInputMessage> findMyLocationContextMessage(IncomingMessage message) {
-    if (message == null || message.isGroup()) {
+    if (message == null || message.isGroup() || !message.isBlueBubblesTransport()) {
       return Optional.empty();
     }
     if (message.sender() == null || message.sender().isBlank()) {
@@ -1200,15 +1223,19 @@ public class BBMessageAgent {
               "Responsiveness: silent. Only respond when explicitly invoked with the activation prefix 'Chat' (case-insensitive).";
           case DEFAULT -> "";
         };
+    String transportInstruction =
+        message != null && message.isLxmfTransport()
+            ? "You are a chat assistant over LXMF on Reticulum. This transport currently supports one-on-one plain text only. Do not use reactions, attachments, generated images, group controls, or markdown. "
+            : "You are a chat assistant for iMessage via BlueBubbles. "
+                + "You can use reactions for quick acknowledgements and avoid spamming. "
+                + IMESSAGE_FORMATTING_INSTRUCTION;
     return EasyInputMessage.builder()
         .role(EasyInputMessage.Role.SYSTEM)
         .content(
-            "You are a chat assistant for iMessage via BlueBubbles. "
+            transportInstruction
                 + (groupMessage
                     ? "Only respond when it is helpful or requested - this is a group message and not all messages are for you. You MUST ONLY respond if the message was directed to you or if your response will add useful and helpful information."
                     : "This is a one on one message with a user. You should respond to messages unless no reply is needed.")
-                + "You can use reactions for quick acknowledgements and avoid spamming. "
-                + IMESSAGE_FORMATTING_INSTRUCTION
                 + "Never reply to your own messages."
                 + responsivenessInstruction
                 + "Use the "
@@ -1222,7 +1249,38 @@ public class BBMessageAgent {
         .build();
   }
 
-  private EasyInputMessage developerMessage() {
+  private EasyInputMessage developerMessage(IncomingMessage message) {
+    if (message != null && message.isLxmfTransport()) {
+      return EasyInputMessage.builder()
+          .role(EasyInputMessage.Role.DEVELOPER)
+          .content(
+              "You may respond with plain text if that is sufficient. "
+                  + "All outgoing LXMF text must be plain text only. Do not use markdown or formatting markers such as **, __, backticks, or markdown lists. "
+                  + "LXMF support is currently minimal: one-on-one text only. Do not try to send reactions, images, attachments, GIFs, group changes, or thread replies. "
+                  + "Only call "
+                  + SendTextAgentTool.TOOL_NAME
+                  + " when you specifically need to send an extra message; plain text is fine otherwise. "
+                  + "Use available tools for tasks like calendars, memory, Coder, scheduled follow-ups, or lookups when asked. "
+                  + "If the user asks the assistant to be more or less responsive, call "
+                  + AssistantResponsivenessAgentTool.TOOL_NAME
+                  + " to update the setting. The silent mode will only invoke responses when the message starts with 'Chat' (case-insensitive). "
+                  + "If a user shares their name, ask if it's okay to store it globally for future chats; only call "
+                  + AssistantNameAgentTool.TOOL_NAME
+                  + " after they explicitly agree. "
+                  + "For Google Calendar requests, use the available calendar tools. If the account is not linked, call "
+                  + ManageAccountsAgentTool.TOOL_NAME
+                  + " to get an auth_url and have the user complete the OAuth flow in their browser. "
+                  + "When the user shares information about themselves, or information that is helpful to remember, use the "
+                  + MemorySaveAgentTool.TOOL_NAME
+                  + " tool to persist that info. "
+                  + "If asked to recall details about the user or prior interactions, or if memory could help answer a question, call "
+                  + MemoryGetAgentTool.TOOL_NAME
+                  + " before responding. "
+                  + "If no reply is needed, output exactly "
+                  + NO_RESPONSE_TEXT
+                  + ".")
+          .build();
+    }
     return EasyInputMessage.builder()
         .role(EasyInputMessage.Role.DEVELOPER)
         .content(
@@ -1578,8 +1636,8 @@ public class BBMessageAgent {
   }
 
   private void registerBuiltInTools() {
-    registerTool(new SendTextAgentTool(bbHttpClientWrapper).getTool());
-    registerTool(new SendReactionAgentTool(bbHttpClientWrapper).getTool());
+    registerTool(new SendTextAgentTool().getTool());
+    registerTool(new SendReactionAgentTool().getTool());
     registerTool(new SearchConvoHistoryAgentTool(bbHttpClientWrapper).getTool());
     registerTool(new CurrentConversationInfoAgentTool(bbHttpClientWrapper).getTool());
     registerTool(new RenameConversationAgentTool(bbHttpClientWrapper).getTool());

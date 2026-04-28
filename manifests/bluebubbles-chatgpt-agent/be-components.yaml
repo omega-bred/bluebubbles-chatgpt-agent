@@ -8,6 +8,14 @@ metadata:
 apiVersion: onepassword.com/v1
 kind: OnePasswordItem
 metadata:
+  name: lxmf-bridge-webhook-secret #this name will also be used for naming the generated kubernetes secret
+  namespace: bluebubbles-chatgpt-agent
+spec:
+  itemPath: "vaults/Kubernetes/items/lxmf-bridge-webhook-secret"
+---
+apiVersion: onepassword.com/v1
+kind: OnePasswordItem
+metadata:
   name: giphy-api-key #this name will also be used for naming the generated kubernetes secret
   namespace: bluebubbles-chatgpt-agent
 spec:
@@ -144,6 +152,13 @@ spec:
                 secretKeyRef:
                   key: "password"
                   name: bluebubbles
+            - name: LXMF_BRIDGE_WEBHOOK_SECRET
+              valueFrom:
+                secretKeyRef:
+                  key: "password"
+                  name: lxmf-bridge-webhook-secret
+            - name: LXMF_BRIDGE_BASE_URL
+              value: "http://lxmf-bridge.bluebubbles-chatgpt-agent.svc.cluster.local:8091"
             - name: "MEM0_API_KEY"
               valueFrom:
                 secretKeyRef:
@@ -243,6 +258,105 @@ spec:
             secretName: gcal-mcp-server
 #      nodeSelector:
 #        topology.kubernetes.io/zone: "3646"
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: lxmf-bridge-pvc
+  namespace: bluebubbles-chatgpt-agent
+spec:
+  storageClassName: freenas-iscsi-csi-3646
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 2Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app: lxmf-bridge
+  name: lxmf-bridge
+  namespace: bluebubbles-chatgpt-agent
+spec:
+  replicas: 1
+  revisionHistoryLimit: 5
+  selector:
+    matchLabels:
+      app: lxmf-bridge
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        app: lxmf-bridge
+    spec:
+      containers:
+        - name: lxmf-bridge
+          env:
+            - name: LXMF_BRIDGE_WEBHOOK_SECRET
+              valueFrom:
+                secretKeyRef:
+                  key: "password"
+                  name: lxmf-bridge-webhook-secret
+            - name: AGENT_BASE_URL
+              value: "http://bluebubbles-chatgpt-agent.bluebubbles-chatgpt-agent.svc.cluster.local"
+            - name: RNS_BACKBONE_REMOTE
+              value: "rnode-public.rnode.svc.cluster.local"
+            - name: RNS_BACKBONE_PORT
+              value: "4242"
+            - name: LXMF_DISPLAY_NAME
+              value: "BlueBubbles ChatGPT Agent"
+          image: ghcr.io/omega-bred/bluebubbles-chatgpt-agent-lxmf-bridge:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8091
+              name: http
+              protocol: TCP
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8091
+            initialDelaySeconds: 10
+            periodSeconds: 30
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8091
+            initialDelaySeconds: 30
+            periodSeconds: 30
+          resources:
+            limits:
+              cpu: 512m
+              memory: 512Mi
+            requests:
+              cpu: 100m
+              memory: 128Mi
+          volumeMounts:
+            - name: lxmf-bridge-storage
+              mountPath: /var/lib/lxmf-bridge
+      volumes:
+        - name: lxmf-bridge-storage
+          persistentVolumeClaim:
+            claimName: lxmf-bridge-pvc
+---
+kind: Service
+apiVersion: v1
+metadata:
+  name: lxmf-bridge
+  namespace: bluebubbles-chatgpt-agent
+  labels:
+    app: lxmf-bridge
+spec:
+  ports:
+    - name: http
+      protocol: TCP
+      port: 8091
+      targetPort: 8091
+  selector:
+    app: lxmf-bridge
+  type: ClusterIP
 ---
 kind: Service
 apiVersion: v1

@@ -606,6 +606,7 @@ class BBMessageAgentTest {
             new InMemoryAgentSettingsStore(),
             new AgentWorkflowProperties(),
             null,
+            null,
             new ModelPicker());
 
     agent.handleIncomingMessage(
@@ -645,6 +646,7 @@ class BBMessageAgentTest {
             Mockito.mock(GiphyClient.class),
             new InMemoryAgentSettingsStore(),
             new AgentWorkflowProperties(),
+            null,
             null,
             new ModelPicker());
 
