@@ -23,6 +23,7 @@ public class LxmfBridgeClient {
   }
 
   public boolean sendText(String destinationHash, String content) {
+    log.info("Sending message to Lxmf bridge {}: {}", destinationHash, content);
     if (destinationHash == null || destinationHash.isBlank()) {
       log.warn("Cannot send LXMF message without destination hash");
       return false;
