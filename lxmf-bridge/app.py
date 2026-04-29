@@ -195,7 +195,41 @@ def authorize(headers):
     return header_secret == BRIDGE_SECRET or bearer_secret == BRIDGE_SECRET
 
 
+def read_chunked_body(stream):
+    chunks = []
+    while True:
+        size_line = stream.readline()
+        if not size_line:
+            raise ValueError("unexpected EOF while reading chunked body")
+        size_text = size_line.split(b";", 1)[0].strip()
+        if not size_text:
+            continue
+        size = int(size_text, 16)
+        if size == 0:
+            while True:
+                trailer = stream.readline()
+                if trailer in (b"\r\n", b"\n", b""):
+                    return b"".join(chunks)
+        chunks.append(stream.read(size))
+        stream.read(2)
+
+
 class Handler(BaseHTTPRequestHandler):
+    def read_body(self):
+        transfer_encoding = self.headers.get("Transfer-Encoding", "").lower()
+        if "chunked" in transfer_encoding:
+            return read_chunked_body(self.rfile)
+        length = int(self.headers.get("Content-Length") or "0")
+        if length <= 0:
+            return b""
+        return self.rfile.read(length)
+
+    def read_json_body(self):
+        raw_body = self.read_body()
+        if not raw_body.strip():
+            raise ValueError("empty request body")
+        return json.loads(raw_body.decode("utf-8"))
+
     def do_GET(self):
         if self.path == "/health":
             self.write_json(200, {"status": "ok"})
@@ -219,13 +253,15 @@ class Handler(BaseHTTPRequestHandler):
             self.write_json(401, {"error": "unauthorized"})
             return
         try:
-            length = int(self.headers.get("Content-Length", "0"))
-            body = json.loads(self.rfile.read(length).decode("utf-8"))
+            body = self.read_json_body()
             destination_hash = body["destination_hash"].strip().lower()
             content = body["content"]
             title = body.get("title", "")
             outbound_id = send_lxmf(destination_hash, content, title)
             self.write_json(200, {"status": "queued", "message_id": outbound_id})
+        except (json.JSONDecodeError, KeyError, ValueError) as error:
+            log(f"Bad outbound LXMF send request: {error}")
+            self.write_json(400, {"error": str(error)})
         except Exception as error:
             log(f"Failed outbound LXMF send: {error}")
             self.write_json(500, {"error": str(error)})
