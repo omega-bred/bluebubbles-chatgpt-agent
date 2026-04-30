@@ -2,7 +2,8 @@ package io.breland.bbagent.server.agent.tools.coder;
 
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
-import java.util.Locale;
+import java.util.HexFormat;
+import org.apache.commons.lang3.StringUtils;
 
 final class CoderToolNameMapper {
 
@@ -13,9 +14,7 @@ final class CoderToolNameMapper {
         mcpToolName == null
             ? "tool"
             : mcpToolName.replaceAll("[^A-Za-z0-9_-]", "_").replaceAll("_+", "_");
-    if (normalized.isBlank()) {
-      normalized = "tool";
-    }
+    normalized = StringUtils.defaultIfBlank(normalized, "tool");
     String hash = shortHash(mcpToolName);
     int maxBaseLength =
         MAX_TOOL_NAME_LENGTH - CoderMcpClient.TOOL_PREFIX.length() - hash.length() - 1;
@@ -37,11 +36,7 @@ final class CoderToolNameMapper {
     try {
       MessageDigest digest = MessageDigest.getInstance("SHA-256");
       byte[] hashed = digest.digest(String.valueOf(value).getBytes(StandardCharsets.UTF_8));
-      StringBuilder builder = new StringBuilder();
-      for (int i = 0; i < 6; i++) {
-        builder.append(String.format(Locale.ROOT, "%02x", hashed[i]));
-      }
-      return builder.toString();
+      return HexFormat.of().formatHex(hashed, 0, 6);
     } catch (Exception e) {
       return Integer.toHexString(String.valueOf(value).hashCode());
     }

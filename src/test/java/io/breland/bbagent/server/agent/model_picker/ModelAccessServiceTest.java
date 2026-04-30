@@ -48,6 +48,16 @@ class ModelAccessServiceTest {
   }
 
   @Test
+  void blankPremiumModelSelectionDefaultsToChatGpt() {
+    when(repository.findById("Alice")).thenReturn(Optional.of(settings(true, " ")));
+
+    ModelAccessService.ModelAccess access = service.resolve(message());
+
+    assertEquals("chatgpt", access.currentModelKey());
+    assertEquals(ModelAccessService.PREMIUM_RESPONSES_MODEL, access.responsesModel());
+  }
+
+  @Test
   void exposesWebsiteSummaryForReadOnlyAccountPage() {
     when(repository.findById("Alice")).thenReturn(Optional.of(settings(true, null)));
 
