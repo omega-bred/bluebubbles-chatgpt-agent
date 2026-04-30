@@ -16,14 +16,14 @@ public class ConversationState {
   private static final int MAX_RECENT_INCOMING_IDENTIFIERS = BBMessageAgent.MAX_HISTORY * 4;
 
   private final Deque<ConversationTurn> history = new ArrayDeque<>();
-  private final Deque<String> recentIncomingMessageGuidOrder = new ArrayDeque<>();
-  private final Set<String> recentIncomingMessageGuids = new HashSet<>();
-  private final Deque<String> recentIncomingMessageFingerprintOrder = new ArrayDeque<>();
-  private final Set<String> recentIncomingMessageFingerprints = new HashSet<>();
-  private final Deque<String> recordedIncomingMessageGuidOrder = new ArrayDeque<>();
-  private final Set<String> recordedIncomingMessageGuids = new HashSet<>();
-  private final Deque<String> recordedIncomingMessageFingerprintOrder = new ArrayDeque<>();
-  private final Set<String> recordedIncomingMessageFingerprints = new HashSet<>();
+  private final BoundedStringSet recentIncomingMessageGuids =
+      new BoundedStringSet(MAX_RECENT_INCOMING_IDENTIFIERS);
+  private final BoundedStringSet recentIncomingMessageFingerprints =
+      new BoundedStringSet(MAX_RECENT_INCOMING_IDENTIFIERS);
+  private final BoundedStringSet recordedIncomingMessageGuids =
+      new BoundedStringSet(MAX_RECENT_INCOMING_IDENTIFIERS);
+  private final BoundedStringSet recordedIncomingMessageFingerprints =
+      new BoundedStringSet(MAX_RECENT_INCOMING_IDENTIFIERS);
   private final Map<String, ThreadContext> threadContexts = new ConcurrentHashMap<>();
 
   @Getter @Setter private String lastProcessedMessageGuid;
@@ -50,11 +50,11 @@ public class ConversationState {
       return false;
     }
     String guid = normalize(message.messageGuid());
-    if (guid != null && recentIncomingMessageGuids.contains(guid)) {
+    if (recentIncomingMessageGuids.contains(guid)) {
       return true;
     }
     String fingerprint = normalize(message.computeMessageFingerprint());
-    return fingerprint != null && recentIncomingMessageFingerprints.contains(fingerprint);
+    return recentIncomingMessageFingerprints.contains(fingerprint);
   }
 
   public synchronized boolean isStaleIncomingMessage(IncomingMessage message) {
@@ -73,8 +73,8 @@ public class ConversationState {
     }
     String guid = normalize(message.messageGuid());
     String fingerprint = normalize(message.computeMessageFingerprint());
-    remember(recentIncomingMessageGuidOrder, recentIncomingMessageGuids, guid);
-    remember(recentIncomingMessageFingerprintOrder, recentIncomingMessageFingerprints, fingerprint);
+    recentIncomingMessageGuids.add(guid);
+    recentIncomingMessageFingerprints.add(fingerprint);
     lastProcessedMessageGuid = guid;
     lastProcessedMessageFingerprint = fingerprint;
     if (message.timestamp() != null
@@ -91,15 +91,14 @@ public class ConversationState {
     markIncomingMessageSeen(message);
     String guid = normalize(message.messageGuid());
     String fingerprint = normalize(message.computeMessageFingerprint());
-    if ((guid != null && recordedIncomingMessageGuids.contains(guid))
-        || (fingerprint != null && recordedIncomingMessageFingerprints.contains(fingerprint))) {
+    if (recordedIncomingMessageGuids.contains(guid)
+        || recordedIncomingMessageFingerprints.contains(fingerprint)) {
       return false;
     }
     Instant timestamp = message.timestamp() != null ? message.timestamp() : Instant.now();
     addTurn(ConversationTurn.user(message.summaryForHistory(), timestamp));
-    remember(recordedIncomingMessageGuidOrder, recordedIncomingMessageGuids, guid);
-    remember(
-        recordedIncomingMessageFingerprintOrder, recordedIncomingMessageFingerprints, fingerprint);
+    recordedIncomingMessageGuids.add(guid);
+    recordedIncomingMessageFingerprints.add(fingerprint);
     return true;
   }
 
@@ -124,15 +123,29 @@ public class ConversationState {
     return value;
   }
 
-  private static void remember(Deque<String> order, Set<String> values, String value) {
-    if (value == null || values.contains(value)) {
-      return;
+  private static final class BoundedStringSet {
+    private final int maxSize;
+    private final Deque<String> order = new ArrayDeque<>();
+    private final Set<String> values = new HashSet<>();
+
+    private BoundedStringSet(int maxSize) {
+      this.maxSize = maxSize;
     }
-    order.addLast(value);
-    values.add(value);
-    while (order.size() > MAX_RECENT_INCOMING_IDENTIFIERS) {
-      String removed = order.removeFirst();
-      values.remove(removed);
+
+    private boolean contains(String value) {
+      return value != null && values.contains(value);
+    }
+
+    private void add(String value) {
+      if (value == null || values.contains(value)) {
+        return;
+      }
+      order.addLast(value);
+      values.add(value);
+      while (order.size() > maxSize) {
+        String removed = order.removeFirst();
+        values.remove(removed);
+      }
     }
   }
 
