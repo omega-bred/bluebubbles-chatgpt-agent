@@ -19,6 +19,16 @@ class CoderToolNameMapperTest {
   }
 
   @Test
+  void defaultsBlankToolNames() {
+    CoderToolNameMapper mapper = new CoderToolNameMapper();
+
+    String name = mapper.toAgentToolName("!!!");
+
+    assertTrue(name.startsWith(CoderMcpClient.TOOL_PREFIX + "tool_"));
+    assertTrue(name.length() <= 64);
+  }
+
+  @Test
   void disambiguatesDuplicateNames() {
     CoderToolNameMapper mapper = new CoderToolNameMapper();
 
