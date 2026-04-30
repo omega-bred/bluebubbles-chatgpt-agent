@@ -1,6 +1,7 @@
 package io.breland.bbagent.server.agent;
 
-import io.breland.bbagent.server.StringValueUtils;
+import java.util.stream.Stream;
+import org.springframework.util.StringUtils;
 
 public record AgentAccountIdentity(
     String accountBase,
@@ -22,9 +23,9 @@ public record AgentAccountIdentity(
   }
 
   public static AgentAccountIdentity from(String rawSender, String rawChatGuid) {
-    String sender = StringValueUtils.clean(rawSender);
-    String chatGuid = StringValueUtils.clean(rawChatGuid);
-    String accountBase = StringValueUtils.firstNonBlank(sender, chatGuid);
+    String sender = clean(rawSender);
+    String chatGuid = clean(rawChatGuid);
+    String accountBase = firstWithText(sender, chatGuid);
     String gcalAccountBase =
         sender != null && chatGuid != null ? chatGuid + "|" + sender : accountBase;
     return new AgentAccountIdentity(
@@ -40,6 +41,14 @@ public record AgentAccountIdentity(
   }
 
   public boolean hasAccountBase() {
-    return accountBase != null && !accountBase.isBlank();
+    return StringUtils.hasText(accountBase);
+  }
+
+  private static String clean(String value) {
+    return StringUtils.hasText(value) ? value : null;
+  }
+
+  private static String firstWithText(String... values) {
+    return Stream.of(values).filter(StringUtils::hasText).findFirst().orElse(null);
   }
 }
