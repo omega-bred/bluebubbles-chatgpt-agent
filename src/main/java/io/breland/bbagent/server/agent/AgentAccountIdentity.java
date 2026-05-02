@@ -1,6 +1,6 @@
 package io.breland.bbagent.server.agent;
 
-import io.breland.bbagent.server.StringValueUtils;
+import org.apache.commons.lang3.StringUtils;
 
 public record AgentAccountIdentity(
     String accountBase,
@@ -22,9 +22,9 @@ public record AgentAccountIdentity(
   }
 
   public static AgentAccountIdentity from(String rawSender, String rawChatGuid) {
-    String sender = StringValueUtils.clean(rawSender);
-    String chatGuid = StringValueUtils.clean(rawChatGuid);
-    String accountBase = StringValueUtils.firstNonBlank(sender, chatGuid);
+    String sender = StringUtils.trimToNull(rawSender);
+    String chatGuid = StringUtils.trimToNull(rawChatGuid);
+    String accountBase = StringUtils.firstNonBlank(sender, chatGuid);
     String gcalAccountBase =
         sender != null && chatGuid != null ? chatGuid + "|" + sender : accountBase;
     return new AgentAccountIdentity(
