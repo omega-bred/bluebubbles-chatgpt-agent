@@ -1,12 +1,9 @@
 package io.breland.bbagent.server.controllers;
 
 import io.breland.bbagent.generated.api.CoderApiController;
-import io.breland.bbagent.generated.bluebubblesclient.model.ApiV1MessageTextPostRequest;
 import io.breland.bbagent.server.agent.tools.coder.CoderMcpClient;
-import io.breland.bbagent.server.agent.transport.bb.BBHttpClientWrapper;
 import java.util.Optional;
 import org.springframework.http.HttpStatus;
-import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -16,15 +13,15 @@ import org.springframework.web.context.request.NativeWebRequest;
 @RequestMapping("${openapi.blueBubblesChatGPTAgentOpenAPISpec.base-path:}")
 public class CoderOauthController extends CoderApiController {
   private final CoderMcpClient coderMcpClient;
-  private final BBHttpClientWrapper bbHttpClientWrapper;
+  private final OauthCallbackSupport oauthCallbackSupport;
 
   public CoderOauthController(
       NativeWebRequest request,
       CoderMcpClient coderMcpClient,
-      BBHttpClientWrapper bbHttpClientWrapper) {
+      OauthCallbackSupport oauthCallbackSupport) {
     super(request);
     this.coderMcpClient = coderMcpClient;
-    this.bbHttpClientWrapper = bbHttpClientWrapper;
+    this.oauthCallbackSupport = oauthCallbackSupport;
   }
 
   @Override
@@ -43,52 +40,12 @@ public class CoderOauthController extends CoderApiController {
     if (completion.isEmpty()) {
       return htmlResponse(HttpStatus.INTERNAL_SERVER_ERROR, "OAuth failed. Please try again.");
     }
-    sendFollowup(
+    oauthCallbackSupport.sendFollowup(
         completion.get().chatGuid(), completion.get().messageGuid(), "Coder successfully linked.");
     return htmlResponse(HttpStatus.OK, "Coder linked. You can close this tab.");
   }
 
-  private void sendFollowup(String chatGuid, String messageGuid, String message) {
-    if (chatGuid == null || chatGuid.isBlank() || message == null || message.isBlank()) {
-      return;
-    }
-    ApiV1MessageTextPostRequest request = new ApiV1MessageTextPostRequest();
-    request.setChatGuid(chatGuid);
-    request.setMessage(message);
-    if (messageGuid != null && !messageGuid.isBlank()) {
-      request.setSelectedMessageGuid(messageGuid);
-      request.setPartIndex(0);
-    }
-    bbHttpClientWrapper.sendTextDirect(request);
-  }
-
   private ResponseEntity<String> htmlResponse(HttpStatus status, String message) {
-    String body =
-        "<!doctype html>"
-            + "<html lang=\"en\">"
-            + "<head>"
-            + "<meta charset=\"utf-8\"/>"
-            + "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"/>"
-            + "<title>Coder OAuth</title>"
-            + "</head>"
-            + "<body>"
-            + "<p>"
-            + escapeHtml(message)
-            + "</p>"
-            + "</body>"
-            + "</html>";
-    return ResponseEntity.status(status).contentType(MediaType.TEXT_HTML).body(body);
-  }
-
-  private String escapeHtml(String input) {
-    if (input == null) {
-      return "";
-    }
-    return input
-        .replace("&", "&amp;")
-        .replace("<", "&lt;")
-        .replace(">", "&gt;")
-        .replace("\"", "&quot;")
-        .replace("'", "&#39;");
+    return oauthCallbackSupport.htmlResponse("Coder OAuth", status, message);
   }
 }
