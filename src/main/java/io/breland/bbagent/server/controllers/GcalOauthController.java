@@ -1,12 +1,9 @@
 package io.breland.bbagent.server.controllers;
 
 import io.breland.bbagent.generated.api.GcalApiController;
-import io.breland.bbagent.generated.bluebubblesclient.model.ApiV1MessageTextPostRequest;
 import io.breland.bbagent.server.agent.tools.gcal.GcalClient;
-import io.breland.bbagent.server.agent.transport.bb.BBHttpClientWrapper;
 import java.util.Optional;
 import org.springframework.http.HttpStatus;
-import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -16,13 +13,13 @@ import org.springframework.web.context.request.NativeWebRequest;
 @RequestMapping("${openapi.blueBubblesChatGPTAgentOpenAPISpec.base-path:}")
 public class GcalOauthController extends GcalApiController {
   private final GcalClient gcalClient;
-  private final BBHttpClientWrapper bbHttpClientWrapper;
+  private final OauthCallbackSupport oauthCallbackSupport;
 
   public GcalOauthController(
-      NativeWebRequest request, GcalClient gcalClient, BBHttpClientWrapper bbHttpClientWrapper) {
+      NativeWebRequest request, GcalClient gcalClient, OauthCallbackSupport oauthCallbackSupport) {
     super(request);
     this.gcalClient = gcalClient;
-    this.bbHttpClientWrapper = bbHttpClientWrapper;
+    this.oauthCallbackSupport = oauthCallbackSupport;
   }
 
   @Override
@@ -43,60 +40,20 @@ public class GcalOauthController extends GcalApiController {
         gcalClient.exchangeCode(
             oauthState.get().accountBase(), oauthState.get().pendingKey(), code);
     if (accountId.isEmpty()) {
-      sendFollowup(
+      oauthCallbackSupport.sendFollowup(
           oauthState.get().chatGuid(),
           oauthState.get().messageGuid(),
           "Calendar linking failed. Please try again.");
       return htmlResponse(HttpStatus.INTERNAL_SERVER_ERROR, "OAuth failed. Please try again.");
     }
-    sendFollowup(
+    oauthCallbackSupport.sendFollowup(
         oauthState.get().chatGuid(),
         oauthState.get().messageGuid(),
         "Calendar successfully linked.");
     return htmlResponse(HttpStatus.OK, "Google Calendar linked. You can close this tab.");
   }
 
-  private void sendFollowup(String chatGuid, String messageGuid, String message) {
-    if (chatGuid == null || chatGuid.isBlank() || message == null || message.isBlank()) {
-      return;
-    }
-    ApiV1MessageTextPostRequest request = new ApiV1MessageTextPostRequest();
-    request.setChatGuid(chatGuid);
-    request.setMessage(message);
-    if (messageGuid != null && !messageGuid.isBlank()) {
-      request.setSelectedMessageGuid(messageGuid);
-      request.setPartIndex(0);
-    }
-    bbHttpClientWrapper.sendTextDirect(request);
-  }
-
   private ResponseEntity<String> htmlResponse(HttpStatus status, String message) {
-    String body =
-        "<!doctype html>"
-            + "<html lang=\"en\">"
-            + "<head>"
-            + "<meta charset=\"utf-8\"/>"
-            + "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"/>"
-            + "<title>Google Calendar OAuth</title>"
-            + "</head>"
-            + "<body>"
-            + "<p>"
-            + escapeHtml(message)
-            + "</p>"
-            + "</body>"
-            + "</html>";
-    return ResponseEntity.status(status).contentType(MediaType.TEXT_HTML).body(body);
-  }
-
-  private String escapeHtml(String input) {
-    if (input == null) {
-      return "";
-    }
-    return input
-        .replace("&", "&amp;")
-        .replace("<", "&lt;")
-        .replace(">", "&gt;")
-        .replace("\"", "&quot;")
-        .replace("'", "&#39;");
+    return oauthCallbackSupport.htmlResponse("Google Calendar OAuth", status, message);
   }
 }
