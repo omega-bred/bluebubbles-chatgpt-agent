@@ -1,6 +1,7 @@
 package io.breland.bbagent.server.agent.tools.gcal;
 
 import static io.breland.bbagent.server.agent.tools.JsonSchemaUtilities.jsonSchema;
+import static org.springframework.util.StringUtils.hasText;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.google.api.client.util.DateTime;
@@ -37,7 +38,8 @@ public class UpdateEventAgentTool extends GcalToolSupport implements ToolProvide
   public AgentTool getTool() {
     return new AgentTool(
         TOOL_NAME,
-        "Update a calendar event. Do not use this tool to rename or update conversation / chat information.",
+        "Update a calendar event. Do not use this tool to rename or update conversation / chat"
+            + " information.",
         jsonSchema(UpdateEventRequest.class),
         false,
         (context, args) -> {
@@ -49,7 +51,7 @@ public class UpdateEventAgentTool extends GcalToolSupport implements ToolProvide
               (client, accountKey) -> {
                 String calendarId = resolveCalendarId(request.calendarId());
                 String eventId = request.eventId();
-                if (isBlank(eventId)) {
+                if (!hasText(eventId)) {
                   return "missing event_id";
                 }
                 ZoneId zone = resolveZone(request.timezone());
@@ -68,13 +70,13 @@ public class UpdateEventAgentTool extends GcalToolSupport implements ToolProvide
                 }
                 String startText = request.start();
                 String endText = request.end();
-                if (!isBlank(startText)) {
+                if (hasText(startText)) {
                   DateTime start = gcalClient.parseDateTime(startText, zone);
                   if (start != null) {
                     patch.setStart(eventDateTime(start, request.timezone()));
                   }
                 }
-                if (!isBlank(endText)) {
+                if (hasText(endText)) {
                   DateTime end = gcalClient.parseDateTime(endText, zone);
                   if (end != null) {
                     patch.setEnd(eventDateTime(end, request.timezone()));
