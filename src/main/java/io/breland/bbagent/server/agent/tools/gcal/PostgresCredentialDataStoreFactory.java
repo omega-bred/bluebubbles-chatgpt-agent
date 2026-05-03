@@ -8,8 +8,10 @@ import io.breland.bbagent.server.agent.persistence.GcalCredentialRepository;
 import java.io.IOException;
 import java.util.Collection;
 import java.util.List;
+import java.util.Objects;
 import java.util.Set;
 import java.util.stream.Collectors;
+import org.springframework.util.StringUtils;
 
 public class PostgresCredentialDataStoreFactory implements DataStoreFactory {
   private final GcalCredentialRepository repository;
@@ -67,9 +69,9 @@ public class PostgresCredentialDataStoreFactory implements DataStoreFactory {
           .map(PostgresCredentialDataStore::toStoredCredential)
           .anyMatch(
               stored ->
-                  safeEquals(stored.getAccessToken(), value.getAccessToken())
-                      && safeEquals(stored.getRefreshToken(), value.getRefreshToken())
-                      && safeEquals(
+                  Objects.equals(stored.getAccessToken(), value.getAccessToken())
+                      && Objects.equals(stored.getRefreshToken(), value.getRefreshToken())
+                      && Objects.equals(
                           stored.getExpirationTimeMilliseconds(),
                           value.getExpirationTimeMilliseconds()));
     }
@@ -97,7 +99,7 @@ public class PostgresCredentialDataStoreFactory implements DataStoreFactory {
 
     @Override
     public DataStore<StoredCredential> set(String key, StoredCredential value) {
-      if (key == null || key.isBlank()) {
+      if (!StringUtils.hasText(key)) {
         return this;
       }
       if (value == null) {
@@ -108,7 +110,7 @@ public class PostgresCredentialDataStoreFactory implements DataStoreFactory {
       AccountKeyParts keyParts = AccountKeyParts.parse(key);
       GcalCredentialEntity existing = repository.findById(id).orElse(null);
       String refreshToken = value.getRefreshToken();
-      if ((refreshToken == null || refreshToken.isBlank()) && existing != null) {
+      if (!StringUtils.hasText(refreshToken) && existing != null) {
         refreshToken = existing.getRefreshToken();
       }
       GcalCredentialEntity entity =
@@ -127,7 +129,7 @@ public class PostgresCredentialDataStoreFactory implements DataStoreFactory {
 
     @Override
     public DataStore<StoredCredential> delete(String key) {
-      if (key == null || key.isBlank()) {
+      if (!StringUtils.hasText(key)) {
         return this;
       }
       repository.deleteById(idFor(key));
@@ -150,10 +152,6 @@ public class PostgresCredentialDataStoreFactory implements DataStoreFactory {
       credential.setRefreshToken(entity.getRefreshToken());
       credential.setExpirationTimeMilliseconds(entity.getExpirationTimeMs());
       return credential;
-    }
-
-    private static boolean safeEquals(Object left, Object right) {
-      return left == null ? right == null : left.equals(right);
     }
   }
 }
