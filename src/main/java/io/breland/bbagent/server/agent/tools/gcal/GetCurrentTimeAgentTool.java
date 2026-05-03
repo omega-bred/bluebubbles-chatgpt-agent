@@ -34,11 +34,7 @@ public class GetCurrentTimeAgentTool extends GcalToolSupport implements ToolProv
           Map<String, Object> response = new LinkedHashMap<>();
           response.put("timezone", zone.getId());
           response.put("current_time", now.toString());
-          try {
-            return toJson(response);
-          } catch (Exception e) {
-            return response.toString();
-          }
+          return toJson(response);
         });
   }
 }
