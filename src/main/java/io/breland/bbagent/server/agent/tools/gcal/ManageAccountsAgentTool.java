@@ -1,6 +1,7 @@
 package io.breland.bbagent.server.agent.tools.gcal;
 
 import static io.breland.bbagent.server.agent.tools.JsonSchemaUtilities.jsonSchema;
+import static org.springframework.util.StringUtils.hasText;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
 import io.breland.bbagent.server.agent.tools.AgentTool;
@@ -52,7 +53,7 @@ public class ManageAccountsAgentTool extends GcalToolSupport implements ToolProv
                 switch (request.action()) {
                   case LIST -> {
                     String accountBase = resolveAccountBase(context);
-                    if (isBlank(accountBase)) {
+                    if (!hasText(accountBase)) {
                       return "no account";
                     }
                     Map<String, Object> response = new LinkedHashMap<>();
@@ -61,7 +62,7 @@ public class ManageAccountsAgentTool extends GcalToolSupport implements ToolProv
                   }
                   case AUTH_URL -> {
                     String accountBase = resolveAccountBase(context);
-                    if (isBlank(accountBase)) {
+                    if (!hasText(accountBase)) {
                       return "no account";
                     }
                     String accountKey = accountBase;
@@ -69,7 +70,7 @@ public class ManageAccountsAgentTool extends GcalToolSupport implements ToolProv
                         context.message() != null ? context.message().chatGuid() : null;
                     String messageGuid =
                         context.message() != null ? context.message().messageGuid() : null;
-                    if (isBlank(chatGuid)) {
+                    if (!hasText(chatGuid)) {
                       return "missing chat";
                     }
                     String url = gcalClient.getAuthUrl(accountKey, chatGuid, messageGuid);
@@ -83,7 +84,7 @@ public class ManageAccountsAgentTool extends GcalToolSupport implements ToolProv
                   }
                   case REVOKE -> {
                     String accountBase = resolveAccountBase(context);
-                    if (isBlank(accountBase)) {
+                    if (!hasText(accountBase)) {
                       return "no account";
                     }
                     String requestedAccountKey = request.accountKey();
