@@ -34,7 +34,8 @@ public class GcalToolSupport {
     return value.asText();
   }
 
-  protected String resolveAccountKey(ToolContext context, com.fasterxml.jackson.databind.JsonNode args) {
+  protected String resolveAccountKey(
+      ToolContext context, com.fasterxml.jackson.databind.JsonNode args) {
     String accountId = getOptionalText(args, "account_key");
     String accountBase = resolveAccountBase(context);
     return gcalClient.scopeAccountKey(accountBase, accountId);
@@ -113,7 +114,8 @@ public class GcalToolSupport {
     }
   }
 
-  protected Optional<Integer> getOptionalInt(com.fasterxml.jackson.databind.JsonNode args, String field) {
+  protected Optional<Integer> getOptionalInt(
+      com.fasterxml.jackson.databind.JsonNode args, String field) {
     com.fasterxml.jackson.databind.JsonNode node = args.get(field);
     if (node == null || node.isNull() || !node.isNumber()) {
       return Optional.empty();
