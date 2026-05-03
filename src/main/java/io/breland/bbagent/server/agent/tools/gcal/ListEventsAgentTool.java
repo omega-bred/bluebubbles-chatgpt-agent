@@ -63,7 +63,8 @@ public class ListEventsAgentTool extends GcalToolSupport implements ToolProvider
                 if (max != null) {
                   request.setTimeMax(max);
                 }
-                Optional.ofNullable(listEventsRequest.maxResults()).ifPresent(request::setMaxResults);
+                Optional.ofNullable(listEventsRequest.maxResults())
+                    .ifPresent(request::setMaxResults);
                 Optional.ofNullable(listEventsRequest.singleEvents())
                     .ifPresent(request::setSingleEvents);
                 String orderBy = listEventsRequest.orderBy();
