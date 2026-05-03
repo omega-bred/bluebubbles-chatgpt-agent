@@ -6,6 +6,7 @@ import java.time.Duration;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import org.springframework.stereotype.Component;
+import org.springframework.util.StringUtils;
 
 @Component
 public class BlobStore {
@@ -14,13 +15,7 @@ public class BlobStore {
       CacheBuilder.newBuilder().expireAfterWrite(Duration.ofHours(1)).maximumSize(100).build();
 
   public void storeBlob(String conversationId, String id, String blob) {
-    if (conversationId == null || conversationId.isBlank()) {
-      return;
-    }
-    if (id == null || id.isBlank()) {
-      return;
-    }
-    if (blob == null) {
+    if (!StringUtils.hasText(conversationId) || !StringUtils.hasText(id) || blob == null) {
       return;
     }
     blobsByConversation
@@ -30,10 +25,7 @@ public class BlobStore {
   }
 
   public String getBlob(String conversationId, String id) {
-    if (conversationId == null || conversationId.isBlank()) {
-      return null;
-    }
-    if (id == null || id.isBlank()) {
+    if (!StringUtils.hasText(conversationId) || !StringUtils.hasText(id)) {
       return null;
     }
     Map<String, String> conversationBlobs = blobsByConversation.getIfPresent(conversationId);
