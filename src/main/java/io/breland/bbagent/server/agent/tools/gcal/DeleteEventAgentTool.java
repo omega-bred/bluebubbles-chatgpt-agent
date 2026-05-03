@@ -1,6 +1,7 @@
 package io.breland.bbagent.server.agent.tools.gcal;
 
 import static io.breland.bbagent.server.agent.tools.JsonSchemaUtilities.jsonSchema;
+import static org.springframework.util.StringUtils.hasText;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
 import io.breland.bbagent.server.agent.tools.AgentTool;
@@ -38,7 +39,7 @@ public class DeleteEventAgentTool extends GcalToolSupport implements ToolProvide
               (client, accountKey) -> {
                 String calendarId = resolveCalendarId(request.calendarId());
                 String eventId = request.eventId();
-                if (isBlank(eventId)) {
+                if (!hasText(eventId)) {
                   return "missing event_id";
                 }
                 client.events().delete(calendarId, eventId).execute();
