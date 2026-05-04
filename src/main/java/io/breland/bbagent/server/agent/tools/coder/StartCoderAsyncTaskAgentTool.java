@@ -1,6 +1,12 @@
 package io.breland.bbagent.server.agent.tools.coder;
 
 import static io.breland.bbagent.server.agent.tools.JsonSchemaUtilities.jsonSchema;
+import static org.apache.commons.lang3.StringUtils.abbreviate;
+import static org.apache.commons.lang3.StringUtils.defaultIfBlank;
+import static org.apache.commons.lang3.StringUtils.defaultString;
+import static org.apache.commons.lang3.StringUtils.isBlank;
+import static org.apache.commons.lang3.StringUtils.lowerCase;
+import static org.apache.commons.lang3.StringUtils.normalizeSpace;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -50,12 +56,14 @@ public class StartCoderAsyncTaskAgentTool implements ToolProvider {
       @JsonProperty("template_version_id")
           @Schema(
               description =
-                  "Optional exact Coder template version UUID. If omitted, the tool selects the task template.")
+                  "Optional exact Coder template version UUID. If omitted, the tool selects the"
+                      + " task template.")
           String templateVersionId,
       @JsonProperty("template_name")
           @Schema(
               description =
-                  "Optional template name/display-name hint. Defaults to the best AI task template.")
+                  "Optional template name/display-name hint. Defaults to the best AI task"
+                      + " template.")
           String templateName,
       @JsonProperty("fallback_delay_seconds")
           @Schema(description = "Optional delay before the fallback check. Defaults to 5 minutes.")
@@ -79,9 +87,11 @@ public class StartCoderAsyncTaskAgentTool implements ToolProvider {
   public AgentTool getTool() {
     return new AgentTool(
         TOOL_NAME,
-        "Start a Coder AI task end-to-end. Use this when the user asks to start, run, kick off, or watch a Coder AI/dev task. "
-            + "This tool creates the webhook callback, injects callback instructions into the Coder task prompt, starts the Coder task, and schedules a fallback status check. "
-            + "Do not call create_workflow_callback or coder_create_task separately for Coder AI tasks.",
+        "Start a Coder AI task end-to-end. Use this when the user asks to start, run, kick off, or"
+            + " watch a Coder AI/dev task. This tool creates the webhook callback, injects callback"
+            + " instructions into the Coder task prompt, starts the Coder task, and schedules a"
+            + " fallback status check. Do not call create_workflow_callback or coder_create_task"
+            + " separately for Coder AI tasks.",
         jsonSchema(StartCoderAsyncTaskRequest.class),
         false,
         (context, args) -> {
@@ -125,7 +135,7 @@ public class StartCoderAsyncTaskAgentTool implements ToolProvider {
           taskStartStore.reserve(
               idempotencyKey,
               accountBase,
-              context.message() == null ? "" : valueOrDefault(context.message().chatGuid(), ""),
+              context.message() == null ? "" : defaultIfBlank(context.message().chatGuid(), ""),
               context.message() == null ? null : context.message().messageGuid(),
               sha256(normalizeTask(request.task())),
               request.task().trim());
@@ -171,7 +181,8 @@ public class StartCoderAsyncTaskAgentTool implements ToolProvider {
       }
       response.put(
           "message",
-          "Coder task start flow completed. Do not reveal callback secrets; summarize status to the user.");
+          "Coder task start flow completed. Do not reveal callback secrets; summarize status to the"
+              + " user.");
       String responseJson = mapper.writeValueAsString(response);
       taskStartStore.markStarted(idempotencyKey, responseJson);
       return responseJson;
@@ -196,21 +207,24 @@ public class StartCoderAsyncTaskAgentTool implements ToolProvider {
       replay.put("start_status", entity.getStatus());
       replay.put(
           "message",
-          "This Coder task was already started for the current iMessage. Do not call start_coder_async_task again; summarize the existing status to the user.");
+          "This Coder task was already started for the current iMessage. Do not call"
+              + " start_coder_async_task again; summarize the existing status to the user.");
       return mapper.writeValueAsString(replay);
     }
     response.put("deduplicated", true);
     response.put("start_status", entity.getStatus());
     response.put("started", CoderAsyncTaskStartStore.STATUS_STARTING.equals(entity.getStatus()));
     if (CoderAsyncTaskStartStore.STATUS_FAILED.equals(entity.getStatus())) {
-      response.put("error", valueOrDefault(entity.getErrorMessage(), "previous start failed"));
+      response.put("error", defaultIfBlank(entity.getErrorMessage(), "previous start failed"));
       response.put(
           "message",
-          "This iMessage already attempted to start a Coder task and failed. Do not call start_coder_async_task again unless the user sends a new retry request.");
+          "This iMessage already attempted to start a Coder task and failed. Do not call"
+              + " start_coder_async_task again unless the user sends a new retry request.");
     } else {
       response.put(
           "message",
-          "This Coder task is already being started for the current iMessage. Do not call start_coder_async_task again; tell the user startup is in progress.");
+          "This Coder task is already being started for the current iMessage. Do not call"
+              + " start_coder_async_task again; tell the user startup is in progress.");
     }
     return mapper.writeValueAsString(response);
   }
@@ -223,7 +237,7 @@ public class StartCoderAsyncTaskAgentTool implements ToolProvider {
       throws Exception {
     if (!isBlank(templateVersionId)) {
       return new TemplateSelection(
-          templateVersionId.trim(), valueOrDefault(templateName, "provided"));
+          templateVersionId.trim(), defaultIfBlank(templateName, "provided"));
     }
     String listResult = coderMcpClient.callMcpTool(accountBase, LIST_TEMPLATES_MCP_TOOL, Map.of());
     List<JsonNode> templates = extractTemplateNodes(listResult, mapper);
@@ -252,7 +266,7 @@ public class StartCoderAsyncTaskAgentTool implements ToolProvider {
     }
     return new TemplateSelection(
         text(selected, "active_version_id", "activeVersionId"),
-        valueOrDefault(text(selected, "display_name", "displayName"), text(selected, "name")));
+        defaultIfBlank(text(selected, "display_name", "displayName"), text(selected, "name")));
   }
 
   private List<JsonNode> extractTemplateNodes(String listResult, ObjectMapper mapper)
@@ -290,14 +304,15 @@ public class StartCoderAsyncTaskAgentTool implements ToolProvider {
   }
 
   private int scoreTemplate(JsonNode template, @Nullable String preferredName) {
-    String name = lower(text(template, "name"));
-    String displayName = lower(text(template, "display_name", "displayName"));
-    String description = lower(text(template, "description"));
-    String id = lower(text(template, "id"));
-    String activeVersionId = lower(text(template, "active_version_id", "activeVersionId"));
+    String name = lowerCase(text(template, "name"), Locale.ROOT);
+    String displayName = lowerCase(text(template, "display_name", "displayName"), Locale.ROOT);
+    String description = lowerCase(text(template, "description"), Locale.ROOT);
+    String id = lowerCase(text(template, "id"), Locale.ROOT);
+    String activeVersionId =
+        lowerCase(text(template, "active_version_id", "activeVersionId"), Locale.ROOT);
     String haystack = String.join(" ", name, displayName, description, id, activeVersionId);
     if (!isBlank(preferredName)) {
-      String preferred = lower(preferredName);
+      String preferred = lowerCase(preferredName, Locale.ROOT);
       if (name.equals(preferred)
           || displayName.equals(preferred)
           || id.equals(preferred)
@@ -332,8 +347,9 @@ public class StartCoderAsyncTaskAgentTool implements ToolProvider {
         + "Callback instructions for reporting completion or failure:\n"
         + callback.callbackInstructions()
         + "\n\n"
-        + "Important: call the callback exactly once when the task is complete or failed. "
-        + "Then include enough summary/detail/artifact links in the callback payload for the assistant to report back to the user.";
+        + "Important: call the callback exactly once when the task is complete or failed. Then"
+        + " include enough summary/detail/artifact links in the callback payload for the assistant"
+        + " to report back to the user.";
   }
 
   private String scheduleFallback(
@@ -361,9 +377,11 @@ public class StartCoderAsyncTaskAgentTool implements ToolProvider {
               + callback.expiresAt()
               + "\nCoder task creation result: "
               + truncate(coderResult)
-              + "\nUse the available Coder status/log tools to check progress. "
-              + "If the task is still pending or running, call schedule_event again for another one-time check before ending the turn. "
-              + "If it completed, fetch enough result/log detail and notify the user. If it failed, notify the user with the error.");
+              + "\n"
+              + "Use the available Coder status/log tools to check progress. If the task is still"
+              + " pending or running, call schedule_event again for another one-time check before"
+              + " ending the turn. If it completed, fetch enough result/log detail and notify the"
+              + " user. If it failed, notify the user with the error.");
       return new ScheduledEventTool(cadenceWorkflowLauncher)
           .getTool()
           .handler()
@@ -385,7 +403,7 @@ public class StartCoderAsyncTaskAgentTool implements ToolProvider {
     List<String> summaries = new ArrayList<>();
     for (JsonNode template : templates) {
       summaries.add(
-          valueOrDefault(text(template, "display_name", "displayName"), text(template, "name"))
+          defaultIfBlank(text(template, "display_name", "displayName"), text(template, "name"))
               + " (active_version_id="
               + text(template, "active_version_id", "activeVersionId")
               + ")");
@@ -398,8 +416,7 @@ public class StartCoderAsyncTaskAgentTool implements ToolProvider {
   }
 
   private static String summarize(String text) {
-    String singleLine = text == null ? "" : text.replaceAll("\\s+", " ").trim();
-    return singleLine.length() <= 120 ? singleLine : singleLine.substring(0, 117) + "...";
+    return abbreviate(defaultString(normalizeSpace(text)), 120);
   }
 
   private static String truncate(String text) {
@@ -422,10 +439,6 @@ public class StartCoderAsyncTaskAgentTool implements ToolProvider {
     return "";
   }
 
-  private static String valueOrDefault(String value, String defaultValue) {
-    return isBlank(value) ? defaultValue : value;
-  }
-
   private static String idempotencyKey(
       ToolContext context, String accountBase, StartCoderAsyncTaskRequest request) {
     String chatGuid =
@@ -438,17 +451,17 @@ public class StartCoderAsyncTaskAgentTool implements ToolProvider {
             : context.workflowContext() == null ? "" : context.workflowContext().messageGuid();
     String naturalKey =
         !isBlank(messageGuid)
-            ? accountBase + "|" + valueOrDefault(chatGuid, "") + "|" + messageGuid
+            ? accountBase + "|" + defaultIfBlank(chatGuid, "") + "|" + messageGuid
             : accountBase
                 + "|"
-                + valueOrDefault(chatGuid, "")
+                + defaultIfBlank(chatGuid, "")
                 + "|"
                 + normalizeTask(request.task());
     return "coder-task-" + sha256(naturalKey);
   }
 
   private static String normalizeTask(String task) {
-    return task == null ? "" : task.replaceAll("\\s+", " ").trim().toLowerCase(Locale.ROOT);
+    return lowerCase(defaultString(normalizeSpace(task)), Locale.ROOT);
   }
 
   private static String sha256(String value) {
@@ -458,14 +471,6 @@ public class StartCoderAsyncTaskAgentTool implements ToolProvider {
     } catch (Exception e) {
       throw new IllegalStateException("SHA-256 is unavailable", e);
     }
-  }
-
-  private static String lower(String text) {
-    return text == null ? "" : text.toLowerCase(Locale.ROOT);
-  }
-
-  private static boolean isBlank(@Nullable String text) {
-    return text == null || text.isBlank();
   }
 
   private record TemplateSelection(String templateVersionId, String displayName) {}
