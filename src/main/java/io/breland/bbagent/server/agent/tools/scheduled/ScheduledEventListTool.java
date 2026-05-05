@@ -37,21 +37,15 @@ public class ScheduledEventListTool implements ToolProvider {
               context.getMapper().convertValue(args, ScheduledEventListRequest.class);
           String chatGuid = request.chatGuid();
           if (chatGuid == null || chatGuid.isBlank()) {
-            if (context.message() != null) {
-              chatGuid = context.message().chatGuid();
-            }
+            chatGuid = context.chatGuid();
           }
-          if (chatGuid == null || chatGuid.isBlank()) {
+          if (chatGuid == null) {
             return "missing chat";
           }
           String prefix = ScheduledEventTool.buildWorkflowIdPrefix(chatGuid);
           List<CadenceWorkflowLauncher.ScheduledWorkflowSummary> summaries =
               cadenceWorkflowLauncher.listScheduledWorkflows(prefix);
-          try {
-            return context.getMapper().writeValueAsString(summaries);
-          } catch (Exception e) {
-            return "failed to serialize scheduled events";
-          }
+          return context.stringify(summaries, "failed to serialize scheduled events");
         });
   }
 }

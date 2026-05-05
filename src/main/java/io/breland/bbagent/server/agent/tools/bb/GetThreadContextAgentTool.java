@@ -3,7 +3,6 @@ package io.breland.bbagent.server.agent.tools.bb;
 import static io.breland.bbagent.server.agent.tools.JsonSchemaUtilities.jsonSchema;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
-import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import io.breland.bbagent.server.agent.ConversationState;
 import io.breland.bbagent.server.agent.cadence.models.IncomingAttachment;
@@ -40,7 +39,8 @@ public class GetThreadContextAgentTool implements ToolProvider {
   public AgentTool getTool() {
     return new AgentTool(
         TOOL_NAME,
-        "Get the latest message and images for the current thread. Use when asked about the last message in this thread or previously sent images in this thread.",
+        "Get the latest message and images for the current thread. Use when asked about the last"
+            + " message in this thread or previously sent images in this thread.",
         jsonSchema(GetThreadContextRequest.class),
         false,
         (context, args) -> {
@@ -48,13 +48,17 @@ public class GetThreadContextAgentTool implements ToolProvider {
               context.getMapper().convertValue(args, GetThreadContextRequest.class);
           String threadRootGuid = request.threadRootGuid();
           if (threadRootGuid == null || threadRootGuid.isBlank()) {
-            threadRootGuid = resolveThreadRootGuid(context);
+            threadRootGuid = context.threadOriginatorGuid();
           }
           if (threadRootGuid == null || threadRootGuid.isBlank()) {
             log.warn("Could not resolve thread_root_guid");
             return "no thread";
           }
-          ConversationState state = context.getConversations().get(context.message().chatGuid());
+          String chatGuid = context.chatGuid();
+          if (chatGuid == null) {
+            return "no chat";
+          }
+          ConversationState state = context.getConversations().get(chatGuid);
           if (state == null) {
             log.warn("Could not resolve conversation state");
             return "no context";
@@ -75,25 +79,10 @@ public class GetThreadContextAgentTool implements ToolProvider {
           response.put("last_message_sender", threadContext.lastMessageSender());
           response.put("last_message_timestamp", threadContext.lastMessageTimestamp());
           response.put("last_image_urls", threadContext.lastImageUrls());
-          try {
-            String modelResponse = context.getMapper().writeValueAsString(response);
-            log.info("modelResponse: {}", modelResponse);
-            return modelResponse;
-          } catch (JsonProcessingException e) {
-            throw new RuntimeException(e);
-          }
+          String modelResponse = context.stringify(response, "failed to serialize thread context");
+          log.info("modelResponse: {}", modelResponse);
+          return modelResponse;
         });
-  }
-
-  private String resolveThreadRootGuid(ToolContext context) {
-    if (context == null || context.message() == null) {
-      return null;
-    }
-    String threadOriginatorGuid = context.message().threadOriginatorGuid();
-    if (threadOriginatorGuid != null && !threadOriginatorGuid.isBlank()) {
-      return threadOriginatorGuid;
-    }
-    return null;
   }
 
   private ConversationState.ThreadContext fetchThreadContext(

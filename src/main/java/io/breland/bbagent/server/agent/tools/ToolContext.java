@@ -5,6 +5,7 @@ import io.breland.bbagent.server.agent.BBMessageAgent;
 import io.breland.bbagent.server.agent.ConversationState;
 import io.breland.bbagent.server.agent.IncomingMessage;
 import io.breland.bbagent.server.agent.transport.OutgoingTextMessage;
+import org.springframework.util.StringUtils;
 
 public class ToolContext {
   private final BBMessageAgent bbMessageAgent;
@@ -24,12 +25,44 @@ public class ToolContext {
     return message;
   }
 
+  public String chatGuid() {
+    return clean(message == null ? null : message.chatGuid());
+  }
+
+  public String messageGuid() {
+    return clean(message == null ? null : message.messageGuid());
+  }
+
+  public String sender() {
+    return clean(message == null ? null : message.sender());
+  }
+
+  public String threadOriginatorGuid() {
+    return clean(message == null ? null : message.threadOriginatorGuid());
+  }
+
+  public boolean isGroupChat() {
+    return message != null && message.isGroup();
+  }
+
   public java.util.Map<String, ConversationState> getConversations() {
     return bbMessageAgent.getConversations();
   }
 
   public com.fasterxml.jackson.databind.ObjectMapper getMapper() {
     return bbMessageAgent.getObjectMapper();
+  }
+
+  public String stringify(Object value, String fallback) {
+    var mapper = getMapper();
+    if (mapper == null) {
+      return fallback;
+    }
+    try {
+      return mapper.writeValueAsString(value);
+    } catch (Exception ignored) {
+      return fallback;
+    }
   }
 
   public void setAssistantResponsiveness(BBMessageAgent.AssistantResponsiveness responsiveness) {
@@ -68,5 +101,9 @@ public class ToolContext {
 
   public AgentWorkflowContext workflowContext() {
     return workflowContext;
+  }
+
+  private static String clean(String value) {
+    return StringUtils.hasText(value) ? value : null;
   }
 }

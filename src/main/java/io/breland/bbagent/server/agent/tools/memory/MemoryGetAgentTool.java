@@ -9,9 +9,7 @@ import io.swagger.v3.oas.annotations.media.Schema;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import lombok.extern.slf4j.Slf4j;
 
-@Slf4j
 public class MemoryGetAgentTool implements ToolProvider {
   public static final String TOOL_NAME = "memory_get";
   private final Mem0Client mem0Client;
@@ -27,7 +25,12 @@ public class MemoryGetAgentTool implements ToolProvider {
   public AgentTool getTool() {
     return new AgentTool(
         TOOL_NAME,
-        "Query memory for the current user or conversation. Use this tool any time the user asks a question or when memory might answer their question or if personal details or prior context might enhance your ability to answer. The memory accepts a natural language query. Use this tool to try and resolve inputs for other tools that rely on personal details or preferences (examples are things like names, relationships, location, user preferences, etc). ",
+        "Query memory for the current user or conversation. Use this tool any time the user asks a"
+            + " question or when memory might answer their question or if personal details or prior"
+            + " context might enhance your ability to answer. The memory accepts a natural language"
+            + " query. Use this tool to try and resolve inputs for other tools that rely on"
+            + " personal details or preferences (examples are things like names, relationships,"
+            + " location, user preferences, etc). ",
         jsonSchema(MemoryGetRequest.class),
         false,
         (context, args) -> {
@@ -71,11 +74,7 @@ public class MemoryGetAgentTool implements ToolProvider {
             }
           }
           result.put("memories", formatted);
-          try {
-            return this.mem0Client.getObjectMapper().writeValueAsString(result);
-          } catch (Exception e) {
-            return result.toString();
-          }
+          return context.stringify(result, result.toString());
         });
   }
 }

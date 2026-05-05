@@ -7,7 +7,6 @@ import com.openai.models.images.Image;
 import com.openai.models.images.ImageGenerateParams;
 import com.openai.models.images.ImageModel;
 import com.openai.models.images.ImagesResponse;
-import io.breland.bbagent.server.agent.IncomingMessage;
 import io.breland.bbagent.server.agent.tools.AgentTool;
 import io.breland.bbagent.server.agent.tools.ToolProvider;
 import io.breland.bbagent.server.agent.transport.bb.BBHttpClientWrapper;
@@ -47,11 +46,11 @@ public class SetGroupIconAgentTool implements ToolProvider {
         jsonSchema(SetGroupIconRequest.class),
         false,
         (context, args) -> {
-          IncomingMessage message = context.message();
-          if (message == null || message.chatGuid() == null || message.chatGuid().isBlank()) {
+          String chatGuid = context.chatGuid();
+          if (chatGuid == null) {
             return "no chat";
           }
-          if (!message.isGroup()) {
+          if (!context.isGroupChat()) {
             return "not group";
           }
           SetGroupIconRequest request =
@@ -68,7 +67,7 @@ public class SetGroupIconAgentTool implements ToolProvider {
           try {
             tempPath = Files.createTempFile("bb-group-icon-", ".png");
             Files.write(tempPath, imageBytes.get());
-            boolean success = bbHttpClientWrapper.setConversationIcon(message.chatGuid(), tempPath);
+            boolean success = bbHttpClientWrapper.setConversationIcon(chatGuid, tempPath);
             return success ? "updated" : "failed";
           } catch (Exception e) {
             return "failed";

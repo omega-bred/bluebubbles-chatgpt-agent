@@ -2,7 +2,6 @@ package io.breland.bbagent.server.agent.tools.bb;
 
 import static io.breland.bbagent.server.agent.tools.JsonSchemaUtilities.jsonSchema;
 
-import io.breland.bbagent.server.agent.IncomingMessage;
 import io.breland.bbagent.server.agent.tools.AgentTool;
 import io.breland.bbagent.server.agent.tools.ToolProvider;
 import io.breland.bbagent.server.agent.transport.bb.BBHttpClientWrapper;
@@ -26,15 +25,16 @@ public class RenameConversationAgentTool implements ToolProvider {
   public AgentTool getTool() {
     return new AgentTool(
         TOOL_NAME,
-        "Rename the current conversation. Use this tool when the user requests or suggests renaming the group, renaming the chat or other common terms for chat",
+        "Rename the current conversation. Use this tool when the user requests or suggests renaming"
+            + " the group, renaming the chat or other common terms for chat",
         jsonSchema(RenameConversationRequest.class),
         false,
         (context, args) -> {
-          IncomingMessage message = context.message();
-          if (message == null || message.chatGuid() == null || message.chatGuid().isBlank()) {
+          String chatGuid = context.chatGuid();
+          if (chatGuid == null) {
             return "no chat";
           }
-          if (!message.isGroup()) {
+          if (!context.isGroupChat()) {
             return "not group";
           }
           RenameConversationRequest request =
@@ -43,7 +43,7 @@ public class RenameConversationAgentTool implements ToolProvider {
           if (displayName == null || displayName.isBlank()) {
             return "missing name";
           }
-          boolean success = bbHttpClientWrapper.renameConversation(message.chatGuid(), displayName);
+          boolean success = bbHttpClientWrapper.renameConversation(chatGuid, displayName);
           return success ? "renamed" : "failed";
         });
   }
