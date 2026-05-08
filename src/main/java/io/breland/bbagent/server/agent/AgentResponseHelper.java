@@ -19,17 +19,19 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 public final class AgentResponseHelper {
+  private static final ObjectMapper TOOL_ARGUMENT_MAPPER = new ObjectMapper();
   private static final Pattern TEXT_TOOL_CALL_PATTERN =
       Pattern.compile("(?im)^\\s*call:([a-zA-Z0-9_\\-.]+)\\s*\\{(.*)}\\s*$");
   private static final Pattern TEXT_TOOL_ARG_DELIMITER =
       Pattern.compile(",\\s*(?=[a-zA-Z_][a-zA-Z0-9_\\-.]*\\s*:)");
   private static final String REPEATED_TOOL_CALL_BLOCKED_OUTPUT =
-      "Tool call blocked to prevent repeated loops in one turn. "
-          + "Summarize the current status to the user without calling this tool again unless the user explicitly asks.";
+      "Tool call blocked to prevent repeated loops in one turn. Summarize the current status to the"
+          + " user without calling this tool again unless the user explicitly asks.";
   private static final String REPEATED_WORKFLOW_CALLBACK_BLOCKED_OUTPUT =
-      "Workflow callback creation was blocked because one callback has already been created in this turn. "
-          + "Use the earlier callback_id and callback_instructions from the previous tool result, then continue with the next tool call. "
-          + "For Coder async tasks, create or start the Coder task now; do not call create_workflow_callback again.";
+      "Workflow callback creation was blocked because one callback has already been created in this"
+          + " turn. Use the earlier callback_id and callback_instructions from the previous tool"
+          + " result, then continue with the next tool call. For Coder async tasks, create or start"
+          + " the Coder task now; do not call create_workflow_callback again.";
 
   private AgentResponseHelper() {}
 
@@ -225,26 +227,10 @@ public final class AgentResponseHelper {
   }
 
   private static String toJsonObject(Map<String, String> args) {
-    StringBuilder builder = new StringBuilder("{");
-    boolean first = true;
-    for (Map.Entry<String, String> entry : args.entrySet()) {
-      if (!first) {
-        builder.append(',');
-      }
-      first = false;
-      builder.append('"').append(escapeJson(entry.getKey())).append('"').append(':');
-      builder.append('"').append(escapeJson(entry.getValue())).append('"');
+    try {
+      return TOOL_ARGUMENT_MAPPER.writeValueAsString(args);
+    } catch (Exception e) {
+      throw new IllegalStateException("Unable to encode text tool call arguments", e);
     }
-    builder.append('}');
-    return builder.toString();
-  }
-
-  private static String escapeJson(String value) {
-    return value
-        .replace("\\", "\\\\")
-        .replace("\"", "\\\"")
-        .replace("\n", "\\n")
-        .replace("\r", "\\r")
-        .replace("\t", "\\t");
   }
 }
