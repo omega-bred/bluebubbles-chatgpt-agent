@@ -27,7 +27,9 @@ class AgentResponseHelperTest {
   void parseTextFunctionCalls_preservesCommasInsideArgumentValues() throws Exception {
     List<com.openai.models.responses.ResponseFunctionToolCall> calls =
         AgentResponseHelper.parseTextFunctionCalls(
-            "call:create_workflow_callback{purpose:Clone repos, cherry-pick commit, and push to GitHub.,resume_instructions:Notify Breland once the cherry-pick and push are complete.}");
+            "call:create_workflow_callback{purpose:Clone repos, cherry-pick commit, and push to"
+                + " GitHub.,resume_instructions:Notify Breland once the cherry-pick and push are"
+                + " complete.}");
 
     assertEquals(1, calls.size());
     assertEquals("create_workflow_callback", calls.getFirst().name());
@@ -40,14 +42,26 @@ class AgentResponseHelperTest {
   }
 
   @Test
+  void parseTextFunctionCalls_serializesSpecialCharactersAsJson() throws Exception {
+    List<com.openai.models.responses.ResponseFunctionToolCall> calls =
+        AgentResponseHelper.parseTextFunctionCalls(
+            "call:send_text{text:hello \"Breland\" \\\\ path}");
+
+    assertEquals(1, calls.size());
+    assertEquals(
+        "hello \"Breland\" \\\\ path",
+        new ObjectMapper().readTree(calls.getFirst().arguments()).get("text").asText());
+  }
+
+  @Test
   void normalizeAssistantText_stripsTextToolCallLines() {
     String normalized =
         AgentResponseHelper.normalizeAssistantText(
             new ObjectMapper(),
             """
-            I'll start that now.
-            call:create_workflow_callback{purpose:Clone repos, cherry-pick commit, and push to GitHub.,resume_instructions:Notify Breland once complete.}
-            """);
+I'll start that now.
+call:create_workflow_callback{purpose:Clone repos, cherry-pick commit, and push to GitHub.,resume_instructions:Notify Breland once complete.}
+""");
 
     assertEquals("I'll start that now.", normalized);
   }
@@ -57,7 +71,8 @@ class AgentResponseHelperTest {
     String normalized =
         AgentResponseHelper.normalizeAssistantText(
             new ObjectMapper(),
-            "call:create_workflow_callback{purpose:Clone repos, cherry-pick commit, and push to GitHub.,resume_instructions:Notify Breland once complete.}");
+            "call:create_workflow_callback{purpose:Clone repos, cherry-pick commit, and push to"
+                + " GitHub.,resume_instructions:Notify Breland once complete.}");
 
     assertEquals("", normalized);
   }

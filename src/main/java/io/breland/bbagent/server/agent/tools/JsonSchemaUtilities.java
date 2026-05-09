@@ -11,7 +11,9 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
-public class JsonSchemaUtilities {
+public final class JsonSchemaUtilities {
+  private JsonSchemaUtilities() {}
+
   public static FunctionTool.Parameters jsonSchema(Map<String, Object> schema) {
     Map<String, Object> normalized = new LinkedHashMap<>(schema);
     normalized.putIfAbsent("additionalProperties", false);
@@ -25,11 +27,7 @@ public class JsonSchemaUtilities {
         normalized.put("required", required);
       }
     }
-    FunctionTool.Parameters.Builder builder = FunctionTool.Parameters.builder();
-    for (Map.Entry<String, Object> entry : normalized.entrySet()) {
-      builder.putAdditionalProperty(entry.getKey(), JsonValue.from(entry.getValue()));
-    }
-    return builder.build();
+    return toParameters(normalized);
   }
 
   public static FunctionTool.Parameters jsonSchema(Class<?> schemaClass) {
@@ -40,8 +38,12 @@ public class JsonSchemaUtilities {
     normalized.putIfAbsent("type", "object");
     normalized.putIfAbsent("properties", new LinkedHashMap<>());
     normalized.putIfAbsent("additionalProperties", false);
+    return toParameters(normalized);
+  }
+
+  private static FunctionTool.Parameters toParameters(Map<String, Object> schema) {
     FunctionTool.Parameters.Builder builder = FunctionTool.Parameters.builder();
-    for (Map.Entry<String, Object> entry : normalized.entrySet()) {
+    for (Map.Entry<String, Object> entry : schema.entrySet()) {
       builder.putAdditionalProperty(entry.getKey(), JsonValue.from(entry.getValue()));
     }
     return builder.build();

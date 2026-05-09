@@ -2,7 +2,6 @@ package io.breland.bbagent.server.agent.model_picker;
 
 import io.breland.bbagent.generated.model.WebsiteModelAccessSummary;
 import io.breland.bbagent.generated.model.WebsiteModelOption;
-import io.breland.bbagent.server.StringValueUtils;
 import io.breland.bbagent.server.agent.AgentAccountIdentity;
 import io.breland.bbagent.server.agent.IncomingMessage;
 import io.breland.bbagent.server.agent.persistence.model.ModelAccountSettingsEntity;
@@ -12,6 +11,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.function.Function;
 import java.util.stream.Collectors;
+import org.apache.commons.lang3.StringUtils;
 import org.springframework.lang.Nullable;
 import org.springframework.stereotype.Service;
 
@@ -48,7 +48,7 @@ public class ModelAccessService {
   }
 
   public ModelAccess resolve(@Nullable String accountBase) {
-    String cleanAccountBase = StringValueUtils.clean(accountBase);
+    String cleanAccountBase = StringUtils.defaultIfBlank(accountBase, null);
     if (cleanAccountBase == null) {
       return standard(null);
     }
@@ -89,7 +89,7 @@ public class ModelAccessService {
 
   private ModelAccess fromEntity(ModelAccountSettingsEntity entity) {
     if (entity.isPremium()) {
-      String selected = StringValueUtils.clean(entity.getSelectedModel());
+      String selected = StringUtils.defaultIfBlank(entity.getSelectedModel(), null);
       String modelKey = selected == null ? PREMIUM_MODEL_KEY : selected;
       return new ModelAccess(
           entity.getAccountBase(),

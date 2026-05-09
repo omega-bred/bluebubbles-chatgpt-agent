@@ -3,7 +3,6 @@ package io.breland.bbagent.server.agent.tools.website;
 import static io.breland.bbagent.server.agent.tools.JsonSchemaUtilities.jsonSchema;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
-import io.breland.bbagent.server.StringValueUtils;
 import io.breland.bbagent.server.agent.IncomingMessage;
 import io.breland.bbagent.server.agent.tools.AgentTool;
 import io.breland.bbagent.server.agent.tools.ToolJson;
@@ -13,6 +12,7 @@ import io.swagger.v3.oas.annotations.media.Schema;
 import java.time.format.DateTimeFormatter;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import org.apache.commons.lang3.StringUtils;
 
 public class GetWebsiteAccountLinkStatusAgentTool implements ToolProvider {
   public static final String TOOL_NAME = "get_website_account_link_status";
@@ -24,12 +24,14 @@ public class GetWebsiteAccountLinkStatusAgentTool implements ToolProvider {
   public record GetWebsiteAccountLinkStatusRequest(
       @Schema(
               description =
-                  "Optional iMessage sender/handle to check. Defaults to the current incoming sender.")
+                  "Optional iMessage sender/handle to check. Defaults to the current incoming"
+                      + " sender.")
           @JsonProperty("sender")
           String sender,
       @Schema(
               description =
-                  "Optional chat GUID to check for chat-scoped integrations. Defaults to the current incoming chat.")
+                  "Optional chat GUID to check for chat-scoped integrations. Defaults to the"
+                      + " current incoming chat.")
           @JsonProperty("chat_guid")
           String chatGuid) {}
 
@@ -41,7 +43,9 @@ public class GetWebsiteAccountLinkStatusAgentTool implements ToolProvider {
   public AgentTool getTool() {
     return new AgentTool(
         TOOL_NAME,
-        "Check whether the current or specified iMessage sender is already linked to a website account. Use this before answering account-link status questions; if unlinked and the user wants to connect, call link_website_account next.",
+        "Check whether the current or specified iMessage sender is already linked to a website"
+            + " account. Use this before answering account-link status questions; if unlinked and"
+            + " the user wants to connect, call link_website_account next.",
         jsonSchema(GetWebsiteAccountLinkStatusRequest.class),
         false,
         (context, args) -> {
@@ -50,10 +54,10 @@ public class GetWebsiteAccountLinkStatusAgentTool implements ToolProvider {
                 context.getMapper().convertValue(args, GetWebsiteAccountLinkStatusRequest.class);
             IncomingMessage message = context.message();
             String sender =
-                StringValueUtils.firstNonBlank(
+                StringUtils.firstNonBlank(
                     request.sender(), message == null ? null : message.sender());
             String chatGuid =
-                StringValueUtils.firstNonBlank(
+                StringUtils.firstNonBlank(
                     request.chatGuid(), message == null ? null : message.chatGuid());
             WebsiteAccountService.SenderLinkStatus status =
                 accountService.getLinkStatus(sender, chatGuid);
@@ -90,8 +94,10 @@ public class GetWebsiteAccountLinkStatusAgentTool implements ToolProvider {
       return "This iMessage sender is linked to a web account for this chat. " + modelText(status);
     }
     if (status.linked()) {
-      return "This iMessage sender is linked to a web account, but this specific chat does not have its own web account link yet. "
-          + modelText(status);
+      String linkedText =
+          "This iMessage sender is linked to a web account, but this specific chat does not have"
+              + " its own web account link yet. ";
+      return linkedText + modelText(status);
     }
     return "This iMessage sender is not linked to a web account yet. " + modelText(status);
   }
