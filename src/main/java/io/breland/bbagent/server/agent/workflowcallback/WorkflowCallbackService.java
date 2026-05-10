@@ -16,6 +16,9 @@ import java.security.SecureRandom;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Base64;
+import java.util.LinkedHashMap;
+import java.util.Locale;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import javax.annotation.Nullable;
@@ -25,6 +28,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.core.task.SimpleAsyncTaskExecutor;
 import org.springframework.core.task.TaskExecutor;
 import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.util.UriComponentsBuilder;
@@ -270,17 +274,17 @@ public class WorkflowCallbackService {
   }
 
   private String callbackInstructions(String callbackUrl, String signingSecret) {
-    return "When the async work completes or fails, call this Standard Webhooks callback exactly once.\n"
-        + "POST "
-        + callbackUrl
-        + "\n"
-        + "Use headers: Content-Type=application/json, webhook-id=<unique stable id>, webhook-timestamp=<unix seconds>, webhook-signature=v1,<base64 HMAC-SHA256>.\n"
-        + "Signing secret: "
-        + signingSecret
-        + "\n"
-        + "Sign the exact raw request body using HMAC-SHA256 over: webhook-id + '.' + webhook-timestamp + '.' + raw_body.\n"
-        + "Send JSON shaped like {\"type\":\"agent.async_task.completed\",\"timestamp\":\"<ISO-8601>\",\"data\":{\"status\":\"completed\",\"summary\":\"...\",\"details\":\"...\",\"artifacts\":[]}}.\n"
-        + "Use type agent.async_task.failed and include data.errors if the work fails. Keep payloads thin; include IDs or links instead of huge logs.";
+    return """
+        When the async work completes or fails, call this Standard Webhooks callback exactly once.
+        POST %s
+        Use headers: Content-Type=application/json, webhook-id=<unique stable id>, webhook-timestamp=<unix seconds>, webhook-signature=v1,<base64 HMAC-SHA256>.
+        Signing secret: %s
+        Sign the exact raw request body using HMAC-SHA256 over: webhook-id + '.' + webhook-timestamp + '.' + raw_body.
+        Send JSON shaped like {"type":"agent.async_task.completed","timestamp":"<ISO-8601>","data":{"status":"completed","summary":"...","details":"...","artifacts":[]}}.
+        Use type agent.async_task.failed and include data.errors if the work fails. Keep payloads thin; include IDs or links instead of huge logs.
+        """
+        .formatted(callbackUrl, signingSecret)
+        .trim();
   }
 
   private String createSigningSecret() {
@@ -307,37 +311,72 @@ public class WorkflowCallbackService {
     }
 
     static ReceiveResult duplicate(String message) {
-      return new ReceiveResult(ReceiveStatus.DUPLICATE, message, null, null);
+      return withoutWorkflow(ReceiveStatus.DUPLICATE, message);
     }
 
     static ReceiveResult badRequest(String message) {
-      return new ReceiveResult(ReceiveStatus.BAD_REQUEST, message, null, null);
+      return withoutWorkflow(ReceiveStatus.BAD_REQUEST, message);
     }
 
     static ReceiveResult unauthorized(String message) {
-      return new ReceiveResult(ReceiveStatus.UNAUTHORIZED, message, null, null);
+      return withoutWorkflow(ReceiveStatus.UNAUTHORIZED, message);
     }
 
     static ReceiveResult notFound(String message) {
-      return new ReceiveResult(ReceiveStatus.NOT_FOUND, message, null, null);
+      return withoutWorkflow(ReceiveStatus.NOT_FOUND, message);
     }
 
     static ReceiveResult conflict(String message) {
-      return new ReceiveResult(ReceiveStatus.CONFLICT, message, null, null);
+      return withoutWorkflow(ReceiveStatus.CONFLICT, message);
     }
 
     static ReceiveResult expired(String message) {
-      return new ReceiveResult(ReceiveStatus.EXPIRED, message, null, null);
+      return withoutWorkflow(ReceiveStatus.EXPIRED, message);
+    }
+
+    private static ReceiveResult withoutWorkflow(ReceiveStatus status, String message) {
+      return new ReceiveResult(status, message, null, null);
+    }
+
+    public HttpStatus httpStatus() {
+      return status.httpStatus();
+    }
+
+    public Map<String, Object> body() {
+      Map<String, Object> response = new LinkedHashMap<>();
+      response.put("status", status.responseValue());
+      response.put("message", message);
+      if (workflowId != null) {
+        response.put("workflow_id", workflowId);
+      }
+      if (runId != null) {
+        response.put("run_id", runId);
+      }
+      return response;
     }
   }
 
   public enum ReceiveStatus {
-    PROCESSED,
-    DUPLICATE,
-    BAD_REQUEST,
-    UNAUTHORIZED,
-    NOT_FOUND,
-    CONFLICT,
-    EXPIRED
+    PROCESSED(HttpStatus.OK),
+    DUPLICATE(HttpStatus.OK),
+    BAD_REQUEST(HttpStatus.BAD_REQUEST),
+    UNAUTHORIZED(HttpStatus.UNAUTHORIZED),
+    NOT_FOUND(HttpStatus.NOT_FOUND),
+    CONFLICT(HttpStatus.CONFLICT),
+    EXPIRED(HttpStatus.GONE);
+
+    private final HttpStatus httpStatus;
+
+    ReceiveStatus(HttpStatus httpStatus) {
+      this.httpStatus = httpStatus;
+    }
+
+    HttpStatus httpStatus() {
+      return httpStatus;
+    }
+
+    String responseValue() {
+      return name().toLowerCase(Locale.ROOT);
+    }
   }
 }
