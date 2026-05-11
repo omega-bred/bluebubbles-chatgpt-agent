@@ -13,16 +13,14 @@ import io.breland.bbagent.server.agent.tools.ToolProvider;
 import io.swagger.v3.oas.annotations.media.Schema;
 import java.time.Duration;
 import java.time.Instant;
-import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
-import javax.annotation.Nullable;
+import org.springframework.util.StringUtils;
 
 public class ScheduledEventTool implements ToolProvider {
   public static final String TOOL_NAME = "schedule_event";
-  static final String WORKFLOW_ID_PREFIX = "scheduled";
   private final CadenceWorkflowLauncher cadenceWorkflowLauncher;
 
   @Schema(description = "Schedule a future task for the assistant to execute.")
@@ -41,7 +39,8 @@ public class ScheduledEventTool implements ToolProvider {
           Long delaySeconds,
       @Schema(
               description =
-                  "ISO-8601 duration between recurring runs (e.g. PT24H for daily). Omit for one-time tasks.")
+                  "ISO-8601 duration between recurring runs (e.g. PT24H for daily). Omit for"
+                      + " one-time tasks.")
           String repeatInterval) {}
 
   public ScheduledEventTool(CadenceWorkflowLauncher cadenceWorkflowLauncher) {
@@ -51,13 +50,18 @@ public class ScheduledEventTool implements ToolProvider {
   public AgentTool getTool() {
     return new AgentTool(
         TOOL_NAME,
-        "Schedule a future task for the assistant. Provide a task plus either runAt or delaySeconds. "
-            + "For recurring tasks, include repeatInterval only when recurrence is explicitly needed; "
-            + "repeatInterval must be representable as Unix cron, such as PT1M, PT5M, PT1H, or PT24H. "
-            + "Use this for reminders, follow-ups, and watching long-running work. "
-            + "After starting a long-running Coder task or workspace build, schedule a one-time status check with delaySeconds and no repeatInterval unless the user asks for repeated checks. "
-            + "For long-running work checks, write the task so that if the work is still pending or running, the assistant must call schedule_event again for another one-time check before ending the turn, unless the work is complete, failed, canceled, expired, or the task's max attempts/deadline has been reached. "
-            + "Use the task to describe what should happen, include any IDs needed to continue, attempt count, deadline or callback expiration, and say how the user should be notified.",
+        "Schedule a future task for the assistant. Provide a task plus either runAt or"
+            + " delaySeconds. For recurring tasks, include repeatInterval only when recurrence is"
+            + " explicitly needed; repeatInterval must be representable as Unix cron, such as PT1M,"
+            + " PT5M, PT1H, or PT24H. Use this for reminders, follow-ups, and watching long-running"
+            + " work. After starting a long-running Coder task or workspace build, schedule a"
+            + " one-time status check with delaySeconds and no repeatInterval unless the user asks"
+            + " for repeated checks. For long-running work checks, write the task so that if the"
+            + " work is still pending or running, the assistant must call schedule_event again for"
+            + " another one-time check before ending the turn, unless the work is complete, failed,"
+            + " canceled, expired, or the task's max attempts/deadline has been reached. Use the"
+            + " task to describe what should happen, include any IDs needed to continue, attempt"
+            + " count, deadline or callback expiration, and say how the user should be notified.",
         jsonSchema(ScheduledEventRequest.class),
         false,
         (context, args) -> {
@@ -66,27 +70,30 @@ public class ScheduledEventTool implements ToolProvider {
           }
           ScheduledEventRequest request =
               context.getMapper().convertValue(args, ScheduledEventRequest.class);
-          if (request.task() == null || request.task().isBlank()) {
+          if (!StringUtils.hasText(request.task())) {
             return "missing task";
           }
-          Instant scheduledAt = resolveScheduledInstant(request);
+          Instant scheduledAt =
+              ScheduledEvents.scheduledInstant(
+                  request.runAtEpochMillis(), request.runAt(), request.delaySeconds());
           if (scheduledAt == null) {
             return "missing schedule";
           }
-          Duration repeatInterval = resolveRepeatInterval(request);
+          Duration repeatInterval = ScheduledEvents.repeatInterval(request.repeatInterval());
           if (repeatInterval != null && repeatInterval.isZero()) {
             return "invalid repeat interval";
           }
           IncomingMessage source = context.message();
-          if (source == null || source.chatGuid() == null || source.chatGuid().isBlank()) {
+          String chatGuid = ScheduledEvents.chatGuid(context, null);
+          if (source == null || !StringUtils.hasText(chatGuid)) {
             return "missing chat";
           }
-          String workflowId = buildWorkflowId(source.chatGuid());
+          String workflowId = ScheduledEvents.newWorkflowId(chatGuid);
           String messageGuid = "scheduled-" + UUID.randomUUID();
           String text = buildScheduledText(request.task(), scheduledAt, repeatInterval);
           IncomingMessage scheduledMessage =
               new IncomingMessage(
-                  source.chatGuid(),
+                  chatGuid,
                   messageGuid,
                   source.threadOriginatorGuid(),
                   text,
@@ -98,18 +105,19 @@ public class ScheduledEventTool implements ToolProvider {
                   List.of(),
                   true);
           AgentWorkflowContext workflowContext =
-              new AgentWorkflowContext(workflowId, source.chatGuid(), messageGuid, Instant.now());
-          Duration delayStart = resolveDelayStart(scheduledAt);
-          String cronSchedule = resolveCronSchedule(repeatInterval);
+              new AgentWorkflowContext(workflowId, chatGuid, messageGuid, Instant.now());
+          Duration delayStart = ScheduledEvents.delayStart(scheduledAt);
+          String cronSchedule = ScheduledEvents.cronSchedule(repeatInterval);
           if (repeatInterval != null && cronSchedule == null) {
-            return "unsupported repeat interval: use a whole-minute interval that can be represented as Unix cron, such as PT1M, PT5M, PT1H, or PT24H";
+            return "unsupported repeat interval: use a whole-minute interval that can be"
+                + " represented as Unix cron, such as PT1M, PT5M, PT1H, or PT24H";
           }
           Map<String, Object> memo =
               Map.of(
                   "task",
                   request.task().trim(),
                   "chatGuid",
-                  source.chatGuid(),
+                  chatGuid,
                   "scheduledFor",
                   scheduledAt.toString(),
                   "repeatInterval",
@@ -133,96 +141,8 @@ public class ScheduledEventTool implements ToolProvider {
         });
   }
 
-  private static Instant resolveScheduledInstant(ScheduledEventRequest request) {
-    if (request.runAtEpochMillis() != null) {
-      return Instant.ofEpochMilli(request.runAtEpochMillis());
-    }
-    if (request.runAt() != null && !request.runAt().isBlank()) {
-      try {
-        return OffsetDateTime.parse(request.runAt()).toInstant();
-      } catch (Exception ignored) {
-        // fall through
-      }
-    }
-    if (request.delaySeconds() != null) {
-      if (request.delaySeconds() < 0L) {
-        return null;
-      }
-      return Instant.now().plusSeconds(request.delaySeconds());
-    }
-    return null;
-  }
-
-  private static Duration resolveDelayStart(Instant scheduledAt) {
-    if (scheduledAt == null) {
-      return null;
-    }
-    Duration delay = Duration.between(Instant.now(), scheduledAt);
-    if (delay.isNegative()) {
-      return Duration.ZERO;
-    }
-    return delay;
-  }
-
-  private static Duration resolveRepeatInterval(ScheduledEventRequest request) {
-    if (request.repeatInterval() == null || request.repeatInterval().isBlank()) {
-      return null;
-    }
-    try {
-      Duration duration = Duration.parse(request.repeatInterval());
-      if (duration.isNegative()) {
-        return Duration.ZERO;
-      }
-      return duration;
-    } catch (Exception ignored) {
-      return Duration.ZERO;
-    }
-  }
-
-  static String resolveCronSchedule(@Nullable Duration repeatInterval) {
-    if (repeatInterval == null) {
-      return null;
-    }
-    long seconds = repeatInterval.getSeconds();
-    if (seconds <= 0L || seconds % 60L != 0L) {
-      return null;
-    }
-    long minutes = seconds / 60L;
-    if (minutes < 60L) {
-      if (60L % minutes != 0L) {
-        return null;
-      }
-      return "*/" + minutes + " * * * *";
-    }
-    if (minutes % 60L != 0L) {
-      return null;
-    }
-    long hours = minutes / 60L;
-    if (hours < 24L) {
-      if (24L % hours != 0L) {
-        return null;
-      }
-      return "0 */" + hours + " * * *";
-    }
-    if (hours == 24L) {
-      return "0 0 * * *";
-    }
-    if (hours == 168L) {
-      return "0 0 * * 0";
-    }
-    return null;
-  }
-
-  static String buildWorkflowIdPrefix(String chatGuid) {
-    return WORKFLOW_ID_PREFIX + ":" + chatGuid + ":";
-  }
-
   public static boolean isScheduledWorkflowId(String workflowId) {
-    return workflowId != null && workflowId.startsWith(WORKFLOW_ID_PREFIX + ":");
-  }
-
-  private static String buildWorkflowId(String chatGuid) {
-    return buildWorkflowIdPrefix(chatGuid) + UUID.randomUUID();
+    return ScheduledEvents.isScheduledWorkflowId(workflowId);
   }
 
   private static String buildScheduledText(
@@ -237,10 +157,13 @@ public class ScheduledEventTool implements ToolProvider {
     }
     builder.append(" Task: ").append(task.trim());
     builder.append(
-        " Execute now and notify the user as needed. If this is checking long-running work and the work is still pending or running, call ");
+        " Execute now and notify the user as needed. If this is checking long-running work and the"
+            + " work is still pending or running, call ");
     builder.append(TOOL_NAME);
     builder.append(
-        " again before ending this turn to create another one-time check, unless the work is complete, failed, canceled, expired, or the max attempts/deadline in the task has been reached.");
+        " again before ending this turn to create another one-time check, unless the work is"
+            + " complete, failed, canceled, expired, or the max attempts/deadline in the task has"
+            + " been reached.");
     return builder.toString();
   }
 }
