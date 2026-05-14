@@ -36,6 +36,7 @@ import org.springframework.util.MultiValueMap;
 public class BBHttpClientWrapper {
 
   private static final Duration API_TIMEOUT = Duration.ofSeconds(10);
+  private static final String ANY_DIRECT_CHAT_PREFIX = "any;-;";
 
   private final V1ContactApi contactApi;
   private ApiClient apiClient;
@@ -287,6 +288,7 @@ public class BBHttpClientWrapper {
       log.warn("Cannot send multipart message without chatGuid");
       return false;
     }
+    chatGuid = normalizeDirectAnyChatGuid(chatGuid);
     log.info("Sending multipart message with chatGuid {} - message {}", chatGuid, message);
     List<Map<String, Object>> parts = new ArrayList<>();
     int partIndex = 0;
@@ -438,11 +440,12 @@ public class BBHttpClientWrapper {
       log.warn("Cannot send message without chatGuid");
       return;
     }
-    this.sendTextDirect(message.chatGuid(), text);
+    this.sendTextDirect(normalizeDirectAnyChatGuid(message.chatGuid(), message.service()), text);
   }
 
   public void sendTextDirect(ApiV1MessageTextPostRequest request) {
     try {
+      request.setChatGuid(normalizeDirectAnyChatGuid(request.getChatGuid()));
       applyTextFormatting(request);
       log.info("Attempting to send direct text message {}", request.toString());
       messageApi.apiV1MessageTextPost(password, request).block(API_TIMEOUT);
@@ -495,12 +498,13 @@ public class BBHttpClientWrapper {
 
     ApiV1MessageReactPostRequest request = new ApiV1MessageReactPostRequest();
     request.reaction(reaction);
-    request.setChatGuid(message.chatGuid());
+    request.setChatGuid(normalizeDirectAnyChatGuid(message.chatGuid(), message.service()));
     request.setSelectedMessageGuid(message.messageGuid());
     return this.sendReactionDirect(request);
   }
 
   public boolean sendReactionDirect(ApiV1MessageReactPostRequest request) {
+    request.setChatGuid(normalizeDirectAnyChatGuid(request.getChatGuid()));
     if (!BBMessageAgent.SUPPORTED_REACTIONS.contains(request.getReaction())) {
       log.warn("Unsupported reaction {}", request.getReaction());
       return false;
@@ -513,6 +517,21 @@ public class BBHttpClientWrapper {
       log.warn("Failed to send reaction", e);
       return false;
     }
+  }
+
+  static String normalizeDirectAnyChatGuid(String chatGuid) {
+    return normalizeDirectAnyChatGuid(chatGuid, BBMessageAgent.IMESSAGE_SERVICE);
+  }
+
+  static String normalizeDirectAnyChatGuid(String chatGuid, String service) {
+    if (chatGuid == null || !chatGuid.startsWith(ANY_DIRECT_CHAT_PREFIX)) {
+      return chatGuid;
+    }
+    String resolvedService =
+        service == null || service.isBlank() || "any".equalsIgnoreCase(service)
+            ? BBMessageAgent.IMESSAGE_SERVICE
+            : service;
+    return resolvedService + chatGuid.substring("any".length());
   }
 
   public List<ApiV1ChatChatGuidMessageGet200ResponseDataInner> getMessagesInChat(String chatGuid) {

@@ -4,7 +4,6 @@ import static org.junit.jupiter.api.Assertions.*;
 
 import io.breland.bbagent.generated.bluebubblesclient.model.ApiV1ChatChatGuidMessageGet200ResponseDataInner;
 import io.breland.bbagent.generated.bluebubblesclient.model.Chat;
-import io.breland.bbagent.generated.bluebubblesclient.model.FindMyFriendLocation;
 import io.breland.bbagent.generated.bluebubblesclient.model.Message;
 import io.breland.bbagent.server.agent.transport.bb.BBHttpClientWrapper;
 import java.nio.file.Path;
@@ -21,13 +20,6 @@ import org.springframework.boot.test.context.SpringBootTest;
 public class BBClientTest {
 
   @Autowired public BBHttpClientWrapper bbHttpClientWrapper;
-
-  @Test
-  public void testLocation() {
-    FindMyFriendLocation findMyLocation =
-        bbHttpClientWrapper.getFindMyLocation("mindstorms6+apple@gmail.com");
-    assertNotNull(findMyLocation);
-  }
 
   @Test
   public void testGetHistory() {

@@ -180,6 +180,9 @@ dependencies {
 //	implementation 'com.juliusyolo:endpoint-security-clerk-spring-boot-starter:1.0.2-RELEASE'
 //	implementation 'com.clerk:backend-api:3.1.0'
 
+    // auth components
+    implementation 'dev.openfga:openfga-sdk:0.9.9'
+
 
 	implementation("org.apache.httpcomponents.client5:httpclient5:5.6")
 

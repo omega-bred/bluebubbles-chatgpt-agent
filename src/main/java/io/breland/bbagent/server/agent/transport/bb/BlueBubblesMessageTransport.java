@@ -92,7 +92,8 @@ public class BlueBubblesMessageTransport implements MessageTransport {
       return false;
     }
     ApiV1MessageTextPostRequest request = new ApiV1MessageTextPostRequest();
-    request.setChatGuid(message.chatGuid());
+    request.setChatGuid(
+        BBHttpClientWrapper.normalizeDirectAnyChatGuid(message.chatGuid(), message.service()));
     request.setMessage(outgoingMessage.text());
     request.setTempGuid(java.util.UUID.randomUUID().toString());
     if (outgoingMessage.selectedMessageGuid() != null
@@ -122,7 +123,9 @@ public class BlueBubblesMessageTransport implements MessageTransport {
       String reaction,
       Integer partIndex) {
     ApiV1MessageReactPostRequest request = new ApiV1MessageReactPostRequest();
-    request.setChatGuid(conversationId);
+    request.setChatGuid(
+        BBHttpClientWrapper.normalizeDirectAnyChatGuid(
+            conversationId, message == null ? null : message.service()));
     request.setSelectedMessageGuid(selectedMessageGuid);
     request.setReaction(reaction);
     if (partIndex != null) {
