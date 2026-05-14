@@ -33,7 +33,7 @@ public class NominatimReverseLocationLookup implements ReverseLocationLookup {
   NominatimReverseLocationLookup(
       String baseUrl, long timeoutSeconds, int zoom, WebClient webClient) {
     this.baseUrl = baseUrl == null ? "" : baseUrl.trim();
-    this.timeout = Duration.ofSeconds(Math.max(1, timeoutSeconds));
+    this.timeout = Duration.ofSeconds(Math.max(2, timeoutSeconds));
     this.zoom = Math.max(0, Math.min(18, zoom));
     this.webClient = webClient;
   }
