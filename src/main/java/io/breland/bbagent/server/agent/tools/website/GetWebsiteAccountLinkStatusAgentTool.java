@@ -95,7 +95,7 @@ public class GetWebsiteAccountLinkStatusAgentTool implements ToolProvider {
     }
     if (status.linked()) {
       return "This iMessage sender is linked to a web account, but this specific chat does not have"
-                 + " its own web account link yet. "
+          + " its own web account link yet. "
           + modelText(status);
     }
     return "This iMessage sender is not linked to a web account yet. " + modelText(status);

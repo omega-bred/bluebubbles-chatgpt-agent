@@ -10,27 +10,29 @@ import io.breland.bbagent.server.agent.transport.bb.BBHttpClientWrapper;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.UUID;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.condition.DisabledOnOs;
+import org.junit.jupiter.api.condition.OS;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 
 @SpringBootTest()
-@Disabled
+@DisabledOnOs(OS.LINUX)
 public class BBClientTest {
 
   @Autowired public BBHttpClientWrapper bbHttpClientWrapper;
 
   @Test
   public void testLocation() {
-    FindMyFriendLocation findMyLocation = bbHttpClientWrapper.getFindMyLocation("+18033861737");
+    FindMyFriendLocation findMyLocation =
+        bbHttpClientWrapper.getFindMyLocation("mindstorms6+apple@gmail.com");
     assertNotNull(findMyLocation);
   }
 
   @Test
   public void testGetHistory() {
     List<ApiV1ChatChatGuidMessageGet200ResponseDataInner> worked =
-        bbHttpClientWrapper.getMessagesInChat("iMessage;+;chat293505621450166166");
+        bbHttpClientWrapper.getMessagesInChat("any;+;chat293505621450166166");
     assertNotNull(worked);
   }
 
@@ -38,13 +40,13 @@ public class BBClientTest {
   public void updateGroupIcon() {
     boolean worked =
         bbHttpClientWrapper.setConversationIcon(
-            "iMessage;+;chat293505621450166166", Path.of("/Users/breland/Downloads/back.png"));
+            "any;+;chat293505621450166166", Path.of("/Users/breland/Downloads/back.png"));
     assertTrue(worked);
   }
 
   @Test
   public void testRename() {
-    String chatGuid = "iMessage;+;chat293505621450166166";
+    String chatGuid = "any;+;chat293505621450166166";
     String newName = UUID.randomUUID().toString();
     boolean jd = bbHttpClientWrapper.renameConversation(chatGuid, newName);
     assertTrue(jd);
@@ -62,7 +64,7 @@ public class BBClientTest {
   @Test
   public void testGetMessages() {
     List<ApiV1ChatChatGuidMessageGet200ResponseDataInner> messagesInChat =
-        bbHttpClientWrapper.getMessagesInChat("iMessage;+;chat293505621450166166");
+        bbHttpClientWrapper.getMessagesInChat("any;+;chat293505621450166166");
   }
 
   @Test
@@ -73,7 +75,7 @@ public class BBClientTest {
 
   @Test
   public void testConvoSearch() {
-    String chatGuid = "iMessage;+;chat293505621450166166";
+    String chatGuid = "any;+;chat293505621450166166";
     String query = "JD";
     List<Message> messages =
         bbHttpClientWrapper.searchConversationHistory(chatGuid, query, null, null);

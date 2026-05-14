@@ -719,7 +719,7 @@ components:
               type: string
               nullable: true
             associatedMessageType:
-              type: integer
+              type: string
               nullable: true
             expressiveSendStyleId:
               type: string

@@ -14,6 +14,7 @@ final class CoderToolNameMapper {
         mcpToolName == null
             ? "tool"
             : mcpToolName.replaceAll("[^A-Za-z0-9_-]", "_").replaceAll("_+", "_");
+    normalized = normalized.replaceAll("^_+|_+$", "");
     normalized = StringUtils.defaultIfBlank(normalized, "tool");
     String hash = shortHash(mcpToolName);
     int maxBaseLength =
