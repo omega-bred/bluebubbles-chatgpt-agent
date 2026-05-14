@@ -1,6 +1,7 @@
 package io.breland.bbagent.server.agent.tools.gcal;
 
 import static io.breland.bbagent.server.agent.tools.JsonSchemaUtilities.jsonSchema;
+import static org.springframework.util.StringUtils.hasText;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.google.api.services.calendar.model.Event;
@@ -38,7 +39,7 @@ public class GetEventAgentTool extends GcalToolSupport implements ToolProvider {
               (client, accountKey) -> {
                 String calendarId = resolveCalendarId(request.calendarId());
                 String eventId = request.eventId();
-                if (isBlank(eventId)) {
+                if (!hasText(eventId)) {
                   return "missing event_id";
                 }
                 Event event = client.events().get(calendarId, eventId).execute();

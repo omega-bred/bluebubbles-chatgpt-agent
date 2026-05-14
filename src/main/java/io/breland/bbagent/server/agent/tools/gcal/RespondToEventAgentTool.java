@@ -1,6 +1,7 @@
 package io.breland.bbagent.server.agent.tools.gcal;
 
 import static io.breland.bbagent.server.agent.tools.JsonSchemaUtilities.jsonSchema;
+import static org.springframework.util.StringUtils.hasText;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.google.api.services.calendar.model.Event;
@@ -64,10 +65,10 @@ public class RespondToEventAgentTool extends GcalToolSupport implements ToolProv
                 String eventId = request.eventId();
                 String attendeeEmail = request.attendeeEmail();
                 ResponseStatus responseStatus = request.responseStatus();
-                if (isBlank(eventId)) {
+                if (!hasText(eventId)) {
                   return "missing event_id";
                 }
-                if (isBlank(attendeeEmail)) {
+                if (!hasText(attendeeEmail)) {
                   return "missing attendee_email";
                 }
                 if (responseStatus == null) {

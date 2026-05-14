@@ -1,6 +1,7 @@
 package io.breland.bbagent.server.agent.tools.gcal;
 
 import static io.breland.bbagent.server.agent.tools.JsonSchemaUtilities.jsonSchema;
+import static org.springframework.util.StringUtils.hasText;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.google.api.client.util.DateTime;
@@ -49,10 +50,10 @@ public class CreateEventAgentTool extends GcalToolSupport implements ToolProvide
               (client, accountKey) -> {
                 String calendarId = resolveCalendarId(request.calendarId());
                 ZoneId zone = resolveZone(request.timezone());
-                if (isBlank(request.start())) {
+                if (!hasText(request.start())) {
                   return "missing start";
                 }
-                if (isBlank(request.end())) {
+                if (!hasText(request.end())) {
                   return "missing end";
                 }
                 DateTime start = gcalClient.parseDateTime(request.start(), zone);
@@ -62,16 +63,16 @@ public class CreateEventAgentTool extends GcalToolSupport implements ToolProvide
                 }
                 Event event = new Event();
                 String summary = request.summary();
-                if (isBlank(summary)) {
+                if (!hasText(summary)) {
                   return "missing summary";
                 }
                 event.setSummary(summary);
                 String description = request.description();
-                if (!isBlank(description)) {
+                if (hasText(description)) {
                   event.setDescription(description);
                 }
                 String location = request.location();
-                if (!isBlank(location)) {
+                if (hasText(location)) {
                   event.setLocation(location);
                 }
                 event.setStart(eventDateTime(start, request.timezone()));

@@ -1,6 +1,7 @@
 package io.breland.bbagent.server.agent.tools.gcal;
 
 import static io.breland.bbagent.server.agent.tools.JsonSchemaUtilities.jsonSchema;
+import static org.springframework.util.StringUtils.hasText;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.google.api.client.util.DateTime;
@@ -67,7 +68,7 @@ public class ListEventsAgentTool extends GcalToolSupport implements ToolProvider
                 Optional.ofNullable(listEventsRequest.singleEvents())
                     .ifPresent(request::setSingleEvents);
                 String orderBy = listEventsRequest.orderBy();
-                if (orderBy != null && !orderBy.isBlank()) {
+                if (hasText(orderBy)) {
                   request.setOrderBy(orderBy);
                 }
                 Events events = request.execute();

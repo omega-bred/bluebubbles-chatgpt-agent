@@ -1,6 +1,7 @@
 package io.breland.bbagent.server.agent.tools.gcal;
 
 import static io.breland.bbagent.server.agent.tools.JsonSchemaUtilities.jsonSchema;
+import static org.springframework.util.StringUtils.hasText;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.google.api.client.util.DateTime;
@@ -50,7 +51,7 @@ public class SearchEventsAgentTool extends GcalToolSupport implements ToolProvid
               (client, accountKey) -> {
                 String calendarId = resolveCalendarId(request.calendarId());
                 String query = request.query();
-                if (isBlank(query)) {
+                if (!hasText(query)) {
                   return "missing query";
                 }
                 ZoneId zone = resolveZone(request.timezone());

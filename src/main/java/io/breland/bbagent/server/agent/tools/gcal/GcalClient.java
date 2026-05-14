@@ -35,10 +35,16 @@ import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.time.ZonedDateTime;
 import java.time.format.DateTimeParseException;
-import java.util.*;
+import java.util.Collection;
+import java.util.Date;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Optional;
+import java.util.UUID;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
+import org.springframework.util.StringUtils;
 
 @Slf4j
 @Component
@@ -68,20 +74,14 @@ public class GcalClient {
     this.clientSecretPath = clientSecretPath;
     this.clientSecret = clientSecret;
     this.redirectUri = redirectUri;
-    this.stateAlgorithm =
-        stateSecret == null || stateSecret.isBlank() ? null : Algorithm.HMAC256(stateSecret);
+    this.stateAlgorithm = StringUtils.hasText(stateSecret) ? Algorithm.HMAC256(stateSecret) : null;
     this.applicationName = applicationName;
     this.credentialRepository = credentialRepository;
     this.objectMapper = objectMapper;
   }
 
   public boolean isConfigured() {
-    boolean configuredPath =
-        clientSecretPath != null
-            && !clientSecretPath.isBlank()
-            && Files.exists(Paths.get(clientSecretPath));
-    boolean directSecretConfigured = clientSecret != null && !clientSecret.isBlank();
-    boolean configured = configuredPath || directSecretConfigured;
+    boolean configured = isClientSecretPathConfigured() || StringUtils.hasText(clientSecret);
     if (!configured) {
       log.warn(
           "Gcal client is not configured, no direct secret, path does not exist: {}",
@@ -100,7 +100,7 @@ public class GcalClient {
     if (state == null) {
       return null;
     }
-    GoogleAuthorizationCodeFlow flow = buildFlow(pendingKey);
+    GoogleAuthorizationCodeFlow flow = buildFlow();
     return flow.newAuthorizationUrl().setRedirectUri(redirectUri).setState(state).build();
   }
 
@@ -109,12 +109,12 @@ public class GcalClient {
       return Optional.empty();
     }
     try {
-      GoogleAuthorizationCodeFlow flow = buildFlow(pendingKey);
+      GoogleAuthorizationCodeFlow flow = buildFlow();
       TokenResponse tokenResponse =
           flow.newTokenRequest(code).setRedirectUri(redirectUri).execute();
       flow.createAndStoreCredential(tokenResponse, pendingKey);
       String accountId = resolveAccountId(pendingKey);
-      if (accountId == null || accountId.isBlank()) {
+      if (!StringUtils.hasText(accountId)) {
         return Optional.empty();
       }
       String scopedKey = scopeAccountKey(accountBase, accountId);
@@ -133,7 +133,7 @@ public class GcalClient {
   }
 
   public List<String> listAccountsFor(String accountBase) {
-    if (accountBase == null || accountBase.isBlank()) {
+    if (!StringUtils.hasText(accountBase)) {
       return List.of();
     }
     List<String> accountIds =
@@ -143,7 +143,7 @@ public class GcalClient {
     }
     LinkedHashSet<String> result = new LinkedHashSet<>();
     for (String accountId : accountIds) {
-      if (accountId == null || accountId.isBlank()) {
+      if (!StringUtils.hasText(accountId)) {
         continue;
       }
       if (accountId.startsWith(ACCOUNT_PENDING_PREFIX)) {
@@ -155,7 +155,7 @@ public class GcalClient {
   }
 
   public String scopeAccountKey(String accountBase, String accountId) {
-    if (accountId == null || accountId.isBlank()) {
+    if (!StringUtils.hasText(accountId)) {
       return accountBase;
     }
     if (accountId.contains(AccountKeyParts.ACCOUNT_DELIM)) {
@@ -164,14 +164,14 @@ public class GcalClient {
     if (AccountKeyParts.DEFAULT_ACCOUNT_ID.equalsIgnoreCase(accountId)) {
       return accountBase;
     }
-    if (accountBase == null || accountBase.isBlank()) {
+    if (!StringUtils.hasText(accountBase)) {
       return accountId;
     }
     return accountBase + AccountKeyParts.ACCOUNT_DELIM + accountId;
   }
 
   public boolean revokeAccount(String accountKey) {
-    if (accountKey == null || accountKey.isBlank()) {
+    if (!StringUtils.hasText(accountKey)) {
       return false;
     }
     return credentialRepository.deleteByStoreIdAndAccountKey(STORE_ID, accountKey) > 0;
@@ -190,7 +190,7 @@ public class GcalClient {
   }
 
   public com.google.api.client.util.DateTime parseDateTime(String value, ZoneId fallbackZone) {
-    if (value == null || value.isBlank()) {
+    if (!StringUtils.hasText(value)) {
       return null;
     }
     try {
@@ -227,7 +227,7 @@ public class GcalClient {
   }
 
   public Optional<OauthState> parseOauthState(String state) {
-    if (state == null || state.isBlank() || stateAlgorithm == null) {
+    if (!StringUtils.hasText(state) || stateAlgorithm == null) {
       return Optional.empty();
     }
     try {
@@ -237,10 +237,10 @@ public class GcalClient {
       String pendingKey = jwt.getClaim("pending_key").asString();
       String chatGuid = jwt.getClaim("chat_guid").asString();
       String messageGuid = jwt.getClaim("message_guid").asString();
-      if (accountBase == null || accountBase.isBlank() || chatGuid == null || chatGuid.isBlank()) {
+      if (!StringUtils.hasText(accountBase) || !StringUtils.hasText(chatGuid)) {
         return Optional.empty();
       }
-      if (pendingKey == null || pendingKey.isBlank()) {
+      if (!StringUtils.hasText(pendingKey)) {
         return Optional.empty();
       }
       return Optional.of(new OauthState(accountBase, pendingKey, chatGuid, messageGuid));
@@ -254,7 +254,7 @@ public class GcalClient {
     if (!isConfigured()) {
       throw new IOException("Google Calendar client not configured");
     }
-    GoogleAuthorizationCodeFlow flow = buildFlow(accountKey);
+    GoogleAuthorizationCodeFlow flow = buildFlow();
     Credential credential = flow.loadCredential(accountKey);
     if (credential == null) {
       throw new IOException("No credentials found for account: " + accountKey);
@@ -262,36 +262,22 @@ public class GcalClient {
     return credential;
   }
 
-  private GoogleAuthorizationCodeFlow buildFlow(String accountKey) {
-    if (clientSecretPath != null
-        && !clientSecretPath.isBlank()
-        && Files.exists(Paths.get(clientSecretPath))) {
+  private GoogleAuthorizationCodeFlow buildFlow() {
+    if (isClientSecretPathConfigured()) {
       try (FileInputStream input = new FileInputStream(clientSecretPath)) {
         GoogleClientSecrets clientSecrets =
             GoogleClientSecrets.load(
                 JSON_FACTORY, new InputStreamReader(input, StandardCharsets.UTF_8));
-        DataStoreFactory dataStoreFactory =
-            new PostgresCredentialDataStoreFactory(credentialRepository);
-        return new GoogleAuthorizationCodeFlow.Builder(
-                GoogleNetHttpTransport.newTrustedTransport(), JSON_FACTORY, clientSecrets, SCOPES)
-            .setDataStoreFactory(dataStoreFactory)
-            .setAccessType("offline")
-            .build();
+        return buildFlow(clientSecrets);
       } catch (Exception e) {
         log.error("Failed to load Google client secrets via path", e);
         throw new IllegalStateException("Failed to load Google client secrets", e);
       }
-    } else if (clientSecret != null && !clientSecret.isBlank()) {
+    } else if (StringUtils.hasText(clientSecret)) {
       try {
         GoogleClientSecrets clientSecrets =
             GoogleClientSecrets.load(JSON_FACTORY, new StringReader(clientSecret));
-        DataStoreFactory dataStoreFactory =
-            new PostgresCredentialDataStoreFactory(credentialRepository);
-        return new GoogleAuthorizationCodeFlow.Builder(
-                GoogleNetHttpTransport.newTrustedTransport(), JSON_FACTORY, clientSecrets, SCOPES)
-            .setDataStoreFactory(dataStoreFactory)
-            .setAccessType("offline")
-            .build();
+        return buildFlow(clientSecrets);
       } catch (Exception e) {
         log.error("Failed to load Google client secrets via direct", e);
         throw new IllegalStateException("Failed to load Google client secrets", e);
@@ -301,12 +287,27 @@ public class GcalClient {
     throw new IllegalStateException("Failed to load Google client secrets");
   }
 
+  private boolean isClientSecretPathConfigured() {
+    return StringUtils.hasText(clientSecretPath) && Files.exists(Paths.get(clientSecretPath));
+  }
+
+  private GoogleAuthorizationCodeFlow buildFlow(GoogleClientSecrets clientSecrets)
+      throws Exception {
+    DataStoreFactory dataStoreFactory =
+        new PostgresCredentialDataStoreFactory(credentialRepository);
+    return new GoogleAuthorizationCodeFlow.Builder(
+            GoogleNetHttpTransport.newTrustedTransport(), JSON_FACTORY, clientSecrets, SCOPES)
+        .setDataStoreFactory(dataStoreFactory)
+        .setAccessType("offline")
+        .build();
+  }
+
   private String createOauthState(
       String accountBase, String pendingKey, String chatGuid, String messageGuid) {
     if (stateAlgorithm == null) {
       return null;
     }
-    if (accountBase == null || accountBase.isBlank() || chatGuid == null || chatGuid.isBlank()) {
+    if (!StringUtils.hasText(accountBase) || !StringUtils.hasText(chatGuid)) {
       return null;
     }
     try {
@@ -332,7 +333,7 @@ public class GcalClient {
     try {
       Calendar client = getCalendarService(accountKey);
       CalendarListEntry primary = client.calendarList().get("primary").execute();
-      if (primary != null && primary.getId() != null && !primary.getId().isBlank()) {
+      if (primary != null && StringUtils.hasText(primary.getId())) {
         return primary.getId();
       }
     } catch (Exception e) {

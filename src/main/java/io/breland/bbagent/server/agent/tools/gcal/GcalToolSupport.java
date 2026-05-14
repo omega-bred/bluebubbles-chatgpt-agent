@@ -1,5 +1,6 @@
 package io.breland.bbagent.server.agent.tools.gcal;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.google.api.client.util.DateTime;
 import com.google.api.services.calendar.Calendar;
@@ -7,6 +8,7 @@ import com.google.api.services.calendar.model.Event;
 import com.google.api.services.calendar.model.EventAttendee;
 import com.google.api.services.calendar.model.EventDateTime;
 import com.google.api.services.calendar.model.Events;
+import com.google.api.services.calendar.model.FreeBusyRequestItem;
 import io.breland.bbagent.server.agent.AgentAccountIdentity;
 import io.breland.bbagent.server.agent.tools.ToolContext;
 import java.time.ZoneId;
@@ -15,6 +17,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import org.springframework.util.StringUtils;
 
 public class GcalToolSupport {
   protected final GcalClient gcalClient;
@@ -48,7 +51,7 @@ public class GcalToolSupport {
     return withConfigured(
         () -> {
           String accountKey = resolveAccountKey(context, requestedAccountKey);
-          if (isBlank(accountKey)) {
+          if (!StringUtils.hasText(accountKey)) {
             return "no account";
           }
           return operation.apply(gcalClient.getCalendarService(accountKey), accountKey);
@@ -85,15 +88,12 @@ public class GcalToolSupport {
   }
 
   protected String resolveCalendarId(String calendarId) {
-    if (!isBlank(calendarId)) {
-      return calendarId;
-    }
-    return "primary";
+    return StringUtils.hasText(calendarId) ? calendarId : "primary";
   }
 
   protected ZoneId resolveZone(com.fasterxml.jackson.databind.JsonNode args) {
     String timezone = getOptionalText(args, "timezone");
-    if (timezone == null || timezone.isBlank()) {
+    if (!StringUtils.hasText(timezone)) {
       return ZoneId.systemDefault();
     }
     try {
@@ -104,7 +104,7 @@ public class GcalToolSupport {
   }
 
   protected ZoneId resolveZone(String timezone) {
-    if (isBlank(timezone)) {
+    if (!StringUtils.hasText(timezone)) {
       return ZoneId.systemDefault();
     }
     try {
@@ -138,12 +138,12 @@ public class GcalToolSupport {
     return Optional.empty();
   }
 
-  protected boolean isBlank(String value) {
-    return value == null || value.isBlank();
-  }
-
-  protected String toJson(Object value) throws Exception {
-    return gcalClient.mapper().writeValueAsString(value);
+  protected String toJson(Object value) {
+    try {
+      return gcalClient.mapper().writeValueAsString(value);
+    } catch (JsonProcessingException e) {
+      throw new IllegalStateException("Failed to serialize Google Calendar tool response", e);
+    }
   }
 
   protected List<Map<String, Object>> eventSummaries(Events events) {
@@ -173,7 +173,7 @@ public class GcalToolSupport {
 
   protected EventDateTime eventDateTime(DateTime dateTime, String timezone) {
     EventDateTime eventDateTime = new EventDateTime().setDateTime(dateTime);
-    if (!isBlank(timezone)) {
+    if (StringUtils.hasText(timezone)) {
       eventDateTime.setTimeZone(timezone);
     }
     return eventDateTime;
@@ -183,12 +183,19 @@ public class GcalToolSupport {
     if (attendeeEmails == null || attendeeEmails.isEmpty()) {
       return List.of();
     }
-    List<EventAttendee> attendees = new ArrayList<>();
-    for (String email : attendeeEmails) {
-      if (!isBlank(email)) {
-        attendees.add(new EventAttendee().setEmail(email));
-      }
+    return attendeeEmails.stream()
+        .filter(StringUtils::hasText)
+        .map(email -> new EventAttendee().setEmail(email))
+        .toList();
+  }
+
+  protected List<FreeBusyRequestItem> freeBusyItemsFromCalendarIds(List<String> calendarIds) {
+    if (calendarIds == null || calendarIds.isEmpty()) {
+      return List.of();
     }
-    return attendees;
+    return calendarIds.stream()
+        .filter(StringUtils::hasText)
+        .map(calendarId -> new FreeBusyRequestItem().setId(calendarId))
+        .toList();
   }
 }

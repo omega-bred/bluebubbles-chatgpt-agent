@@ -1,17 +1,16 @@
 package io.breland.bbagent.server.agent.tools.gcal;
 
 import static io.breland.bbagent.server.agent.tools.JsonSchemaUtilities.jsonSchema;
+import static org.springframework.util.StringUtils.hasText;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.google.api.client.util.DateTime;
 import com.google.api.services.calendar.model.FreeBusyRequest;
-import com.google.api.services.calendar.model.FreeBusyRequestItem;
 import com.google.api.services.calendar.model.FreeBusyResponse;
 import io.breland.bbagent.server.agent.tools.AgentTool;
 import io.breland.bbagent.server.agent.tools.ToolProvider;
 import io.swagger.v3.oas.annotations.media.Schema;
 import java.time.ZoneId;
-import java.util.ArrayList;
 import java.util.List;
 
 public class GetFreebusyAgentTool extends GcalToolSupport implements ToolProvider {
@@ -48,10 +47,10 @@ public class GetFreebusyAgentTool extends GcalToolSupport implements ToolProvide
               request.accountKey(),
               (client, accountKey) -> {
                 ZoneId zone = resolveZone(request.timezone());
-                if (isBlank(request.timeMin())) {
+                if (!hasText(request.timeMin())) {
                   return "missing time_min";
                 }
-                if (isBlank(request.timeMax())) {
+                if (!hasText(request.timeMax())) {
                   return "missing time_max";
                 }
                 DateTime min = gcalClient.parseDateTime(request.timeMin(), zone);
@@ -59,16 +58,7 @@ public class GetFreebusyAgentTool extends GcalToolSupport implements ToolProvide
                 if (min == null || max == null) {
                   return "invalid time";
                 }
-                List<String> calendarIds = request.calendars();
-                if (calendarIds == null || calendarIds.isEmpty()) {
-                  return "missing calendars";
-                }
-                List<FreeBusyRequestItem> items = new ArrayList<>();
-                for (String calendarId : calendarIds) {
-                  if (!isBlank(calendarId)) {
-                    items.add(new FreeBusyRequestItem().setId(calendarId));
-                  }
-                }
+                var items = freeBusyItemsFromCalendarIds(request.calendars());
                 if (items.isEmpty()) {
                   return "missing calendars";
                 }
@@ -77,7 +67,7 @@ public class GetFreebusyAgentTool extends GcalToolSupport implements ToolProvide
                 gRequest.setTimeMax(max);
                 gRequest.setItems(items);
                 String timezone = request.timezone();
-                if (!isBlank(timezone)) {
+                if (hasText(timezone)) {
                   gRequest.setTimeZone(timezone);
                 }
                 FreeBusyResponse response = client.freebusy().query(gRequest).execute();
