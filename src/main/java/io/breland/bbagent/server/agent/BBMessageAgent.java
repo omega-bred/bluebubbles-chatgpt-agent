@@ -153,6 +153,7 @@ public class BBMessageAgent {
 
   @Autowired
   public BBMessageAgent(
+      @Nullable OpenAIClient openAiClient,
       BBHttpClientWrapper bbHttpClientWrapper,
       Mem0Client mem0Client,
       GcalClient gcalClient,
@@ -165,9 +166,12 @@ public class BBMessageAgent {
       AgentSettingsStore agentSettingsStore,
       AgentWorkflowProperties workflowProperties,
       MessageTransportRegistry transportRegistry,
-      ObjectMapper objectMapper,
+      @Nullable ObjectMapper objectMapper,
       @Nullable CadenceWorkflowLauncher cadenceWorkflowLauncher,
       ModelPicker modelPicker) {
+    if (openAiClient != null) {
+      this.openAIClient = openAiClient;
+    }
     this.bbHttpClientWrapper = bbHttpClientWrapper;
     this.mem0Client = mem0Client;
     this.gcalClient = gcalClient;
@@ -184,105 +188,7 @@ public class BBMessageAgent {
         transportRegistry != null
             ? transportRegistry
             : MessageTransportRegistry.blueBubblesOnly(bbHttpClientWrapper);
-    this.objectMapper = objectMapper;
-    this.cadenceWorkflowLauncher = cadenceWorkflowLauncher;
-    this.modelPicker = modelPicker;
-    registerBuiltInTools();
-  }
-
-  BBMessageAgent(
-      OpenAIClient openAIClient,
-      BBHttpClientWrapper bbHttpClientWrapper,
-      Mem0Client mem0Client,
-      GcalClient gcalClient,
-      GiphyClient giphyClient,
-      AgentSettingsStore agentSettingsStore,
-      AgentWorkflowProperties workflowProperties,
-      @Nullable CadenceWorkflowLauncher cadenceWorkflowLauncher,
-      ModelPicker modelPicker) {
-    this(
-        openAIClient,
-        bbHttpClientWrapper,
-        mem0Client,
-        gcalClient,
-        null,
-        null,
-        null,
-        null,
-        giphyClient,
-        ReverseLocationLookup.noop(),
-        agentSettingsStore,
-        workflowProperties,
-        null,
-        cadenceWorkflowLauncher,
-        modelPicker);
-  }
-
-  BBMessageAgent(
-      OpenAIClient openAIClient,
-      BBHttpClientWrapper bbHttpClientWrapper,
-      Mem0Client mem0Client,
-      GcalClient gcalClient,
-      @Nullable CoderMcpClient coderMcpClient,
-      @Nullable WorkflowCallbackService workflowCallbackService,
-      @Nullable CoderAsyncTaskStartStore coderAsyncTaskStartStore,
-      @Nullable WebsiteAccountService websiteAccountService,
-      GiphyClient giphyClient,
-      AgentSettingsStore agentSettingsStore,
-      AgentWorkflowProperties workflowProperties,
-      @Nullable MessageTransportRegistry transportRegistry,
-      @Nullable CadenceWorkflowLauncher cadenceWorkflowLauncher,
-      ModelPicker modelPicker) {
-    this(
-        openAIClient,
-        bbHttpClientWrapper,
-        mem0Client,
-        gcalClient,
-        coderMcpClient,
-        workflowCallbackService,
-        coderAsyncTaskStartStore,
-        websiteAccountService,
-        giphyClient,
-        ReverseLocationLookup.noop(),
-        agentSettingsStore,
-        workflowProperties,
-        cadenceWorkflowLauncher,
-        modelPicker);
-  }
-
-  BBMessageAgent(
-      OpenAIClient openAIClient,
-      BBHttpClientWrapper bbHttpClientWrapper,
-      Mem0Client mem0Client,
-      GcalClient gcalClient,
-      @Nullable CoderMcpClient coderMcpClient,
-      @Nullable WorkflowCallbackService workflowCallbackService,
-      @Nullable CoderAsyncTaskStartStore coderAsyncTaskStartStore,
-      @Nullable WebsiteAccountService websiteAccountService,
-      GiphyClient giphyClient,
-      ReverseLocationLookup reverseLocationLookup,
-      AgentSettingsStore agentSettingsStore,
-      AgentWorkflowProperties workflowProperties,
-      @Nullable CadenceWorkflowLauncher cadenceWorkflowLauncher,
-      ModelPicker modelPicker) {
-    this.openAIClient = openAIClient;
-    this.bbHttpClientWrapper = bbHttpClientWrapper;
-    this.mem0Client = mem0Client;
-    this.gcalClient = gcalClient;
-    this.coderMcpClient = coderMcpClient;
-    this.workflowCallbackService = workflowCallbackService;
-    this.coderAsyncTaskStartStore = coderAsyncTaskStartStore;
-    this.websiteAccountService = websiteAccountService;
-    this.giphyClient = giphyClient;
-    this.reverseLocationLookup =
-        reverseLocationLookup == null ? ReverseLocationLookup.noop() : reverseLocationLookup;
-    this.agentSettingsStore = agentSettingsStore;
-    this.workflowProperties = workflowProperties;
-    this.transportRegistry =
-        transportRegistry != null
-            ? transportRegistry
-            : MessageTransportRegistry.blueBubblesOnly(bbHttpClientWrapper);
-    this.objectMapper = new ObjectMapper();
+    this.objectMapper = objectMapper == null ? new ObjectMapper() : objectMapper;
     this.cadenceWorkflowLauncher = cadenceWorkflowLauncher;
     this.modelPicker = modelPicker;
     registerBuiltInTools();

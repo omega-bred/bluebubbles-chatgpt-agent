@@ -20,7 +20,6 @@ import com.openai.models.ChatModel;
 import com.openai.models.responses.EasyInputMessage;
 import com.openai.models.responses.FunctionTool;
 import com.openai.models.responses.Response;
-import com.openai.models.responses.Response.ToolChoice;
 import com.openai.models.responses.ResponseCreateParams;
 import com.openai.models.responses.ResponseError;
 import com.openai.models.responses.ResponseFunctionToolCall;
@@ -86,9 +85,16 @@ class BBMessageAgentTest {
             bbHttpClientWrapper,
             mem0Client,
             gcalClient,
+            null,
+            null,
+            null,
+            null,
             giphyClient,
+            ReverseLocationLookup.noop(),
             new InMemoryAgentSettingsStore(),
             workflowProperties,
+            null,
+            null,
             null,
             new ModelPicker());
 
@@ -562,9 +568,16 @@ class BBMessageAgentTest {
             bbHttpClientWrapper,
             mem0Client,
             gcalClient,
+            null,
+            null,
+            null,
+            null,
             giphyClient,
+            ReverseLocationLookup.noop(),
             new InMemoryAgentSettingsStore(),
             workflowProperties,
+            null,
+            null,
             null,
             new ModelPicker());
 
@@ -614,8 +627,10 @@ class BBMessageAgentTest {
             null,
             null,
             Mockito.mock(GiphyClient.class),
+            ReverseLocationLookup.noop(),
             new InMemoryAgentSettingsStore(),
             new AgentWorkflowProperties(),
+            null,
             null,
             null,
             new ModelPicker());
@@ -655,8 +670,10 @@ class BBMessageAgentTest {
             Mockito.mock(CoderAsyncTaskStartStore.class),
             null,
             Mockito.mock(GiphyClient.class),
+            ReverseLocationLookup.noop(),
             new InMemoryAgentSettingsStore(),
             new AgentWorkflowProperties(),
+            null,
             null,
             null,
             new ModelPicker());
@@ -810,6 +827,8 @@ class BBMessageAgentTest {
         new InMemoryAgentSettingsStore(),
         new AgentWorkflowProperties(),
         null,
+        null,
+        null,
         new ModelPicker());
   }
 
@@ -820,9 +839,16 @@ class BBMessageAgentTest {
         bbHttpClientWrapper,
         Mockito.mock(Mem0Client.class),
         Mockito.mock(GcalClient.class),
+        Mockito.mock(CoderMcpClient.class),
+        null,
+        Mockito.mock(CoderAsyncTaskStartStore.class),
+        null,
         Mockito.mock(GiphyClient.class),
+        ReverseLocationLookup.noop(),
         new InMemoryAgentSettingsStore(),
         new AgentWorkflowProperties(),
+        null,
+        null,
         null,
         modelPicker);
   }
@@ -991,7 +1017,7 @@ class BBMessageAgentTest {
         .output(outputItems)
         .parallelToolCalls(false)
         .temperature(0.2)
-        .toolChoice(ToolChoice.ofOptions(ToolChoiceOptions.AUTO))
+        .toolChoice(ToolChoiceOptions.AUTO)
         .tools(List.of())
         .topP(1.0)
         .build();
