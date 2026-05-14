@@ -1,9 +1,14 @@
 package io.breland.bbagent.server.agent;
 
 import io.breland.bbagent.generated.bluebubblesclient.model.ApiV1ChatChatGuidMessageGet200ResponseDataInner;
+import io.breland.bbagent.generated.bluebubblesclient.model.ApiV1ChatChatGuidMessageGet200ResponseDataInnerChatsInner;
+import io.breland.bbagent.generated.model.BlueBubblesMessageReceivedRequestData;
+import io.breland.bbagent.generated.model.BlueBubblesMessageReceivedRequestDataAttachmentsInner;
+import io.breland.bbagent.generated.model.BlueBubblesMessageReceivedRequestDataChatsInner;
+import io.breland.bbagent.generated.model.LxmfMessageReceivedRequest;
 import io.breland.bbagent.server.agent.cadence.models.IncomingAttachment;
-import io.breland.bbagent.server.controllers.BluebubblesWebhookController;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.List;
 
 public record IncomingMessage(
@@ -22,6 +27,9 @@ public record IncomingMessage(
 
   public static final String TRANSPORT_BLUEBUBBLES = "bluebubbles";
   public static final String TRANSPORT_LXMF = "lxmf";
+  private static final String BLUEBUBBLES_GROUP_PREFIX = "iMessage;+;chat";
+  private static final String BLUEBUBBLES_ANY_GROUP_PREFIX = "any;+;chat";
+  private static final String LXMF_SERVICE = "LXMF";
 
   public IncomingMessage(
       String chatGuid,
@@ -50,14 +58,12 @@ public record IncomingMessage(
         isSystemMessage);
   }
 
-  public static IncomingMessage create(ApiV1ChatChatGuidMessageGet200ResponseDataInner message) {
+  public static IncomingMessage fromBlueBubblesHistory(
+      ApiV1ChatChatGuidMessageGet200ResponseDataInner message) {
     if (message == null) {
       return null;
     }
-    String chatGuid =
-        message.getChats() == null
-            ? null
-            : message.getChats().stream().findFirst().map(chat -> chat.getGuid()).orElse(null);
+    String chatGuid = firstHistoryChatGuid(message.getChats());
     String sender = message.getHandle() == null ? null : message.getHandle().getAddress();
     return new IncomingMessage(
         TRANSPORT_BLUEBUBBLES,
@@ -68,11 +74,53 @@ public record IncomingMessage(
         message.getIsFromMe(),
         BBMessageAgent.IMESSAGE_SERVICE,
         sender,
-        BluebubblesWebhookController.resolveIsGroup(message),
+        isBlueBubblesGroup(message.getChats(), message.getGroupTitle(), chatGuid),
         parseTimestamp(message.getDateCreated()),
         List.of(),
-        (message.getIsSystemMessage() != null && message.getIsSystemMessage())
-            || (message.getIsServiceMessage() != null && message.getIsServiceMessage()));
+        Boolean.TRUE.equals(message.getIsSystemMessage())
+            || Boolean.TRUE.equals(message.getIsServiceMessage()));
+  }
+
+  public static IncomingMessage fromBlueBubblesWebhook(BlueBubblesMessageReceivedRequestData data) {
+    if (data == null) {
+      return null;
+    }
+    String chatGuid = firstWebhookChatGuid(data.getChats());
+    String service = data.getHandle() == null ? null : data.getHandle().getService();
+    String sender = data.getHandle() == null ? null : data.getHandle().getAddress();
+    return new IncomingMessage(
+        TRANSPORT_BLUEBUBBLES,
+        chatGuid,
+        data.getGuid(),
+        data.getThreadOriginatorGuid(),
+        data.getText(),
+        data.getIsFromMe(),
+        service,
+        sender,
+        isBlueBubblesGroup(data.getChats(), data.getGroupTitle(), chatGuid),
+        parseTimestamp(data.getDateCreated()),
+        parseWebhookAttachments(data.getAttachments()),
+        false);
+  }
+
+  public static IncomingMessage fromLxmfWebhook(LxmfMessageReceivedRequest request) {
+    if (request == null) {
+      return null;
+    }
+    String sourceHash = normalizeLxmfHash(request.getSourceHash());
+    return new IncomingMessage(
+        TRANSPORT_LXMF,
+        transportPrefix(TRANSPORT_LXMF, sourceHash),
+        request.getMessageId(),
+        null,
+        request.getContent(),
+        false,
+        LXMF_SERVICE,
+        sourceHash,
+        false,
+        request.getTimestamp() != null ? request.getTimestamp().toInstant() : Instant.now(),
+        List.of(),
+        false);
   }
 
   public static String transportPrefix(String transport, String id) {
@@ -120,6 +168,67 @@ public record IncomingMessage(
       return Instant.ofEpochMilli(value);
     }
     return Instant.ofEpochSecond(value);
+  }
+
+  private static String firstHistoryChatGuid(
+      List<ApiV1ChatChatGuidMessageGet200ResponseDataInnerChatsInner> chats) {
+    if (chats == null || chats.isEmpty()) {
+      return null;
+    }
+    ApiV1ChatChatGuidMessageGet200ResponseDataInnerChatsInner chat = chats.getFirst();
+    return chat == null ? null : chat.getGuid();
+  }
+
+  private static String firstWebhookChatGuid(
+      List<BlueBubblesMessageReceivedRequestDataChatsInner> chats) {
+    if (chats == null || chats.isEmpty()) {
+      return null;
+    }
+    BlueBubblesMessageReceivedRequestDataChatsInner chat = chats.getFirst();
+    return chat == null ? null : chat.getGuid();
+  }
+
+  private static boolean isBlueBubblesGroup(
+      List<?> chats, String groupTitle, String firstChatGuid) {
+    if (chats != null && chats.size() > 1) {
+      return true;
+    }
+    if (groupTitle != null && !groupTitle.isBlank()) {
+      return true;
+    }
+    return isBlueBubblesGroupGuid(firstChatGuid);
+  }
+
+  private static boolean isBlueBubblesGroupGuid(String chatGuid) {
+    return chatGuid != null
+        && (chatGuid.startsWith(BLUEBUBBLES_GROUP_PREFIX)
+            || chatGuid.startsWith(BLUEBUBBLES_ANY_GROUP_PREFIX));
+  }
+
+  private static List<IncomingAttachment> parseWebhookAttachments(
+      List<BlueBubblesMessageReceivedRequestDataAttachmentsInner> attachments) {
+    if (attachments == null || attachments.isEmpty()) {
+      return List.of();
+    }
+    List<IncomingAttachment> parsed = new ArrayList<>();
+    for (BlueBubblesMessageReceivedRequestDataAttachmentsInner attachment : attachments) {
+      if (attachment == null) {
+        continue;
+      }
+      parsed.add(
+          new IncomingAttachment(
+              attachment.getGuid(),
+              attachment.getMimeType(),
+              attachment.getTransferName(),
+              null,
+              null,
+              null));
+    }
+    return parsed;
+  }
+
+  private static String normalizeLxmfHash(String value) {
+    return value == null ? null : value.trim().toLowerCase();
   }
 
   public String computeMessageFingerprint() {
