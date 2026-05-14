@@ -3,7 +3,6 @@ package io.breland.bbagent.server.agent.tools.bb;
 import static io.breland.bbagent.server.agent.tools.JsonSchemaUtilities.jsonSchema;
 
 import io.breland.bbagent.generated.bluebubblesclient.model.Message;
-import io.breland.bbagent.server.agent.IncomingMessage;
 import io.breland.bbagent.server.agent.tools.AgentTool;
 import io.breland.bbagent.server.agent.tools.ToolProvider;
 import io.breland.bbagent.server.agent.transport.bb.BBHttpClientWrapper;
@@ -11,9 +10,7 @@ import io.swagger.v3.oas.annotations.media.Schema;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import lombok.extern.slf4j.Slf4j;
 
-@Slf4j
 public class SearchConvoHistoryAgentTool implements ToolProvider {
   public static final String TOOL_NAME = "search_convo_history";
   private final BBHttpClientWrapper bbHttpClientWrapper;
@@ -31,12 +28,15 @@ public class SearchConvoHistoryAgentTool implements ToolProvider {
   public AgentTool getTool() {
     return new AgentTool(
         TOOL_NAME,
-        "Search recent message history for the current conversation. The tool only supports case insensitive substring searches when searching for text - so you may need to use it multiple times with variations of the target text. It is limited to 1 month of history.",
+        "Search recent message history for the current conversation. The tool only supports case"
+            + " insensitive substring searches when searching for text - so you may need to use it"
+            + " multiple times with variations of the target text. It is limited to 1 month of"
+            + " history.",
         jsonSchema(SearchConversationHistoryRequest.class),
         false,
         (context, args) -> {
-          IncomingMessage message = context.message();
-          if (message == null || message.chatGuid() == null || message.chatGuid().isBlank()) {
+          String chatGuid = context.chatGuid();
+          if (chatGuid == null) {
             return "no chat";
           }
           SearchConversationHistoryRequest request =
@@ -45,8 +45,7 @@ public class SearchConvoHistoryAgentTool implements ToolProvider {
           Integer limit = request.limit();
           Integer offset = request.offset();
           List<Message> bbMessages =
-              bbHttpClientWrapper.searchConversationHistory(
-                  message.chatGuid(), query, limit, offset);
+              bbHttpClientWrapper.searchConversationHistory(chatGuid, query, limit, offset);
           if (bbMessages == null) {
             return "not found";
           }
@@ -63,12 +62,7 @@ public class SearchConvoHistoryAgentTool implements ToolProvider {
               });
 
           result.put("messages", messages);
-          try {
-            return bbHttpClientWrapper.getObjectMapper().writeValueAsString(result);
-          } catch (Exception e) {
-            log.error(e.getMessage(), e);
-            return "failed to serialize messages";
-          }
+          return context.stringify(result, "failed to serialize messages");
         });
   }
 }

@@ -12,7 +12,6 @@ import com.openai.models.responses.ResponseInputImage;
 import com.openai.models.responses.ResponseInputItem;
 import com.openai.models.responses.ResponseInputText;
 import com.openai.models.responses.ResponseOutputItem;
-import io.breland.bbagent.server.agent.IncomingMessage;
 import io.breland.bbagent.server.agent.tools.AgentTool;
 import io.breland.bbagent.server.agent.tools.ToolContext;
 import io.breland.bbagent.server.agent.tools.ToolProvider;
@@ -53,15 +52,17 @@ public class SendGiphyAgentTool implements ToolProvider {
   public AgentTool getTool() {
     return new AgentTool(
         TOOL_NAME,
-        "Search Giphy for a GIF and send it as a reply in the current conversation. If your response would be better describe as the perfect gif - use this tool to find and send it. ",
+        "Search Giphy for a GIF and send it as a reply in the current conversation. If your"
+            + " response would be better describe as the perfect gif - use this tool to find and"
+            + " send it. ",
         jsonSchema(SendGiphyRequest.class),
         false,
         this::sendGif);
   }
 
   private String sendGif(ToolContext context, com.fasterxml.jackson.databind.JsonNode args) {
-    IncomingMessage message = context.message();
-    if (message == null || message.chatGuid() == null || message.chatGuid().isBlank()) {
+    String chatGuid = context.chatGuid();
+    if (chatGuid == null) {
       return "no chat";
     }
     SendGiphyRequest request = context.getMapper().convertValue(args, SendGiphyRequest.class);
@@ -93,7 +94,7 @@ public class SendGiphyAgentTool implements ToolProvider {
         selected.id() == null || selected.id().isBlank() ? "giphy.gif" : selected.id() + ".gif";
     boolean sent =
         bbHttpClientWrapper.sendMultipartMessage(
-            message.chatGuid(),
+            chatGuid,
             caption,
             List.of(new BBHttpClientWrapper.AttachmentData(filename, bytes.get())));
     if (sent) {
@@ -183,7 +184,8 @@ public class SendGiphyAgentTool implements ToolProvider {
         ResponseInputContent.ofInputText(
             ResponseInputText.builder()
                 .text(
-                    "We have candidate GIF thumbnails to choose from. Each thumbnail is labeled by index.\n"
+                    "We have candidate GIF thumbnails to choose from. Each thumbnail is labeled by"
+                        + " index.\n"
                         + prompt)
                 .build()));
     for (GiphyClient.GiphyGif gif : visualCandidates) {

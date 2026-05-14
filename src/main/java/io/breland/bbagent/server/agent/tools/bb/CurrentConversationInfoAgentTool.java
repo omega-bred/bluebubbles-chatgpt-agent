@@ -3,9 +3,7 @@ package io.breland.bbagent.server.agent.tools.bb;
 import static io.breland.bbagent.server.agent.tools.JsonSchemaUtilities.jsonSchema;
 
 import io.breland.bbagent.generated.bluebubblesclient.model.Chat;
-import io.breland.bbagent.server.agent.IncomingMessage;
 import io.breland.bbagent.server.agent.tools.AgentTool;
-import io.breland.bbagent.server.agent.tools.ToolJson;
 import io.breland.bbagent.server.agent.tools.ToolProvider;
 import io.breland.bbagent.server.agent.transport.bb.BBHttpClientWrapper;
 import io.swagger.v3.oas.annotations.media.Schema;
@@ -32,11 +30,11 @@ public class CurrentConversationInfoAgentTool implements ToolProvider {
         jsonSchema(CurrentConversationInfoRequest.class),
         false,
         (context, args) -> {
-          IncomingMessage message = context.message();
-          if (message == null || message.chatGuid() == null || message.chatGuid().isBlank()) {
+          String chatGuid = context.chatGuid();
+          if (chatGuid == null) {
             return "no chat";
           }
-          Chat response = bbHttpClientWrapper.getConversationInfo(message.chatGuid());
+          Chat response = bbHttpClientWrapper.getConversationInfo(chatGuid);
           if (response == null) {
             return "not found";
           }
@@ -55,8 +53,7 @@ public class CurrentConversationInfoAgentTool implements ToolProvider {
                   });
           result.put("participants", participants);
 
-          return ToolJson.stringify(
-              bbHttpClientWrapper.getObjectMapper(), result, response.toString());
+          return context.stringify(result, response.toString());
         });
   }
 }
