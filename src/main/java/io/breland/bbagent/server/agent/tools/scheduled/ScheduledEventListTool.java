@@ -6,7 +6,7 @@ import io.breland.bbagent.server.agent.cadence.CadenceWorkflowLauncher;
 import io.breland.bbagent.server.agent.tools.AgentTool;
 import io.breland.bbagent.server.agent.tools.ToolProvider;
 import io.swagger.v3.oas.annotations.media.Schema;
-import java.util.List;
+import org.springframework.util.StringUtils;
 
 public class ScheduledEventListTool implements ToolProvider {
   public static final String TOOL_NAME = "scheduled_event_list";
@@ -35,23 +35,15 @@ public class ScheduledEventListTool implements ToolProvider {
           }
           ScheduledEventListRequest request =
               context.getMapper().convertValue(args, ScheduledEventListRequest.class);
-          String chatGuid = request.chatGuid();
-          if (chatGuid == null || chatGuid.isBlank()) {
-            if (context.message() != null) {
-              chatGuid = context.message().chatGuid();
-            }
-          }
-          if (chatGuid == null || chatGuid.isBlank()) {
+          String chatGuid = ScheduledEvents.chatGuid(context, request.chatGuid());
+          if (!StringUtils.hasText(chatGuid)) {
             return "missing chat";
           }
-          String prefix = ScheduledEventTool.buildWorkflowIdPrefix(chatGuid);
-          List<CadenceWorkflowLauncher.ScheduledWorkflowSummary> summaries =
-              cadenceWorkflowLauncher.listScheduledWorkflows(prefix);
-          try {
-            return context.getMapper().writeValueAsString(summaries);
-          } catch (Exception e) {
-            return "failed to serialize scheduled events";
-          }
+          return ScheduledEvents.toJson(
+              context,
+              cadenceWorkflowLauncher.listScheduledWorkflows(
+                  ScheduledEvents.workflowIdPrefix(chatGuid)),
+              "failed to serialize scheduled events");
         });
   }
 }

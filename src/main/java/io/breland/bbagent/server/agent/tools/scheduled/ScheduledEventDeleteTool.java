@@ -6,6 +6,7 @@ import io.breland.bbagent.server.agent.cadence.CadenceWorkflowLauncher;
 import io.breland.bbagent.server.agent.tools.AgentTool;
 import io.breland.bbagent.server.agent.tools.ToolProvider;
 import io.swagger.v3.oas.annotations.media.Schema;
+import org.springframework.util.StringUtils;
 
 public class ScheduledEventDeleteTool implements ToolProvider {
   public static final String TOOL_NAME = "scheduled_event_delete";
@@ -36,10 +37,10 @@ public class ScheduledEventDeleteTool implements ToolProvider {
           ScheduledEventDeleteRequest request =
               context.getMapper().convertValue(args, ScheduledEventDeleteRequest.class);
           String workflowId = request.workflowId();
-          if (workflowId == null || workflowId.isBlank()) {
+          if (!StringUtils.hasText(workflowId)) {
             return "missing workflowId";
           }
-          if (!ScheduledEventTool.isScheduledWorkflowId(workflowId)) {
+          if (!ScheduledEvents.isScheduledWorkflowId(workflowId)) {
             return "invalid workflowId";
           }
           boolean deleted =

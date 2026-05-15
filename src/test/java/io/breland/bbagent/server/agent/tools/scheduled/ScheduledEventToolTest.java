@@ -2,6 +2,7 @@ package io.breland.bbagent.server.agent.tools.scheduled;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -22,9 +23,9 @@ class ScheduledEventToolTest {
 
   @Test
   void rejectsIntervalsThatUnixCronCannotRepresentAccurately() {
-    assertNull(ScheduledEventTool.resolveCronSchedule(Duration.ofSeconds(30)));
-    assertNull(ScheduledEventTool.resolveCronSchedule(Duration.ofMinutes(45)));
-    assertNull(ScheduledEventTool.resolveCronSchedule(Duration.ofHours(5)));
+    assertNull(ScheduledEvents.cronSchedule(Duration.ofSeconds(30)));
+    assertNull(ScheduledEvents.cronSchedule(Duration.ofMinutes(45)));
+    assertNull(ScheduledEvents.cronSchedule(Duration.ofHours(5)));
   }
 
   @Test
@@ -36,8 +37,15 @@ class ScheduledEventToolTest {
     assertTrue(description.contains("max attempts/deadline"));
   }
 
+  @Test
+  void recognizesScheduledWorkflowIds() {
+    assertTrue(ScheduledEvents.isScheduledWorkflowId("scheduled:iMessage;-;chat:abc"));
+    assertFalse(ScheduledEvents.isScheduledWorkflowId("callback:iMessage;-;chat:abc"));
+    assertFalse(ScheduledEvents.isScheduledWorkflowId(null));
+  }
+
   private static void assertCadenceAccepts(String expectedCron, Duration interval) {
-    String cron = ScheduledEventTool.resolveCronSchedule(interval);
+    String cron = ScheduledEvents.cronSchedule(interval);
     assertEquals(expectedCron, cron);
     assertDoesNotThrow(
         () ->
