@@ -6,7 +6,6 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 import io.breland.bbagent.server.agent.tools.AgentTool;
 import io.breland.bbagent.server.agent.tools.ToolProvider;
 import io.swagger.v3.oas.annotations.media.Schema;
-import java.util.LinkedHashMap;
 import java.util.Map;
 
 public class CoderAuthAgentTool implements ToolProvider {
@@ -59,14 +58,14 @@ public class CoderAuthAgentTool implements ToolProvider {
                   context
                       .getMapper()
                       .writeValueAsString(
-                          mapOf(
+                          Map.of(
                               "linked",
                               coderMcpClient.isLinked(accountBase),
                               "tool_prefix",
                               CoderMcpClient.TOOL_PREFIX));
               case AUTH_URL -> {
                 if (coderMcpClient.isLinked(accountBase)) {
-                  yield context.getMapper().writeValueAsString(mapOf("linked", true));
+                  yield context.getMapper().writeValueAsString(Map.of("linked", true));
                 }
                 String chatGuid = context.message() != null ? context.message().chatGuid() : null;
                 String messageGuid =
@@ -80,7 +79,7 @@ public class CoderAuthAgentTool implements ToolProvider {
                 }
                 yield context
                     .getMapper()
-                    .writeValueAsString(mapOf("auth_url", authUrl.get(), "linked", false));
+                    .writeValueAsString(Map.of("auth_url", authUrl.get(), "linked", false));
               }
               case REVOKE -> coderMcpClient.revoke(accountBase) ? "revoked" : "not found";
             };
@@ -88,18 +87,5 @@ public class CoderAuthAgentTool implements ToolProvider {
             return "error: " + e.getMessage();
           }
         });
-  }
-
-  private Map<String, Object> mapOf(String key1, Object value1) {
-    Map<String, Object> response = new LinkedHashMap<>();
-    response.put(key1, value1);
-    return response;
-  }
-
-  private Map<String, Object> mapOf(String key1, Object value1, String key2, Object value2) {
-    Map<String, Object> response = new LinkedHashMap<>();
-    response.put(key1, value1);
-    response.put(key2, value2);
-    return response;
   }
 }
