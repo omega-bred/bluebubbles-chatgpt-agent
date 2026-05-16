@@ -310,33 +310,6 @@ paths:
           description: Link token already redeemed by another account
         '410':
           description: Link token expired
-  /api/v1/websiteAccount/deleteLink.websiteAccountLinks:
-    delete:
-      operationId: websiteAccountDeleteLink
-      tags:
-        - websiteAccount
-      summary: Deletes an iMessage sender link
-      description: Unlinks an iMessage identity from the authenticated website account.
-      security:
-        - bearerAuth: []
-      parameters:
-        - name: link_id
-          in: query
-          description: Link identifier to remove.
-          required: true
-          schema:
-            type: string
-      responses:
-        '200':
-          description: Link deleted
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/WebsiteAccountDeleteLinkResponse'
-        '401':
-          description: Authentication required
-        '404':
-          description: Link not found
   /api/v1/websiteAccount/deleteLinkedAccount.websiteAccountLinks:
     delete:
       operationId: websiteAccountDeleteLinkedAccount
@@ -423,8 +396,12 @@ components:
       type: object
       required:
         - subject
+        - account_id
       properties:
         subject:
+          type: string
+          nullable: true
+        account_id:
           type: string
         email:
           type: string
@@ -443,26 +420,39 @@ components:
           type: string
           format: date-time
           nullable: true
+    WebsiteAccountIdentity:
+      type: object
+      required:
+        - type
+        - identifier
+        - normalized_identifier
+      properties:
+        type:
+          type: string
+          enum:
+            - imessage_email
+            - imessage_phone
+            - lxmf_address
+        identifier:
+          type: string
+        normalized_identifier:
+          type: string
     WebsiteAccountLink:
       type: object
       required:
         - link_id
-        - account_base
-        - coder_account_base
-        - gcal_account_base
-        - is_group
+        - account_id
+        - identities
       properties:
         link_id:
           type: string
-        account_base:
+        account_id:
           type: string
-          description: Stable display identity for the linked iMessage sender.
-        coder_account_base:
-          type: string
-          description: Account base used by Coder tools for this sender.
-        gcal_account_base:
-          type: string
-          description: Account base used by Google Calendar tools for this sender/chat.
+          description: Canonical account id shared across chat identities and integrations.
+        identities:
+          type: array
+          items:
+            $ref: '#/components/schemas/WebsiteAccountIdentity'
         chat_guid:
           type: string
           nullable: true
@@ -472,8 +462,6 @@ components:
         service:
           type: string
           nullable: true
-        is_group:
-          type: boolean
         created_at:
           type: string
           format: date-time
@@ -554,10 +542,10 @@ components:
         - model_selection_configurable
         - available_models
       properties:
-        account_base:
+        account_id:
           type: string
           nullable: true
-          description: Sender/account base used by the model picker.
+          description: Canonical account id used by the model picker.
         plan:
           type: string
           enum:
@@ -635,13 +623,6 @@ components:
           type: string
         link:
           $ref: '#/components/schemas/WebsiteAccountLink'
-    WebsiteAccountDeleteLinkResponse:
-      type: object
-      required:
-        - deleted
-      properties:
-        deleted:
-          type: boolean
     WebsiteAccountDeleteLinkedAccountResponse:
       type: object
       required:

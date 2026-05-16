@@ -117,8 +117,8 @@ public class PostgresCredentialDataStoreFactory implements DataStoreFactory {
               id,
               storeId,
               key,
-              keyParts.accountBase(),
               keyParts.accountId(),
+              keyParts.googleAccountId(),
               value.getAccessToken(),
               refreshToken,
               value.getExpirationTimeMilliseconds());

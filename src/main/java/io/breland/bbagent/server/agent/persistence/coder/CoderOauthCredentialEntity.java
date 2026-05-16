@@ -17,8 +17,8 @@ import lombok.Setter;
 public class CoderOauthCredentialEntity {
 
   @Id
-  @Column(name = "account_base", nullable = false, length = 512)
-  private String accountBase;
+  @Column(name = "account_id", nullable = false, length = 36)
+  private String accountId;
 
   @Column(name = "access_token", columnDefinition = "TEXT")
   private String accessToken;
@@ -42,7 +42,7 @@ public class CoderOauthCredentialEntity {
   private Instant updatedAt;
 
   public CoderOauthCredentialEntity(
-      String accountBase,
+      String accountId,
       String accessToken,
       String refreshToken,
       String tokenType,
@@ -50,7 +50,7 @@ public class CoderOauthCredentialEntity {
       Instant expiresAt,
       Instant createdAt,
       Instant updatedAt) {
-    this.accountBase = accountBase;
+    this.accountId = accountId;
     this.accessToken = accessToken;
     this.refreshToken = refreshToken;
     this.tokenType = tokenType;

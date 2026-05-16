@@ -19,8 +19,8 @@ public class CoderAsyncTaskStartEntity {
   @Column(name = "idempotency_key", nullable = false, length = 128)
   private String idempotencyKey;
 
-  @Column(name = "account_base", nullable = false, length = 512)
-  private String accountBase;
+  @Column(name = "account_id", nullable = false, length = 36)
+  private String accountId;
 
   @Column(name = "chat_guid", nullable = false, length = 255)
   private String chatGuid;
@@ -51,7 +51,7 @@ public class CoderAsyncTaskStartEntity {
 
   public CoderAsyncTaskStartEntity(
       String idempotencyKey,
-      String accountBase,
+      String accountId,
       String chatGuid,
       String messageGuid,
       String taskHash,
@@ -60,7 +60,7 @@ public class CoderAsyncTaskStartEntity {
       Instant createdAt,
       Instant updatedAt) {
     this.idempotencyKey = idempotencyKey;
-    this.accountBase = accountBase;
+    this.accountId = accountId;
     this.chatGuid = chatGuid;
     this.messageGuid = messageGuid;
     this.taskHash = taskHash;

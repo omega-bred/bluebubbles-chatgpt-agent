@@ -11,10 +11,11 @@ public interface GcalCredentialRepository extends JpaRepository<GcalCredentialEn
 
   List<GcalCredentialEntity> findAllByStoreId(String storeId);
 
-  List<GcalCredentialEntity> findAllByStoreIdAndAccountBase(String storeId, String accountBase);
+  List<GcalCredentialEntity> findAllByStoreIdAndAgentAccountId(
+      String storeId, String agentAccountId);
 
-  List<GcalCredentialEntity> findAllByStoreIdAndAccountBaseIn(
-      String storeId, Collection<String> accountBases);
+  List<GcalCredentialEntity> findAllByStoreIdAndAgentAccountIdIn(
+      String storeId, Collection<String> agentAccountIds);
 
   boolean existsByStoreIdAndAccountKey(String storeId, String accountKey);
 
@@ -26,7 +27,7 @@ public interface GcalCredentialRepository extends JpaRepository<GcalCredentialEn
   List<String> findAllAccountKeysByStoreId(@Param("storeId") String storeId);
 
   @Query(
-      "select e.accountId from GcalCredentialEntity e where e.storeId = :storeId and e.accountBase = :accountBase")
-  List<String> findAccountIdsByStoreIdAndAccountBase(
-      @Param("storeId") String storeId, @Param("accountBase") String accountBase);
+      "select e.googleAccountId from GcalCredentialEntity e where e.storeId = :storeId and e.agentAccountId = :agentAccountId")
+  List<String> findGoogleAccountIdsByStoreIdAndAgentAccountId(
+      @Param("storeId") String storeId, @Param("agentAccountId") String agentAccountId);
 }

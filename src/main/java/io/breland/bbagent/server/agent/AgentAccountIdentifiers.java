@@ -2,11 +2,20 @@ package io.breland.bbagent.server.agent;
 
 import java.util.Locale;
 import java.util.Optional;
+import java.util.regex.Pattern;
 
 public final class AgentAccountIdentifiers {
+  public static final String IMESSAGE_EMAIL = "imessage_email";
+  public static final String IMESSAGE_PHONE = "imessage_phone";
+  public static final String LXMF_ADDRESS = "lxmf_address";
+
+  private static final Pattern NON_DIGITS = Pattern.compile("\\D+");
+  private static final Pattern WHITESPACE = Pattern.compile("\\s+");
+
   private AgentAccountIdentifiers() {}
 
-  public static Optional<NormalizedIdentifier> normalize(String transport, String identifier) {
+  public static Optional<NormalizedIdentifier> normalizeMessageIdentity(
+      String transport, String identifier) {
     if (identifier == null) {
       return Optional.empty();
     }
@@ -18,30 +27,58 @@ public final class AgentAccountIdentifiers {
         transport == null || transport.isBlank()
             ? IncomingMessage.TRANSPORT_BLUEBUBBLES
             : transport.trim().toLowerCase(Locale.ROOT);
+    if (IncomingMessage.TRANSPORT_LXMF.equalsIgnoreCase(transportKey)) {
+      String value = compact(clean);
+      return Optional.of(new NormalizedIdentifier(LXMF_ADDRESS, value, value));
+    }
+    return normalizeIMessage(clean);
+  }
+
+  public static Optional<NormalizedIdentifier> normalize(String transport, String identifier) {
+    return normalizeMessageIdentity(transport, identifier);
+  }
+
+  public static Optional<NormalizedIdentifier> normalizeByType(String type, String identifier) {
+    if (type == null || identifier == null) {
+      return Optional.empty();
+    }
+    String clean = stripAddressScheme(identifier).trim().toLowerCase(Locale.ROOT);
+    if (clean.isBlank()) {
+      return Optional.empty();
+    }
+    return switch (type) {
+      case IMESSAGE_EMAIL ->
+          Optional.of(new NormalizedIdentifier(type, compact(clean), compact(clean)));
+      case IMESSAGE_PHONE ->
+          normalizePhone(clean).map(value -> new NormalizedIdentifier(type, value, value));
+      case LXMF_ADDRESS ->
+          Optional.of(new NormalizedIdentifier(type, compact(clean), compact(clean)));
+      default -> Optional.empty();
+    };
+  }
+
+  private static Optional<NormalizedIdentifier> normalizeIMessage(String clean) {
     if (clean.contains("@")) {
-      String value = clean.replaceAll("\\s+", "");
-      return Optional.of(
-          new NormalizedIdentifier("email", value, aliasKey(transportKey, "email", value)));
+      String value = compact(clean);
+      return Optional.of(new NormalizedIdentifier(IMESSAGE_EMAIL, value, value));
     }
-    String digits = clean.replaceAll("\\D+", "");
-    if (digits.length() >= 7) {
-      String value = normalizePhoneDigits(digits);
-      return Optional.of(
-          new NormalizedIdentifier("phone", value, aliasKey(transportKey, "phone", value)));
+    Optional<String> phone = normalizePhone(clean);
+    if (phone.isPresent()) {
+      return Optional.of(new NormalizedIdentifier(IMESSAGE_PHONE, phone.get(), phone.get()));
     }
-    String value = clean.replaceAll("\\s+", "");
-    return Optional.of(
-        new NormalizedIdentifier("handle", value, aliasKey(transportKey, "handle", value)));
+    String value = compact(clean);
+    return Optional.of(new NormalizedIdentifier(IMESSAGE_EMAIL, value, value));
   }
 
   public static boolean equivalent(String left, String right) {
     Optional<NormalizedIdentifier> normalizedLeft =
-        normalize(IncomingMessage.TRANSPORT_BLUEBUBBLES, left);
+        normalizeMessageIdentity(IncomingMessage.TRANSPORT_BLUEBUBBLES, left);
     Optional<NormalizedIdentifier> normalizedRight =
-        normalize(IncomingMessage.TRANSPORT_BLUEBUBBLES, right);
+        normalizeMessageIdentity(IncomingMessage.TRANSPORT_BLUEBUBBLES, right);
     return normalizedLeft.isPresent()
         && normalizedRight.isPresent()
-        && normalizedLeft.get().aliasKey().equals(normalizedRight.get().aliasKey());
+        && normalizedLeft.get().type().equals(normalizedRight.get().type())
+        && normalizedLeft.get().value().equals(normalizedRight.get().value());
   }
 
   public static String stripAddressScheme(String value) {
@@ -59,16 +96,27 @@ public final class AgentAccountIdentifiers {
     return clean;
   }
 
-  private static String normalizePhoneDigits(String digits) {
-    if (digits.length() == 11 && digits.startsWith("1")) {
-      return digits.substring(1);
+  private static Optional<String> normalizePhone(String value) {
+    String trimmed = value == null ? "" : value.trim();
+    String digits = NON_DIGITS.matcher(trimmed).replaceAll("");
+    if (digits.length() < 7) {
+      return Optional.empty();
     }
-    return digits;
+    if (digits.length() == 10) {
+      return Optional.of("+1" + digits);
+    }
+    if (digits.length() == 11 && digits.startsWith("1")) {
+      return Optional.of("+" + digits);
+    }
+    if (trimmed.startsWith("+")) {
+      return Optional.of("+" + digits);
+    }
+    return Optional.of("+" + digits);
   }
 
-  private static String aliasKey(String transport, String type, String value) {
-    return transport + ":" + type + ":" + value;
+  private static String compact(String value) {
+    return WHITESPACE.matcher(value == null ? "" : value.trim()).replaceAll("");
   }
 
-  public record NormalizedIdentifier(String type, String value, String aliasKey) {}
+  public record NormalizedIdentifier(String type, String value, String displayValue) {}
 }

@@ -18,6 +18,7 @@ import io.breland.bbagent.server.agent.cadence.models.GeneratedImage;
 import io.breland.bbagent.server.agent.cadence.models.IncomingAttachment;
 import io.breland.bbagent.server.agent.location.ReverseLocationLookup;
 import io.breland.bbagent.server.agent.model_picker.ModelPicker;
+import io.breland.bbagent.server.agent.persistence.account.AgentAccountIdentityEntity;
 import io.breland.bbagent.server.agent.tools.AgentTool;
 import io.breland.bbagent.server.agent.tools.ToolContext;
 import io.breland.bbagent.server.agent.tools.assistant.AssistantNameAgentTool;
@@ -62,6 +63,7 @@ import java.util.function.Supplier;
 import java.util.stream.Collectors;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.lang3.StringUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.lang.Nullable;
 import org.springframework.stereotype.Service;
@@ -152,7 +154,7 @@ public class BBMessageAgent {
   private ModelPicker modelPicker;
   private AdminStatsService adminStatsService;
   private final ReverseLocationLookup reverseLocationLookup;
-  private final AccountIdentityAliasService accountIdentityAliasService;
+  private final AgentAccountResolver accountResolver;
 
   @Autowired
   public BBMessageAgent(
@@ -171,7 +173,7 @@ public class BBMessageAgent {
       MessageTransportRegistry transportRegistry,
       @Nullable ObjectMapper objectMapper,
       @Nullable CadenceWorkflowLauncher cadenceWorkflowLauncher,
-      @Nullable AccountIdentityAliasService accountIdentityAliasService,
+      @Nullable AgentAccountResolver accountResolver,
       @Nullable AdminStatsService adminStatsService,
       ModelPicker modelPicker) {
     if (openAiClient != null) {
@@ -195,7 +197,7 @@ public class BBMessageAgent {
             : MessageTransportRegistry.blueBubblesOnly(bbHttpClientWrapper);
     this.objectMapper = objectMapper == null ? new ObjectMapper() : objectMapper;
     this.cadenceWorkflowLauncher = cadenceWorkflowLauncher;
-    this.accountIdentityAliasService = accountIdentityAliasService;
+    this.accountResolver = accountResolver;
     this.adminStatsService = adminStatsService;
     this.modelPicker = modelPicker;
     registerBuiltInTools();
@@ -719,10 +721,10 @@ public class BBMessageAgent {
       args = applyThreadReplyDefaults(toolCall.name(), args, message);
       ToolContext toolContext = new ToolContext(this, message, workflowContext);
       if (tool == null && coderMcpClient != null) {
-        String accountBase = CoderMcpClient.resolveAccountBase(message);
+        String accountId = resolveOrCreateAccountId(message).orElse(null);
         tool =
             coderMcpClient
-                .getAgentTool(accountBase, toolCall.name(), HIDDEN_CODER_MCP_TOOL_NAMES)
+                .getAgentTool(accountId, toolCall.name(), HIDDEN_CODER_MCP_TOOL_NAMES)
                 .orElse(null);
       }
       if (tool == null) {
@@ -789,8 +791,8 @@ public class BBMessageAgent {
   private List<AgentTool> availableTools(IncomingMessage message) {
     List<AgentTool> available = new ArrayList<>(tools.values());
     if (coderMcpClient != null) {
-      String accountBase = CoderMcpClient.resolveAccountBase(message);
-      available.addAll(coderMcpClient.getAgentTools(accountBase, HIDDEN_CODER_MCP_TOOL_NAMES));
+      String accountId = resolveOrCreateAccountId(message).orElse(null);
+      available.addAll(coderMcpClient.getAgentTools(accountId, HIDDEN_CODER_MCP_TOOL_NAMES));
     }
     return available;
   }
@@ -972,10 +974,11 @@ public class BBMessageAgent {
       return List.of();
     }
     LinkedHashSet<String> identifiers = new LinkedHashSet<>();
-    if (accountIdentityAliasService != null) {
-      identifiers.addAll(accountIdentityAliasService.accountBaseCandidates(message.sender()));
-    }
     identifiers.add(message.sender());
+    resolveAccountIdentities(message).stream()
+        .map(AgentAccountIdentityEntity::getIdentifier)
+        .filter(StringUtils::isNotBlank)
+        .forEach(identifiers::add);
     linkedWebsiteAccountEmail(message)
         .filter(email -> !email.isBlank())
         .filter(
@@ -985,13 +988,13 @@ public class BBMessageAgent {
   }
 
   private void recordAccountAliases(IncomingMessage message) {
-    if (accountIdentityAliasService == null) {
+    if (accountResolver == null) {
       return;
     }
     try {
-      accountIdentityAliasService.recordMessageAliases(message);
+      accountResolver.recordMessageIdentities(message);
     } catch (Exception e) {
-      log.debug("Failed to record account identity aliases", e);
+      log.debug("Failed to record account identities", e);
     }
   }
 
@@ -1289,7 +1292,7 @@ public class BBMessageAgent {
       text.append(" from ").append(message.sender());
     }
     if (message.sender() != null && !message.sender().isBlank()) {
-      String knownName = getGlobalNameForSender(message.sender());
+      String knownName = getGlobalNameForMessage(message);
       if (knownName != null && !knownName.isBlank()) {
         text.append(" [sender name=").append(knownName).append("]");
       }
@@ -1431,7 +1434,7 @@ public class BBMessageAgent {
     }
     try {
       WebsiteAccountService.SenderLinkStatus status = websiteAccountService.getLinkStatus(message);
-      if (status.accountBase() == null || status.accountBase().isBlank()) {
+      if (status.accountId() == null || status.accountId().isBlank()) {
         return;
       }
       text.append(" [websiteAccountLinked=").append(status.linked()).append("]");
@@ -1575,20 +1578,83 @@ public class BBMessageAgent {
     if (sender == null || sender.isBlank()) {
       return null;
     }
-    return agentSettingsStore.findGlobalName(sender).orElse(null);
+    if (accountResolver == null) {
+      return agentSettingsStore.findGlobalName(sender).orElse(null);
+    }
+    return accountResolver
+        .resolveOrCreate(IncomingMessage.TRANSPORT_BLUEBUBBLES, sender)
+        .map(
+            resolved ->
+                agentSettingsStore.findGlobalName(resolved.account().getAccountId()).orElse(null))
+        .orElse(null);
+  }
+
+  private String getGlobalNameForMessage(IncomingMessage message) {
+    if (accountResolver == null) {
+      return message == null ? null : getGlobalNameForSender(message.sender());
+    }
+    return resolveOrCreateAccountId(message)
+        .flatMap(agentSettingsStore::findGlobalName)
+        .orElse(null);
   }
 
   public void setGlobalNameForSender(String sender, String name) {
     if (sender == null || sender.isBlank() || name == null || name.isBlank()) {
       return;
     }
-    agentSettingsStore.saveGlobalName(sender, name);
+    if (accountResolver == null) {
+      agentSettingsStore.saveGlobalName(sender, name);
+      return;
+    }
+    accountResolver
+        .resolveOrCreate(IncomingMessage.TRANSPORT_BLUEBUBBLES, sender)
+        .ifPresent(
+            resolved -> agentSettingsStore.saveGlobalName(resolved.account().getAccountId(), name));
   }
 
   public void removeGlobalNameForSender(String sender) {
     if (sender == null || sender.isBlank()) {
       return;
     }
-    agentSettingsStore.deleteGlobalName(sender);
+    if (accountResolver == null) {
+      agentSettingsStore.deleteGlobalName(sender);
+      return;
+    }
+    accountResolver
+        .resolveOrCreate(IncomingMessage.TRANSPORT_BLUEBUBBLES, sender)
+        .ifPresent(
+            resolved -> agentSettingsStore.deleteGlobalName(resolved.account().getAccountId()));
+  }
+
+  public Optional<String> resolveOrCreateAccountId(IncomingMessage message) {
+    if (message == null) {
+      return Optional.empty();
+    }
+    if (accountResolver == null) {
+      return Optional.ofNullable(StringUtils.defaultIfBlank(message.sender(), null));
+    }
+    return accountResolver
+        .resolveOrCreate(message)
+        .map(resolved -> resolved.account().getAccountId());
+  }
+
+  public Optional<String> resolveAccountId(IncomingMessage message) {
+    if (message == null) {
+      return Optional.empty();
+    }
+    if (accountResolver == null) {
+      return Optional.ofNullable(StringUtils.defaultIfBlank(message.sender(), null));
+    }
+    return accountResolver.resolve(message).map(resolved -> resolved.account().getAccountId());
+  }
+
+  private List<AgentAccountIdentityEntity> resolveAccountIdentities(IncomingMessage message) {
+    if (message == null || accountResolver == null) {
+      return List.of();
+    }
+    return accountResolver
+        .resolve(message)
+        .map(resolved -> accountResolver.identitiesForAccount(resolved.account().getAccountId()))
+        .orElseGet(List::of);
   }
 }

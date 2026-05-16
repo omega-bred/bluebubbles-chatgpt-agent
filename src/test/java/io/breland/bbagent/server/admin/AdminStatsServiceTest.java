@@ -4,12 +4,12 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.breland.bbagent.generated.model.AdminStatsResponse;
+import io.breland.bbagent.server.agent.AgentAccountResolver;
 import io.breland.bbagent.server.agent.AgentWorkflowProperties;
 import io.breland.bbagent.server.agent.IncomingMessage;
 import io.breland.bbagent.server.agent.model_picker.ModelAccessService;
+import io.breland.bbagent.server.agent.persistence.account.AgentAccountRepository;
 import io.breland.bbagent.server.agent.persistence.metrics.AgentMessageMetricRepository;
-import io.breland.bbagent.server.agent.persistence.model.ModelAccountSettingsEntity;
-import io.breland.bbagent.server.agent.persistence.model.ModelAccountSettingsRepository;
 import java.time.Instant;
 import java.util.List;
 import org.junit.jupiter.api.Test;
@@ -22,13 +22,20 @@ import org.springframework.transaction.annotation.Transactional;
 class AdminStatsServiceTest {
   @Autowired private AdminStatsService adminStatsService;
   @Autowired private AgentMessageMetricRepository metricRepository;
-  @Autowired private ModelAccountSettingsRepository modelSettingsRepository;
+  @Autowired private AgentAccountResolver accountResolver;
+  @Autowired private AgentAccountRepository accountRepository;
 
   @Test
   void recordsAcceptedMessagesAndSummarizesByModelAndUser() {
     metricRepository.deleteAll();
     Instant now = Instant.now();
-    modelSettingsRepository.save(new ModelAccountSettingsEntity("Alice", true, null, now, now));
+    var alice =
+        accountResolver
+            .resolveOrCreate(IncomingMessage.TRANSPORT_BLUEBUBBLES, "Alice")
+            .orElseThrow()
+            .account();
+    alice.setPremium(true);
+    accountRepository.save(alice);
 
     adminStatsService.recordAcceptedMessage(
         incomingMessage("chat-1", "msg-1", "Alice"), AgentWorkflowProperties.Mode.INLINE);

@@ -4,7 +4,9 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.breland.bbagent.server.agent.AgentAccountResolver;
 import io.breland.bbagent.server.agent.BBMessageAgent;
+import io.breland.bbagent.server.agent.IncomingMessage;
 import java.util.Optional;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -14,6 +16,7 @@ import org.springframework.boot.test.context.SpringBootTest;
 class PostgresAgentSettingsStoreTest {
 
   @Autowired private PostgresAgentSettingsStore store;
+  @Autowired private AgentAccountResolver accountResolver;
 
   @Test
   void assistantResponsivenessCrud() {
@@ -39,16 +42,21 @@ class PostgresAgentSettingsStoreTest {
 
   @Test
   void globalNameCrud() {
-    String sender = "user@example.com";
-    assertTrue(store.findGlobalName(sender).isEmpty());
+    String accountId =
+        accountResolver
+            .resolveOrCreate(IncomingMessage.TRANSPORT_BLUEBUBBLES, "user@example.com")
+            .orElseThrow()
+            .account()
+            .getAccountId();
+    assertTrue(store.findGlobalName(accountId).isEmpty());
 
-    store.saveGlobalName(sender, "Jordan");
-    assertEquals("Jordan", store.findGlobalName(sender).orElse(null));
+    store.saveGlobalName(accountId, "Jordan");
+    assertEquals("Jordan", store.findGlobalName(accountId).orElse(null));
 
-    store.saveGlobalName(sender, "JD");
-    assertEquals("JD", store.findGlobalName(sender).orElse(null));
+    store.saveGlobalName(accountId, "JD");
+    assertEquals("JD", store.findGlobalName(accountId).orElse(null));
 
-    store.deleteGlobalName(sender);
-    assertFalse(store.findGlobalName(sender).isPresent());
+    store.deleteGlobalName(accountId);
+    assertFalse(store.findGlobalName(accountId).isPresent());
   }
 }

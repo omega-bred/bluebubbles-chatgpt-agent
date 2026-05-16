@@ -2,19 +2,16 @@ package io.breland.bbagent.server.agent.model_picker;
 
 import io.breland.bbagent.generated.model.WebsiteModelAccessSummary;
 import io.breland.bbagent.generated.model.WebsiteModelOption;
-import io.breland.bbagent.server.agent.AccountIdentityAliasService;
-import io.breland.bbagent.server.agent.AgentAccountIdentity;
+import io.breland.bbagent.server.agent.AgentAccountResolver;
 import io.breland.bbagent.server.agent.IncomingMessage;
-import io.breland.bbagent.server.agent.persistence.model.ModelAccountSettingsEntity;
-import io.breland.bbagent.server.agent.persistence.model.ModelAccountSettingsRepository;
+import io.breland.bbagent.server.agent.persistence.account.AgentAccountEntity;
+import io.breland.bbagent.server.agent.persistence.account.AgentAccountRepository;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 import java.util.Set;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 import org.apache.commons.lang3.StringUtils;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.lang.Nullable;
 import org.springframework.stereotype.Service;
 
@@ -40,50 +37,47 @@ public class ModelAccessService {
       PREMIUM_OPTIONS.stream()
           .collect(Collectors.toUnmodifiableMap(ModelOption::modelKey, Function.identity()));
 
-  private final ModelAccountSettingsRepository repository;
-  private final AccountIdentityAliasService accountIdentityAliasService;
+  private final AgentAccountRepository accountRepository;
+  private final AgentAccountResolver accountResolver;
 
-  public ModelAccessService(ModelAccountSettingsRepository repository) {
-    this(repository, null);
-  }
-
-  @Autowired
   public ModelAccessService(
-      ModelAccountSettingsRepository repository,
-      @Nullable AccountIdentityAliasService accountIdentityAliasService) {
-    this.repository = repository;
-    this.accountIdentityAliasService = accountIdentityAliasService;
+      AgentAccountRepository accountRepository, @Nullable AgentAccountResolver accountResolver) {
+    this.accountRepository = accountRepository;
+    this.accountResolver = accountResolver;
   }
 
   public ModelAccess resolve(IncomingMessage message) {
-    return resolve(resolveAccountBase(message));
-  }
-
-  public ModelAccess resolve(@Nullable String accountBase) {
-    String cleanAccountBase = StringUtils.defaultIfBlank(accountBase, null);
-    if (cleanAccountBase == null) {
+    if (accountResolver == null) {
       return standard(null);
     }
-    for (String candidateBase : accountBaseCandidates(cleanAccountBase)) {
-      Optional<ModelAccess> access = repository.findById(candidateBase).map(this::fromEntity);
-      if (access.isPresent()) {
-        return access.get();
-      }
+    return accountResolver
+        .resolveOrCreate(message)
+        .map(resolved -> fromEntity(resolved.account()))
+        .orElseGet(() -> standard(null));
+  }
+
+  public ModelAccess resolve(@Nullable String accountId) {
+    String cleanAccountId = StringUtils.defaultIfBlank(accountId, null);
+    if (cleanAccountId == null) {
+      return standard(null);
     }
-    return standard(cleanAccountBase);
+    return accountRepository
+        .findById(cleanAccountId)
+        .map(this::fromEntity)
+        .orElseGet(() -> standard(cleanAccountId));
   }
 
   public boolean isPremium(IncomingMessage message) {
     return resolve(message).premium();
   }
 
-  public WebsiteModelAccessSummary toWebsiteSummary(@Nullable String accountBase) {
-    return toWebsiteSummary(resolve(accountBase));
+  public WebsiteModelAccessSummary toWebsiteSummary(@Nullable String accountId) {
+    return toWebsiteSummary(resolve(accountId));
   }
 
   public WebsiteModelAccessSummary toWebsiteSummary(ModelAccess access) {
     return new WebsiteModelAccessSummary()
-        .accountBase(access.accountBase())
+        .accountId(access.accountId())
         .plan(WebsiteModelAccessSummary.PlanEnum.fromValue(access.plan()))
         .isPremium(access.premium())
         .currentModel(access.currentModelKey())
@@ -97,17 +91,22 @@ public class ModelAccessService {
         .availableModels(access.availableModels().stream().map(this::toWebsiteOption).toList());
   }
 
-  public String resolveAccountBase(IncomingMessage message) {
-    AgentAccountIdentity identity = AgentAccountIdentity.from(message);
-    return identity.hasAccountBase() ? identity.accountBase() : null;
+  public String resolveAccountId(IncomingMessage message) {
+    if (accountResolver == null) {
+      return null;
+    }
+    return accountResolver
+        .resolveOrCreate(message)
+        .map(resolved -> resolved.account().getAccountId())
+        .orElse(null);
   }
 
-  private ModelAccess fromEntity(ModelAccountSettingsEntity entity) {
+  private ModelAccess fromEntity(AgentAccountEntity entity) {
     if (entity.isPremium()) {
       String selected = StringUtils.defaultIfBlank(entity.getSelectedModel(), null);
       String modelKey = selected == null ? PREMIUM_MODEL_KEY : selected;
       return new ModelAccess(
-          entity.getAccountBase(),
+          entity.getAccountId(),
           true,
           "premium",
           modelKey,
@@ -116,12 +115,12 @@ public class ModelAccessService {
           true,
           PREMIUM_OPTIONS);
     }
-    return standard(entity.getAccountBase());
+    return standard(entity.getAccountId());
   }
 
-  private ModelAccess standard(String accountBase) {
+  private ModelAccess standard(String accountId) {
     return new ModelAccess(
-        accountBase,
+        accountId,
         false,
         "standard",
         STANDARD_MODEL_KEY,
@@ -129,13 +128,6 @@ public class ModelAccessService {
         STANDARD_RESPONSES_MODEL,
         false,
         STANDARD_OPTIONS);
-  }
-
-  private List<String> accountBaseCandidates(String accountBase) {
-    if (accountIdentityAliasService == null) {
-      return List.of(accountBase);
-    }
-    return accountIdentityAliasService.accountBaseCandidates(accountBase);
   }
 
   private WebsiteModelOption toWebsiteOption(ModelOption option) {
@@ -160,7 +152,7 @@ public class ModelAccessService {
   }
 
   public record ModelAccess(
-      String accountBase,
+      String accountId,
       boolean premium,
       String plan,
       String currentModelKey,

@@ -2,6 +2,7 @@ import React from "react";
 
 import type { AuthState } from "../auth/useKeycloak";
 import type {
+  WebsiteAccountIdentity,
   WebsiteIntegrationSummary,
   WebsiteLinkedAccountsResponse,
   WebsiteLinkedIntegrationAccount,
@@ -84,7 +85,6 @@ function LinkedIdentity({
   integration: WebsiteIntegrationSummary;
   onDeleted: () => Promise<void>;
 }) {
-  const [deleting, setDeleting] = React.useState(false);
   const [unlinkingAccountKey, setUnlinkingAccountKey] = React.useState<string | null>(null);
   const link = integration.link;
   if (!link) {
@@ -102,9 +102,9 @@ function LinkedIdentity({
   return (
     <article className="linked-item">
       <div>
-        <p className="eyebrow">iMessage sender</p>
-        <h2>{link.is_group ? "Group iMessage chat" : "Direct iMessage sender"}</h2>
-        <p className="muted">{link.service || "iMessage"} linked to this account.</p>
+        <p className="eyebrow">Chat identities</p>
+        <h2>Linked chat addresses</h2>
+        <p className="muted">These addresses are treated as the same user across tools.</p>
         {modelAccess ? (
           <p className="model-note">
             {accessNote}
@@ -130,6 +130,12 @@ function LinkedIdentity({
       </div>
       {linkedAccounts.length > 0 ? (
         <div className="linked-account-list">
+          {(link.identities || []).map((identity) => (
+            <IdentityRow
+              key={`${identity.type}:${identity.normalized_identifier}`}
+              identity={identity}
+            />
+          ))}
           {linkedAccounts.map((account) => (
             <LinkedAccountRow
               key={`${account.type}:${account.account_key}`}
@@ -148,19 +154,28 @@ function LinkedIdentity({
           ))}
         </div>
       ) : null}
-      <button
-        className="button button-secondary"
-        disabled={deleting}
-        onClick={async () => {
-          setDeleting(true);
-          await websiteAccountApi.deleteLink(link.link_id);
-          await onDeleted();
-          setDeleting(false);
-        }}
-      >
-        {deleting ? "Unlinking" : "Unlink sender"}
-      </button>
+      {linkedAccounts.length === 0 && (link.identities || []).length > 0 ? (
+        <div className="linked-account-list">
+          {(link.identities || []).map((identity) => (
+            <IdentityRow
+              key={`${identity.type}:${identity.normalized_identifier}`}
+              identity={identity}
+            />
+          ))}
+        </div>
+      ) : null}
     </article>
+  );
+}
+
+function IdentityRow({ identity }: { identity: WebsiteAccountIdentity }) {
+  return (
+    <div className="linked-account-row">
+      <div>
+        <p className="linked-account-type">{identityTypeLabel(identity.type)}</p>
+        <p className="linked-account-email">{identity.identifier}</p>
+      </div>
+    </div>
   );
 }
 
@@ -202,4 +217,17 @@ function EmptyLinks() {
       </p>
     </article>
   );
+}
+
+function identityTypeLabel(type: WebsiteAccountIdentity["type"]) {
+  switch (type) {
+    case "imessage_email":
+      return "iMessage email";
+    case "imessage_phone":
+      return "iMessage phone";
+    case "lxmf_address":
+      return "LXMF address";
+    default:
+      return "Chat address";
+  }
 }

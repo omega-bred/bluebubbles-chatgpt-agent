@@ -108,16 +108,16 @@ public class StartCoderAsyncTaskAgentTool implements ToolProvider {
       if (!coderMcpClient.isConfigured()) {
         return "Coder MCP is not configured";
       }
-      String accountBase = CoderMcpClient.resolveAccountBase(context);
-      if (StringUtils.isBlank(accountBase)) {
+      String accountId = context.accountId();
+      if (StringUtils.isBlank(accountId)) {
         return "missing Coder account identity";
       }
-      if (!coderMcpClient.isLinked(accountBase)) {
+      if (!coderMcpClient.isLinked(accountId)) {
         response.put("started", false);
         response.put("linked", false);
         coderMcpClient
             .getAuthUrl(
-                accountBase,
+                accountId,
                 context.message() == null ? null : context.message().chatGuid(),
                 context.message() == null ? null : context.message().messageGuid())
             .ifPresent(authUrl -> response.put("auth_url", authUrl));
@@ -125,11 +125,11 @@ public class StartCoderAsyncTaskAgentTool implements ToolProvider {
         return mapper.writeValueAsString(response);
       }
 
-      idempotencyKey = idempotencyKey(context, accountBase, request);
+      idempotencyKey = idempotencyKey(context, accountId, request);
       CoderAsyncTaskStartStore.Reservation reservation =
           taskStartStore.reserve(
               idempotencyKey,
-              accountBase,
+              accountId,
               context.message() == null
                   ? ""
                   : StringUtils.defaultIfBlank(context.message().chatGuid(), ""),
@@ -142,7 +142,7 @@ public class StartCoderAsyncTaskAgentTool implements ToolProvider {
       reservedStart = true;
 
       TemplateSelection template =
-          selectTemplate(accountBase, request.templateVersionId(), request.templateName(), mapper);
+          selectTemplate(accountId, request.templateVersionId(), request.templateName(), mapper);
       Duration callbackTtl =
           Duration.ofSeconds(
               positiveOrDefault(
@@ -161,7 +161,7 @@ public class StartCoderAsyncTaskAgentTool implements ToolProvider {
       createTaskArgs.put("input", taskPrompt);
       createTaskArgs.put("template_version_id", template.templateVersionId());
       String coderResult =
-          coderMcpClient.callMcpTool(accountBase, CREATE_TASK_MCP_TOOL, createTaskArgs);
+          coderMcpClient.callMcpTool(accountId, CREATE_TASK_MCP_TOOL, createTaskArgs);
 
       response.put("started", !isCoderError(coderResult, mapper));
       response.put("template_version_id", template.templateVersionId());
@@ -228,7 +228,7 @@ public class StartCoderAsyncTaskAgentTool implements ToolProvider {
   }
 
   private TemplateSelection selectTemplate(
-      String accountBase,
+      String accountId,
       @Nullable String templateVersionId,
       @Nullable String templateName,
       ObjectMapper mapper)
@@ -237,7 +237,7 @@ public class StartCoderAsyncTaskAgentTool implements ToolProvider {
       return new TemplateSelection(
           templateVersionId.trim(), StringUtils.defaultIfBlank(templateName, "provided"));
     }
-    String listResult = coderMcpClient.callMcpTool(accountBase, LIST_TEMPLATES_MCP_TOOL, Map.of());
+    String listResult = coderMcpClient.callMcpTool(accountId, LIST_TEMPLATES_MCP_TOOL, Map.of());
     List<JsonNode> templates = extractTemplateNodes(listResult, mapper);
     if (templates.isEmpty()) {
       throw new IllegalStateException("No Coder templates were returned");
@@ -442,7 +442,7 @@ public class StartCoderAsyncTaskAgentTool implements ToolProvider {
   }
 
   private static String idempotencyKey(
-      ToolContext context, String accountBase, StartCoderAsyncTaskRequest request) {
+      ToolContext context, String accountId, StartCoderAsyncTaskRequest request) {
     String chatGuid =
         context.message() != null
             ? context.message().chatGuid()
@@ -453,8 +453,8 @@ public class StartCoderAsyncTaskAgentTool implements ToolProvider {
             : context.workflowContext() == null ? "" : context.workflowContext().messageGuid();
     String naturalKey =
         StringUtils.isNotBlank(messageGuid)
-            ? accountBase + "|" + StringUtils.defaultIfBlank(chatGuid, "") + "|" + messageGuid
-            : accountBase
+            ? accountId + "|" + StringUtils.defaultIfBlank(chatGuid, "") + "|" + messageGuid
+            : accountId
                 + "|"
                 + StringUtils.defaultIfBlank(chatGuid, "")
                 + "|"

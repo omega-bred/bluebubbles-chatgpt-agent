@@ -60,11 +60,6 @@ export const websiteAccountApi = {
     return (await client.websiteAccountRedeemLink(request)).data;
   },
 
-  deleteLink: async (linkId: string) => {
-    const client = await websiteAccountClient();
-    return (await client.websiteAccountDeleteLink(linkId)).data;
-  },
-
   deleteLinkedAccount: async (
     type: WebsiteAccountDeleteLinkedAccountTypeEnum,
     accountKey: string,
