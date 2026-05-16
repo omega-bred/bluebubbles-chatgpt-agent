@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.when;
 
 import io.breland.bbagent.generated.model.WebsiteLinkedIntegrationAccount;
@@ -21,6 +22,7 @@ import io.breland.bbagent.server.agent.persistence.website.WebsiteAccountSenderL
 import io.breland.bbagent.server.agent.tools.coder.CoderMcpClient;
 import io.breland.bbagent.server.agent.tools.gcal.GcalClient;
 import java.time.Instant;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
@@ -97,6 +99,12 @@ class WebsiteAccountServiceTest {
     assertEquals("linked", response.getStatus());
     assertEquals("Alice", response.getLink().getCoderAccountBase());
     assertEquals("iMessage;+;chat-1|Alice", response.getLink().getGcalAccountBase());
+    @SuppressWarnings("unchecked")
+    ArgumentCaptor<Collection<String>> aliasesCaptor = ArgumentCaptor.forClass(Collection.class);
+    Mockito.verify(accountIdentityAliasService)
+        .recordAliases(eq("bluebubbles"), aliasesCaptor.capture(), eq("Alice"));
+    assertTrue(aliasesCaptor.getValue().contains("Alice"));
+    assertTrue(aliasesCaptor.getValue().contains("alice@example.com"));
   }
 
   @Test

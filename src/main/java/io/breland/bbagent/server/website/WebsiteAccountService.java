@@ -32,6 +32,7 @@ import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.Base64;
 import java.util.HexFormat;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
@@ -105,6 +106,7 @@ public class WebsiteAccountService {
         linkRepository
             .findAllByAccountSubjectOrderByCreatedAtDesc(account.getKeycloakSubject())
             .stream()
+            .peek(link -> recordAliases(account, link))
             .map(this::toIntegration)
             .toList();
     return new WebsiteLinkedAccountsResponse()
@@ -250,6 +252,7 @@ public class WebsiteAccountService {
         existingLink.orElseGet(() -> newSenderLink(account, tokenEntity, now));
     link.setUpdatedAt(now);
     link = linkRepository.save(link);
+    recordAliases(account, tokenEntity);
 
     markTokenRedeemed(tokenEntity, account, now);
 
@@ -484,6 +487,37 @@ public class WebsiteAccountService {
     if (accountIdentityAliasService != null) {
       accountIdentityAliasService.recordMessageAliases(message);
     }
+  }
+
+  private void recordAliases(WebsiteAccountEntity account, WebsiteAccountLinkTokenEntity token) {
+    if (account == null || token == null || token.isGroup()) {
+      return;
+    }
+    recordLinkedAccountAliases(account, token.getAccountBase(), token.getSender());
+  }
+
+  private void recordAliases(WebsiteAccountEntity account, WebsiteAccountSenderLinkEntity link) {
+    if (account == null || link == null || link.isGroup()) {
+      return;
+    }
+    recordLinkedAccountAliases(account, link.getAccountBase(), link.getSender());
+  }
+
+  private void recordLinkedAccountAliases(
+      WebsiteAccountEntity account, String accountBase, String sender) {
+    if (accountIdentityAliasService == null || StringUtils.isBlank(accountBase)) {
+      return;
+    }
+    LinkedHashSet<String> aliases = new LinkedHashSet<>();
+    aliases.add(accountBase);
+    if (StringUtils.isNotBlank(sender)) {
+      aliases.add(sender);
+    }
+    if (StringUtils.isNotBlank(account.getEmail())) {
+      aliases.add(account.getEmail());
+    }
+    accountIdentityAliasService.recordAliases(
+        IncomingMessage.TRANSPORT_BLUEBUBBLES, aliases, accountBase);
   }
 
   private List<String> accountBaseCandidates(String accountBase) {
