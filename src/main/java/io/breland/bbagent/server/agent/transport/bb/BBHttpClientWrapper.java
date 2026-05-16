@@ -127,12 +127,34 @@ public class BBHttpClientWrapper {
     if (userId == null || userId.isBlank()) {
       return null;
     }
+    return getFindMyLocation(List.of(userId));
+  }
+
+  public FindMyFriendLocation getFindMyLocation(Collection<String> userIds) {
+    List<String> candidates =
+        userIds == null
+            ? List.of()
+            : userIds.stream().filter(id -> id != null && !id.isBlank()).toList();
+    if (candidates.isEmpty()) {
+      return null;
+    }
     ApiResponseFindMyFriendsLocations response =
         this.icloudApi.apiV1IcloudFindmyFriendsRefreshPost(password).block(API_TIMEOUT);
     response = requirePresent(response, "refresh Find My friends locations");
     requireSuccessfulResponse(
         response.getStatus(), response.getMessage(), "refresh Find My friends locations");
-    return findFindMyLocation(response.getData(), userId).orElse(null);
+    return findFindMyLocation(response.getData(), candidates).orElse(null);
+  }
+
+  private static Optional<FindMyFriendLocation> findFindMyLocation(
+      List<FindMyFriendLocation> locations, Collection<String> userIds) {
+    if (userIds == null || userIds.isEmpty()) {
+      return Optional.empty();
+    }
+    return userIds.stream()
+        .map(userId -> findFindMyLocation(locations, userId))
+        .flatMap(Optional::stream)
+        .findFirst();
   }
 
   private static Optional<FindMyFriendLocation> findFindMyLocation(

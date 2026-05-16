@@ -10,6 +10,7 @@ import static org.mockito.Mockito.when;
 import io.breland.bbagent.generated.model.WebsiteModelAccessSummary;
 import io.breland.bbagent.server.agent.IncomingMessage;
 import io.breland.bbagent.server.agent.model_picker.ModelAccessService;
+import io.breland.bbagent.server.agent.persistence.website.WebsiteAccountEntity;
 import io.breland.bbagent.server.agent.persistence.website.WebsiteAccountLinkTokenEntity;
 import io.breland.bbagent.server.agent.persistence.website.WebsiteAccountLinkTokenRepository;
 import io.breland.bbagent.server.agent.persistence.website.WebsiteAccountRepository;
@@ -191,6 +192,24 @@ class WebsiteAccountServiceTest {
     assertFalse(status.exactChatLinked());
     assertEquals(1, status.linkCount());
     assertEquals(0, status.exactChatLinkCount());
+  }
+
+  @Test
+  void findLinkedAccountEmailReturnsEmailForCurrentExactSenderLink() {
+    WebsiteAccountSenderLinkEntity link = senderLink();
+    when(linkRepository
+            .findAllByAccountBaseAndCoderAccountBaseAndGcalAccountBaseOrderByCreatedAtDesc(
+                "Alice", "Alice", "iMessage;+;chat-1|Alice"))
+        .thenReturn(List.of(link));
+    when(accountRepository.findById("sub-1"))
+        .thenReturn(
+            Optional.of(
+                new WebsiteAccountEntity(
+                    "sub-1", "alice@example.com", "alice", "Alice", Instant.now(), Instant.now())));
+
+    Optional<String> email = service.findLinkedAccountEmail(message());
+
+    assertEquals(Optional.of("alice@example.com"), email);
   }
 
   private WebsiteModelAccessSummary modelAccess() {

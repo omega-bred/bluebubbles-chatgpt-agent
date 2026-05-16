@@ -146,6 +146,34 @@ public class WebsiteAccountService {
   }
 
   @Transactional(readOnly = true)
+  public Optional<String> findLinkedAccountEmail(IncomingMessage message) {
+    if (message == null) {
+      return Optional.empty();
+    }
+    AgentAccountIdentity identity = AgentAccountIdentity.from(message);
+    if (identity.accountBase().isBlank()) {
+      return Optional.empty();
+    }
+    Optional<WebsiteAccountSenderLinkEntity> exactLink =
+        linkRepository
+            .findAllByAccountBaseAndCoderAccountBaseAndGcalAccountBaseOrderByCreatedAtDesc(
+                identity.accountBase(), identity.coderAccountBase(), identity.gcalAccountBase())
+            .stream()
+            .findFirst();
+    Optional<WebsiteAccountSenderLinkEntity> link =
+        exactLink.or(
+            () ->
+                linkRepository
+                    .findAllByAccountBaseOrderByCreatedAtDesc(identity.accountBase())
+                    .stream()
+                    .findFirst());
+    return link.flatMap(linkEntity -> accountRepository.findById(linkEntity.getAccountSubject()))
+        .map(WebsiteAccountEntity::getEmail)
+        .map(String::trim)
+        .filter(email -> !email.isBlank());
+  }
+
+  @Transactional(readOnly = true)
   public SenderLinkStatus getLinkStatus(String sender, String chatGuid) {
     AgentAccountIdentity identity = AgentAccountIdentity.from(sender, chatGuid);
     if (identity.accountBase().isBlank()) {

@@ -50,10 +50,13 @@ import io.breland.bbagent.server.agent.tools.giphy.GiphyClient;
 import io.breland.bbagent.server.agent.tools.memory.Mem0Client;
 import io.breland.bbagent.server.agent.transport.bb.BBHttpClientWrapper;
 import io.breland.bbagent.server.agent.workflowcallback.WorkflowCallbackService;
+import io.breland.bbagent.server.website.WebsiteAccountService;
 import java.time.Instant;
+import java.util.Collection;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
@@ -311,6 +314,37 @@ class BBMessageAgentTest {
     assertTrue(contextText.contains("share their location via Find My"));
     assertEquals(1, bbHttpClientWrapper.findMyLookupCalls);
     assertEquals("Alice", bbHttpClientWrapper.lastFindMyUserId);
+  }
+
+  @Test
+  void injectsFindMyLocationContextUsingLinkedWebsiteEmailFallback() {
+    StubBBHttpClientWrapper bbHttpClientWrapper = new StubBBHttpClientWrapper();
+    WebsiteAccountService websiteAccountService = Mockito.mock(WebsiteAccountService.class);
+    bbHttpClientWrapper.setFindMyLocation(
+        "alice@example.com",
+        findMyLocation(
+            "alice@example.com",
+            List.of(37.33182, -122.03118),
+            "Apple Park",
+            "1 Apple Park Way, Cupertino, CA 95014, United States",
+            1777050691000L));
+    when(websiteAccountService.findLinkedAccountEmail(any(IncomingMessage.class)))
+        .thenReturn(Optional.of("alice@example.com"));
+    BBMessageAgent agent =
+        newAgent(
+            Mockito.mock(OpenAIClient.class),
+            bbHttpClientWrapper,
+            websiteAccountService,
+            ReverseLocationLookup.noop());
+    IncomingMessage incoming =
+        incomingMessage(
+            "iMessage;+;chat-linked-location", "msg-linked-location", "where am I?", 1_000L);
+
+    List<ResponseInputItem> input = agent.buildConversationInput(List.of(), incoming);
+
+    ResponseInputItem locationContext = input.get(input.size() - 1);
+    assertTrue(extractText(locationContext).contains("Current Find My location context"));
+    assertEquals(List.of("Alice", "alice@example.com"), bbHttpClientWrapper.lastFindMyUserIds);
   }
 
   @Test
@@ -813,6 +847,14 @@ class BBMessageAgentTest {
       OpenAIClient openAIClient,
       BBHttpClientWrapper bbHttpClientWrapper,
       ReverseLocationLookup reverseLocationLookup) {
+    return newAgent(openAIClient, bbHttpClientWrapper, null, reverseLocationLookup);
+  }
+
+  private static BBMessageAgent newAgent(
+      OpenAIClient openAIClient,
+      BBHttpClientWrapper bbHttpClientWrapper,
+      WebsiteAccountService websiteAccountService,
+      ReverseLocationLookup reverseLocationLookup) {
     return new BBMessageAgent(
         openAIClient,
         bbHttpClientWrapper,
@@ -821,7 +863,7 @@ class BBMessageAgentTest {
         null,
         null,
         null,
-        null,
+        websiteAccountService,
         Mockito.mock(GiphyClient.class),
         reverseLocationLookup,
         new InMemoryAgentSettingsStore(),
@@ -882,6 +924,7 @@ class BBMessageAgentTest {
     private final Map<String, FindMyFriendLocation> findMyLocations = new ConcurrentHashMap<>();
     private int findMyLookupCalls;
     private String lastFindMyUserId;
+    private List<String> lastFindMyUserIds = List.of();
 
     StubBBHttpClientWrapper() {
       super("pw", Mockito.mock(V1MessageApi.class), Mockito.mock(V1ContactApi.class));
@@ -904,9 +947,19 @@ class BBMessageAgentTest {
 
     @Override
     public FindMyFriendLocation getFindMyLocation(String userId) {
+      return getFindMyLocation(userId == null ? List.of() : List.of(userId));
+    }
+
+    @Override
+    public FindMyFriendLocation getFindMyLocation(Collection<String> userIds) {
       findMyLookupCalls++;
-      lastFindMyUserId = userId;
-      return findMyLocations.get(userId);
+      lastFindMyUserIds = userIds == null ? List.of() : userIds.stream().toList();
+      lastFindMyUserId = lastFindMyUserIds.isEmpty() ? null : lastFindMyUserIds.getFirst();
+      return lastFindMyUserIds.stream()
+          .map(findMyLocations::get)
+          .filter(Objects::nonNull)
+          .findFirst()
+          .orElse(null);
     }
 
     @Override

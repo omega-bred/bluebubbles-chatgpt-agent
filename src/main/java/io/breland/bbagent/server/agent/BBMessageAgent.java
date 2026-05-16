@@ -922,7 +922,8 @@ public class BBMessageAgent {
       return Optional.empty();
     }
     try {
-      FindMyFriendLocation location = bbHttpClientWrapper.getFindMyLocation(message.sender());
+      FindMyFriendLocation location =
+          bbHttpClientWrapper.getFindMyLocation(findMyLocationIdentifiers(message));
       String locationContext = formatFindMyLocationContext(location);
       if (locationContext == null || locationContext.isBlank()) {
         locationContext = missingFindMyLocationContext();
@@ -943,6 +944,32 @@ public class BBMessageAgent {
               .role(EasyInputMessage.Role.DEVELOPER)
               .content(missingFindMyLocationContext())
               .build());
+    }
+  }
+
+  private List<String> findMyLocationIdentifiers(IncomingMessage message) {
+    if (message == null || message.sender() == null || message.sender().isBlank()) {
+      return List.of();
+    }
+    List<String> identifiers = new ArrayList<>();
+    identifiers.add(message.sender());
+    linkedWebsiteAccountEmail(message)
+        .filter(email -> !email.isBlank())
+        .filter(
+            email -> identifiers.stream().noneMatch(existing -> existing.equalsIgnoreCase(email)))
+        .ifPresent(identifiers::add);
+    return identifiers;
+  }
+
+  private Optional<String> linkedWebsiteAccountEmail(IncomingMessage message) {
+    if (websiteAccountService == null) {
+      return Optional.empty();
+    }
+    try {
+      return websiteAccountService.findLinkedAccountEmail(message);
+    } catch (Exception e) {
+      log.debug("Failed to resolve linked website account email for Find My lookup", e);
+      return Optional.empty();
     }
   }
 
