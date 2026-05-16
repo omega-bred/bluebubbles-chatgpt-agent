@@ -1,6 +1,7 @@
 package io.breland.bbagent.server.admin;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.breland.bbagent.generated.model.AdminStatsResponse;
@@ -40,13 +41,20 @@ class AdminStatsServiceTest {
     adminStatsService.recordAcceptedMessage(
         incomingMessage("chat-1", "msg-1", "Alice"), AgentWorkflowProperties.Mode.INLINE);
     adminStatsService.recordAcceptedMessage(
-        incomingMessage("chat-2", "msg-2", "Bob"), AgentWorkflowProperties.Mode.CADENCE);
+        incomingMessage("chat-1", "msg-2", "Alice"), AgentWorkflowProperties.Mode.INLINE);
+    adminStatsService.recordAcceptedMessage(
+        incomingMessage("chat-2", "msg-3", "Bob"), AgentWorkflowProperties.Mode.CADENCE);
 
     AdminStatsResponse stats =
         adminStatsService.getStatistics(now.minusSeconds(60), now.plusSeconds(60));
 
-    assertEquals(2L, stats.getTotalMessages());
+    assertEquals(3L, stats.getTotalMessages());
     assertEquals(2L, stats.getActiveUsers());
+    assertEquals(2, stats.getSenders().size());
+    assertEquals(2L, stats.getSenders().get(0).getMessageCount());
+    assertEquals(2.0 / 3.0, stats.getSenders().get(0).getPercentage(), 0.0001);
+    assertEquals(12, stats.getSenders().get(0).getAccountBucket().length());
+    assertFalse(stats.getSenders().get(0).getModels().isEmpty());
     assertTrue(
         stats.getModels().stream()
             .anyMatch(
@@ -56,7 +64,31 @@ class AdminStatsServiceTest {
             .anyMatch(
                 model -> ModelAccessService.STANDARD_MODEL_LABEL.equals(model.getModelLabel())));
     assertEquals(
-        2L, stats.getTimeline().stream().mapToLong(bucket -> bucket.getMessageCount()).sum());
+        3L, stats.getTimeline().stream().mapToLong(bucket -> bucket.getMessageCount()).sum());
+  }
+
+  @Test
+  void limitsSenderStatsToTopTenByVolume() {
+    metricRepository.deleteAll();
+    Instant now = Instant.now();
+
+    for (int senderIndex = 0; senderIndex < 12; senderIndex++) {
+      int messageCount = senderIndex == 11 ? 3 : 1;
+      for (int messageIndex = 0; messageIndex < messageCount; messageIndex++) {
+        adminStatsService.recordAcceptedMessage(
+            incomingMessage(
+                "chat-" + senderIndex,
+                "msg-" + senderIndex + "-" + messageIndex,
+                "Sender " + senderIndex),
+            AgentWorkflowProperties.Mode.INLINE);
+      }
+    }
+
+    AdminStatsResponse stats =
+        adminStatsService.getStatistics(now.minusSeconds(60), now.plusSeconds(60));
+
+    assertEquals(10, stats.getSenders().size());
+    assertEquals(3L, stats.getSenders().get(0).getMessageCount());
   }
 
   private IncomingMessage incomingMessage(String chatGuid, String messageGuid, String sender) {

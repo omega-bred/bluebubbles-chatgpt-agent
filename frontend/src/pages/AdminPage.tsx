@@ -1,7 +1,7 @@
 import React from "react";
 
 import type { AuthState } from "../auth/useKeycloak";
-import type { AdminStatsBucket, AdminStatsResponse } from "../client";
+import type { AdminSenderStats, AdminStatsBucket, AdminStatsResponse } from "../client";
 import { AuthGate } from "../components/AuthGate";
 import { CenteredMessage } from "../components/CenteredMessage";
 import { SiteNav } from "../components/SiteNav";
@@ -162,6 +162,14 @@ export function AdminPage({ auth }: { auth: AuthState }) {
 
           <article className="admin-panel">
             <header>
+              <p className="eyebrow">Senders</p>
+              <h2>Top accounts</h2>
+            </header>
+            <SenderUsage senders={data?.senders || []} />
+          </article>
+
+          <article className="admin-panel">
+            <header>
               <p className="eyebrow">Timeline</p>
               <h2>Message volume</h2>
             </header>
@@ -179,6 +187,37 @@ function MetricTile({ label, value }: { label: string; value: string }) {
       <span>{label}</span>
       <strong>{value}</strong>
     </article>
+  );
+}
+
+function SenderUsage({ senders }: { senders: AdminSenderStats[] }) {
+  const max = Math.max(1, ...senders.map((sender) => sender.message_count || 0));
+  if (senders.length === 0) {
+    return <p className="muted">No sender buckets in this period.</p>;
+  }
+  return (
+    <div className="sender-usage-list">
+      {senders.map((sender) => {
+        const count = sender.message_count || 0;
+        return (
+          <div className="sender-usage-row" key={sender.account_key_hash}>
+            <div>
+              <strong>#{sender.account_bucket || "unknown"}</strong>
+              <span title={sender.account_key_hash}>
+                Last seen {formatDateTime(sender.last_seen_at)}
+              </span>
+            </div>
+            <div className="sender-usage-meter" aria-hidden="true">
+              <span style={{ width: `${(count / max) * 100}%` }} />
+            </div>
+            <p>
+              {formatCount(count)} messages / {formatPercent(sender.percentage)} of volume /{" "}
+              {senderModelSummary(sender)}
+            </p>
+          </div>
+        );
+      })}
+    </div>
   );
 }
 
@@ -283,6 +322,17 @@ function bucketModelSummary(bucket: AdminStatsBucket): string {
     return "No messages";
   }
   return models
+    .map((model) => `${model.model_label}: ${formatCount(model.message_count)}`)
+    .join(" / ");
+}
+
+function senderModelSummary(sender: AdminSenderStats): string {
+  const models = sender.models || [];
+  if (models.length === 0) {
+    return "No model mix";
+  }
+  return models
+    .slice(0, 2)
     .map((model) => `${model.model_label}: ${formatCount(model.message_count)}`)
     .join(" / ");
 }
