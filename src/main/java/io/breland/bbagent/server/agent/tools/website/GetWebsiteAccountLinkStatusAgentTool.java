@@ -73,9 +73,7 @@ public class GetWebsiteAccountLinkStatusAgentTool implements ToolProvider {
     Map<String, Object> response = new LinkedHashMap<>();
     response.put("linked", status.linked());
     response.put("exact_chat_linked", status.exactChatLinked());
-    response.put("account_base", status.accountBase());
-    response.put("coder_account_base", status.coderAccountBase());
-    response.put("gcal_account_base", status.gcalAccountBase());
+    response.put("account_id", status.accountId());
     response.put("link_count", status.linkCount());
     response.put("exact_chat_link_count", status.exactChatLinkCount());
     response.put("model_access", status.modelAccess());
@@ -87,7 +85,7 @@ public class GetWebsiteAccountLinkStatusAgentTool implements ToolProvider {
   }
 
   private String userFacingText(WebsiteAccountService.SenderLinkStatus status) {
-    if (StringUtils.isBlank(status.accountBase())) {
+    if (StringUtils.isBlank(status.accountId())) {
       return "I could not tell which iMessage sender to check.";
     }
     if (status.exactChatLinked()) {

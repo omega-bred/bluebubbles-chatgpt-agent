@@ -1,4 +1,4 @@
-package io.breland.bbagent.server.agent.persistence;
+package io.breland.bbagent.server.agent.persistence.account;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -10,27 +10,24 @@ import lombok.NoArgsConstructor;
 import lombok.Setter;
 
 @Entity
-@Table(name = "agent_account_identity_aliases")
+@Table(name = "agent_account_identities")
 @Getter
 @Setter
 @NoArgsConstructor
-public class AccountIdentityAliasEntity {
+public class AgentAccountIdentityEntity {
 
   @Id
-  @Column(name = "alias_key", nullable = false, length = 768)
-  private String aliasKey;
+  @Column(name = "identity_id", nullable = false, length = 36)
+  private String identityId;
 
-  @Column(name = "account_base", nullable = false, length = 512)
-  private String accountBase;
+  @Column(name = "account_id", nullable = false, length = 36)
+  private String accountId;
 
-  @Column(name = "transport", nullable = false, length = 64)
-  private String transport;
+  @Column(name = "identity_type", nullable = false, length = 64)
+  private String identityType;
 
   @Column(name = "identifier", nullable = false, length = 512)
   private String identifier;
-
-  @Column(name = "identifier_type", nullable = false, length = 32)
-  private String identifierType;
 
   @Column(name = "normalized_identifier", nullable = false, length = 512)
   private String normalizedIdentifier;
@@ -41,20 +38,18 @@ public class AccountIdentityAliasEntity {
   @Column(name = "updated_at", nullable = false)
   private Instant updatedAt;
 
-  public AccountIdentityAliasEntity(
-      String aliasKey,
-      String accountBase,
-      String transport,
+  public AgentAccountIdentityEntity(
+      String identityId,
+      String accountId,
+      String identityType,
       String identifier,
-      String identifierType,
       String normalizedIdentifier,
       Instant createdAt,
       Instant updatedAt) {
-    this.aliasKey = aliasKey;
-    this.accountBase = accountBase;
-    this.transport = transport;
+    this.identityId = identityId;
+    this.accountId = accountId;
+    this.identityType = identityType;
     this.identifier = identifier;
-    this.identifierType = identifierType;
     this.normalizedIdentifier = normalizedIdentifier;
     this.createdAt = createdAt;
     this.updatedAt = updatedAt;

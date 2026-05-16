@@ -61,7 +61,7 @@ public class LinkWebsiteAccountAgentTool implements ToolProvider {
     Map<String, Object> response = new LinkedHashMap<>();
     response.put("link_url", link.url());
     response.put("expires_at", expiresAt);
-    response.put("account_base", link.accountBase());
+    response.put("account_id", link.accountId());
     response.put("user_facing_text", text);
     return response;
   }

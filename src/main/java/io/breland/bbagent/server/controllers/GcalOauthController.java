@@ -44,8 +44,7 @@ public class GcalOauthController extends GcalApiController {
       return errorResponse(SERVICE, "Invalid OAuth state. Please retry the linking flow.");
     }
     Optional<String> accountId =
-        gcalClient.exchangeCode(
-            oauthState.get().accountBase(), oauthState.get().pendingKey(), code);
+        gcalClient.exchangeCode(oauthState.get().accountId(), oauthState.get().pendingKey(), code);
     if (accountId.isEmpty()) {
       sendFollowup(
           bbHttpClientWrapper,

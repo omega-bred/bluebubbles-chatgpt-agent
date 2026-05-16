@@ -48,8 +48,8 @@ public class CoderAuthAgentTool implements ToolProvider {
           if (request.action() == null) {
             return "missing action";
           }
-          String accountBase = CoderMcpClient.resolveAccountBase(context);
-          if (accountBase == null || accountBase.isBlank()) {
+          String accountId = context.accountId();
+          if (accountId == null || accountId.isBlank()) {
             return "no account";
           }
           try {
@@ -60,11 +60,11 @@ public class CoderAuthAgentTool implements ToolProvider {
                       .writeValueAsString(
                           Map.of(
                               "linked",
-                              coderMcpClient.isLinked(accountBase),
+                              coderMcpClient.isLinked(accountId),
                               "tool_prefix",
                               CoderMcpClient.TOOL_PREFIX));
               case AUTH_URL -> {
-                if (coderMcpClient.isLinked(accountBase)) {
+                if (coderMcpClient.isLinked(accountId)) {
                   yield context.getMapper().writeValueAsString(Map.of("linked", true));
                 }
                 String chatGuid = context.message() != null ? context.message().chatGuid() : null;
@@ -73,7 +73,7 @@ public class CoderAuthAgentTool implements ToolProvider {
                 if (chatGuid == null || chatGuid.isBlank()) {
                   yield "missing chat";
                 }
-                var authUrl = coderMcpClient.getAuthUrl(accountBase, chatGuid, messageGuid);
+                var authUrl = coderMcpClient.getAuthUrl(accountId, chatGuid, messageGuid);
                 if (authUrl.isEmpty()) {
                   yield "not configured";
                 }
@@ -81,7 +81,7 @@ public class CoderAuthAgentTool implements ToolProvider {
                     .getMapper()
                     .writeValueAsString(Map.of("auth_url", authUrl.get(), "linked", false));
               }
-              case REVOKE -> coderMcpClient.revoke(accountBase) ? "revoked" : "not found";
+              case REVOKE -> coderMcpClient.revoke(accountId) ? "revoked" : "not found";
             };
           } catch (Exception e) {
             return "error: " + e.getMessage();

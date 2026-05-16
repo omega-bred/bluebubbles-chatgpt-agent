@@ -32,6 +32,14 @@ public class ToolContext {
     return bbMessageAgent.getObjectMapper();
   }
 
+  public String accountId() {
+    java.util.Optional<String> accountId = bbMessageAgent.resolveOrCreateAccountId(message);
+    if (accountId == null) {
+      return message == null ? null : message.sender();
+    }
+    return accountId.orElse(message == null ? null : message.sender());
+  }
+
   public void setAssistantResponsiveness(BBMessageAgent.AssistantResponsiveness responsiveness) {
     bbMessageAgent.setAssistantResponsiveness(message.chatGuid(), responsiveness);
   }

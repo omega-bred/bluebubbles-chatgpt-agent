@@ -7,7 +7,6 @@ import com.google.api.services.calendar.model.Event;
 import com.google.api.services.calendar.model.EventAttendee;
 import com.google.api.services.calendar.model.EventDateTime;
 import com.google.api.services.calendar.model.Events;
-import io.breland.bbagent.server.agent.AgentAccountIdentity;
 import io.breland.bbagent.server.agent.tools.ToolContext;
 import java.time.ZoneId;
 import java.util.ArrayList;
@@ -33,14 +32,14 @@ public class GcalToolSupport {
 
   protected String resolveAccountKey(
       ToolContext context, com.fasterxml.jackson.databind.JsonNode args) {
-    String accountId = getOptionalText(args, "account_key");
-    String accountBase = resolveAccountBase(context);
-    return gcalClient.scopeAccountKey(accountBase, accountId);
+    String requestedAccountKey = getOptionalText(args, "account_key");
+    String accountId = resolveAccountId(context);
+    return gcalClient.scopeAccountKey(accountId, requestedAccountKey);
   }
 
   protected String resolveAccountKey(ToolContext context, String accountId) {
-    String accountBase = resolveAccountBase(context);
-    return gcalClient.scopeAccountKey(accountBase, accountId);
+    String resolvedAccountId = resolveAccountId(context);
+    return gcalClient.scopeAccountKey(resolvedAccountId, accountId);
   }
 
   protected String withCalendar(
@@ -76,12 +75,11 @@ public class GcalToolSupport {
     String apply() throws Exception;
   }
 
-  protected String resolveAccountBase(ToolContext context) {
+  protected String resolveAccountId(ToolContext context) {
     if (context == null || context.message() == null) {
       return null;
     }
-    AgentAccountIdentity identity = AgentAccountIdentity.from(context.message());
-    return identity.hasAccountBase() ? identity.gcalAccountBase() : null;
+    return context.accountId();
   }
 
   protected String resolveCalendarId(String calendarId) {

@@ -33,7 +33,7 @@ final class CoderOauthStateCodec {
   }
 
   Optional<String> createState(
-      String accountBase, String pendingId, String chatGuid, String messageGuid) {
+      String accountId, String pendingId, String chatGuid, String messageGuid) {
     if (!isConfigured()) {
       return Optional.empty();
     }
@@ -43,7 +43,7 @@ final class CoderOauthStateCodec {
           JWT.create()
               .withIssuedAt(Date.from(now))
               .withExpiresAt(Date.from(now.plus(ttl)))
-              .withClaim("account_base", accountBase)
+              .withClaim("account_id", accountId)
               .withClaim("pending_id", pendingId)
               .withClaim("chat_guid", chatGuid)
               .withClaim("message_guid", messageGuid)
@@ -61,17 +61,14 @@ final class CoderOauthStateCodec {
     try {
       JWTVerifier verifier = JWT.require(algorithm).build();
       DecodedJWT jwt = verifier.verify(state);
-      String accountBase = jwt.getClaim("account_base").asString();
+      String accountId = jwt.getClaim("account_id").asString();
       String pendingId = jwt.getClaim("pending_id").asString();
       String chatGuid = jwt.getClaim("chat_guid").asString();
       String messageGuid = jwt.getClaim("message_guid").asString();
-      if (accountBase == null
-          || accountBase.isBlank()
-          || pendingId == null
-          || pendingId.isBlank()) {
+      if (accountId == null || accountId.isBlank() || pendingId == null || pendingId.isBlank()) {
         return Optional.empty();
       }
-      return Optional.of(new OauthState(accountBase, pendingId, chatGuid, messageGuid));
+      return Optional.of(new OauthState(accountId, pendingId, chatGuid, messageGuid));
     } catch (JWTVerificationException e) {
       log.warn("Failed to parse Coder OAuth state", e);
       return Optional.empty();
@@ -94,5 +91,5 @@ final class CoderOauthStateCodec {
     }
   }
 
-  record OauthState(String accountBase, String pendingId, String chatGuid, String messageGuid) {}
+  record OauthState(String accountId, String pendingId, String chatGuid, String messageGuid) {}
 }

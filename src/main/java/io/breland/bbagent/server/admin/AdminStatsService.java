@@ -5,8 +5,7 @@ import io.breland.bbagent.generated.model.AdminModelStats;
 import io.breland.bbagent.generated.model.AdminStatsBucket;
 import io.breland.bbagent.generated.model.AdminStatsPeriod;
 import io.breland.bbagent.generated.model.AdminStatsResponse;
-import io.breland.bbagent.server.agent.AccountIdentityAliasService;
-import io.breland.bbagent.server.agent.AgentAccountIdentity;
+import io.breland.bbagent.server.agent.AgentAccountResolver;
 import io.breland.bbagent.server.agent.AgentWorkflowProperties;
 import io.breland.bbagent.server.agent.IncomingMessage;
 import io.breland.bbagent.server.agent.model_picker.ModelAccessService;
@@ -37,15 +36,15 @@ public class AdminStatsService {
 
   private final AgentMessageMetricRepository repository;
   private final ModelAccessService modelAccessService;
-  private final AccountIdentityAliasService accountIdentityAliasService;
+  private final AgentAccountResolver accountResolver;
 
   public AdminStatsService(
       AgentMessageMetricRepository repository,
       ModelAccessService modelAccessService,
-      @Nullable AccountIdentityAliasService accountIdentityAliasService) {
+      @Nullable AgentAccountResolver accountResolver) {
     this.repository = repository;
     this.modelAccessService = modelAccessService;
-    this.accountIdentityAliasService = accountIdentityAliasService;
+    this.accountResolver = accountResolver;
   }
 
   @Transactional
@@ -55,12 +54,16 @@ public class AdminStatsService {
       return;
     }
     ModelAccessService.ModelAccess modelAccess = modelAccessService.resolve(message);
-    AgentAccountIdentity identity = AgentAccountIdentity.from(message);
-    String userKey = firstNonBlank(identity.accountBase(), message.sender(), message.chatGuid());
+    String userKey =
+        accountResolver == null
+            ? null
+            : accountResolver
+                .resolveOrCreate(message)
+                .map(resolved -> resolved.account().getAccountId())
+                .orElse(null);
+    userKey = firstNonBlank(userKey, message.sender(), message.chatGuid());
     if (userKey == null) {
       userKey = "unknown";
-    } else if (accountIdentityAliasService != null) {
-      userKey = accountIdentityAliasService.preferredAccountBaseForWrite(userKey);
     }
     Instant now = Instant.now();
     repository.save(

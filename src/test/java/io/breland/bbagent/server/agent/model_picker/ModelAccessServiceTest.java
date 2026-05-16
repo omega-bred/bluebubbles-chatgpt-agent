@@ -3,12 +3,14 @@ package io.breland.bbagent.server.agent.model_picker;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.when;
 
 import io.breland.bbagent.generated.model.WebsiteModelAccessSummary;
+import io.breland.bbagent.server.agent.AgentAccountResolver;
 import io.breland.bbagent.server.agent.IncomingMessage;
-import io.breland.bbagent.server.agent.persistence.model.ModelAccountSettingsEntity;
-import io.breland.bbagent.server.agent.persistence.model.ModelAccountSettingsRepository;
+import io.breland.bbagent.server.agent.persistence.account.AgentAccountEntity;
+import io.breland.bbagent.server.agent.persistence.account.AgentAccountRepository;
 import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
@@ -17,13 +19,15 @@ import org.mockito.Mockito;
 
 class ModelAccessServiceTest {
 
-  private final ModelAccountSettingsRepository repository =
-      Mockito.mock(ModelAccountSettingsRepository.class);
-  private final ModelAccessService service = new ModelAccessService(repository);
+  private final AgentAccountRepository repository = Mockito.mock(AgentAccountRepository.class);
+  private final AgentAccountResolver resolver = Mockito.mock(AgentAccountResolver.class);
+  private final ModelAccessService service = new ModelAccessService(repository, resolver);
 
   @Test
   void defaultsUnconfiguredSenderToStandardFreePlan() {
-    when(repository.findById("Alice")).thenReturn(Optional.empty());
+    when(resolver.resolveOrCreate(any(IncomingMessage.class)))
+        .thenReturn(
+            Optional.of(new AgentAccountResolver.ResolvedAccount(account(false, null), List.of())));
 
     ModelAccessService.ModelAccess access = service.resolve(message());
 
@@ -37,7 +41,9 @@ class ModelAccessServiceTest {
 
   @Test
   void readsPremiumEntitlementFromPostgresBackedRepository() {
-    when(repository.findById("Alice")).thenReturn(Optional.of(settings(true, null)));
+    when(resolver.resolveOrCreate(any(IncomingMessage.class)))
+        .thenReturn(
+            Optional.of(new AgentAccountResolver.ResolvedAccount(account(true, null), List.of())));
 
     ModelAccessService.ModelAccess access = service.resolve(message());
 
@@ -49,7 +55,9 @@ class ModelAccessServiceTest {
 
   @Test
   void blankPremiumModelSelectionDefaultsToChatGpt() {
-    when(repository.findById("Alice")).thenReturn(Optional.of(settings(true, " ")));
+    when(resolver.resolveOrCreate(any(IncomingMessage.class)))
+        .thenReturn(
+            Optional.of(new AgentAccountResolver.ResolvedAccount(account(true, " "), List.of())));
 
     ModelAccessService.ModelAccess access = service.resolve(message());
 
@@ -59,9 +67,9 @@ class ModelAccessServiceTest {
 
   @Test
   void exposesWebsiteSummaryForReadOnlyAccountPage() {
-    when(repository.findById("Alice")).thenReturn(Optional.of(settings(true, null)));
+    when(repository.findById("account-1")).thenReturn(Optional.of(account(true, null)));
 
-    WebsiteModelAccessSummary summary = service.toWebsiteSummary("Alice");
+    WebsiteModelAccessSummary summary = service.toWebsiteSummary("account-1");
 
     assertEquals(WebsiteModelAccessSummary.PlanEnum.PREMIUM, summary.getPlan());
     assertTrue(summary.getIsPremium());
@@ -70,9 +78,12 @@ class ModelAccessServiceTest {
     assertEquals(4, summary.getAvailableModels().size());
   }
 
-  private ModelAccountSettingsEntity settings(boolean premium, String selectedModel) {
+  private AgentAccountEntity account(boolean premium, String selectedModel) {
     Instant now = Instant.now();
-    return new ModelAccountSettingsEntity("Alice", premium, selectedModel, now, now);
+    AgentAccountEntity account = new AgentAccountEntity("account-1", now, now);
+    account.setPremium(premium);
+    account.setSelectedModel(selectedModel);
+    return account;
   }
 
   private IncomingMessage message() {

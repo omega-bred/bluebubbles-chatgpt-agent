@@ -20,8 +20,8 @@ public class CoderOauthPendingAuthorizationEntity {
   @Column(name = "pending_id", nullable = false, length = 128)
   private String pendingId;
 
-  @Column(name = "account_base", nullable = false, length = 512)
-  private String accountBase;
+  @Column(name = "account_id", nullable = false, length = 36)
+  private String accountId;
 
   @Column(name = "chat_guid", length = 255)
   private String chatGuid;
@@ -40,14 +40,14 @@ public class CoderOauthPendingAuthorizationEntity {
 
   public CoderOauthPendingAuthorizationEntity(
       String pendingId,
-      String accountBase,
+      String accountId,
       String chatGuid,
       String messageGuid,
       String codeVerifier,
       Instant expiresAt,
       Instant createdAt) {
     this.pendingId = pendingId;
-    this.accountBase = accountBase;
+    this.accountId = accountId;
     this.chatGuid = chatGuid;
     this.messageGuid = messageGuid;
     this.codeVerifier = codeVerifier;

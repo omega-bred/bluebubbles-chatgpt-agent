@@ -22,15 +22,13 @@ class GetWebsiteAccountLinkStatusAgentToolTest {
     when(service.getLinkStatus("Alice", "iMessage;+;chat-1"))
         .thenReturn(
             new WebsiteAccountService.SenderLinkStatus(
-                "Alice",
-                "Alice",
-                "iMessage;+;chat-1|Alice",
+                "account-1",
                 true,
                 true,
                 1,
                 1,
                 new WebsiteModelAccessSummary()
-                    .accountBase("Alice")
+                    .accountId("account-1")
                     .plan(WebsiteModelAccessSummary.PlanEnum.PREMIUM)
                     .isPremium(true)
                     .currentModel("chatgpt")
