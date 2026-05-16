@@ -26,7 +26,9 @@ public class MemorySaveAgentTool implements ToolProvider {
   public AgentTool getTool() {
     return new AgentTool(
         TOOL_NAME,
-        "Save memories about the current user or conversation. Any time you discover useful information about a user - you should persist it with this tool. Information like the user's name, preferences, or general tone/vibe are appropriate to store here.",
+        "Save memories about the current user or conversation. Any time you discover useful"
+            + " information about a user - you should persist it with this tool. Information like"
+            + " the user's name, preferences, or general tone/vibe are appropriate to store here.",
         jsonSchema(MemorySaveRequest.class),
         false,
         (context, args) -> {
@@ -44,10 +46,8 @@ public class MemorySaveAgentTool implements ToolProvider {
           if (memory == null || memory.isBlank()) {
             return "no memory";
           }
-          String groupChatSenderId = message.isGroup() ? AgentTool.getSenderId(message) : null;
           boolean saved =
-              mem0Client.addMemory(
-                  userIdOrGroupChatId, memory.trim(), buildMetadata(message), null);
+              mem0Client.addMemory(userIdOrGroupChatId, memory.trim(), buildMetadata(message));
           return saved ? "saved" : "failed";
         });
   }
