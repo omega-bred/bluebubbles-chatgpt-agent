@@ -18,7 +18,7 @@ public class LinkWebsiteAccountAgentTool implements ToolProvider {
 
   private final WebsiteAccountService accountService;
 
-  @Schema(description = "Create a website account link for the current iMessage sender.")
+  @Schema(description = "Create a website account link for the current chat identity.")
   public record LinkWebsiteAccountRequest(
       @Schema(description = "Short reason the user wants the account link.")
           @JsonProperty("purpose")
@@ -32,7 +32,9 @@ public class LinkWebsiteAccountAgentTool implements ToolProvider {
   public AgentTool getTool() {
     return new AgentTool(
         TOOL_NAME,
-        "Create a short-lived website login/signup link that connects the current iMessage sender to a website account. Use when the user asks to log in, manage their website account, link iMessage to the website, or view web account integrations.",
+        "Create a short-lived website login/signup link that connects the current chat identity to"
+            + " a website account. Use when the user asks to log in, manage their website account,"
+            + " link this chat identity to the website, or view web account integrations.",
         jsonSchema(LinkWebsiteAccountRequest.class),
         false,
         (context, args) -> {
@@ -53,7 +55,7 @@ public class LinkWebsiteAccountAgentTool implements ToolProvider {
   private Map<String, Object> toResponse(WebsiteAccountService.CreatedLinkToken link) {
     String expiresAt = INSTANT_FORMATTER.format(link.expiresAt());
     String text =
-        "Open this link to log in or sign up and connect this iMessage sender to your web account: "
+        "Open this link to log in or sign up and connect this chat identity to your web account: "
             + link.url()
             + "\nThis link expires at "
             + expiresAt

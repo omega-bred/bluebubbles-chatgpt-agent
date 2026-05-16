@@ -20,12 +20,11 @@ public class GetWebsiteAccountLinkStatusAgentTool implements ToolProvider {
 
   private final WebsiteAccountService accountService;
 
-  @Schema(description = "Check whether an iMessage sender is linked to a website account.")
+  @Schema(description = "Check whether a chat identity is linked to a website account.")
   public record GetWebsiteAccountLinkStatusRequest(
       @Schema(
               description =
-                  "Optional iMessage sender/handle to check. Defaults to the current incoming"
-                      + " sender.")
+                  "Optional sender/handle to check. Defaults to the current incoming sender.")
           @JsonProperty("sender")
           String sender,
       @Schema(
@@ -33,7 +32,13 @@ public class GetWebsiteAccountLinkStatusAgentTool implements ToolProvider {
                   "Optional chat GUID to check for chat-scoped integrations. Defaults to the"
                       + " current incoming chat.")
           @JsonProperty("chat_guid")
-          String chatGuid) {}
+          String chatGuid,
+      @Schema(
+              description =
+                  "Optional transport to check, such as bluebubbles or lxmf. Defaults to the"
+                      + " current incoming message transport.")
+          @JsonProperty("transport")
+          String transport) {}
 
   public GetWebsiteAccountLinkStatusAgentTool(WebsiteAccountService accountService) {
     this.accountService = accountService;
@@ -43,7 +48,7 @@ public class GetWebsiteAccountLinkStatusAgentTool implements ToolProvider {
   public AgentTool getTool() {
     return new AgentTool(
         TOOL_NAME,
-        "Check whether the current or specified iMessage sender is already linked to a website"
+        "Check whether the current or specified chat identity is already linked to a website"
             + " account. Use this before answering account-link status questions; if unlinked and"
             + " the user wants to connect, call link_website_account next.",
         jsonSchema(GetWebsiteAccountLinkStatusRequest.class),
@@ -53,20 +58,32 @@ public class GetWebsiteAccountLinkStatusAgentTool implements ToolProvider {
             GetWebsiteAccountLinkStatusRequest request =
                 context.getMapper().convertValue(args, GetWebsiteAccountLinkStatusRequest.class);
             IncomingMessage message = context.message();
-            String sender =
-                StringUtils.firstNonBlank(
-                    request.sender(), message == null ? null : message.sender());
-            String chatGuid =
-                StringUtils.firstNonBlank(
-                    request.chatGuid(), message == null ? null : message.chatGuid());
-            WebsiteAccountService.SenderLinkStatus status =
-                accountService.getLinkStatus(sender, chatGuid);
+            WebsiteAccountService.SenderLinkStatus status = getLinkStatus(request, message);
             return ToolJson.stringify(
                 context.getMapper(), toResponse(status), "error: unable to encode link status");
           } catch (Exception e) {
             return "error: " + e.getMessage();
           }
         });
+  }
+
+  private WebsiteAccountService.SenderLinkStatus getLinkStatus(
+      GetWebsiteAccountLinkStatusRequest request, IncomingMessage message) {
+    boolean hasExplicitLookup =
+        StringUtils.isNotBlank(request.sender())
+            || StringUtils.isNotBlank(request.chatGuid())
+            || StringUtils.isNotBlank(request.transport());
+    if (!hasExplicitLookup && message != null) {
+      return accountService.getLinkStatus(message);
+    }
+    String sender =
+        StringUtils.firstNonBlank(request.sender(), message == null ? null : message.sender());
+    String chatGuid =
+        StringUtils.firstNonBlank(request.chatGuid(), message == null ? null : message.chatGuid());
+    String transport =
+        StringUtils.firstNonBlank(
+            request.transport(), message == null ? null : message.transportOrDefault());
+    return accountService.getLinkStatus(transport, sender, chatGuid);
   }
 
   private Map<String, Object> toResponse(WebsiteAccountService.SenderLinkStatus status) {
@@ -86,17 +103,17 @@ public class GetWebsiteAccountLinkStatusAgentTool implements ToolProvider {
 
   private String userFacingText(WebsiteAccountService.SenderLinkStatus status) {
     if (StringUtils.isBlank(status.accountId())) {
-      return "I could not tell which iMessage sender to check.";
+      return "I could not tell which sender or chat identity to check.";
     }
     if (status.exactChatLinked()) {
-      return "This iMessage sender is linked to a web account for this chat. " + modelText(status);
+      return "This chat identity is linked to a web account for this chat. " + modelText(status);
     }
     if (status.linked()) {
-      return "This iMessage sender is linked to a web account, but this specific chat does not have"
+      return "This chat identity is linked to a web account, but this specific chat does not have"
           + " its own web account link yet. "
           + modelText(status);
     }
-    return "This iMessage sender is not linked to a web account yet. " + modelText(status);
+    return "This chat identity is not linked to a web account yet. " + modelText(status);
   }
 
   private String modelText(WebsiteAccountService.SenderLinkStatus status) {
