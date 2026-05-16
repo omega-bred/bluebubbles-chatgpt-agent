@@ -26,6 +26,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.TreeMap;
 import java.util.UUID;
+import org.apache.commons.lang3.StringUtils;
 import org.springframework.lang.Nullable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -71,7 +72,7 @@ public class AdminStatsService {
             UUID.randomUUID().toString(),
             now,
             firstNonBlank(message.transportOrDefault(), "unknown"),
-            trimToNull(message.messageGuid()),
+            StringUtils.trimToNull(message.messageGuid()),
             hashNullable(message.chatGuid()),
             hash(userKey),
             firstNonBlank(modelAccess.currentModelKey(), "unknown"),
@@ -173,7 +174,7 @@ public class AdminStatsService {
   }
 
   private String hashNullable(String value) {
-    String trimmed = trimToNull(value);
+    String trimmed = StringUtils.trimToNull(value);
     return trimmed == null ? null : hash(trimmed);
   }
 
@@ -186,25 +187,8 @@ public class AdminStatsService {
     }
   }
 
-  private String trimToNull(String value) {
-    if (value == null) {
-      return null;
-    }
-    String trimmed = value.trim();
-    return trimmed.isBlank() ? null : trimmed;
-  }
-
   private String firstNonBlank(String... values) {
-    if (values == null) {
-      return null;
-    }
-    for (String value : values) {
-      String trimmed = trimToNull(value);
-      if (trimmed != null) {
-        return trimmed;
-      }
-    }
-    return null;
+    return StringUtils.trimToNull(StringUtils.firstNonBlank(values));
   }
 
   private enum BucketSize {
