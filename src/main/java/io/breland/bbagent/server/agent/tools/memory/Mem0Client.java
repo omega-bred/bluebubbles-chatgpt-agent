@@ -75,8 +75,7 @@ public class Mem0Client {
 
   public record StoredMemory(String memoryId, String memory) {}
 
-  public boolean addMemory(
-      String userId, String memory, Map<String, Object> metadata, String groupChatUser) {
+  public boolean addMemory(String userId, String memory, Map<String, Object> metadata) {
     if (!configured) {
       return false;
     }
@@ -86,11 +85,7 @@ public class Mem0Client {
     Map<String, Object> body = new LinkedHashMap<>();
     body.put("user_id", userId);
     body.put("version", "v2");
-    Map<String, String> messageMap = new HashMap<>(Map.of("role", "user", "content", memory));
-    if (groupChatUser != null && !groupChatUser.isBlank()) {
-      messageMap.put("name", groupChatUser);
-    }
-    body.put("messages", List.of(messageMap));
+    body.put("messages", List.of(Map.of("role", "user", "content", memory)));
     if (metadata != null && !metadata.isEmpty()) {
       body.put("metadata", metadata);
     }
