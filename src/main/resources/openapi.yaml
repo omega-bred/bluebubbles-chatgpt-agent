@@ -20,6 +20,8 @@ tags:
     description: Agent workflow callback endpoints
   - name: websiteAccount
     description: Website account management endpoints
+  - name: admin
+    description: Admin-only operational endpoints
 paths:
 
   /api/v1/bluebubbles/messageReceived.message:
@@ -371,6 +373,43 @@ paths:
           description: Authentication required
         '404':
           description: Linked integration account not found
+  /api/v1/admin/get.statistics:
+    get:
+      operationId: adminGetStatistics
+      tags:
+        - admin
+      summary: Gets recent agent statistics
+      description: Returns message, model, and active-user statistics for an admin-selected time period.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: from
+          in: query
+          description: Inclusive start of the statistics period. Defaults to 24 hours before now.
+          required: false
+          schema:
+            type: string
+            format: date-time
+        - name: to
+          in: query
+          description: Exclusive end of the statistics period. Defaults to now.
+          required: false
+          schema:
+            type: string
+            format: date-time
+      responses:
+        '200':
+          description: Admin statistics
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminStatsResponse'
+        '400':
+          description: Invalid time period
+        '401':
+          description: Authentication required
+        '403':
+          description: Admin role required
 
 
 components:
@@ -610,6 +649,123 @@ components:
       properties:
         deleted:
           type: boolean
+    AdminStatsPeriod:
+      type: object
+      required:
+        - from
+        - to
+        - bucket_size
+      properties:
+        from:
+          type: string
+          format: date-time
+        to:
+          type: string
+          format: date-time
+        bucket_size:
+          type: string
+          enum:
+            - hour
+            - day
+    AdminModelStats:
+      type: object
+      required:
+        - model_key
+        - model_label
+        - responses_model
+        - plan
+        - is_premium
+        - message_count
+        - active_users
+        - percentage
+      properties:
+        model_key:
+          type: string
+        model_label:
+          type: string
+        responses_model:
+          type: string
+        plan:
+          type: string
+        is_premium:
+          type: boolean
+        message_count:
+          type: integer
+          format: int64
+        active_users:
+          type: integer
+          format: int64
+        percentage:
+          type: number
+          format: double
+    AdminBucketModelStats:
+      type: object
+      required:
+        - model_key
+        - model_label
+        - message_count
+      properties:
+        model_key:
+          type: string
+        model_label:
+          type: string
+        message_count:
+          type: integer
+          format: int64
+    AdminStatsBucket:
+      type: object
+      required:
+        - bucket_start
+        - bucket_end
+        - message_count
+        - active_users
+        - models
+      properties:
+        bucket_start:
+          type: string
+          format: date-time
+        bucket_end:
+          type: string
+          format: date-time
+        message_count:
+          type: integer
+          format: int64
+        active_users:
+          type: integer
+          format: int64
+        models:
+          type: array
+          items:
+            $ref: '#/components/schemas/AdminBucketModelStats'
+    AdminStatsResponse:
+      type: object
+      required:
+        - period
+        - total_messages
+        - active_users
+        - average_messages_per_user
+        - models
+        - timeline
+      properties:
+        period:
+          $ref: '#/components/schemas/AdminStatsPeriod'
+        total_messages:
+          type: integer
+          format: int64
+        active_users:
+          type: integer
+          format: int64
+        average_messages_per_user:
+          type: number
+          format: double
+        models:
+          type: array
+          items:
+            $ref: '#/components/schemas/AdminModelStats'
+        timeline:
+          type: array
+          items:
+            $ref: '#/components/schemas/AdminStatsBucket'
     WorkflowCallbackPayload:
       type: object
       required:
