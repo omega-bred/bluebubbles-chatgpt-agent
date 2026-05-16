@@ -693,6 +693,35 @@ components:
         message_count:
           type: integer
           format: int64
+    AdminSenderStats:
+      type: object
+      required:
+        - account_key_hash
+        - account_bucket
+        - message_count
+        - percentage
+        - last_seen_at
+        - models
+      properties:
+        account_key_hash:
+          type: string
+          description: SHA-256 hash of the sender/account bucket used for metrics grouping.
+        account_bucket:
+          type: string
+          description: Short stable display bucket derived from the account hash.
+        message_count:
+          type: integer
+          format: int64
+        percentage:
+          type: number
+          format: double
+        last_seen_at:
+          type: string
+          format: date-time
+        models:
+          type: array
+          items:
+            $ref: '#/components/schemas/AdminBucketModelStats'
     AdminStatsBucket:
       type: object
       required:
@@ -726,6 +755,7 @@ components:
         - active_users
         - average_messages_per_user
         - models
+        - senders
         - timeline
       properties:
         period:
@@ -743,6 +773,11 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/AdminModelStats'
+        senders:
+          type: array
+          description: Top sender/account buckets by message volume for the selected period.
+          items:
+            $ref: '#/components/schemas/AdminSenderStats'
         timeline:
           type: array
           items:

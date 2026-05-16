@@ -2,6 +2,7 @@ package io.breland.bbagent.server.admin;
 
 import io.breland.bbagent.generated.model.AdminBucketModelStats;
 import io.breland.bbagent.generated.model.AdminModelStats;
+import io.breland.bbagent.generated.model.AdminSenderStats;
 import io.breland.bbagent.generated.model.AdminStatsBucket;
 import io.breland.bbagent.generated.model.AdminStatsPeriod;
 import io.breland.bbagent.generated.model.AdminStatsResponse;
@@ -19,6 +20,7 @@ import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.time.temporal.ChronoUnit;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HexFormat;
 import java.util.List;
@@ -34,6 +36,8 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 public class AdminStatsService {
   private static final String HASH_ALGORITHM = "SHA-256";
+  private static final int TOP_SENDER_LIMIT = 10;
+  private static final int ACCOUNT_BUCKET_PREFIX_LENGTH = 12;
 
   private final AgentMessageMetricRepository repository;
   private final ModelAccessService modelAccessService;
@@ -105,6 +109,7 @@ public class AdminStatsService {
         .activeUsers(activeUsers)
         .averageMessagesPerUser(activeUsers == 0 ? 0.0 : (double) messageCount / activeUsers)
         .models(modelStats(from, to, messageCount))
+        .senders(senderStats(events, messageCount))
         .timeline(bucketStats(from, to, bucketSize, events));
   }
 
@@ -124,6 +129,25 @@ public class AdminStatsService {
                         totalMessages == 0
                             ? 0.0
                             : (double) valueOrZero(row.getMessageCount()) / totalMessages))
+        .toList();
+  }
+
+  private List<AdminSenderStats> senderStats(
+      List<AgentMessageMetricEntity> events, long totalMessages) {
+    Map<String, MutableSenderStats> senders = new HashMap<>();
+    for (AgentMessageMetricEntity event : events) {
+      String accountKeyHash = firstNonBlank(event.getUserKeyHash(), "unknown");
+      MutableSenderStats sender = senders.computeIfAbsent(accountKeyHash, MutableSenderStats::new);
+      sender.record(event);
+    }
+
+    return senders.values().stream()
+        .sorted(
+            Comparator.comparingLong(MutableSenderStats::messageCount)
+                .reversed()
+                .thenComparing(MutableSenderStats::accountKeyHash))
+        .limit(TOP_SENDER_LIMIT)
+        .map(sender -> sender.toResponse(totalMessages))
         .toList();
   }
 
@@ -203,6 +227,62 @@ public class AdminStatsService {
   }
 
   private record BucketModelKey(String modelKey, String modelLabel) {}
+
+  private static class MutableSenderStats {
+    private final String accountKeyHash;
+    private long messageCount;
+    private Instant lastSeenAt;
+    private final Map<BucketModelKey, Long> modelCounts = new HashMap<>();
+
+    private MutableSenderStats(String accountKeyHash) {
+      this.accountKeyHash = accountKeyHash;
+    }
+
+    private String accountKeyHash() {
+      return accountKeyHash;
+    }
+
+    private long messageCount() {
+      return messageCount;
+    }
+
+    private void record(AgentMessageMetricEntity event) {
+      messageCount++;
+      if (lastSeenAt == null || event.getOccurredAt().isAfter(lastSeenAt)) {
+        lastSeenAt = event.getOccurredAt();
+      }
+      BucketModelKey modelKey = new BucketModelKey(event.getModelKey(), event.getModelLabel());
+      modelCounts.merge(modelKey, 1L, Long::sum);
+    }
+
+    private AdminSenderStats toResponse(long totalMessages) {
+      List<AdminBucketModelStats> models =
+          modelCounts.entrySet().stream()
+              .sorted(Map.Entry.<BucketModelKey, Long>comparingByValue().reversed())
+              .map(
+                  entry ->
+                      new AdminBucketModelStats()
+                          .modelKey(entry.getKey().modelKey())
+                          .modelLabel(entry.getKey().modelLabel())
+                          .messageCount(entry.getValue()))
+              .toList();
+      return new AdminSenderStats()
+          .accountKeyHash(accountKeyHash)
+          .accountBucket(accountBucket(accountKeyHash))
+          .messageCount(messageCount)
+          .percentage(totalMessages == 0 ? 0.0 : (double) messageCount / totalMessages)
+          .lastSeenAt(OffsetDateTime.ofInstant(lastSeenAt, ZoneOffset.UTC))
+          .models(models);
+    }
+
+    private String accountBucket(String accountKeyHash) {
+      if (accountKeyHash == null || accountKeyHash.isBlank()) {
+        return "unknown";
+      }
+      return accountKeyHash.substring(
+          0, Math.min(accountKeyHash.length(), ACCOUNT_BUCKET_PREFIX_LENGTH));
+    }
+  }
 
   private static class MutableBucket {
     private final Instant start;

@@ -63,6 +63,7 @@ class AdminControllerTest {
                 .activeUsers(3L)
                 .averageMessagesPerUser(4.0)
                 .models(List.of())
+                .senders(List.of())
                 .timeline(
                     List.of(
                         new AdminStatsBucket()
