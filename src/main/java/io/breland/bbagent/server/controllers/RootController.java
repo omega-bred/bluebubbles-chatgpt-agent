@@ -11,7 +11,7 @@ public class RootController {
 
   @RequestMapping(
       method = RequestMethod.GET,
-      value = {"/", "/account", "/account/link", "/oauth/callback"})
+      value = {"/", "/account", "/account/link", "/admin", "/oauth/callback"})
   public ResponseEntity<org.springframework.core.io.Resource> rootGet() {
     // Serve the static index.html bundled inside src/main/resources/static.
     org.springframework.core.io.ClassPathResource resource =
