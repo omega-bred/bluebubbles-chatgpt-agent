@@ -2,16 +2,19 @@ package io.breland.bbagent.server.agent.model_picker;
 
 import io.breland.bbagent.generated.model.WebsiteModelAccessSummary;
 import io.breland.bbagent.generated.model.WebsiteModelOption;
+import io.breland.bbagent.server.agent.AccountIdentityAliasService;
 import io.breland.bbagent.server.agent.AgentAccountIdentity;
 import io.breland.bbagent.server.agent.IncomingMessage;
 import io.breland.bbagent.server.agent.persistence.model.ModelAccountSettingsEntity;
 import io.breland.bbagent.server.agent.persistence.model.ModelAccountSettingsRepository;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 import org.apache.commons.lang3.StringUtils;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.lang.Nullable;
 import org.springframework.stereotype.Service;
 
@@ -38,9 +41,18 @@ public class ModelAccessService {
           .collect(Collectors.toUnmodifiableMap(ModelOption::modelKey, Function.identity()));
 
   private final ModelAccountSettingsRepository repository;
+  private final AccountIdentityAliasService accountIdentityAliasService;
 
   public ModelAccessService(ModelAccountSettingsRepository repository) {
+    this(repository, null);
+  }
+
+  @Autowired
+  public ModelAccessService(
+      ModelAccountSettingsRepository repository,
+      @Nullable AccountIdentityAliasService accountIdentityAliasService) {
     this.repository = repository;
+    this.accountIdentityAliasService = accountIdentityAliasService;
   }
 
   public ModelAccess resolve(IncomingMessage message) {
@@ -52,10 +64,13 @@ public class ModelAccessService {
     if (cleanAccountBase == null) {
       return standard(null);
     }
-    return repository
-        .findById(cleanAccountBase)
-        .map(this::fromEntity)
-        .orElseGet(() -> standard(cleanAccountBase));
+    for (String candidateBase : accountBaseCandidates(cleanAccountBase)) {
+      Optional<ModelAccess> access = repository.findById(candidateBase).map(this::fromEntity);
+      if (access.isPresent()) {
+        return access.get();
+      }
+    }
+    return standard(cleanAccountBase);
   }
 
   public boolean isPremium(IncomingMessage message) {
@@ -114,6 +129,13 @@ public class ModelAccessService {
         STANDARD_RESPONSES_MODEL,
         false,
         STANDARD_OPTIONS);
+  }
+
+  private List<String> accountBaseCandidates(String accountBase) {
+    if (accountIdentityAliasService == null) {
+      return List.of(accountBase);
+    }
+    return accountIdentityAliasService.accountBaseCandidates(accountBase);
   }
 
   private WebsiteModelOption toWebsiteOption(ModelOption option) {

@@ -99,6 +99,7 @@ class BBMessageAgentTest {
             null,
             null,
             null,
+            null,
             new ModelPicker());
 
     Response first =
@@ -613,6 +614,7 @@ class BBMessageAgentTest {
             null,
             null,
             null,
+            null,
             new ModelPicker());
 
     IncomingMessage incoming =
@@ -667,6 +669,7 @@ class BBMessageAgentTest {
             null,
             null,
             null,
+            null,
             new ModelPicker());
 
     agent.handleIncomingMessage(
@@ -707,6 +710,7 @@ class BBMessageAgentTest {
             ReverseLocationLookup.noop(),
             new InMemoryAgentSettingsStore(),
             new AgentWorkflowProperties(),
+            null,
             null,
             null,
             null,
@@ -871,6 +875,7 @@ class BBMessageAgentTest {
         null,
         null,
         null,
+        null,
         new ModelPicker());
   }
 
@@ -889,6 +894,7 @@ class BBMessageAgentTest {
         ReverseLocationLookup.noop(),
         new InMemoryAgentSettingsStore(),
         new AgentWorkflowProperties(),
+        null,
         null,
         null,
         null,

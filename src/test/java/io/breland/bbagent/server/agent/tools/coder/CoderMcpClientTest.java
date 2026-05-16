@@ -84,7 +84,8 @@ class CoderMcpClientTest {
         Mockito.mock(CoderOauthClientRepository.class),
         credentials,
         Mockito.mock(CoderOauthPendingAuthorizationRepository.class),
-        new ObjectMapper());
+        new ObjectMapper(),
+        null);
   }
 
   private static CoderOauthCredentialEntity credential(String accountBase) {

@@ -6,6 +6,7 @@ import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import io.breland.bbagent.generated.bluebubblesclient.ApiClient;
 import io.breland.bbagent.generated.bluebubblesclient.api.*;
 import io.breland.bbagent.generated.bluebubblesclient.model.*;
+import io.breland.bbagent.server.agent.AgentAccountIdentifiers;
 import io.breland.bbagent.server.agent.BBMessageAgent;
 import io.breland.bbagent.server.agent.IncomingMessage;
 import java.io.IOException;
@@ -192,14 +193,10 @@ public class BBHttpClientWrapper {
     if (value == null) {
       return null;
     }
-    String normalized = value.trim().toLowerCase(Locale.ROOT);
+    String normalized =
+        AgentAccountIdentifiers.stripAddressScheme(value).trim().toLowerCase(Locale.ROOT);
     if (normalized.isBlank()) {
       return null;
-    }
-    if (normalized.startsWith("mailto:")) {
-      normalized = normalized.substring("mailto:".length());
-    } else if (normalized.startsWith("tel:")) {
-      normalized = normalized.substring("tel:".length());
     }
     normalized = normalized.replaceAll("\\s+", "");
     return normalized.isBlank() ? null : normalized;
@@ -211,6 +208,52 @@ public class BBHttpClientWrapper {
     }
     String digits = value.replaceAll("\\D+", "");
     return digits.isBlank() ? null : digits;
+  }
+
+  public List<String> getContactAddressesFor(String address) {
+    if (address == null || address.isBlank()) {
+      return List.of();
+    }
+    ApiV1ContactGet200Response response = contactApi.apiV1ContactGet(password).block(API_TIMEOUT);
+    response = requirePresent(response, "get contacts");
+    requireSuccessfulResponse(response.getStatus(), response.getMessage(), "get contacts");
+    if (response.getData() == null || response.getData().isEmpty()) {
+      return List.of();
+    }
+    LinkedHashSet<String> matches = new LinkedHashSet<>();
+    for (Contact contact : response.getData()) {
+      List<String> contactAddresses = contactAddresses(contact);
+      boolean containsAddress =
+          contactAddresses.stream()
+              .anyMatch(candidate -> AgentAccountIdentifiers.equivalent(candidate, address));
+      if (containsAddress) {
+        matches.addAll(contactAddresses);
+      }
+    }
+    return List.copyOf(matches);
+  }
+
+  private static List<String> contactAddresses(Contact contact) {
+    if (contact == null) {
+      return List.of();
+    }
+    LinkedHashSet<String> addresses = new LinkedHashSet<>();
+    addAddressEntries(addresses, contact.getPhoneNumbers());
+    addAddressEntries(addresses, contact.getEmails());
+    return List.copyOf(addresses);
+  }
+
+  private static void addAddressEntries(
+      LinkedHashSet<String> addresses, List<AddressEntry> entries) {
+    if (entries == null) {
+      return;
+    }
+    entries.stream()
+        .filter(Objects::nonNull)
+        .map(AddressEntry::getAddress)
+        .filter(value -> value != null && !value.isBlank())
+        .map(String::trim)
+        .forEach(addresses::add);
   }
 
   public Path getAttachment(String attachmentGuid) {

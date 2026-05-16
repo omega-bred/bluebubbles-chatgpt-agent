@@ -292,9 +292,9 @@ a {
 
 .linked-item {
   display: grid;
-  grid-template-columns: 1fr auto auto;
-  gap: 20px;
-  align-items: center;
+  grid-template-columns: 1fr;
+  gap: 18px;
+  align-items: start;
 }
 
 .integration-pills {
@@ -322,6 +322,42 @@ a {
   border-color: #1d8cff;
   color: #0b4786;
   background: #eaf4ff;
+}
+
+.linked-account-list {
+  display: grid;
+  gap: 10px;
+  border-top: 1px solid #eeeeee;
+  padding-top: 14px;
+}
+
+.linked-account-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 14px;
+  align-items: center;
+}
+
+.linked-account-type,
+.linked-account-email {
+  margin: 0;
+}
+
+.linked-account-type {
+  color: #111111;
+  font-size: 0.95rem;
+  font-weight: 800;
+}
+
+.linked-account-email {
+  overflow-wrap: anywhere;
+  color: #62625d;
+  line-height: 1.45;
+}
+
+.button.compact {
+  min-height: 36px;
+  padding: 7px 12px;
 }
 
 .error-banner {

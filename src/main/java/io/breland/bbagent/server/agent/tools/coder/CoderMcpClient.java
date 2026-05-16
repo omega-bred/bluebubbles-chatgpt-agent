@@ -6,6 +6,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.openai.core.JsonValue;
 import com.openai.models.responses.FunctionTool;
+import io.breland.bbagent.server.agent.AccountIdentityAliasService;
 import io.breland.bbagent.server.agent.AgentAccountIdentity;
 import io.breland.bbagent.server.agent.persistence.coder.CoderOauthClientEntity;
 import io.breland.bbagent.server.agent.persistence.coder.CoderOauthClientRepository;
@@ -36,6 +37,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
+import org.springframework.lang.Nullable;
 import org.springframework.stereotype.Component;
 import org.springframework.util.LinkedMultiValueMap;
 import org.springframework.util.MultiValueMap;
@@ -67,6 +69,7 @@ public class CoderMcpClient {
   private final Duration requestTimeout;
   private final Duration toolCacheTtl;
   private final CoderOauthStateCodec stateCodec;
+  private final AccountIdentityAliasService accountIdentityAliasService;
   private final Map<String, CachedTools> toolsCache = new ConcurrentHashMap<>();
 
   private volatile ProtectedResourceMetadata protectedResourceMetadata;
@@ -86,7 +89,8 @@ public class CoderMcpClient {
       CoderOauthClientRepository clientRepository,
       CoderOauthCredentialRepository credentialRepository,
       CoderOauthPendingAuthorizationRepository pendingAuthorizationRepository,
-      ObjectMapper objectMapper) {
+      ObjectMapper objectMapper,
+      @Nullable AccountIdentityAliasService accountIdentityAliasService) {
     this.serverUrl = serverUrl;
     this.redirectUri = redirectUri;
     this.stateCodec = new CoderOauthStateCodec(stateSecret, OAUTH_STATE_TTL);
@@ -101,6 +105,7 @@ public class CoderMcpClient {
     this.credentialRepository = credentialRepository;
     this.pendingAuthorizationRepository = pendingAuthorizationRepository;
     this.objectMapper = objectMapper;
+    this.accountIdentityAliasService = accountIdentityAliasService;
     this.toolResultFormatter = new CoderToolResultFormatter(objectMapper);
   }
 
@@ -121,6 +126,7 @@ public class CoderMcpClient {
       return Optional.empty();
     }
     try {
+      accountBase = preferredAccountBaseForWrite(accountBase);
       pendingAuthorizationRepository.deleteByExpiresAtBefore(Instant.now());
       OAuthClientRegistration registration = ensureClientRegistration();
       AuthorizationServerMetadata authMetadata = getAuthorizationServerMetadata();
@@ -428,12 +434,52 @@ public class CoderMcpClient {
     if (accountBase == null || accountBase.isBlank()) {
       return Optional.empty();
     }
-    if (credentialRepository.existsById(accountBase)) {
-      return Optional.of(accountBase);
+    for (String candidateBase : accountBaseCandidates(accountBase)) {
+      if (credentialRepository.existsById(candidateBase)) {
+        return Optional.of(candidateBase);
+      }
+      Optional<String> chatScoped =
+          credentialRepository
+              .findFirstByAccountBaseEndingWithOrderByUpdatedAtDesc("|" + candidateBase)
+              .map(CoderOauthCredentialEntity::getAccountBase);
+      if (chatScoped.isPresent()) {
+        return chatScoped;
+      }
     }
-    return credentialRepository
-        .findFirstByAccountBaseEndingWithOrderByUpdatedAtDesc("|" + accountBase)
-        .map(CoderOauthCredentialEntity::getAccountBase);
+    return Optional.empty();
+  }
+
+  public Optional<String> findLinkedAccountBase(String accountBase) {
+    return resolveLinkedAccountBase(accountBase);
+  }
+
+  public Optional<CoderLinkedAccount> findLinkedAccount(String accountBase) {
+    return resolveLinkedAccountBase(accountBase)
+        .map(
+            linkedAccountBase -> {
+              Optional<CoderUserProfile> profile = getCurrentUserProfile(linkedAccountBase);
+              return new CoderLinkedAccount(
+                  linkedAccountBase,
+                  profile
+                      .map(CoderUserProfile::email)
+                      .filter(email -> !email.isBlank())
+                      .orElse(null),
+                  profile.map(CoderMcpClient::profileLabel).orElse("Coder"));
+            });
+  }
+
+  private List<String> accountBaseCandidates(String accountBase) {
+    if (accountIdentityAliasService == null) {
+      return accountBase == null || accountBase.isBlank() ? List.of() : List.of(accountBase);
+    }
+    return accountIdentityAliasService.accountBaseCandidates(accountBase);
+  }
+
+  private String preferredAccountBaseForWrite(String accountBase) {
+    if (accountIdentityAliasService == null) {
+      return accountBase;
+    }
+    return accountIdentityAliasService.preferredAccountBaseForWrite(accountBase);
   }
 
   private String getValidAccessTokenUnchecked(String accountBase) {
@@ -442,6 +488,33 @@ public class CoderMcpClient {
     } catch (IOException e) {
       throw new IllegalStateException(e);
     }
+  }
+
+  private Optional<CoderUserProfile> getCurrentUserProfile(String accountBase) {
+    try {
+      CoderUserProfile profile =
+          restClient
+              .get()
+              .uri(serverOrigin(URI.create(serverUrl)) + "/api/v2/users/me")
+              .accept(MediaType.APPLICATION_JSON)
+              .header(HttpHeaders.AUTHORIZATION, "Bearer " + getValidAccessToken(accountBase))
+              .retrieve()
+              .body(CoderUserProfile.class);
+      return Optional.ofNullable(profile);
+    } catch (Exception e) {
+      log.warn("Failed to load Coder user profile", e);
+      return Optional.empty();
+    }
+  }
+
+  private static String profileLabel(CoderUserProfile profile) {
+    if (profile.name() != null && !profile.name().isBlank()) {
+      return profile.name();
+    }
+    if (profile.username() != null && !profile.username().isBlank()) {
+      return profile.username();
+    }
+    return "Coder";
   }
 
   private Optional<CoderOauthCredentialEntity> refreshCredential(
@@ -746,6 +819,9 @@ public class CoderMcpClient {
 
   public record OauthCompletion(String accountBase, String chatGuid, String messageGuid) {}
 
+  public record CoderLinkedAccount(
+      String accountBase, @Nullable String email, @Nullable String label) {}
+
   private record OAuthClientRegistration(
       String issuer, String clientId, String clientSecret, String tokenEndpointAuthMethod) {}
 
@@ -772,6 +848,11 @@ public class CoderMcpClient {
       @JsonProperty("client_id") String clientId,
       @JsonProperty("client_secret") String clientSecret,
       @JsonProperty("token_endpoint_auth_method") String tokenEndpointAuthMethod) {}
+
+  private record CoderUserProfile(
+      @JsonProperty("email") String email,
+      @JsonProperty("username") String username,
+      @JsonProperty("name") String name) {}
 
   private record TokenResponse(
       @JsonProperty("access_token") String accessToken,

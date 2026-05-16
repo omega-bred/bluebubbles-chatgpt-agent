@@ -1,5 +1,6 @@
 package io.breland.bbagent.server.agent.persistence;
 
+import java.util.Collection;
 import java.util.List;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
@@ -11,6 +12,11 @@ public interface GcalCredentialRepository extends JpaRepository<GcalCredentialEn
   List<GcalCredentialEntity> findAllByStoreId(String storeId);
 
   List<GcalCredentialEntity> findAllByStoreIdAndAccountBase(String storeId, String accountBase);
+
+  List<GcalCredentialEntity> findAllByStoreIdAndAccountBaseIn(
+      String storeId, Collection<String> accountBases);
+
+  boolean existsByStoreIdAndAccountKey(String storeId, String accountKey);
 
   long deleteByStoreIdAndAccountKey(String storeId, String accountKey);
 

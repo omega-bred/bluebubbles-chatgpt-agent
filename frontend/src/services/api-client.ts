@@ -3,6 +3,7 @@ import axios from "axios";
 import {
   Configuration,
   WebsiteAccountApi,
+  type WebsiteAccountDeleteLinkedAccountTypeEnum,
 } from "../client";
 import type { WebsiteAccountRedeemLinkRequest } from "../client";
 import { getAccessToken, login } from "../auth/keycloak";
@@ -52,5 +53,13 @@ export const websiteAccountApi = {
   deleteLink: async (linkId: string) => {
     const client = await websiteAccountClient();
     return (await client.websiteAccountDeleteLink(linkId)).data;
+  },
+
+  deleteLinkedAccount: async (
+    type: WebsiteAccountDeleteLinkedAccountTypeEnum,
+    accountKey: string,
+  ) => {
+    const client = await websiteAccountClient();
+    return (await client.websiteAccountDeleteLinkedAccount(type, accountKey)).data;
   },
 };

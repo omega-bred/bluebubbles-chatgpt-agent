@@ -150,6 +150,7 @@ public class BBMessageAgent {
   private GiphyClient giphyClient;
   private ModelPicker modelPicker;
   private final ReverseLocationLookup reverseLocationLookup;
+  private final AccountIdentityAliasService accountIdentityAliasService;
 
   @Autowired
   public BBMessageAgent(
@@ -168,6 +169,7 @@ public class BBMessageAgent {
       MessageTransportRegistry transportRegistry,
       @Nullable ObjectMapper objectMapper,
       @Nullable CadenceWorkflowLauncher cadenceWorkflowLauncher,
+      @Nullable AccountIdentityAliasService accountIdentityAliasService,
       ModelPicker modelPicker) {
     if (openAiClient != null) {
       this.openAIClient = openAiClient;
@@ -190,6 +192,7 @@ public class BBMessageAgent {
             : MessageTransportRegistry.blueBubblesOnly(bbHttpClientWrapper);
     this.objectMapper = objectMapper == null ? new ObjectMapper() : objectMapper;
     this.cadenceWorkflowLauncher = cadenceWorkflowLauncher;
+    this.accountIdentityAliasService = accountIdentityAliasService;
     this.modelPicker = modelPicker;
     registerBuiltInTools();
   }
@@ -219,6 +222,7 @@ public class BBMessageAgent {
       return;
     }
     log.info("Processing Message {}", message);
+    recordAccountAliases(message);
     ConversationState state =
         conversations.computeIfAbsent(
             message.chatGuid(), key -> this.computeConversationState(key, message));
@@ -951,14 +955,28 @@ public class BBMessageAgent {
     if (message == null || message.sender() == null || message.sender().isBlank()) {
       return List.of();
     }
-    List<String> identifiers = new ArrayList<>();
+    LinkedHashSet<String> identifiers = new LinkedHashSet<>();
+    if (accountIdentityAliasService != null) {
+      identifiers.addAll(accountIdentityAliasService.accountBaseCandidates(message.sender()));
+    }
     identifiers.add(message.sender());
     linkedWebsiteAccountEmail(message)
         .filter(email -> !email.isBlank())
         .filter(
             email -> identifiers.stream().noneMatch(existing -> existing.equalsIgnoreCase(email)))
         .ifPresent(identifiers::add);
-    return identifiers;
+    return List.copyOf(identifiers);
+  }
+
+  private void recordAccountAliases(IncomingMessage message) {
+    if (accountIdentityAliasService == null) {
+      return;
+    }
+    try {
+      accountIdentityAliasService.recordMessageAliases(message);
+    } catch (Exception e) {
+      log.debug("Failed to record account identity aliases", e);
+    }
   }
 
   private Optional<String> linkedWebsiteAccountEmail(IncomingMessage message) {

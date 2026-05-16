@@ -7,7 +7,9 @@ import io.breland.bbagent.generated.model.WebsiteAccountResponse;
 import io.breland.bbagent.generated.model.WebsiteCalendarAccountSummary;
 import io.breland.bbagent.generated.model.WebsiteIntegrationSummary;
 import io.breland.bbagent.generated.model.WebsiteLinkedAccountsResponse;
+import io.breland.bbagent.generated.model.WebsiteLinkedIntegrationAccount;
 import io.breland.bbagent.generated.model.WebsiteModelAccessSummary;
+import io.breland.bbagent.server.agent.AccountIdentityAliasService;
 import io.breland.bbagent.server.agent.AgentAccountIdentity;
 import io.breland.bbagent.server.agent.IncomingMessage;
 import io.breland.bbagent.server.agent.model_picker.ModelAccessService;
@@ -34,8 +36,11 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.stream.Stream;
+import org.apache.commons.lang3.StringUtils;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
+import org.springframework.lang.Nullable;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -54,6 +59,7 @@ public class WebsiteAccountService {
   private final GcalClient gcalClient;
   private final CoderMcpClient coderMcpClient;
   private final ModelAccessService modelAccessService;
+  private final AccountIdentityAliasService accountIdentityAliasService;
   private final String websiteBaseUrl;
   private final Duration linkTokenTtl;
   private final SecureRandom secureRandom = new SecureRandom();
@@ -65,6 +71,7 @@ public class WebsiteAccountService {
       GcalClient gcalClient,
       CoderMcpClient coderMcpClient,
       ModelAccessService modelAccessService,
+      @Nullable AccountIdentityAliasService accountIdentityAliasService,
       @Value("${website.base-url:" + DEFAULT_WEBSITE_BASE_URL + "}") String websiteBaseUrl,
       @Value("${website.account-link-token-ttl-minutes:30}") long linkTokenTtlMinutes) {
     this.accountRepository = accountRepository;
@@ -73,6 +80,7 @@ public class WebsiteAccountService {
     this.gcalClient = gcalClient;
     this.coderMcpClient = coderMcpClient;
     this.modelAccessService = modelAccessService;
+    this.accountIdentityAliasService = accountIdentityAliasService;
     this.websiteBaseUrl = stripTrailingSlash(websiteBaseUrl);
     this.linkTokenTtl = Duration.ofMinutes(linkTokenTtlMinutes);
   }
@@ -113,6 +121,10 @@ public class WebsiteAccountService {
     if (identity.accountBase().isBlank()) {
       throw new IllegalArgumentException("missing iMessage identity");
     }
+    recordAliases(message);
+    String accountBase = preferredAccountBaseForWrite(identity.accountBase());
+    String coderAccountBase = preferredAccountBaseForWrite(identity.coderAccountBase());
+    String gcalAccountBase = preferredAccountBaseForWrite(identity.gcalAccountBase());
 
     String token = newToken();
     String tokenHash = hashToken(token);
@@ -121,9 +133,9 @@ public class WebsiteAccountService {
     WebsiteAccountLinkTokenEntity entity =
         new WebsiteAccountLinkTokenEntity(
             tokenHash,
-            identity.accountBase(),
-            identity.coderAccountBase(),
-            identity.gcalAccountBase(),
+            accountBase,
+            coderAccountBase,
+            gcalAccountBase,
             message.chatGuid(),
             message.sender(),
             message.service(),
@@ -134,7 +146,7 @@ public class WebsiteAccountService {
             now);
     tokenRepository.save(entity);
     String url = buildLinkUrl(token);
-    return new CreatedLinkToken(url, expiresAt, identity.accountBase());
+    return new CreatedLinkToken(url, expiresAt, accountBase);
   }
 
   @Transactional(readOnly = true)
@@ -154,18 +166,19 @@ public class WebsiteAccountService {
     if (identity.accountBase().isBlank()) {
       return Optional.empty();
     }
+    List<String> accountBases = accountBaseCandidates(identity.accountBase());
+    List<String> coderAccountBases = accountBaseCandidates(identity.coderAccountBase());
+    List<String> gcalAccountBases = accountBaseCandidates(identity.gcalAccountBase());
     Optional<WebsiteAccountSenderLinkEntity> exactLink =
         linkRepository
-            .findAllByAccountBaseAndCoderAccountBaseAndGcalAccountBaseOrderByCreatedAtDesc(
-                identity.accountBase(), identity.coderAccountBase(), identity.gcalAccountBase())
+            .findAllByAccountBaseInAndCoderAccountBaseInAndGcalAccountBaseInOrderByCreatedAtDesc(
+                accountBases, coderAccountBases, gcalAccountBases)
             .stream()
             .findFirst();
     Optional<WebsiteAccountSenderLinkEntity> link =
         exactLink.or(
             () ->
-                linkRepository
-                    .findAllByAccountBaseOrderByCreatedAtDesc(identity.accountBase())
-                    .stream()
+                linkRepository.findAllByAccountBaseInOrderByCreatedAtDesc(accountBases).stream()
                     .findFirst());
     return link.flatMap(linkEntity -> accountRepository.findById(linkEntity.getAccountSubject()))
         .map(WebsiteAccountEntity::getEmail)
@@ -179,12 +192,15 @@ public class WebsiteAccountService {
     if (identity.accountBase().isBlank()) {
       return SenderLinkStatus.empty();
     }
+    List<String> accountBases = accountBaseCandidates(identity.accountBase());
+    List<String> coderAccountBases = accountBaseCandidates(identity.coderAccountBase());
+    List<String> gcalAccountBases = accountBaseCandidates(identity.gcalAccountBase());
     List<WebsiteAccountSenderLinkEntity> accountLinks =
-        linkRepository.findAllByAccountBaseOrderByCreatedAtDesc(identity.accountBase());
+        linkRepository.findAllByAccountBaseInOrderByCreatedAtDesc(accountBases);
     List<WebsiteAccountSenderLinkEntity> exactLinks =
         linkRepository
-            .findAllByAccountBaseAndCoderAccountBaseAndGcalAccountBaseOrderByCreatedAtDesc(
-                identity.accountBase(), identity.coderAccountBase(), identity.gcalAccountBase());
+            .findAllByAccountBaseInAndCoderAccountBaseInAndGcalAccountBaseInOrderByCreatedAtDesc(
+                accountBases, coderAccountBases, gcalAccountBases);
     Instant latestLinkedAt =
         exactLinks.stream()
             .findFirst()
@@ -192,14 +208,14 @@ public class WebsiteAccountService {
             .map(WebsiteAccountSenderLinkEntity::getCreatedAt)
             .orElse(null);
     return new SenderLinkStatus(
-        identity.accountBase(),
-        identity.coderAccountBase(),
-        identity.gcalAccountBase(),
+        accountBases.getFirst(),
+        coderAccountBases.getFirst(),
+        gcalAccountBases.getFirst(),
         !accountLinks.isEmpty(),
         !exactLinks.isEmpty(),
         accountLinks.size(),
         exactLinks.size(),
-        modelAccessService.toWebsiteSummary(identity.accountBase()),
+        modelAccessService.toWebsiteSummary(accountBases.getFirst()),
         latestLinkedAt);
   }
 
@@ -219,10 +235,13 @@ public class WebsiteAccountService {
 
     boolean tokenAlreadyRedeemed = tokenEntity.getRedeemedAccountSubject() != null;
     Optional<WebsiteAccountSenderLinkEntity> existingLink =
-        linkRepository.findByAccountSubjectAndCoderAccountBaseAndGcalAccountBase(
-            account.getKeycloakSubject(),
-            tokenEntity.getCoderAccountBase(),
-            tokenEntity.getGcalAccountBase());
+        linkRepository
+            .findAllByAccountSubjectAndCoderAccountBaseInAndGcalAccountBaseInOrderByCreatedAtDesc(
+                account.getKeycloakSubject(),
+                accountBaseCandidates(tokenEntity.getCoderAccountBase()),
+                accountBaseCandidates(tokenEntity.getGcalAccountBase()))
+            .stream()
+            .findFirst();
     if (tokenAlreadyRedeemed && existingLink.isEmpty()) {
       throw new ResponseStatusException(HttpStatus.CONFLICT, "Link token already consumed");
     }
@@ -248,6 +267,36 @@ public class WebsiteAccountService {
             .findByLinkIdAndAccountSubject(linkId, account.getKeycloakSubject())
             .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Link not found"));
     linkRepository.delete(link);
+    return true;
+  }
+
+  @Transactional
+  public boolean deleteLinkedAccount(Jwt jwt, String type, String accountKey) {
+    WebsiteAccountEntity account = upsertAccount(jwt);
+    if (StringUtils.isBlank(type) || StringUtils.isBlank(accountKey)) {
+      throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Missing linked account");
+    }
+    WebsiteLinkedIntegrationAccount linkedAccount =
+        linkRepository
+            .findAllByAccountSubjectOrderByCreatedAtDesc(account.getKeycloakSubject())
+            .stream()
+            .flatMap(link -> linkedAccounts(link).stream())
+            .filter(linked -> accountKey.equals(linked.getAccountKey()))
+            .filter(linked -> type.equalsIgnoreCase(linked.getType().getValue()))
+            .findFirst()
+            .orElseThrow(
+                () ->
+                    new ResponseStatusException(
+                        HttpStatus.NOT_FOUND, "Linked integration account not found"));
+    boolean deleted =
+        switch (linkedAccount.getType()) {
+          case GCAL -> gcalClient.revokeAccount(accountKey);
+          case CODER -> coderMcpClient != null && coderMcpClient.revoke(accountKey);
+        };
+    if (!deleted) {
+      throw new ResponseStatusException(
+          HttpStatus.NOT_FOUND, "Linked integration account not found");
+    }
     return true;
   }
 
@@ -288,14 +337,52 @@ public class WebsiteAccountService {
 
   private WebsiteIntegrationSummary toIntegration(WebsiteAccountSenderLinkEntity link) {
     List<WebsiteCalendarAccountSummary> gcalAccounts =
-        gcalClient.listAccountsFor(link.getGcalAccountBase()).stream()
-            .map(accountId -> new WebsiteCalendarAccountSummary().accountId(accountId))
+        gcalClient.listLinkedAccountsFor(link.getGcalAccountBase()).stream()
+            .map(
+                account ->
+                    new WebsiteCalendarAccountSummary()
+                        .accountId(account.accountId())
+                        .accountKey(account.accountKey())
+                        .email(account.accountId()))
             .toList();
     return new WebsiteIntegrationSummary()
         .link(toLink(link))
         .coderLinked(coderMcpClient != null && coderMcpClient.isLinked(link.getCoderAccountBase()))
         .gcalAccounts(gcalAccounts)
+        .linkedAccounts(linkedAccounts(link))
         .modelAccess(modelAccessService.toWebsiteSummary(link.getAccountBase()));
+  }
+
+  private List<WebsiteLinkedIntegrationAccount> linkedAccounts(
+      WebsiteAccountSenderLinkEntity link) {
+    Stream<WebsiteLinkedIntegrationAccount> gcalAccounts =
+        gcalClient.listLinkedAccountsFor(link.getGcalAccountBase()).stream()
+            .map(
+                account ->
+                    new WebsiteLinkedIntegrationAccount()
+                        .type(WebsiteLinkedIntegrationAccount.TypeEnum.GCAL)
+                        .accountKey(account.accountKey())
+                        .email(account.accountId())
+                        .label("Google Calendar")
+                        .unlinkable(true));
+    Stream<WebsiteLinkedIntegrationAccount> coderAccounts =
+        coderMcpClient == null
+            ? Stream.empty()
+            : coderMcpClient
+                .findLinkedAccount(link.getCoderAccountBase())
+                .map(
+                    account ->
+                        new WebsiteLinkedIntegrationAccount()
+                            .type(WebsiteLinkedIntegrationAccount.TypeEnum.CODER)
+                            .accountKey(account.accountBase())
+                            .email(account.email())
+                            .label(
+                                account.label() == null || account.label().isBlank()
+                                    ? "Coder"
+                                    : account.label())
+                            .unlinkable(true))
+                .stream();
+    return Stream.concat(gcalAccounts, coderAccounts).toList();
   }
 
   private WebsiteAccountProfile toProfile(WebsiteAccountEntity account) {
@@ -391,6 +478,29 @@ public class WebsiteAccountService {
       base = base.substring(0, base.length() - 1);
     }
     return base;
+  }
+
+  private void recordAliases(IncomingMessage message) {
+    if (accountIdentityAliasService != null) {
+      accountIdentityAliasService.recordMessageAliases(message);
+    }
+  }
+
+  private List<String> accountBaseCandidates(String accountBase) {
+    if (accountIdentityAliasService == null) {
+      return accountBase == null || accountBase.isBlank() ? List.of() : List.of(accountBase);
+    }
+    List<String> candidates = accountIdentityAliasService.accountBaseCandidates(accountBase);
+    return candidates.isEmpty() && accountBase != null && !accountBase.isBlank()
+        ? List.of(accountBase)
+        : candidates;
+  }
+
+  private String preferredAccountBaseForWrite(String accountBase) {
+    if (accountIdentityAliasService == null) {
+      return accountBase;
+    }
+    return accountIdentityAliasService.preferredAccountBaseForWrite(accountBase);
   }
 
   public record CreatedLinkToken(String url, Instant expiresAt, String accountBase) {}

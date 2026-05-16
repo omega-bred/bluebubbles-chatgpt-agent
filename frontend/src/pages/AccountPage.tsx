@@ -1,7 +1,11 @@
 import React from "react";
 
 import type { AuthState } from "../auth/useKeycloak";
-import type { WebsiteIntegrationSummary, WebsiteLinkedAccountsResponse } from "../client";
+import type {
+  WebsiteIntegrationSummary,
+  WebsiteLinkedAccountsResponse,
+  WebsiteLinkedIntegrationAccount,
+} from "../client";
 import { AuthGate } from "../components/AuthGate";
 import { CenteredMessage } from "../components/CenteredMessage";
 import { SiteNav } from "../components/SiteNav";
@@ -81,11 +85,13 @@ function LinkedIdentity({
   onDeleted: () => Promise<void>;
 }) {
   const [deleting, setDeleting] = React.useState(false);
+  const [unlinkingAccountKey, setUnlinkingAccountKey] = React.useState<string | null>(null);
   const link = integration.link;
   if (!link) {
     return null;
   }
   const calendars = integration.gcal_accounts || [];
+  const linkedAccounts = integration.linked_accounts || [];
   const modelAccess = integration.model_access;
   const modelLabel = modelAccess ? displayModelLabel(modelAccess.current_model_label) : "";
   const planLabel = modelAccess?.is_premium ? "Premium" : "Free";
@@ -122,6 +128,26 @@ function LinkedIdentity({
             : "not linked"}
         </span>
       </div>
+      {linkedAccounts.length > 0 ? (
+        <div className="linked-account-list">
+          {linkedAccounts.map((account) => (
+            <LinkedAccountRow
+              key={`${account.type}:${account.account_key}`}
+              account={account}
+              unlinking={unlinkingAccountKey === account.account_key}
+              onUnlink={async () => {
+                setUnlinkingAccountKey(account.account_key);
+                try {
+                  await websiteAccountApi.deleteLinkedAccount(account.type, account.account_key);
+                  await onDeleted();
+                } finally {
+                  setUnlinkingAccountKey(null);
+                }
+              }}
+            />
+          ))}
+        </div>
+      ) : null}
       <button
         className="button button-secondary"
         disabled={deleting}
@@ -135,6 +161,34 @@ function LinkedIdentity({
         {deleting ? "Unlinking" : "Unlink sender"}
       </button>
     </article>
+  );
+}
+
+function LinkedAccountRow({
+  account,
+  unlinking,
+  onUnlink,
+}: {
+  account: WebsiteLinkedIntegrationAccount;
+  unlinking: boolean;
+  onUnlink: () => Promise<void>;
+}) {
+  const typeLabel = account.type === "gcal" ? "Google Calendar" : "Coder";
+  const identifier = account.email || account.account_key;
+  return (
+    <div className="linked-account-row">
+      <div>
+        <p className="linked-account-type">{typeLabel}</p>
+        <p className="linked-account-email">{identifier}</p>
+      </div>
+      <button
+        className="button button-secondary compact"
+        disabled={!account.unlinkable || unlinking}
+        onClick={() => void onUnlink()}
+      >
+        {unlinking ? "Unlinking" : "Unlink"}
+      </button>
+    </div>
   );
 }
 

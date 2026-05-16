@@ -7,7 +7,9 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.when;
 
+import io.breland.bbagent.generated.model.WebsiteLinkedIntegrationAccount;
 import io.breland.bbagent.generated.model.WebsiteModelAccessSummary;
+import io.breland.bbagent.server.agent.AccountIdentityAliasService;
 import io.breland.bbagent.server.agent.IncomingMessage;
 import io.breland.bbagent.server.agent.model_picker.ModelAccessService;
 import io.breland.bbagent.server.agent.persistence.website.WebsiteAccountEntity;
@@ -21,6 +23,7 @@ import io.breland.bbagent.server.agent.tools.gcal.GcalClient;
 import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mockito;
@@ -39,6 +42,8 @@ class WebsiteAccountServiceTest {
   private final GcalClient gcalClient = Mockito.mock(GcalClient.class);
   private final CoderMcpClient coderMcpClient = Mockito.mock(CoderMcpClient.class);
   private final ModelAccessService modelAccessService = Mockito.mock(ModelAccessService.class);
+  private final AccountIdentityAliasService accountIdentityAliasService =
+      Mockito.mock(AccountIdentityAliasService.class);
   private final WebsiteAccountService service =
       new WebsiteAccountService(
           accountRepository,
@@ -47,8 +52,17 @@ class WebsiteAccountServiceTest {
           gcalClient,
           coderMcpClient,
           modelAccessService,
+          accountIdentityAliasService,
           "https://chatagent.example",
           30);
+
+  @BeforeEach
+  void stubDefaultAliases() {
+    when(accountIdentityAliasService.accountBaseCandidates(anyString()))
+        .thenAnswer(invocation -> List.of(invocation.getArgument(0, String.class)));
+    when(accountIdentityAliasService.preferredAccountBaseForWrite(anyString()))
+        .thenAnswer(invocation -> invocation.getArgument(0, String.class));
+  }
 
   @Test
   void createLinkTokenReturnsUrlAndStoresOnlyHash() {
@@ -71,9 +85,10 @@ class WebsiteAccountServiceTest {
     WebsiteAccountLinkTokenEntity tokenEntity = tokenEntity(Instant.now().plusSeconds(60));
     stubAccountUpsert();
     when(tokenRepository.findById(anyString())).thenReturn(Optional.of(tokenEntity));
-    when(linkRepository.findByAccountSubjectAndCoderAccountBaseAndGcalAccountBase(
-            "sub-1", "Alice", "iMessage;+;chat-1|Alice"))
-        .thenReturn(Optional.empty());
+    when(linkRepository
+            .findAllByAccountSubjectAndCoderAccountBaseInAndGcalAccountBaseInOrderByCreatedAtDesc(
+                "sub-1", List.of("Alice"), List.of("iMessage;+;chat-1|Alice")))
+        .thenReturn(List.of());
     when(linkRepository.existsById(anyString())).thenReturn(false);
     when(linkRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
 
@@ -91,9 +106,10 @@ class WebsiteAccountServiceTest {
     WebsiteAccountSenderLinkEntity existing = senderLink();
     stubAccountUpsert();
     when(tokenRepository.findById(anyString())).thenReturn(Optional.of(tokenEntity));
-    when(linkRepository.findByAccountSubjectAndCoderAccountBaseAndGcalAccountBase(
-            "sub-1", "Alice", "iMessage;+;chat-1|Alice"))
-        .thenReturn(Optional.of(existing));
+    when(linkRepository
+            .findAllByAccountSubjectAndCoderAccountBaseInAndGcalAccountBaseInOrderByCreatedAtDesc(
+                "sub-1", List.of("Alice"), List.of("iMessage;+;chat-1|Alice")))
+        .thenReturn(List.of(existing));
     when(linkRepository.existsById(existing.getLinkId())).thenReturn(true);
     when(linkRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
 
@@ -140,7 +156,15 @@ class WebsiteAccountServiceTest {
     when(linkRepository.findAllByAccountSubjectOrderByCreatedAtDesc("sub-1"))
         .thenReturn(List.of(senderLink()));
     when(coderMcpClient.isLinked("Alice")).thenReturn(true);
-    when(gcalClient.listAccountsFor("iMessage;+;chat-1|Alice")).thenReturn(List.of("primary"));
+    when(coderMcpClient.findLinkedAccount("Alice"))
+        .thenReturn(
+            Optional.of(
+                new CoderMcpClient.CoderLinkedAccount("Alice", "alice@coder.example", "alice")));
+    when(gcalClient.listLinkedAccountsFor("iMessage;+;chat-1|Alice"))
+        .thenReturn(
+            List.of(
+                new GcalClient.GcalLinkedAccount(
+                    "iMessage;+;chat-1|Alice::primary", "iMessage;+;chat-1|Alice", "primary")));
     when(modelAccessService.toWebsiteSummary("Alice")).thenReturn(modelAccess());
 
     var response = service.listLinkedAccounts(jwt());
@@ -150,17 +174,24 @@ class WebsiteAccountServiceTest {
     assertEquals(
         "primary", response.getIntegrations().get(0).getGcalAccounts().get(0).getAccountId());
     assertEquals(
+        "alice@coder.example",
+        response.getIntegrations().get(0).getLinkedAccounts().stream()
+            .filter(account -> account.getType() == WebsiteLinkedIntegrationAccount.TypeEnum.CODER)
+            .findFirst()
+            .orElseThrow()
+            .getEmail());
+    assertEquals(
         WebsiteModelAccessSummary.PlanEnum.STANDARD,
         response.getIntegrations().get(0).getModelAccess().getPlan());
   }
 
   @Test
   void getLinkStatusChecksCurrentSenderAndChat() {
-    when(linkRepository.findAllByAccountBaseOrderByCreatedAtDesc("Alice"))
+    when(linkRepository.findAllByAccountBaseInOrderByCreatedAtDesc(List.of("Alice")))
         .thenReturn(List.of(senderLink()));
     when(linkRepository
-            .findAllByAccountBaseAndCoderAccountBaseAndGcalAccountBaseOrderByCreatedAtDesc(
-                "Alice", "Alice", "iMessage;+;chat-1|Alice"))
+            .findAllByAccountBaseInAndCoderAccountBaseInAndGcalAccountBaseInOrderByCreatedAtDesc(
+                List.of("Alice"), List.of("Alice"), List.of("iMessage;+;chat-1|Alice")))
         .thenReturn(List.of(senderLink()));
     when(modelAccessService.toWebsiteSummary("Alice")).thenReturn(modelAccess());
 
@@ -177,11 +208,11 @@ class WebsiteAccountServiceTest {
 
   @Test
   void getLinkStatusDistinguishesSenderLinkFromExactChatLink() {
-    when(linkRepository.findAllByAccountBaseOrderByCreatedAtDesc("Alice"))
+    when(linkRepository.findAllByAccountBaseInOrderByCreatedAtDesc(List.of("Alice")))
         .thenReturn(List.of(senderLink()));
     when(linkRepository
-            .findAllByAccountBaseAndCoderAccountBaseAndGcalAccountBaseOrderByCreatedAtDesc(
-                "Alice", "Alice", "iMessage;+;chat-2|Alice"))
+            .findAllByAccountBaseInAndCoderAccountBaseInAndGcalAccountBaseInOrderByCreatedAtDesc(
+                List.of("Alice"), List.of("Alice"), List.of("iMessage;+;chat-2|Alice")))
         .thenReturn(List.of());
     when(modelAccessService.toWebsiteSummary("Alice")).thenReturn(modelAccess());
 
@@ -195,11 +226,51 @@ class WebsiteAccountServiceTest {
   }
 
   @Test
+  void getLinkStatusTreatsPhoneAndEmailAliasesAsSameSender() {
+    when(accountIdentityAliasService.accountBaseCandidates("alice@example.com"))
+        .thenReturn(List.of("alice@example.com", "+15555550123"));
+    when(accountIdentityAliasService.accountBaseCandidates("iMessage;+;chat-1|alice@example.com"))
+        .thenReturn(
+            List.of("iMessage;+;chat-1|alice@example.com", "iMessage;+;chat-1|+15555550123"));
+    WebsiteAccountSenderLinkEntity phoneLink =
+        new WebsiteAccountSenderLinkEntity(
+            "link-phone",
+            "sub-1",
+            "+15555550123",
+            "+15555550123",
+            "iMessage;+;chat-1|+15555550123",
+            "iMessage;+;chat-1",
+            "+15555550123",
+            "iMessage",
+            false,
+            "msg-1",
+            "hash",
+            Instant.now(),
+            Instant.now());
+    when(linkRepository.findAllByAccountBaseInOrderByCreatedAtDesc(
+            List.of("alice@example.com", "+15555550123")))
+        .thenReturn(List.of(phoneLink));
+    when(linkRepository
+            .findAllByAccountBaseInAndCoderAccountBaseInAndGcalAccountBaseInOrderByCreatedAtDesc(
+                List.of("alice@example.com", "+15555550123"),
+                List.of("alice@example.com", "+15555550123"),
+                List.of("iMessage;+;chat-1|alice@example.com", "iMessage;+;chat-1|+15555550123")))
+        .thenReturn(List.of(phoneLink));
+    when(modelAccessService.toWebsiteSummary("alice@example.com")).thenReturn(modelAccess());
+
+    WebsiteAccountService.SenderLinkStatus status =
+        service.getLinkStatus("alice@example.com", "iMessage;+;chat-1");
+
+    assertTrue(status.linked());
+    assertTrue(status.exactChatLinked());
+  }
+
+  @Test
   void findLinkedAccountEmailReturnsEmailForCurrentExactSenderLink() {
     WebsiteAccountSenderLinkEntity link = senderLink();
     when(linkRepository
-            .findAllByAccountBaseAndCoderAccountBaseAndGcalAccountBaseOrderByCreatedAtDesc(
-                "Alice", "Alice", "iMessage;+;chat-1|Alice"))
+            .findAllByAccountBaseInAndCoderAccountBaseInAndGcalAccountBaseInOrderByCreatedAtDesc(
+                List.of("Alice"), List.of("Alice"), List.of("iMessage;+;chat-1|Alice")))
         .thenReturn(List.of(link));
     when(accountRepository.findById("sub-1"))
         .thenReturn(

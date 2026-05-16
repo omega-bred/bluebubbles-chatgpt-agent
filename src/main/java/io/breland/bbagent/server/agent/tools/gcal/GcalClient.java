@@ -19,6 +19,7 @@ import com.google.api.client.util.store.DataStoreFactory;
 import com.google.api.services.calendar.Calendar;
 import com.google.api.services.calendar.CalendarScopes;
 import com.google.api.services.calendar.model.CalendarListEntry;
+import io.breland.bbagent.server.agent.AccountIdentityAliasService;
 import io.breland.bbagent.server.agent.persistence.GcalCredentialEntity;
 import io.breland.bbagent.server.agent.persistence.GcalCredentialRepository;
 import java.io.FileInputStream;
@@ -38,6 +39,7 @@ import java.time.format.DateTimeParseException;
 import java.util.*;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.lang.Nullable;
 import org.springframework.stereotype.Component;
 
 @Slf4j
@@ -56,6 +58,7 @@ public class GcalClient {
   private final String applicationName;
   private final Algorithm stateAlgorithm;
   private final GcalCredentialRepository credentialRepository;
+  private final AccountIdentityAliasService accountIdentityAliasService;
 
   public GcalClient(
       @Value("${gcal.oauth.client_secret_path:}") String clientSecretPath,
@@ -64,7 +67,8 @@ public class GcalClient {
       @Value("${gcal.oauth.state_secret:}") String stateSecret,
       @Value("${gcal.application_name:iMessage + ChatGPT}") String applicationName,
       GcalCredentialRepository credentialRepository,
-      ObjectMapper objectMapper) {
+      ObjectMapper objectMapper,
+      @Nullable AccountIdentityAliasService accountIdentityAliasService) {
     this.clientSecretPath = clientSecretPath;
     this.clientSecret = clientSecret;
     this.redirectUri = redirectUri;
@@ -73,6 +77,7 @@ public class GcalClient {
     this.applicationName = applicationName;
     this.credentialRepository = credentialRepository;
     this.objectMapper = objectMapper;
+    this.accountIdentityAliasService = accountIdentityAliasService;
   }
 
   public boolean isConfigured() {
@@ -94,6 +99,7 @@ public class GcalClient {
     if (!isConfigured()) {
       return null;
     }
+    accountBase = preferredAccountBaseForWrite(accountBase);
     String pendingKey =
         accountBase + AccountKeyParts.ACCOUNT_DELIM + ACCOUNT_PENDING_PREFIX + UUID.randomUUID();
     String state = createOauthState(accountBase, pendingKey, chatGuid, messageGuid);
@@ -133,41 +139,62 @@ public class GcalClient {
   }
 
   public List<String> listAccountsFor(String accountBase) {
+    return listLinkedAccountsFor(accountBase).stream()
+        .map(GcalLinkedAccount::accountId)
+        .distinct()
+        .toList();
+  }
+
+  public List<GcalLinkedAccount> listLinkedAccountsFor(String accountBase) {
     if (accountBase == null || accountBase.isBlank()) {
       return List.of();
     }
-    List<String> accountIds =
-        credentialRepository.findAccountIdsByStoreIdAndAccountBase(STORE_ID, accountBase);
-    if (accountIds == null || accountIds.isEmpty()) {
+    List<GcalCredentialEntity> credentials =
+        credentialRepository.findAllByStoreIdAndAccountBaseIn(
+            STORE_ID, accountBaseCandidates(accountBase));
+    if (credentials == null || credentials.isEmpty()) {
       return List.of();
     }
-    LinkedHashSet<String> result = new LinkedHashSet<>();
-    for (String accountId : accountIds) {
-      if (accountId == null || accountId.isBlank()) {
+    LinkedHashMap<String, GcalLinkedAccount> result = new LinkedHashMap<>();
+    for (GcalCredentialEntity credential : credentials) {
+      if (credential == null
+          || credential.getAccountId() == null
+          || credential.getAccountId().isBlank()
+          || credential.getAccountKey() == null
+          || credential.getAccountKey().isBlank()) {
         continue;
       }
-      if (accountId.startsWith(ACCOUNT_PENDING_PREFIX)) {
+      if (credential.getAccountId().startsWith(ACCOUNT_PENDING_PREFIX)) {
         continue;
       }
-      result.add(accountId);
+      result.putIfAbsent(
+          credential.getAccountKey(),
+          new GcalLinkedAccount(
+              credential.getAccountKey(), credential.getAccountBase(), credential.getAccountId()));
     }
-    return List.copyOf(result);
+    return List.copyOf(result.values());
   }
 
   public String scopeAccountKey(String accountBase, String accountId) {
     if (accountId == null || accountId.isBlank()) {
-      return accountBase;
+      return linkedDefaultAccountKey(accountBase).orElse(preferredAccountBaseForWrite(accountBase));
     }
     if (accountId.contains(AccountKeyParts.ACCOUNT_DELIM)) {
       return accountId;
     }
-    if (AccountKeyParts.DEFAULT_ACCOUNT_ID.equalsIgnoreCase(accountId)) {
-      return accountBase;
-    }
     if (accountBase == null || accountBase.isBlank()) {
       return accountId;
     }
-    return accountBase + AccountKeyParts.ACCOUNT_DELIM + accountId;
+    if (AccountKeyParts.DEFAULT_ACCOUNT_ID.equalsIgnoreCase(accountId)) {
+      return linkedDefaultAccountKey(accountBase).orElse(preferredAccountBaseForWrite(accountBase));
+    }
+    for (String candidateBase : accountBaseCandidates(accountBase)) {
+      String candidateKey = candidateBase + AccountKeyParts.ACCOUNT_DELIM + accountId;
+      if (credentialRepository.existsByStoreIdAndAccountKey(STORE_ID, candidateKey)) {
+        return candidateKey;
+      }
+    }
+    return preferredAccountBaseForWrite(accountBase) + AccountKeyParts.ACCOUNT_DELIM + accountId;
   }
 
   public boolean revokeAccount(String accountKey) {
@@ -327,6 +354,31 @@ public class GcalClient {
 
   public record OauthState(
       String accountBase, String pendingKey, String chatGuid, String messageGuid) {}
+
+  public record GcalLinkedAccount(String accountKey, String accountBase, String accountId) {}
+
+  private List<String> accountBaseCandidates(String accountBase) {
+    if (accountIdentityAliasService == null) {
+      return accountBase == null || accountBase.isBlank() ? List.of() : List.of(accountBase);
+    }
+    return accountIdentityAliasService.accountBaseCandidates(accountBase);
+  }
+
+  private String preferredAccountBaseForWrite(String accountBase) {
+    if (accountIdentityAliasService == null) {
+      return accountBase;
+    }
+    return accountIdentityAliasService.preferredAccountBaseForWrite(accountBase);
+  }
+
+  private Optional<String> linkedDefaultAccountKey(String accountBase) {
+    for (String candidateBase : accountBaseCandidates(accountBase)) {
+      if (credentialRepository.existsByStoreIdAndAccountKey(STORE_ID, candidateBase)) {
+        return Optional.of(candidateBase);
+      }
+    }
+    return Optional.empty();
+  }
 
   private String resolveAccountId(String accountKey) {
     try {
