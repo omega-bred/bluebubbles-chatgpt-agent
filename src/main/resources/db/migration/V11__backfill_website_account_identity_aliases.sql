@@ -77,7 +77,17 @@ deduped AS (
   ) aliases
   ORDER BY alias_key, account_base
 )
-INSERT INTO agent_account_identity_aliases (
+MERGE INTO agent_account_identity_aliases target
+USING deduped source
+ON target.alias_key = source.alias_key
+WHEN MATCHED THEN UPDATE SET
+  account_base = source.account_base,
+  transport = source.transport,
+  identifier = source.identifier,
+  identifier_type = source.identifier_type,
+  normalized_identifier = source.normalized_identifier,
+  updated_at = CURRENT_TIMESTAMP
+WHEN NOT MATCHED THEN INSERT (
   alias_key,
   account_base,
   transport,
@@ -86,21 +96,13 @@ INSERT INTO agent_account_identity_aliases (
   normalized_identifier,
   created_at,
   updated_at
-)
-SELECT
-  alias_key,
-  account_base,
-  transport,
-  identifier,
-  identifier_type,
-  normalized_identifier,
+) VALUES (
+  source.alias_key,
+  source.account_base,
+  source.transport,
+  source.identifier,
+  source.identifier_type,
+  source.normalized_identifier,
   CURRENT_TIMESTAMP,
   CURRENT_TIMESTAMP
-FROM deduped
-ON CONFLICT (alias_key) DO UPDATE SET
-  account_base = EXCLUDED.account_base,
-  transport = EXCLUDED.transport,
-  identifier = EXCLUDED.identifier,
-  identifier_type = EXCLUDED.identifier_type,
-  normalized_identifier = EXCLUDED.normalized_identifier,
-  updated_at = EXCLUDED.updated_at;
+);
