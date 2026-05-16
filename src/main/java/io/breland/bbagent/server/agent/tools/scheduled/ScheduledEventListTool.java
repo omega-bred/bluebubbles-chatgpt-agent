@@ -4,6 +4,7 @@ import static io.breland.bbagent.server.agent.tools.JsonSchemaUtilities.jsonSche
 
 import io.breland.bbagent.server.agent.cadence.CadenceWorkflowLauncher;
 import io.breland.bbagent.server.agent.tools.AgentTool;
+import io.breland.bbagent.server.agent.tools.ToolJson;
 import io.breland.bbagent.server.agent.tools.ToolProvider;
 import io.swagger.v3.oas.annotations.media.Schema;
 import java.util.List;
@@ -47,11 +48,8 @@ public class ScheduledEventListTool implements ToolProvider {
           String prefix = ScheduledEventTool.buildWorkflowIdPrefix(chatGuid);
           List<CadenceWorkflowLauncher.ScheduledWorkflowSummary> summaries =
               cadenceWorkflowLauncher.listScheduledWorkflows(prefix);
-          try {
-            return context.getMapper().writeValueAsString(summaries);
-          } catch (Exception e) {
-            return "failed to serialize scheduled events";
-          }
+          return ToolJson.stringify(
+              context.getMapper(), summaries, "failed to serialize scheduled events");
         });
   }
 }
