@@ -58,7 +58,7 @@ class AgentResponseHelperTest {
     String normalized =
         AgentResponseHelper.normalizeAssistantText(
             new ObjectMapper(),
-            """
+"""
 I'll start that now.
 call:create_workflow_callback{purpose:Clone repos, cherry-pick commit, and push to GitHub.,resume_instructions:Notify Breland once complete.}
 """);
