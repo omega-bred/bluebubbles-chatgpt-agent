@@ -92,15 +92,7 @@ public class GcalToolSupport {
   }
 
   protected ZoneId resolveZone(com.fasterxml.jackson.databind.JsonNode args) {
-    String timezone = getOptionalText(args, "timezone");
-    if (timezone == null || timezone.isBlank()) {
-      return ZoneId.systemDefault();
-    }
-    try {
-      return ZoneId.of(timezone);
-    } catch (Exception e) {
-      return ZoneId.systemDefault();
-    }
+    return resolveZone(getOptionalText(args, "timezone"));
   }
 
   protected ZoneId resolveZone(String timezone) {
