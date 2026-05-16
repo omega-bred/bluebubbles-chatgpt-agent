@@ -1,40 +1,154 @@
 {
-  description = "Spring Boot Java Project with Nix Flake for Linux and macOS ARM";
+  description = "Development environment for bluebubbles-chatgpt-agent";
 
   inputs = {
-    nixpkgs.url = "github:NixOS/nixpkgs/adaa24fbf46737f3f1b5497bf64bae750f82942e";  # Adjust the version as needed
+    nixpkgs.url = "github:NixOS/nixpkgs/nixos-25.11";
   };
 
-  outputs = { self, nixpkgs }: let
-    # A function that takes a system and returns the package set and derivation
-    forSystem = system: let
-      pkgs = import nixpkgs { inherit system; };
-    in pkgs.stdenv.mkDerivation {
-      pname = "spring-boot-app";
-      version = "1.0.0";
+  outputs =
+    { self, nixpkgs }:
+    let
+      systems = [
+        "x86_64-linux"
+        "aarch64-linux"
+        "x86_64-darwin"
+        "aarch64-darwin"
+      ];
 
-      src = ./.;
+      forAllSystems = nixpkgs.lib.genAttrs systems;
 
-      # Use Gradle or Maven, whichever you use in the Spring Boot project
-      buildInputs = [ pkgs.gradle pkgs.jdk24 ];
+      pkgsFor =
+        system:
+        import nixpkgs {
+          inherit system;
+          config.allowUnfree = true;
+        };
 
-      buildPhase = ''
-        gradle clean build -x test
-      '';
+      devToolsFor =
+        pkgs:
+        let
+          inherit (pkgs) lib stdenv;
 
-      installPhase = ''
-        mkdir -p $out/bin
-        cp build/libs/*.jar $out/bin/
-      '';
+          jdk = pkgs.jdk25;
+
+          python = pkgs.python313.withPackages (
+            ps: with ps; [
+              lxmf
+              pip
+              rns
+              setuptools
+              virtualenv
+              wheel
+            ]
+          );
+
+          kcadm = pkgs.writeShellScriptBin "kcadm" ''
+            exec ${pkgs.keycloak}/bin/kcadm.sh "$@"
+          '';
+
+          linuxNativeLibs = lib.optionals stdenv.isLinux [
+            pkgs.gfortran.cc.lib
+            pkgs.stdenv.cc.cc.lib
+          ];
+        in
+        {
+          inherit jdk linuxNativeLibs python;
+
+          tools = [
+            jdk
+            python
+            kcadm
+
+            pkgs._1password-cli
+            pkgs.bashInteractive
+            pkgs.coreutils
+            pkgs.curl
+            pkgs.docker-client
+            pkgs.docker-compose
+            pkgs.findutils
+            pkgs.flyway
+            pkgs.fluxcd
+            pkgs.git
+            pkgs.gnused
+            pkgs.gradle_9
+            pkgs.jq
+            pkgs.keycloak
+            pkgs.kubectl
+            pkgs.kustomize
+            pkgs.nodejs_20
+            pkgs.openapi-generator-cli
+            pkgs.openssl
+            pkgs.postgresql
+            pkgs.which
+            pkgs.zsh
+          ]
+          ++ linuxNativeLibs;
+        };
+
+      formatterFor =
+        pkgs:
+        pkgs.writeShellApplication {
+          name = "bbagent-nixfmt";
+          runtimeInputs = [ pkgs.nixfmt-rfc-style ];
+          text = ''
+            if [ "$#" -eq 0 ]; then
+              set -- flake.nix
+            fi
+
+            exec nixfmt "$@"
+          '';
+        };
+    in
+    {
+      devShells = forAllSystems (
+        system:
+        let
+          pkgs = pkgsFor system;
+          devTools = devToolsFor pkgs;
+        in
+        {
+          default = pkgs.mkShell {
+            packages = devTools.tools;
+
+            JAVA_HOME = "${devTools.jdk}";
+            BBAGENT_NIX_SHELL = "1";
+
+            shellHook = ''
+              export PATH="$PWD/frontend/node_modules/.bin:$PWD/build/typescript-client-generated/node_modules/.bin:$PATH"
+              export npm_config_audit="false"
+              export npm_config_fund="false"
+            ''
+            + pkgs.lib.optionalString pkgs.stdenv.isLinux ''
+              export LD_LIBRARY_PATH="${pkgs.lib.makeLibraryPath devTools.linuxNativeLibs}:''${LD_LIBRARY_PATH:-}"
+            ''
+            + ''
+
+              echo "bluebubbles-chatgpt-agent dev shell"
+              echo "  Java:  $(java -version 2>&1 | head -n 1)"
+              echo "  Node:  $(node --version) / npm $(npm --version)"
+              echo "  Python: $(python --version)"
+              echo "  Try:   ./gradlew test"
+            '';
+          };
+        }
+      );
+
+      packages = forAllSystems (
+        system:
+        let
+          pkgs = pkgsFor system;
+          devTools = devToolsFor pkgs;
+        in
+        {
+          dev-tools = pkgs.buildEnv {
+            name = "bluebubbles-chatgpt-agent-dev-tools";
+            paths = devTools.tools;
+          };
+
+          default = self.packages.${system}.dev-tools;
+        }
+      );
+
+      formatter = forAllSystems (system: formatterFor (pkgsFor system));
     };
-  in {
-    # Provide packages in both 'packages' and 'defaultPackage' attributes
-    packages = {
-      x86_64-linux = forSystem "x86_64-linux";
-      aarch64-darwin = forSystem "aarch64-darwin";
-    };
-
-    defaultPackage.x86_64-linux = forSystem "x86_64-linux";
-    defaultPackage.aarch64-darwin = forSystem "aarch64-darwin";
-  };
 }

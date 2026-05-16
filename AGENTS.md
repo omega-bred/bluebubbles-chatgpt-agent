@@ -7,6 +7,20 @@ API paths are in the style of `/api/v1/$resourceType/$verb.$resource(s)`.
 
 Formatting should always be run via `./gradlew spotlessApply`.
 
+Nix/dev dependencies:
+- Prefer entering the repo dev shell before running project tooling: `nix develop`.
+- If you are invoking one command from outside the shell, use `nix develop --command <command>`,
+  for example `nix develop --command ./gradlew test` or
+  `nix develop --command ./gradlew spotlessApply`.
+- The flake provides OpenJDK 25, Gradle, Node 20/npm, Python 3.13 with LXMF/RNS, Postgres,
+  Docker/Kubernetes helpers, Keycloak admin tooling, OpenAPI/Flyway CLIs, and 1Password CLI.
+- Use `./gradlew` for backend tasks; the shell sets `JAVA_HOME` for the project JDK.
+- Use the generated TypeScript client workflow through Gradle (`./gradlew openApiGenerate` and the
+  frontend copy/build tasks). For direct frontend work, run npm through the shell, e.g.
+  `nix develop --command npm --prefix frontend run dev`.
+- For LXMF bridge work, the shell Python can import `RNS` and `LXMF`; run bridge checks inside
+  `nix develop` rather than installing Python packages globally.
+
 Testing:
 - Unit/integration tests run with an in-memory H2 database by default (see
   `src/test/resources/application.properties`).
@@ -105,6 +119,7 @@ If you add new configs:
 - Update `manifests/bluebubbles-chatgpt-agent/be-components.yaml` if needed for production deploys.
 - Most properties will need to be replicated into the `application.properties` in the `test/resources` folder.
 
-Primarily, the "agent" lives in `src/main/java/io/breland/bbagent/server/agent/BBMessageAgent.java`. 
+Primarily, the "agent" lives in `src/main/java/io/breland/bbagent/server/agent/BBMessageAgent.java`.
 
-When running the JDK/JVM for development - you may need to update the project to use java21- but never commit this change to the repository. 
+Development JDK/JVM use is pinned through the Nix shell; do not commit local Java-version downgrades
+just to work around a machine-specific JDK issue.

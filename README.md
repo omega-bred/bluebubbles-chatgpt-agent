@@ -21,7 +21,7 @@ Calendar + other tools. Built with Spring Boot + OpenAPI.
 ![screenshot3](./images/screen3.jpg)
 
 ## Requirements
-- Java 21+ (project uses Gradle toolchains; default is 24)
+- Java 25 (project uses Gradle toolchains; use `nix develop` for the pinned toolchain)
 - Node 20+ (for frontend)
 - Postgres (for app data + Google OAuth tokens)
 - BlueBubbles server reachable by the agent
@@ -103,4 +103,4 @@ Tests run with an in-memory H2 database by default, and Flyway migrations enable
 
 ## Deploying
 
-An example kubernetes deployment spec with all the resources is provided in `manifests/bluebubbls-chatgpt-agent`. You'll need to adjust the secrets and URLs accordingly. 
+An example kubernetes deployment spec with all the resources is provided in `manifests/bluebubbls-chatgpt-agent`. You'll need to adjust the secrets and URLs accordingly.

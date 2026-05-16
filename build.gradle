@@ -4,11 +4,11 @@ import java.nio.file.Files
 
 plugins {
 	id 'java'
-	id 'org.springframework.boot' version '3.4.4'
+	id 'org.springframework.boot' version '3.5.14'
 	id 'io.spring.dependency-management' version '1.1.7'
-	id 'org.openapi.generator' version '7.8.0'
-	id 'com.diffplug.spotless' version '7.0.3'
-    id "org.flywaydb.flyway" version "10.20.1"
+	id 'org.openapi.generator' version '7.14.0'
+	id 'com.diffplug.spotless' version '8.4.0'
+    id "org.flywaydb.flyway" version "11.7.2"
 }
 
 var grp = 'io.breland.bbagent'
@@ -119,6 +119,9 @@ bootRun {
 group = grp
 version = '0.0.1-SNAPSHOT'
 
+ext['byte-buddy.version'] = '1.17.8'
+ext['mockito.version'] = '5.23.0'
+
 springBoot {
 	mainClass = grp + ".server.BBChatGptAgentApplication"
 }
@@ -139,7 +142,7 @@ def npmPath = ['bash', 'zsh']
 java {
 	toolchain {
 		languageVersion = JavaLanguageVersion.of(
-				(findProperty("javaVersion") ?: "24") as int
+				(findProperty("javaVersion") ?: "25") as int
 		)
 	}
 }
@@ -167,13 +170,13 @@ dependencies {
 	implementation 'org.springframework.boot:spring-boot-starter-web'
 
     // Persistence (PostgreSQL in prod)
-    implementation "org.flywaydb:flyway-core:10.20.1"
-    runtimeOnly 'org.flywaydb:flyway-database-postgresql:10.20.1'
+    implementation 'org.flywaydb:flyway-core'
+    runtimeOnly 'org.flywaydb:flyway-database-postgresql'
     implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
     runtimeOnly 'org.postgresql:postgresql'
 
 
-    implementation 'de.codecentric:spring-boot-admin-starter-client:3.5.1'
+    implementation 'de.codecentric:spring-boot-admin-starter-client:3.5.9'
 
 	implementation("org.springframework.boot:spring-boot-starter-security")
 	implementation("org.springframework.boot:spring-boot-starter-oauth2-resource-server")
@@ -188,10 +191,10 @@ dependencies {
 
 
     // lombok
-	compileOnly 'org.projectlombok:lombok:1.18.42'
-	annotationProcessor 'org.projectlombok:lombok:1.18.42'
-	implementation platform('org.apache.logging.log4j:log4j-bom:2.24.0')
-    implementation platform("org.springframework.ai:spring-ai-bom:1.1.2")
+	compileOnly 'org.projectlombok:lombok:1.18.46'
+	annotationProcessor 'org.projectlombok:lombok:1.18.46'
+	implementation platform('org.apache.logging.log4j:log4j-bom:2.25.4')
+    implementation platform("org.springframework.ai:spring-ai-bom:1.1.4")
 
     runtimeOnly 'org.apache.logging.log4j:log4j-slf4j2-impl'
 
@@ -229,13 +232,13 @@ dependencies {
     runtimeOnly 'io.micrometer:micrometer-registry-influx'
 	annotationProcessor 'org.springframework.boot:spring-boot-configuration-processor'
     testImplementation 'org.springframework.boot:spring-boot-starter-test'
+    testImplementation 'org.mockito:mockito-core'
+    testImplementation 'org.mockito:mockito-junit-jupiter'
     testImplementation 'org.springframework.security:spring-security-test'
     testImplementation 'com.h2database:h2:2.2.224'
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
 
     // generated java client
-    implementation "org.springframework:spring-webflux:6.2.7"
-    implementation "jakarta.annotation:jakarta.annotation-api:3.0.0"
     implementation 'joda-time:joda-time:2.14.0'
     implementation "com.fasterxml.jackson.datatype:jackson-datatype-jsr310"
 }
@@ -256,7 +259,7 @@ openApiGenerate {
 			useJakartaEe: 'true',
 			generateBuilders: 'true',
 			useTags: 'true',
-			enumPropertyNaming: 'original'
+			enumPropertyNaming: 'MACRO_CASE'
 	]
 }
 
@@ -286,7 +289,7 @@ tasks.register('openApiGenerateJavaClientBlueBubbles', GenerateTask) {
             jakarta: 'true',
             useJakartaEe: 'true',
             serializationLibrary: 'jackson',
-            enumPropertyNaming: 'original',
+            enumPropertyNaming: 'MACRO_CASE',
             generateBuilders: 'true',
 
     ]
@@ -314,7 +317,7 @@ tasks.register('openApiGenerateJavaClient', GenerateTask) {
 			jakarta: 'true',
 			useJakartaEe: 'true',
 			serializationLibrary: 'jackson',
-			enumPropertyNaming: 'original',
+			enumPropertyNaming: 'MACRO_CASE',
             generateBuilders: 'true'
 	]
 }
