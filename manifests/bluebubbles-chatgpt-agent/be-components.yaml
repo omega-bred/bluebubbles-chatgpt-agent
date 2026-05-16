@@ -69,6 +69,14 @@ metadata:
 spec:
   itemPath: "vaults/Kubernetes/items/gcal-oauth-state-secret"
 ---
+apiVersion: onepassword.com/v1
+kind: OnePasswordItem
+metadata:
+  name: coder-bb-agent-client-id-secret #this name will also be used for naming the generated kubernetes secret
+  namespace: bluebubbles-chatgpt-agent
+spec:
+  itemPath: "vaults/Kubernetes/items/coder-bb-agent-client-id-secret"
+---
 apiVersion: v1
 kind: ServiceAccount
 metadata:
@@ -210,6 +218,16 @@ spec:
                 secretKeyRef:
                   key: "password"
                   name: gcal-oauth-state-secret
+            - name: CODER_OAUTH_CLIENT_ID
+              valueFrom:
+                secretKeyRef:
+                  key: "username"
+                  name: coder-bb-agent-client-id-secret
+            - name: CODER_OAUTH_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  key: "password"
+                  name: coder-bb-agent-client-id-secret
             - name: AGENT_WORKFLOW_CALLBACK_BASE_URL
               value: "https://chatagent.bre.land"
             - name: WEBSITE_BASE_URL
