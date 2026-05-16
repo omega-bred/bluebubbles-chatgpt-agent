@@ -1,6 +1,7 @@
 package io.breland.bbagent.server.config;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.SerializationFeature;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.SpringBootConfiguration;
@@ -18,6 +19,8 @@ public class BBChatGptAgentConfig {
 
   @Bean
   public ObjectMapper getObjectMapper() {
-    return new ObjectMapper().registerModule(new JavaTimeModule());
+    return new ObjectMapper()
+        .registerModule(new JavaTimeModule())
+        .disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
   }
 }

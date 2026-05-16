@@ -8,6 +8,19 @@ import { SiteNav } from "../components/SiteNav";
 import { adminApi } from "../services/api-client";
 
 const numberFormat = new Intl.NumberFormat();
+const dateTimeFormat = new Intl.DateTimeFormat(undefined, {
+  dateStyle: "medium",
+  timeStyle: "short",
+});
+const bucketDateFormat = new Intl.DateTimeFormat(undefined, {
+  month: "short",
+  day: "numeric",
+  hour: "numeric",
+  minute: "2-digit",
+});
+const epochSecondsCutoff = 10_000_000_000;
+
+type ApiDateValue = Date | number | string | null | undefined;
 
 export function AdminPage({ auth }: { auth: AuthState }) {
   const [fromInput, setFromInput] = React.useState(() =>
@@ -221,25 +234,47 @@ function formatPercent(value: number | undefined): string {
   return `${Math.round((value || 0) * 100)}%`;
 }
 
-function formatDateTime(value: string | undefined): string {
-  if (!value) {
+function formatDateTime(value: ApiDateValue): string {
+  const date = parseApiDate(value);
+  if (!date) {
     return "";
   }
-  return new Intl.DateTimeFormat(undefined, {
-    dateStyle: "medium",
-    timeStyle: "short",
-  }).format(new Date(value));
+  return dateTimeFormat.format(date);
 }
 
-function formatBucket(value: string | undefined): string {
-  if (!value) {
+function formatBucket(value: ApiDateValue): string {
+  const date = parseApiDate(value);
+  if (!date) {
     return "";
   }
-  return new Intl.DateTimeFormat(undefined, {
-    month: "short",
-    day: "numeric",
-    hour: "numeric",
-  }).format(new Date(value));
+  return bucketDateFormat.format(date);
+}
+
+function parseApiDate(value: ApiDateValue): Date | null {
+  if (value === null || value === undefined || value === "") {
+    return null;
+  }
+  if (value instanceof Date) {
+    return isValidDate(value) ? value : null;
+  }
+  if (typeof value === "number") {
+    const milliseconds = Math.abs(value) < epochSecondsCutoff ? value * 1000 : value;
+    const date = new Date(milliseconds);
+    return isValidDate(date) ? date : null;
+  }
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return null;
+  }
+  if (/^-?\d+(\.\d+)?$/.test(trimmed)) {
+    return parseApiDate(Number(trimmed));
+  }
+  const date = new Date(trimmed);
+  return isValidDate(date) ? date : null;
+}
+
+function isValidDate(date: Date): boolean {
+  return Number.isFinite(date.getTime());
 }
 
 function bucketModelSummary(bucket: AdminStatsBucket): string {

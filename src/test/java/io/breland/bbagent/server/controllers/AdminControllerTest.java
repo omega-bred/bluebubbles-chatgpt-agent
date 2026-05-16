@@ -8,9 +8,11 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import io.breland.bbagent.generated.model.AdminStatsBucket;
 import io.breland.bbagent.generated.model.AdminStatsPeriod;
 import io.breland.bbagent.generated.model.AdminStatsResponse;
 import io.breland.bbagent.server.admin.AdminStatsService;
+import io.breland.bbagent.server.config.BBChatGptAgentConfig;
 import io.breland.bbagent.server.config.SecurityConfig;
 import java.time.OffsetDateTime;
 import java.util.List;
@@ -27,7 +29,7 @@ import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.test.web.servlet.MockMvc;
 
 @WebMvcTest(AdminController.class)
-@Import(SecurityConfig.class)
+@Import({BBChatGptAgentConfig.class, SecurityConfig.class})
 class AdminControllerTest {
   @Autowired private MockMvc mockMvc;
   @Autowired private Converter<Jwt, AbstractAuthenticationToken> jwtAuthenticationConverter;
@@ -61,7 +63,14 @@ class AdminControllerTest {
                 .activeUsers(3L)
                 .averageMessagesPerUser(4.0)
                 .models(List.of())
-                .timeline(List.of()));
+                .timeline(
+                    List.of(
+                        new AdminStatsBucket()
+                            .bucketStart(OffsetDateTime.parse("2026-05-01T00:00:00Z"))
+                            .bucketEnd(OffsetDateTime.parse("2026-05-01T01:00:00Z"))
+                            .messageCount(12L)
+                            .activeUsers(3L)
+                            .models(List.of()))));
 
     mockMvc
         .perform(
@@ -71,6 +80,8 @@ class AdminControllerTest {
                         .authorities(new SimpleGrantedAuthority("ROLE_bbagent-admin-role"))
                         .jwt(token -> token.subject("sub-1"))))
         .andExpect(status().isOk())
+        .andExpect(jsonPath("$.period.from").value("2026-05-01T00:00:00Z"))
+        .andExpect(jsonPath("$.timeline[0].bucket_start").value("2026-05-01T00:00:00Z"))
         .andExpect(jsonPath("$.total_messages").value(12))
         .andExpect(jsonPath("$.active_users").value(3));
   }
