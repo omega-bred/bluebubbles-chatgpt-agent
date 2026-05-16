@@ -100,34 +100,30 @@ paths:
         - name: code
           in: query
           description: OAuth authorization code from Google
-          required: true
+          required: false
           schema:
             type: string
         - name: state
           in: query
           description: Account key used to associate the OAuth session
-          required: true
+          required: false
+          schema:
+            type: string
+        - name: error
+          in: query
+          description: OAuth error returned by Google when authorization is denied
+          required: false
           schema:
             type: string
       responses:
-        '200':
-          description: OAuth completed
-          content:
-            text/html:
+        '303':
+          description: Browser redirected to the frontend OAuth result page
+          headers:
+            Location:
+              description: Frontend OAuth result URL
               schema:
                 type: string
-        '400':
-          description: Missing or invalid parameters
-          content:
-            text/html:
-              schema:
-                type: string
-        '500':
-          description: OAuth exchange failed
-          content:
-            text/html:
-              schema:
-                type: string
+                format: uri-reference
   /api/v1/coder/completeOauth.coder:
     get:
       operationId: coderCompleteOauth
@@ -155,24 +151,14 @@ paths:
           schema:
             type: string
       responses:
-        '200':
-          description: OAuth completed
-          content:
-            text/html:
+        '303':
+          description: Browser redirected to the frontend OAuth result page
+          headers:
+            Location:
+              description: Frontend OAuth result URL
               schema:
                 type: string
-        '400':
-          description: Missing, invalid, or denied OAuth parameters
-          content:
-            text/html:
-              schema:
-                type: string
-        '500':
-          description: OAuth exchange failed
-          content:
-            text/html:
-              schema:
-                type: string
+                format: uri-reference
   /api/v1/workflowCallback/receive.workflowCallbacks:
     post:
       operationId: workflowCallbackReceive

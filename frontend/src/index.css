@@ -266,12 +266,22 @@ a {
   margin-bottom: 32px;
 }
 
+.oauth-result {
+  border-left: 6px solid #ff4d6d;
+  padding-left: 28px;
+}
+
+.oauth-result.success {
+  border-left-color: #33d17a;
+}
+
 .account-heading h1 {
   color: #111111;
   font-size: 3rem;
 }
 
-.account-heading p {
+.account-heading p,
+.oauth-result p {
   color: #4a4a46;
 }
 

@@ -389,6 +389,16 @@ tasks.register('npmBuildFrontend', Exec) {
         dependsOn tasks.copyClientToFrontend
         workingDir "${projectDir}/frontend"
         commandLine npmPath, "run", "build"
+        inputs.dir("${projectDir}/frontend/src")
+        inputs.dir("${projectDir}/frontend/plugins")
+        inputs.file("${projectDir}/frontend/index.html")
+        inputs.file("${projectDir}/frontend/package.json")
+        inputs.file("${projectDir}/frontend/package-lock.json")
+        inputs.file("${projectDir}/frontend/postcss.config.js")
+        inputs.file("${projectDir}/frontend/tailwind.config.js")
+        inputs.file("${projectDir}/frontend/tsconfig.json")
+        inputs.file("${projectDir}/frontend/tsconfig.node.json")
+        inputs.file("${projectDir}/frontend/vite.config.ts")
         outputs.dir("${projectDir}/frontend/dist")
 }
 

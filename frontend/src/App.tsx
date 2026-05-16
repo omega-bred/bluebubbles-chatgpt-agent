@@ -4,6 +4,7 @@ import { useKeycloak } from "./auth/useKeycloak";
 import { AccountLinkPage } from "./pages/AccountLinkPage";
 import { AccountPage } from "./pages/AccountPage";
 import { LandingPage } from "./pages/LandingPage";
+import { OauthCallbackPage } from "./pages/OauthCallbackPage";
 
 export default function App() {
   const [path, setPath] = React.useState(window.location.pathname);
@@ -14,6 +15,10 @@ export default function App() {
     window.addEventListener("popstate", update);
     return () => window.removeEventListener("popstate", update);
   }, []);
+
+  if (path.startsWith("/oauth/callback")) {
+    return <OauthCallbackPage auth={auth} />;
+  }
 
   if (path.startsWith("/account/link")) {
     return <AccountLinkPage auth={auth} />;
