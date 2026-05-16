@@ -17,6 +17,7 @@ export function AccountPage({ auth }: { auth: AuthState }) {
   const [data, setData] = React.useState<WebsiteLinkedAccountsResponse | null>(null);
   const [error, setError] = React.useState<string | null>(null);
   const [loading, setLoading] = React.useState(false);
+  const hasLoaded = data !== null || error !== null;
 
   const load = React.useCallback(async () => {
     if (!auth.authenticated) {
@@ -58,10 +59,12 @@ export function AccountPage({ auth }: { auth: AuthState }) {
         </section>
 
         {error ? <p className="error-banner">{error}</p> : null}
-        {loading ? <p className="muted">Loading linked accounts.</p> : null}
+        {loading && hasLoaded ? <p className="muted">Refreshing linked accounts.</p> : null}
 
-        <section className="linked-list">
-          {(data?.integrations || []).length === 0 ? (
+        <section className="linked-list" aria-busy={!hasLoaded || loading}>
+          {!hasLoaded ? (
+            <AccountLoader />
+          ) : (data?.integrations || []).length === 0 ? (
             <EmptyLinks />
           ) : (
             data?.integrations?.map((integration) => (
@@ -75,6 +78,29 @@ export function AccountPage({ auth }: { auth: AuthState }) {
         </section>
       </main>
     </div>
+  );
+}
+
+function AccountLoader() {
+  return (
+    <article className="account-loader" aria-label="Loading linked accounts">
+      <div className="account-loader-top">
+        <span className="account-loader-spinner" aria-hidden="true" />
+        <div>
+          <p className="eyebrow">Account links</p>
+          <h2>Loading linked accounts</h2>
+        </div>
+      </div>
+      <div className="account-loader-skeleton" aria-hidden="true">
+        <span className="skeleton-line wide" />
+        <span className="skeleton-line medium" />
+        <span className="skeleton-pill-row">
+          <span className="skeleton-pill" />
+          <span className="skeleton-pill" />
+          <span className="skeleton-pill short" />
+        </span>
+      </div>
+    </article>
   );
 }
 
@@ -105,12 +131,7 @@ function LinkedIdentity({
         <p className="eyebrow">Chat identities</p>
         <h2>Linked chat addresses</h2>
         <p className="muted">These addresses are treated as the same user across tools.</p>
-        {modelAccess ? (
-          <p className="model-note">
-            {accessNote}
-            {modelAccess.model_selection_configurable ? "" : " · read only"}
-          </p>
-        ) : null}
+        {modelAccess ? <p className="model-note">{accessNote}</p> : null}
       </div>
       <div className="integration-pills">
         {modelAccess ? (
