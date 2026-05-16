@@ -1,6 +1,7 @@
 import axios from "axios";
 
 import {
+  AdminApi,
   Configuration,
   WebsiteAccountApi,
   type WebsiteAccountDeleteLinkedAccountTypeEnum,
@@ -21,8 +22,18 @@ axiosInstance.interceptors.response.use(
 );
 
 async function websiteAccountClient(): Promise<WebsiteAccountApi> {
+  const config = await authenticatedConfiguration();
+  return new WebsiteAccountApi(config, config.basePath, axiosInstance);
+}
+
+async function adminClient(): Promise<AdminApi> {
+  const config = await authenticatedConfiguration();
+  return new AdminApi(config, config.basePath, axiosInstance);
+}
+
+async function authenticatedConfiguration(): Promise<Configuration> {
   const token = await getAccessToken();
-  const config = new Configuration({
+  return new Configuration({
     basePath: import.meta.env.VITE_API_URL || "",
     baseOptions: {
       headers: {
@@ -30,7 +41,6 @@ async function websiteAccountClient(): Promise<WebsiteAccountApi> {
       },
     },
   });
-  return new WebsiteAccountApi(config, config.basePath, axiosInstance);
 }
 
 export const websiteAccountApi = {
@@ -61,5 +71,12 @@ export const websiteAccountApi = {
   ) => {
     const client = await websiteAccountClient();
     return (await client.websiteAccountDeleteLinkedAccount(type, accountKey)).data;
+  },
+};
+
+export const adminApi = {
+  getStatistics: async (from: string, to: string) => {
+    const client = await adminClient();
+    return (await client.adminGetStatistics(from, to)).data;
   },
 };

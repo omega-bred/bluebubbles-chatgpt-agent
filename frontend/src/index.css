@@ -368,6 +368,201 @@ a {
   background: #fff0f3;
 }
 
+.admin-main {
+  max-width: 1240px;
+}
+
+.admin-heading {
+  margin-bottom: 24px;
+}
+
+.admin-toolbar,
+.admin-stat-grid,
+.admin-content-grid {
+  display: grid;
+  gap: 16px;
+}
+
+.admin-toolbar {
+  grid-template-columns: auto minmax(180px, 1fr) minmax(180px, 1fr) auto;
+  align-items: end;
+  margin-bottom: 24px;
+}
+
+.admin-toolbar label {
+  display: grid;
+  gap: 7px;
+  color: #3f3f3b;
+  font-size: 0.9rem;
+  font-weight: 800;
+}
+
+.admin-toolbar input {
+  width: 100%;
+  min-height: 44px;
+  border-radius: 8px;
+  border: 1px solid #cfcfc9;
+  padding: 8px 10px;
+  color: #111111;
+  background: #ffffff;
+}
+
+.segmented-control {
+  display: grid;
+  grid-auto-flow: column;
+  overflow: hidden;
+  border-radius: 8px;
+  border: 1px solid #cfcfc9;
+  background: #ffffff;
+}
+
+.segmented-control button {
+  min-height: 44px;
+  border: 0;
+  border-right: 1px solid #e2e2dc;
+  padding: 0 16px;
+  cursor: pointer;
+  color: #2c2c29;
+  background: #ffffff;
+  font-weight: 800;
+}
+
+.segmented-control button:last-child {
+  border-right: 0;
+}
+
+.segmented-control button:hover {
+  background: #eaf4ff;
+}
+
+.admin-stat-grid {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  margin-bottom: 16px;
+}
+
+.metric-tile,
+.admin-panel {
+  border-radius: 8px;
+  border: 1px solid #dedede;
+  background: #ffffff;
+}
+
+.metric-tile {
+  display: grid;
+  gap: 10px;
+  min-height: 132px;
+  align-content: center;
+  padding: 22px;
+}
+
+.metric-tile span {
+  color: #62625d;
+  font-weight: 800;
+}
+
+.metric-tile strong {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: #111111;
+  font-size: 2.35rem;
+  line-height: 1;
+}
+
+.admin-content-grid {
+  grid-template-columns: minmax(0, 0.95fr) minmax(0, 1.35fr);
+  align-items: start;
+}
+
+.admin-panel {
+  padding: 24px;
+}
+
+.admin-panel header {
+  margin-bottom: 18px;
+}
+
+.admin-panel h2 {
+  margin: 0;
+  color: #111111;
+  font-size: 1.6rem;
+  line-height: 1.15;
+}
+
+.model-usage-list,
+.timeline-list {
+  display: grid;
+  gap: 14px;
+}
+
+.model-usage-row {
+  display: grid;
+  grid-template-columns: minmax(160px, 1fr);
+  gap: 8px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid #ecece8;
+}
+
+.model-usage-row:last-child {
+  border-bottom: 0;
+  padding-bottom: 0;
+}
+
+.model-usage-row div:first-child {
+  display: grid;
+  gap: 4px;
+}
+
+.model-usage-row strong {
+  color: #111111;
+  font-size: 1.04rem;
+}
+
+.model-usage-row span,
+.model-usage-row p,
+.timeline-row small {
+  margin: 0;
+  color: #62625d;
+  line-height: 1.45;
+}
+
+.model-usage-meter,
+.timeline-bar {
+  overflow: hidden;
+  height: 10px;
+  border-radius: 8px;
+  background: #eeeeea;
+}
+
+.model-usage-meter span,
+.timeline-bar span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #33d17a, #1d8cff);
+}
+
+.timeline-row {
+  display: grid;
+  grid-template-columns: 88px minmax(90px, 1fr) 56px;
+  gap: 10px;
+  align-items: center;
+}
+
+.timeline-row time {
+  color: #3f3f3b;
+  font-size: 0.9rem;
+  font-weight: 800;
+}
+
+.timeline-row strong {
+  color: #111111;
+  text-align: right;
+}
+
+.timeline-row small {
+  grid-column: 2 / 4;
+}
+
 .centered-message {
   display: grid;
   min-height: 100vh;
@@ -396,7 +591,10 @@ a {
 
   .intro-band,
   .capability-grid,
-  .linked-item {
+  .linked-item,
+  .admin-toolbar,
+  .admin-stat-grid,
+  .admin-content-grid {
     grid-template-columns: 1fr;
   }
 
@@ -417,6 +615,14 @@ a {
 
   .integration-pills {
     justify-content: flex-start;
+  }
+
+  .metric-tile {
+    min-height: 112px;
+  }
+
+  .timeline-row {
+    grid-template-columns: 80px minmax(90px, 1fr) 52px;
   }
 }
 

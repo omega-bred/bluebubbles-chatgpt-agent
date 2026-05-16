@@ -11,6 +11,7 @@ import com.uber.cadence.WorkflowExecution;
 import com.uber.cadence.workflow.Workflow;
 import com.uber.cadence.workflow.WorkflowInfo;
 import io.breland.bbagent.generated.bluebubblesclient.model.FindMyFriendLocation;
+import io.breland.bbagent.server.admin.AdminStatsService;
 import io.breland.bbagent.server.agent.cadence.CadenceWorkflowLauncher;
 import io.breland.bbagent.server.agent.cadence.models.CadenceMessageWorkflowRequest;
 import io.breland.bbagent.server.agent.cadence.models.GeneratedImage;
@@ -149,6 +150,7 @@ public class BBMessageAgent {
   private WebsiteAccountService websiteAccountService;
   private GiphyClient giphyClient;
   private ModelPicker modelPicker;
+  private AdminStatsService adminStatsService;
   private final ReverseLocationLookup reverseLocationLookup;
   private final AccountIdentityAliasService accountIdentityAliasService;
 
@@ -170,6 +172,7 @@ public class BBMessageAgent {
       @Nullable ObjectMapper objectMapper,
       @Nullable CadenceWorkflowLauncher cadenceWorkflowLauncher,
       @Nullable AccountIdentityAliasService accountIdentityAliasService,
+      @Nullable AdminStatsService adminStatsService,
       ModelPicker modelPicker) {
     if (openAiClient != null) {
       this.openAIClient = openAiClient;
@@ -193,6 +196,7 @@ public class BBMessageAgent {
     this.objectMapper = objectMapper == null ? new ObjectMapper() : objectMapper;
     this.cadenceWorkflowLauncher = cadenceWorkflowLauncher;
     this.accountIdentityAliasService = accountIdentityAliasService;
+    this.adminStatsService = adminStatsService;
     this.modelPicker = modelPicker;
     registerBuiltInTools();
   }
@@ -251,6 +255,7 @@ public class BBMessageAgent {
       }
       state.markIncomingMessageSeen(message);
     }
+    recordAcceptedMessageMetric(message);
     if (workflowProperties.useCadenceWorkflow()) {
       if (cadenceWorkflowLauncher == null) {
         log.error(
@@ -273,6 +278,17 @@ public class BBMessageAgent {
     }
     log.info("Responding via inline workflow");
     runMessageWorkflow(state, message, workflowContext);
+  }
+
+  private void recordAcceptedMessageMetric(IncomingMessage message) {
+    if (adminStatsService == null) {
+      return;
+    }
+    try {
+      adminStatsService.recordAcceptedMessage(message, workflowProperties.getMode());
+    } catch (RuntimeException e) {
+      log.warn("Failed to record admin message metric for {}", message, e);
+    }
   }
 
   private boolean shouldProcess(IncomingMessage message) {

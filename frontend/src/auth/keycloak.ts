@@ -1,5 +1,7 @@
 import Keycloak from "keycloak-js";
 
+export const ADMIN_ROLE = "bbagent-admin-role";
+
 export const keycloak = new Keycloak({
   url: import.meta.env.VITE_KEYCLOAK_URL || "https://keycloak.bre.land",
   realm: import.meta.env.VITE_KEYCLOAK_REALM || "bbagent",
@@ -41,4 +43,39 @@ export async function getAccessToken(): Promise<string> {
     throw new Error("Missing access token");
   }
   return keycloak.token;
+}
+
+export function hasRole(role: string): boolean {
+  return tokenRoles().includes(role);
+}
+
+export function hasAdminRole(): boolean {
+  return hasRole(ADMIN_ROLE);
+}
+
+function tokenRoles(): string[] {
+  const parsed = keycloak.tokenParsed as Record<string, unknown> | undefined;
+  if (!parsed) {
+    return [];
+  }
+  const roles = new Set<string>();
+  addRoles((parsed.realm_access as Record<string, unknown> | undefined)?.roles, roles);
+  const resourceAccess = parsed.resource_access as Record<string, unknown> | undefined;
+  if (resourceAccess) {
+    Object.values(resourceAccess).forEach((value) => {
+      addRoles((value as Record<string, unknown> | undefined)?.roles, roles);
+    });
+  }
+  return Array.from(roles);
+}
+
+function addRoles(value: unknown, roles: Set<string>) {
+  if (!Array.isArray(value)) {
+    return;
+  }
+  value.forEach((role) => {
+    if (typeof role === "string" && role.trim()) {
+      roles.add(role.trim());
+    }
+  });
 }
