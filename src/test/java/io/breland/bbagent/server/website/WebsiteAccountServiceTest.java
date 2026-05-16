@@ -70,6 +70,27 @@ class WebsiteAccountServiceTest {
   }
 
   @Test
+  void createLinkTokenStoresLxmfChatMetadataForResolvedAccount() {
+    IncomingMessage message = lxmfMessage();
+    when(accountResolver.resolveOrCreate(message))
+        .thenReturn(
+            Optional.of(
+                new AgentAccountResolver.ResolvedAccount(account("account-lxmf"), List.of())));
+    when(tokenRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+
+    WebsiteAccountService.CreatedLinkToken link = service.createLinkToken(message);
+
+    ArgumentCaptor<WebsiteAccountLinkTokenEntity> captor =
+        ArgumentCaptor.forClass(WebsiteAccountLinkTokenEntity.class);
+    Mockito.verify(tokenRepository).save(captor.capture());
+    assertEquals("account-lxmf", link.accountId());
+    assertEquals("account-lxmf", captor.getValue().getAccountId());
+    assertEquals("lxmf:aabb", captor.getValue().getChatGuid());
+    assertEquals("aabb", captor.getValue().getSender());
+    assertEquals("LXMF", captor.getValue().getService());
+  }
+
+  @Test
   void redeemLinkAttachesWebsiteAccountToTokenAccount() {
     WebsiteAccountLinkTokenEntity tokenEntity = tokenEntity(Instant.now().plusSeconds(60));
     when(accountResolver.upsertWebsiteAccount(any(Jwt.class))).thenReturn(account());
@@ -151,6 +172,55 @@ class WebsiteAccountServiceTest {
   }
 
   @Test
+  void getLinkStatusChecksLxmfCurrentChatIdentity() {
+    IncomingMessage message = lxmfMessage();
+    AgentAccountEntity account = account("account-lxmf");
+    when(accountResolver.resolve(message))
+        .thenReturn(Optional.of(new AgentAccountResolver.ResolvedAccount(account, List.of())));
+    when(modelAccessService.toWebsiteSummary("account-lxmf"))
+        .thenReturn(modelAccess("account-lxmf"));
+
+    WebsiteAccountService.SenderLinkStatus status = service.getLinkStatus(message);
+
+    assertTrue(status.linked());
+    assertTrue(status.exactChatLinked());
+    assertEquals("account-lxmf", status.accountId());
+    assertEquals("local", status.modelAccess().getCurrentModel());
+  }
+
+  @Test
+  void getLinkStatusUsesExplicitTransportForLookup() {
+    AgentAccountEntity account = account("account-lxmf");
+    when(accountResolver.resolveOrCreate("lxmf", "ccdd"))
+        .thenReturn(Optional.of(new AgentAccountResolver.ResolvedAccount(account, List.of())));
+    when(modelAccessService.toWebsiteSummary("account-lxmf"))
+        .thenReturn(modelAccess("account-lxmf"));
+
+    WebsiteAccountService.SenderLinkStatus status =
+        service.getLinkStatus("lxmf", "ccdd", "lxmf:aabb");
+
+    assertTrue(status.linked());
+    assertEquals("account-lxmf", status.accountId());
+    Mockito.verify(accountResolver).resolveOrCreate("lxmf", "ccdd");
+  }
+
+  @Test
+  void getLinkStatusCanUseLxmfChatGuidWhenSenderIsAbsent() {
+    AgentAccountEntity account = account("account-lxmf");
+    when(accountResolver.resolveOrCreate("lxmf", "aabb"))
+        .thenReturn(Optional.of(new AgentAccountResolver.ResolvedAccount(account, List.of())));
+    when(modelAccessService.toWebsiteSummary("account-lxmf"))
+        .thenReturn(modelAccess("account-lxmf"));
+
+    WebsiteAccountService.SenderLinkStatus status =
+        service.getLinkStatus("lxmf", null, "lxmf:aabb");
+
+    assertTrue(status.linked());
+    assertEquals("account-lxmf", status.accountId());
+    Mockito.verify(accountResolver).resolveOrCreate("lxmf", "aabb");
+  }
+
+  @Test
   void deleteLinkedAccountRejectsGcalKeysOutsideCurrentAccount() {
     when(accountResolver.upsertWebsiteAccount(any(Jwt.class))).thenReturn(account());
 
@@ -164,8 +234,12 @@ class WebsiteAccountServiceTest {
   }
 
   private WebsiteModelAccessSummary modelAccess() {
+    return modelAccess("account-1");
+  }
+
+  private WebsiteModelAccessSummary modelAccess(String accountId) {
     return new WebsiteModelAccessSummary()
-        .accountId("account-1")
+        .accountId(accountId)
         .plan(WebsiteModelAccessSummary.PlanEnum.STANDARD)
         .isPremium(false)
         .currentModel("local")
@@ -200,9 +274,29 @@ class WebsiteAccountServiceTest {
         false);
   }
 
+  private IncomingMessage lxmfMessage() {
+    return new IncomingMessage(
+        IncomingMessage.TRANSPORT_LXMF,
+        "lxmf:aabb",
+        "msg-1",
+        null,
+        "link my account",
+        false,
+        "LXMF",
+        "aabb",
+        false,
+        Instant.now(),
+        List.of(),
+        false);
+  }
+
   private AgentAccountEntity account() {
+    return account("account-1");
+  }
+
+  private AgentAccountEntity account(String accountId) {
     Instant now = Instant.now();
-    AgentAccountEntity account = new AgentAccountEntity("account-1", now, now);
+    AgentAccountEntity account = new AgentAccountEntity(accountId, now, now);
     account.setWebsiteSubject("sub-1");
     account.setWebsiteEmail("alice@example.com");
     account.setWebsitePreferredUsername("alice");

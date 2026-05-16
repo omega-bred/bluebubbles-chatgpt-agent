@@ -100,7 +100,7 @@ public class WebsiteAccountService {
         accountResolver
             .resolveOrCreate(message)
             .map(AgentAccountResolver.ResolvedAccount::account)
-            .orElseThrow(() -> new IllegalArgumentException("missing iMessage identity"));
+            .orElseThrow(() -> new IllegalArgumentException("missing message identity"));
     String token = newToken();
     String tokenHash = hashToken(token);
     Instant now = Instant.now();
@@ -133,11 +133,17 @@ public class WebsiteAccountService {
 
   @Transactional
   public SenderLinkStatus getLinkStatus(String sender, String chatGuid) {
-    if (StringUtils.isBlank(sender)) {
+    return getLinkStatus(IncomingMessage.TRANSPORT_BLUEBUBBLES, sender, chatGuid);
+  }
+
+  @Transactional
+  public SenderLinkStatus getLinkStatus(String transport, String sender, String chatGuid) {
+    String identifier = linkStatusIdentifier(transport, sender, chatGuid);
+    if (StringUtils.isBlank(identifier)) {
       return SenderLinkStatus.empty();
     }
     return accountResolver
-        .resolveOrCreate(IncomingMessage.TRANSPORT_BLUEBUBBLES, sender)
+        .resolveOrCreate(transport, identifier)
         .map(resolved -> toStatus(resolved.account()))
         .orElseGet(SenderLinkStatus::empty);
   }
@@ -199,6 +205,16 @@ public class WebsiteAccountService {
           HttpStatus.NOT_FOUND, "Linked integration account not found");
     }
     return true;
+  }
+
+  private String linkStatusIdentifier(String transport, String sender, String chatGuid) {
+    if (StringUtils.isNotBlank(sender)) {
+      return sender;
+    }
+    if (IncomingMessage.TRANSPORT_LXMF.equalsIgnoreCase(transport)) {
+      return IncomingMessage.stripTransportPrefix(chatGuid);
+    }
+    return sender;
   }
 
   private SenderLinkStatus toStatus(AgentAccountEntity account) {

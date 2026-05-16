@@ -19,36 +19,57 @@ class GetWebsiteAccountLinkStatusAgentToolTest {
   @Test
   void checksCurrentSenderLinkStatus() {
     WebsiteAccountService service = Mockito.mock(WebsiteAccountService.class);
-    when(service.getLinkStatus("Alice", "iMessage;+;chat-1"))
-        .thenReturn(
-            new WebsiteAccountService.SenderLinkStatus(
-                "account-1",
-                true,
-                true,
-                1,
-                1,
-                new WebsiteModelAccessSummary()
-                    .accountId("account-1")
-                    .plan(WebsiteModelAccessSummary.PlanEnum.PREMIUM)
-                    .isPremium(true)
-                    .currentModel("chatgpt")
-                    .currentModelLabel("ChatGPT")
-                    .modelSelectionAllowed(true)
-                    .modelSelectionConfigurable(false)
-                    .availableModels(List.of()),
-                Instant.parse("2026-04-14T00:00:00Z")));
+    IncomingMessage message = message();
+    when(service.getLinkStatus(message)).thenReturn(status("account-1"));
     GetWebsiteAccountLinkStatusAgentTool tool = new GetWebsiteAccountLinkStatusAgentTool(service);
     BBMessageAgent agent = Mockito.mock(BBMessageAgent.class);
     when(agent.getObjectMapper()).thenReturn(new ObjectMapper());
-    ToolContext context = new ToolContext(agent, message(), null);
+    ToolContext context = new ToolContext(agent, message, null);
 
     String output = tool.getTool().handler().apply(context, new ObjectMapper().createObjectNode());
 
     assertTrue(output.contains("\"linked\":true"));
     assertTrue(output.contains("\"exact_chat_linked\":true"));
+    assertTrue(output.contains("\"account_id\":\"account-1\""));
     assertTrue(output.contains("\"model_access\""));
     assertTrue(output.contains("\"current_model\":\"chatgpt\""));
-    assertTrue(output.contains("This iMessage sender is linked"));
+    assertTrue(output.contains("This chat identity is linked"));
+    Mockito.verify(service).getLinkStatus(message);
+  }
+
+  @Test
+  void checksLxmfStatusUsingCurrentMessageTransport() {
+    WebsiteAccountService service = Mockito.mock(WebsiteAccountService.class);
+    IncomingMessage message = lxmfMessage();
+    when(service.getLinkStatus(message)).thenReturn(status("account-lxmf"));
+    GetWebsiteAccountLinkStatusAgentTool tool = new GetWebsiteAccountLinkStatusAgentTool(service);
+    BBMessageAgent agent = Mockito.mock(BBMessageAgent.class);
+    when(agent.getObjectMapper()).thenReturn(new ObjectMapper());
+    ToolContext context = new ToolContext(agent, message, null);
+
+    String output = tool.getTool().handler().apply(context, new ObjectMapper().createObjectNode());
+
+    assertTrue(output.contains("\"account_id\":\"account-lxmf\""));
+    assertTrue(output.contains("This chat identity is linked"));
+    Mockito.verify(service).getLinkStatus(message);
+  }
+
+  @Test
+  void explicitLookupDefaultsToCurrentTransport() {
+    WebsiteAccountService service = Mockito.mock(WebsiteAccountService.class);
+    when(service.getLinkStatus("lxmf", "ccdd", "lxmf:aabb"))
+        .thenReturn(status("account-lxmf-ccdd"));
+    GetWebsiteAccountLinkStatusAgentTool tool = new GetWebsiteAccountLinkStatusAgentTool(service);
+    BBMessageAgent agent = Mockito.mock(BBMessageAgent.class);
+    ObjectMapper mapper = new ObjectMapper();
+    when(agent.getObjectMapper()).thenReturn(mapper);
+    ToolContext context = new ToolContext(agent, lxmfMessage(), null);
+    var args = mapper.createObjectNode().put("sender", "ccdd");
+
+    String output = tool.getTool().handler().apply(context, args);
+
+    assertTrue(output.contains("\"account_id\":\"account-lxmf-ccdd\""));
+    Mockito.verify(service).getLinkStatus("lxmf", "ccdd", "lxmf:aabb");
   }
 
   private IncomingMessage message() {
@@ -64,5 +85,40 @@ class GetWebsiteAccountLinkStatusAgentToolTest {
         Instant.now(),
         List.of(),
         false);
+  }
+
+  private IncomingMessage lxmfMessage() {
+    return new IncomingMessage(
+        IncomingMessage.TRANSPORT_LXMF,
+        "lxmf:aabb",
+        "msg-1",
+        null,
+        "am I linked?",
+        false,
+        "LXMF",
+        "aabb",
+        false,
+        Instant.now(),
+        List.of(),
+        false);
+  }
+
+  private WebsiteAccountService.SenderLinkStatus status(String accountId) {
+    return new WebsiteAccountService.SenderLinkStatus(
+        accountId,
+        true,
+        true,
+        1,
+        1,
+        new WebsiteModelAccessSummary()
+            .accountId(accountId)
+            .plan(WebsiteModelAccessSummary.PlanEnum.PREMIUM)
+            .isPremium(true)
+            .currentModel("chatgpt")
+            .currentModelLabel("ChatGPT")
+            .modelSelectionAllowed(true)
+            .modelSelectionConfigurable(false)
+            .availableModels(List.of()),
+        Instant.parse("2026-04-14T00:00:00Z"));
   }
 }

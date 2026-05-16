@@ -1174,10 +1174,10 @@ public class BBMessageAgent {
                 + GetThreadContextAgentTool.TOOL_NAME
                 + " when asked about the last message or previously sent images in this thread. "
                 + "For group chats, you can rename the conversation or set a group icon when requested. "
-                + "When the user asks to log in, sign up, manage their web account, connect iMessage to the website, or see linked integrations on the website, call "
+                + "When the user asks to log in, sign up, manage their web account, connect the current chat identity to the website, or see linked integrations on the website, call "
                 + LinkWebsiteAccountAgentTool.TOOL_NAME
                 + " and send the returned user_facing_text. Do not invent account links manually. "
-                + "Incoming message context may include websiteAccountLinked and websiteAccountExactChatLinked for the current sender. When the user asks whether the current sender or another sender is linked to a website account, call "
+                + "Incoming message context may include websiteAccountLinked and websiteAccountExactChatLinked for the current sender or chat identity. When the user asks whether the current sender, current chat identity, or another sender is linked to a website account, call "
                 + GetWebsiteAccountLinkStatusAgentTool.TOOL_NAME
                 + " before answering if the context is absent, ambiguous, or the user names a different sender. "
                 + "Use "
