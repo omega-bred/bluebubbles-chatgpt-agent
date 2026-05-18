@@ -20,14 +20,8 @@ public class WebsiteAccountLinkTokenEntity {
   @Column(name = "token_hash", nullable = false, length = 128)
   private String tokenHash;
 
-  @Column(name = "account_base", nullable = false, length = 512)
-  private String accountBase;
-
-  @Column(name = "coder_account_base", nullable = false, length = 512)
-  private String coderAccountBase;
-
-  @Column(name = "gcal_account_base", nullable = false, length = 512)
-  private String gcalAccountBase;
+  @Column(name = "account_id", nullable = false, length = 36)
+  private String accountId;
 
   @Column(name = "chat_guid", length = 255)
   private String chatGuid;
@@ -50,8 +44,8 @@ public class WebsiteAccountLinkTokenEntity {
   @Column(name = "redeemed_at")
   private Instant redeemedAt;
 
-  @Column(name = "redeemed_account_subject", length = 255)
-  private String redeemedAccountSubject;
+  @Column(name = "redeemed_account_id", length = 36)
+  private String redeemedAccountId;
 
   @Column(name = "created_at", nullable = false)
   private Instant createdAt;
@@ -61,9 +55,7 @@ public class WebsiteAccountLinkTokenEntity {
 
   public WebsiteAccountLinkTokenEntity(
       String tokenHash,
-      String accountBase,
-      String coderAccountBase,
-      String gcalAccountBase,
+      String accountId,
       String chatGuid,
       String sender,
       String service,
@@ -73,9 +65,7 @@ public class WebsiteAccountLinkTokenEntity {
       Instant createdAt,
       Instant updatedAt) {
     this.tokenHash = tokenHash;
-    this.accountBase = accountBase;
-    this.coderAccountBase = coderAccountBase;
-    this.gcalAccountBase = gcalAccountBase;
+    this.accountId = accountId;
     this.chatGuid = chatGuid;
     this.sender = sender;
     this.service = service;

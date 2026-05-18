@@ -3796,7 +3796,7 @@ components:
             - type: "null"
         associatedMessageType:
           oneOf:
-            - type: integer
+            - type: string
             - type: "null"
         
         expressiveSendStyleId:

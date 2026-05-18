@@ -1,4 +1,4 @@
-FROM eclipse-temurin:24-jdk AS base
+FROM eclipse-temurin:25-jdk AS base
 
 RUN apt-get update \
  && apt-get install -y curl libgfortran5 findutils \

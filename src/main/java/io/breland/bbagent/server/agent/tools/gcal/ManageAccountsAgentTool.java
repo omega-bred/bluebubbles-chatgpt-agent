@@ -51,20 +51,19 @@ public class ManageAccountsAgentTool extends GcalToolSupport implements ToolProv
               () -> {
                 switch (request.action()) {
                   case LIST -> {
-                    String accountBase = resolveAccountBase(context);
-                    if (isBlank(accountBase)) {
+                    String accountId = resolveAccountId(context);
+                    if (isBlank(accountId)) {
                       return "no account";
                     }
                     Map<String, Object> response = new LinkedHashMap<>();
-                    response.put("accounts", gcalClient.listAccountsFor(accountBase));
+                    response.put("accounts", gcalClient.listAccountsFor(accountId));
                     return toJson(response);
                   }
                   case AUTH_URL -> {
-                    String accountBase = resolveAccountBase(context);
-                    if (isBlank(accountBase)) {
+                    String accountId = resolveAccountId(context);
+                    if (isBlank(accountId)) {
                       return "no account";
                     }
-                    String accountKey = accountBase;
                     String chatGuid =
                         context.message() != null ? context.message().chatGuid() : null;
                     String messageGuid =
@@ -72,7 +71,7 @@ public class ManageAccountsAgentTool extends GcalToolSupport implements ToolProv
                     if (isBlank(chatGuid)) {
                       return "missing chat";
                     }
-                    String url = gcalClient.getAuthUrl(accountKey, chatGuid, messageGuid);
+                    String url = gcalClient.getAuthUrl(accountId, chatGuid, messageGuid);
                     if (url == null) {
                       return "not configured";
                     }
@@ -82,13 +81,12 @@ public class ManageAccountsAgentTool extends GcalToolSupport implements ToolProv
                     return toJson(response);
                   }
                   case REVOKE -> {
-                    String accountBase = resolveAccountBase(context);
-                    if (isBlank(accountBase)) {
+                    String accountId = resolveAccountId(context);
+                    if (isBlank(accountId)) {
                       return "no account";
                     }
                     String requestedAccountKey = request.accountKey();
-                    String accountKey =
-                        gcalClient.scopeAccountKey(accountBase, requestedAccountKey);
+                    String accountKey = gcalClient.scopeAccountKey(accountId, requestedAccountKey);
                     boolean success = gcalClient.revokeAccount(accountKey);
                     return success ? "revoked" : "not found";
                   }

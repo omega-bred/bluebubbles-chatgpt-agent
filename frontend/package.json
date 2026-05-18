@@ -10,7 +10,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "axios": "^1.15.0",
+    "axios": "^1.15.2",
     "keycloak-js": "^26.1.4",
     "react": "^18.3.1",
     "react-dom": "^18.3.1"
@@ -19,14 +19,14 @@
     "@babel/core": "^7.28.6",
     "@babel/generator": "^7.28.6",
     "@babel/preset-react": "^7.26.3",
-    "@babel/preset-typescript": "^7.27.0",
+    "@babel/preset-typescript": "^7.28.5",
     "@babel/traverse": "^7.27.0",
     "@babel/types": "^7.27.0",
     "@types/react": "^18.3.18",
     "@types/react-dom": "^18.3.5",
     "@vitejs/plugin-react": "^4.3.4",
     "autoprefixer": "10.4.20",
-    "postcss": "8.5.6",
+    "postcss": "8.5.12",
     "source-map-js": "^1.2.1",
     "tailwindcss": "3.4.17",
     "typescript": "5.7.3",

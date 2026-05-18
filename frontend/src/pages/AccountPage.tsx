@@ -1,7 +1,12 @@
 import React from "react";
 
 import type { AuthState } from "../auth/useKeycloak";
-import type { WebsiteIntegrationSummary, WebsiteLinkedAccountsResponse } from "../client";
+import type {
+  WebsiteAccountIdentity,
+  WebsiteIntegrationSummary,
+  WebsiteLinkedAccountsResponse,
+  WebsiteLinkedIntegrationAccount,
+} from "../client";
 import { AuthGate } from "../components/AuthGate";
 import { CenteredMessage } from "../components/CenteredMessage";
 import { SiteNav } from "../components/SiteNav";
@@ -12,6 +17,7 @@ export function AccountPage({ auth }: { auth: AuthState }) {
   const [data, setData] = React.useState<WebsiteLinkedAccountsResponse | null>(null);
   const [error, setError] = React.useState<string | null>(null);
   const [loading, setLoading] = React.useState(false);
+  const hasLoaded = data !== null || error !== null;
 
   const load = React.useCallback(async () => {
     if (!auth.authenticated) {
@@ -53,10 +59,12 @@ export function AccountPage({ auth }: { auth: AuthState }) {
         </section>
 
         {error ? <p className="error-banner">{error}</p> : null}
-        {loading ? <p className="muted">Loading linked accounts.</p> : null}
+        {loading && hasLoaded ? <p className="muted">Refreshing linked accounts.</p> : null}
 
-        <section className="linked-list">
-          {(data?.integrations || []).length === 0 ? (
+        <section className="linked-list" aria-busy={!hasLoaded || loading}>
+          {!hasLoaded ? (
+            <AccountLoader />
+          ) : (data?.integrations || []).length === 0 ? (
             <EmptyLinks />
           ) : (
             data?.integrations?.map((integration) => (
@@ -73,6 +81,29 @@ export function AccountPage({ auth }: { auth: AuthState }) {
   );
 }
 
+function AccountLoader() {
+  return (
+    <article className="account-loader" aria-label="Loading linked accounts">
+      <div className="account-loader-top">
+        <span className="account-loader-spinner" aria-hidden="true" />
+        <div>
+          <p className="eyebrow">Account links</p>
+          <h2>Loading linked accounts</h2>
+        </div>
+      </div>
+      <div className="account-loader-skeleton" aria-hidden="true">
+        <span className="skeleton-line wide" />
+        <span className="skeleton-line medium" />
+        <span className="skeleton-pill-row">
+          <span className="skeleton-pill" />
+          <span className="skeleton-pill" />
+          <span className="skeleton-pill short" />
+        </span>
+      </div>
+    </article>
+  );
+}
+
 function LinkedIdentity({
   integration,
   onDeleted,
@@ -80,12 +111,13 @@ function LinkedIdentity({
   integration: WebsiteIntegrationSummary;
   onDeleted: () => Promise<void>;
 }) {
-  const [deleting, setDeleting] = React.useState(false);
+  const [unlinkingAccountKey, setUnlinkingAccountKey] = React.useState<string | null>(null);
   const link = integration.link;
   if (!link) {
     return null;
   }
   const calendars = integration.gcal_accounts || [];
+  const linkedAccounts = integration.linked_accounts || [];
   const modelAccess = integration.model_access;
   const modelLabel = modelAccess ? displayModelLabel(modelAccess.current_model_label) : "";
   const planLabel = modelAccess?.is_premium ? "Premium" : "Free";
@@ -96,15 +128,10 @@ function LinkedIdentity({
   return (
     <article className="linked-item">
       <div>
-        <p className="eyebrow">iMessage sender</p>
-        <h2>{link.is_group ? "Group iMessage chat" : "Direct iMessage sender"}</h2>
-        <p className="muted">{link.service || "iMessage"} linked to this account.</p>
-        {modelAccess ? (
-          <p className="model-note">
-            {accessNote}
-            {modelAccess.model_selection_configurable ? "" : " · read only"}
-          </p>
-        ) : null}
+        <p className="eyebrow">Chat identities</p>
+        <h2>Linked chat addresses</h2>
+        <p className="muted">These addresses are treated as the same user across tools.</p>
+        {modelAccess ? <p className="model-note">{accessNote}</p> : null}
       </div>
       <div className="integration-pills">
         {modelAccess ? (
@@ -122,19 +149,82 @@ function LinkedIdentity({
             : "not linked"}
         </span>
       </div>
-      <button
-        className="button button-secondary"
-        disabled={deleting}
-        onClick={async () => {
-          setDeleting(true);
-          await websiteAccountApi.deleteLink(link.link_id);
-          await onDeleted();
-          setDeleting(false);
-        }}
-      >
-        {deleting ? "Unlinking" : "Unlink sender"}
-      </button>
+      {linkedAccounts.length > 0 ? (
+        <div className="linked-account-list">
+          {(link.identities || []).map((identity) => (
+            <IdentityRow
+              key={`${identity.type}:${identity.normalized_identifier}`}
+              identity={identity}
+            />
+          ))}
+          {linkedAccounts.map((account) => (
+            <LinkedAccountRow
+              key={`${account.type}:${account.account_key}`}
+              account={account}
+              unlinking={unlinkingAccountKey === account.account_key}
+              onUnlink={async () => {
+                setUnlinkingAccountKey(account.account_key);
+                try {
+                  await websiteAccountApi.deleteLinkedAccount(account.type, account.account_key);
+                  await onDeleted();
+                } finally {
+                  setUnlinkingAccountKey(null);
+                }
+              }}
+            />
+          ))}
+        </div>
+      ) : null}
+      {linkedAccounts.length === 0 && (link.identities || []).length > 0 ? (
+        <div className="linked-account-list">
+          {(link.identities || []).map((identity) => (
+            <IdentityRow
+              key={`${identity.type}:${identity.normalized_identifier}`}
+              identity={identity}
+            />
+          ))}
+        </div>
+      ) : null}
     </article>
+  );
+}
+
+function IdentityRow({ identity }: { identity: WebsiteAccountIdentity }) {
+  return (
+    <div className="linked-account-row">
+      <div>
+        <p className="linked-account-type">{identityTypeLabel(identity.type)}</p>
+        <p className="linked-account-email">{identity.identifier}</p>
+      </div>
+    </div>
+  );
+}
+
+function LinkedAccountRow({
+  account,
+  unlinking,
+  onUnlink,
+}: {
+  account: WebsiteLinkedIntegrationAccount;
+  unlinking: boolean;
+  onUnlink: () => Promise<void>;
+}) {
+  const typeLabel = account.type === "gcal" ? "Google Calendar" : "Coder";
+  const identifier = account.email || account.account_key;
+  return (
+    <div className="linked-account-row">
+      <div>
+        <p className="linked-account-type">{typeLabel}</p>
+        <p className="linked-account-email">{identifier}</p>
+      </div>
+      <button
+        className="button button-secondary compact"
+        disabled={!account.unlinkable || unlinking}
+        onClick={() => void onUnlink()}
+      >
+        {unlinking ? "Unlinking" : "Unlink"}
+      </button>
+    </div>
   );
 }
 
@@ -148,4 +238,17 @@ function EmptyLinks() {
       </p>
     </article>
   );
+}
+
+function identityTypeLabel(type: WebsiteAccountIdentity["type"]) {
+  switch (type) {
+    case "imessage_email":
+      return "iMessage email";
+    case "imessage_phone":
+      return "iMessage phone";
+    case "lxmf_address":
+      return "LXMF address";
+    default:
+      return "Chat address";
+  }
 }

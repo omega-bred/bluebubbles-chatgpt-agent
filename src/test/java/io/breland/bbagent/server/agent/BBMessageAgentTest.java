@@ -20,7 +20,6 @@ import com.openai.models.ChatModel;
 import com.openai.models.responses.EasyInputMessage;
 import com.openai.models.responses.FunctionTool;
 import com.openai.models.responses.Response;
-import com.openai.models.responses.Response.ToolChoice;
 import com.openai.models.responses.ResponseCreateParams;
 import com.openai.models.responses.ResponseError;
 import com.openai.models.responses.ResponseFunctionToolCall;
@@ -35,6 +34,8 @@ import io.breland.bbagent.generated.bluebubblesclient.model.ApiV1ChatChatGuidMes
 import io.breland.bbagent.generated.bluebubblesclient.model.ApiV1MessageReactPostRequest;
 import io.breland.bbagent.generated.bluebubblesclient.model.ApiV1MessageTextPostRequest;
 import io.breland.bbagent.generated.bluebubblesclient.model.FindMyFriendLocation;
+import io.breland.bbagent.server.agent.location.ReverseLocationLookup;
+import io.breland.bbagent.server.agent.location.ReverseLocationLookupResult;
 import io.breland.bbagent.server.agent.model_picker.ModelAccessService;
 import io.breland.bbagent.server.agent.model_picker.ModelPicker;
 import io.breland.bbagent.server.agent.tools.AgentTool;
@@ -49,10 +50,13 @@ import io.breland.bbagent.server.agent.tools.giphy.GiphyClient;
 import io.breland.bbagent.server.agent.tools.memory.Mem0Client;
 import io.breland.bbagent.server.agent.transport.bb.BBHttpClientWrapper;
 import io.breland.bbagent.server.agent.workflowcallback.WorkflowCallbackService;
+import io.breland.bbagent.server.website.WebsiteAccountService;
 import java.time.Instant;
+import java.util.Collection;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
@@ -84,9 +88,18 @@ class BBMessageAgentTest {
             bbHttpClientWrapper,
             mem0Client,
             gcalClient,
+            null,
+            null,
+            null,
+            null,
             giphyClient,
+            ReverseLocationLookup.noop(),
             new InMemoryAgentSettingsStore(),
             workflowProperties,
+            null,
+            null,
+            null,
+            null,
             null,
             new ModelPicker());
 
@@ -237,6 +250,7 @@ class BBMessageAgentTest {
     OpenAIClient openAIClient = Mockito.mock(OpenAIClient.class);
     var responseService = Mockito.mock(com.openai.services.blocking.ResponseService.class);
     StubBBHttpClientWrapper bbHttpClientWrapper = new StubBBHttpClientWrapper();
+    StubReverseLocationLookup reverseLocationLookup = new StubReverseLocationLookup();
     bbHttpClientWrapper.setFindMyLocation(
         "Alice",
         findMyLocation(
@@ -245,10 +259,11 @@ class BBMessageAgentTest {
             "Apple Park",
             "1 Apple Park Way, Cupertino, CA 95014, United States",
             1777050691000L));
+    reverseLocationLookup.setResult("Cupertino, Santa Clara County, California, United States");
     when(openAIClient.responses()).thenReturn(responseService);
     when(responseService.create(any(ResponseCreateParams.class)))
         .thenReturn(responseWithNoToolCalls());
-    BBMessageAgent agent = newAgent(openAIClient, bbHttpClientWrapper);
+    BBMessageAgent agent = newAgent(openAIClient, bbHttpClientWrapper, reverseLocationLookup);
     IncomingMessage incoming =
         incomingMessage("iMessage;+;chat-location", "msg-location", "where am I?", 1_000L);
 
@@ -260,10 +275,16 @@ class BBMessageAgentTest {
     assertTrue(contextText.contains("Current Find My location context"));
     assertTrue(contextText.contains("latitude=37.33182"));
     assertTrue(contextText.contains("longitude=-122.03118"));
+    assertTrue(
+        contextText.contains(
+            "reverse_geocoded_approximate_address=Cupertino, Santa Clara County, California, United States"));
     assertTrue(contextText.contains("short_address=Apple Park"));
     assertTrue(contextText.contains("last_updated=2026-04-24T17:11:31Z"));
     assertEquals(1, bbHttpClientWrapper.findMyLookupCalls);
     assertEquals("Alice", bbHttpClientWrapper.lastFindMyUserId);
+    assertEquals(1, reverseLocationLookup.reverseLookupCalls);
+    assertEquals(37.33182, reverseLocationLookup.lastLatitude);
+    assertEquals(-122.03118, reverseLocationLookup.lastLongitude);
 
     agent.createResponse(input, incoming, null);
 
@@ -295,6 +316,37 @@ class BBMessageAgentTest {
     assertTrue(contextText.contains("share their location via Find My"));
     assertEquals(1, bbHttpClientWrapper.findMyLookupCalls);
     assertEquals("Alice", bbHttpClientWrapper.lastFindMyUserId);
+  }
+
+  @Test
+  void injectsFindMyLocationContextUsingLinkedWebsiteEmailFallback() {
+    StubBBHttpClientWrapper bbHttpClientWrapper = new StubBBHttpClientWrapper();
+    WebsiteAccountService websiteAccountService = Mockito.mock(WebsiteAccountService.class);
+    bbHttpClientWrapper.setFindMyLocation(
+        "alice@example.com",
+        findMyLocation(
+            "alice@example.com",
+            List.of(37.33182, -122.03118),
+            "Apple Park",
+            "1 Apple Park Way, Cupertino, CA 95014, United States",
+            1777050691000L));
+    when(websiteAccountService.findLinkedAccountEmail(any(IncomingMessage.class)))
+        .thenReturn(Optional.of("alice@example.com"));
+    BBMessageAgent agent =
+        newAgent(
+            Mockito.mock(OpenAIClient.class),
+            bbHttpClientWrapper,
+            websiteAccountService,
+            ReverseLocationLookup.noop());
+    IncomingMessage incoming =
+        incomingMessage(
+            "iMessage;+;chat-linked-location", "msg-linked-location", "where am I?", 1_000L);
+
+    List<ResponseInputItem> input = agent.buildConversationInput(List.of(), incoming);
+
+    ResponseInputItem locationContext = input.get(input.size() - 1);
+    assertTrue(extractText(locationContext).contains("Current Find My location context"));
+    assertEquals(List.of("Alice", "alice@example.com"), bbHttpClientWrapper.lastFindMyUserIds);
   }
 
   @Test
@@ -552,9 +604,18 @@ class BBMessageAgentTest {
             bbHttpClientWrapper,
             mem0Client,
             gcalClient,
+            null,
+            null,
+            null,
+            null,
             giphyClient,
+            ReverseLocationLookup.noop(),
             new InMemoryAgentSettingsStore(),
             workflowProperties,
+            null,
+            null,
+            null,
+            null,
             null,
             new ModelPicker());
 
@@ -604,8 +665,12 @@ class BBMessageAgentTest {
             null,
             null,
             Mockito.mock(GiphyClient.class),
+            ReverseLocationLookup.noop(),
             new InMemoryAgentSettingsStore(),
             new AgentWorkflowProperties(),
+            null,
+            null,
+            null,
             null,
             null,
             new ModelPicker());
@@ -645,8 +710,12 @@ class BBMessageAgentTest {
             Mockito.mock(CoderAsyncTaskStartStore.class),
             null,
             Mockito.mock(GiphyClient.class),
+            ReverseLocationLookup.noop(),
             new InMemoryAgentSettingsStore(),
             new AgentWorkflowProperties(),
+            null,
+            null,
+            null,
             null,
             null,
             new ModelPicker());
@@ -783,17 +852,78 @@ class BBMessageAgentTest {
   }
 
   private static BBMessageAgent newAgent(
+      OpenAIClient openAIClient,
+      BBHttpClientWrapper bbHttpClientWrapper,
+      ReverseLocationLookup reverseLocationLookup) {
+    return newAgent(openAIClient, bbHttpClientWrapper, null, reverseLocationLookup);
+  }
+
+  private static BBMessageAgent newAgent(
+      OpenAIClient openAIClient,
+      BBHttpClientWrapper bbHttpClientWrapper,
+      WebsiteAccountService websiteAccountService,
+      ReverseLocationLookup reverseLocationLookup) {
+    return new BBMessageAgent(
+        openAIClient,
+        bbHttpClientWrapper,
+        Mockito.mock(Mem0Client.class),
+        Mockito.mock(GcalClient.class),
+        null,
+        null,
+        null,
+        websiteAccountService,
+        Mockito.mock(GiphyClient.class),
+        reverseLocationLookup,
+        new InMemoryAgentSettingsStore(),
+        new AgentWorkflowProperties(),
+        null,
+        null,
+        null,
+        null,
+        null,
+        new ModelPicker());
+  }
+
+  private static BBMessageAgent newAgent(
       OpenAIClient openAIClient, BBHttpClientWrapper bbHttpClientWrapper, ModelPicker modelPicker) {
     return new BBMessageAgent(
         openAIClient,
         bbHttpClientWrapper,
         Mockito.mock(Mem0Client.class),
         Mockito.mock(GcalClient.class),
+        Mockito.mock(CoderMcpClient.class),
+        null,
+        Mockito.mock(CoderAsyncTaskStartStore.class),
+        null,
         Mockito.mock(GiphyClient.class),
+        ReverseLocationLookup.noop(),
         new InMemoryAgentSettingsStore(),
         new AgentWorkflowProperties(),
         null,
+        null,
+        null,
+        null,
+        null,
         modelPicker);
+  }
+
+  private static class StubReverseLocationLookup implements ReverseLocationLookup {
+    private Optional<ReverseLocationLookupResult> result = Optional.empty();
+    private int reverseLookupCalls;
+    private double lastLatitude;
+    private double lastLongitude;
+
+    void setResult(String displayName) {
+      this.result = Optional.of(new ReverseLocationLookupResult(displayName, Map.of()));
+    }
+
+    @Override
+    public Optional<ReverseLocationLookupResult> reverseLookup(double latitude, double longitude) {
+      reverseLookupCalls++;
+      lastLatitude = latitude;
+      lastLongitude = longitude;
+      return result;
+    }
   }
 
   private static class StubBBHttpClientWrapper extends BBHttpClientWrapper {
@@ -806,6 +936,7 @@ class BBMessageAgentTest {
     private final Map<String, FindMyFriendLocation> findMyLocations = new ConcurrentHashMap<>();
     private int findMyLookupCalls;
     private String lastFindMyUserId;
+    private List<String> lastFindMyUserIds = List.of();
 
     StubBBHttpClientWrapper() {
       super("pw", Mockito.mock(V1MessageApi.class), Mockito.mock(V1ContactApi.class));
@@ -828,9 +959,19 @@ class BBMessageAgentTest {
 
     @Override
     public FindMyFriendLocation getFindMyLocation(String userId) {
+      return getFindMyLocation(userId == null ? List.of() : List.of(userId));
+    }
+
+    @Override
+    public FindMyFriendLocation getFindMyLocation(Collection<String> userIds) {
       findMyLookupCalls++;
-      lastFindMyUserId = userId;
-      return findMyLocations.get(userId);
+      lastFindMyUserIds = userIds == null ? List.of() : userIds.stream().toList();
+      lastFindMyUserId = lastFindMyUserIds.isEmpty() ? null : lastFindMyUserIds.getFirst();
+      return lastFindMyUserIds.stream()
+          .map(findMyLocations::get)
+          .filter(Objects::nonNull)
+          .findFirst()
+          .orElse(null);
     }
 
     @Override
@@ -941,7 +1082,7 @@ class BBMessageAgentTest {
         .output(outputItems)
         .parallelToolCalls(false)
         .temperature(0.2)
-        .toolChoice(ToolChoice.ofOptions(ToolChoiceOptions.AUTO))
+        .toolChoice(ToolChoiceOptions.AUTO)
         .tools(List.of())
         .topP(1.0)
         .build();

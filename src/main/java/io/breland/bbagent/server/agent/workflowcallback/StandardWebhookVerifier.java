@@ -7,6 +7,7 @@ import java.time.Instant;
 import java.util.Base64;
 import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
+import org.apache.commons.lang3.StringUtils;
 import org.springframework.stereotype.Component;
 
 @Component
@@ -22,10 +23,7 @@ public class StandardWebhookVerifier {
       byte[] payload,
       Instant now,
       Duration timestampTolerance) {
-    if (isBlank(signingSecret)
-        || isBlank(webhookId)
-        || isBlank(webhookTimestamp)
-        || isBlank(webhookSignature)) {
+    if (StringUtils.isAnyBlank(signingSecret, webhookId, webhookTimestamp, webhookSignature)) {
       return VerificationResult.invalid("missing Standard Webhooks headers");
     }
     if (webhookId.contains(".") || webhookTimestamp.contains(".")) {
@@ -97,10 +95,6 @@ public class StandardWebhookVerifier {
     mac.update((webhookId + "." + webhookTimestamp + ".").getBytes(StandardCharsets.UTF_8));
     mac.update(payload == null ? new byte[0] : payload);
     return mac.doFinal();
-  }
-
-  private boolean isBlank(String value) {
-    return value == null || value.isBlank();
   }
 
   public record VerificationResult(boolean valid, String error) {

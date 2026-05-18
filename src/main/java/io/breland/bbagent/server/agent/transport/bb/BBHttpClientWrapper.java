@@ -6,6 +6,7 @@ import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import io.breland.bbagent.generated.bluebubblesclient.ApiClient;
 import io.breland.bbagent.generated.bluebubblesclient.api.*;
 import io.breland.bbagent.generated.bluebubblesclient.model.*;
+import io.breland.bbagent.server.agent.AgentAccountIdentifiers;
 import io.breland.bbagent.server.agent.BBMessageAgent;
 import io.breland.bbagent.server.agent.IncomingMessage;
 import java.io.IOException;
@@ -36,6 +37,7 @@ import org.springframework.util.MultiValueMap;
 public class BBHttpClientWrapper {
 
   private static final Duration API_TIMEOUT = Duration.ofSeconds(10);
+  private static final String ANY_DIRECT_CHAT_PREFIX = "any;-;";
 
   private final V1ContactApi contactApi;
   private ApiClient apiClient;
@@ -126,12 +128,34 @@ public class BBHttpClientWrapper {
     if (userId == null || userId.isBlank()) {
       return null;
     }
+    return getFindMyLocation(List.of(userId));
+  }
+
+  public FindMyFriendLocation getFindMyLocation(Collection<String> userIds) {
+    List<String> candidates =
+        userIds == null
+            ? List.of()
+            : userIds.stream().filter(id -> id != null && !id.isBlank()).toList();
+    if (candidates.isEmpty()) {
+      return null;
+    }
     ApiResponseFindMyFriendsLocations response =
         this.icloudApi.apiV1IcloudFindmyFriendsRefreshPost(password).block(API_TIMEOUT);
     response = requirePresent(response, "refresh Find My friends locations");
     requireSuccessfulResponse(
         response.getStatus(), response.getMessage(), "refresh Find My friends locations");
-    return findFindMyLocation(response.getData(), userId).orElse(null);
+    return findFindMyLocation(response.getData(), candidates).orElse(null);
+  }
+
+  private static Optional<FindMyFriendLocation> findFindMyLocation(
+      List<FindMyFriendLocation> locations, Collection<String> userIds) {
+    if (userIds == null || userIds.isEmpty()) {
+      return Optional.empty();
+    }
+    return userIds.stream()
+        .map(userId -> findFindMyLocation(locations, userId))
+        .flatMap(Optional::stream)
+        .findFirst();
   }
 
   private static Optional<FindMyFriendLocation> findFindMyLocation(
@@ -169,14 +193,10 @@ public class BBHttpClientWrapper {
     if (value == null) {
       return null;
     }
-    String normalized = value.trim().toLowerCase(Locale.ROOT);
+    String normalized =
+        AgentAccountIdentifiers.stripAddressScheme(value).trim().toLowerCase(Locale.ROOT);
     if (normalized.isBlank()) {
       return null;
-    }
-    if (normalized.startsWith("mailto:")) {
-      normalized = normalized.substring("mailto:".length());
-    } else if (normalized.startsWith("tel:")) {
-      normalized = normalized.substring("tel:".length());
     }
     normalized = normalized.replaceAll("\\s+", "");
     return normalized.isBlank() ? null : normalized;
@@ -188,6 +208,52 @@ public class BBHttpClientWrapper {
     }
     String digits = value.replaceAll("\\D+", "");
     return digits.isBlank() ? null : digits;
+  }
+
+  public List<String> getContactAddressesFor(String address) {
+    if (address == null || address.isBlank()) {
+      return List.of();
+    }
+    ApiV1ContactGet200Response response = contactApi.apiV1ContactGet(password).block(API_TIMEOUT);
+    response = requirePresent(response, "get contacts");
+    requireSuccessfulResponse(response.getStatus(), response.getMessage(), "get contacts");
+    if (response.getData() == null || response.getData().isEmpty()) {
+      return List.of();
+    }
+    LinkedHashSet<String> matches = new LinkedHashSet<>();
+    for (Contact contact : response.getData()) {
+      List<String> contactAddresses = contactAddresses(contact);
+      boolean containsAddress =
+          contactAddresses.stream()
+              .anyMatch(candidate -> AgentAccountIdentifiers.equivalent(candidate, address));
+      if (containsAddress) {
+        matches.addAll(contactAddresses);
+      }
+    }
+    return List.copyOf(matches);
+  }
+
+  private static List<String> contactAddresses(Contact contact) {
+    if (contact == null) {
+      return List.of();
+    }
+    LinkedHashSet<String> addresses = new LinkedHashSet<>();
+    addAddressEntries(addresses, contact.getPhoneNumbers());
+    addAddressEntries(addresses, contact.getEmails());
+    return List.copyOf(addresses);
+  }
+
+  private static void addAddressEntries(
+      LinkedHashSet<String> addresses, List<AddressEntry> entries) {
+    if (entries == null) {
+      return;
+    }
+    entries.stream()
+        .filter(Objects::nonNull)
+        .map(AddressEntry::getAddress)
+        .filter(value -> value != null && !value.isBlank())
+        .map(String::trim)
+        .forEach(addresses::add);
   }
 
   public Path getAttachment(String attachmentGuid) {
@@ -287,6 +353,7 @@ public class BBHttpClientWrapper {
       log.warn("Cannot send multipart message without chatGuid");
       return false;
     }
+    chatGuid = normalizeDirectAnyChatGuid(chatGuid);
     log.info("Sending multipart message with chatGuid {} - message {}", chatGuid, message);
     List<Map<String, Object>> parts = new ArrayList<>();
     int partIndex = 0;
@@ -438,11 +505,12 @@ public class BBHttpClientWrapper {
       log.warn("Cannot send message without chatGuid");
       return;
     }
-    this.sendTextDirect(message.chatGuid(), text);
+    this.sendTextDirect(normalizeDirectAnyChatGuid(message.chatGuid(), message.service()), text);
   }
 
   public void sendTextDirect(ApiV1MessageTextPostRequest request) {
     try {
+      request.setChatGuid(normalizeDirectAnyChatGuid(request.getChatGuid()));
       applyTextFormatting(request);
       log.info("Attempting to send direct text message {}", request.toString());
       messageApi.apiV1MessageTextPost(password, request).block(API_TIMEOUT);
@@ -495,12 +563,13 @@ public class BBHttpClientWrapper {
 
     ApiV1MessageReactPostRequest request = new ApiV1MessageReactPostRequest();
     request.reaction(reaction);
-    request.setChatGuid(message.chatGuid());
+    request.setChatGuid(normalizeDirectAnyChatGuid(message.chatGuid(), message.service()));
     request.setSelectedMessageGuid(message.messageGuid());
     return this.sendReactionDirect(request);
   }
 
   public boolean sendReactionDirect(ApiV1MessageReactPostRequest request) {
+    request.setChatGuid(normalizeDirectAnyChatGuid(request.getChatGuid()));
     if (!BBMessageAgent.SUPPORTED_REACTIONS.contains(request.getReaction())) {
       log.warn("Unsupported reaction {}", request.getReaction());
       return false;
@@ -513,6 +582,21 @@ public class BBHttpClientWrapper {
       log.warn("Failed to send reaction", e);
       return false;
     }
+  }
+
+  static String normalizeDirectAnyChatGuid(String chatGuid) {
+    return normalizeDirectAnyChatGuid(chatGuid, BBMessageAgent.IMESSAGE_SERVICE);
+  }
+
+  static String normalizeDirectAnyChatGuid(String chatGuid, String service) {
+    if (chatGuid == null || !chatGuid.startsWith(ANY_DIRECT_CHAT_PREFIX)) {
+      return chatGuid;
+    }
+    String resolvedService =
+        service == null || service.isBlank() || "any".equalsIgnoreCase(service)
+            ? BBMessageAgent.IMESSAGE_SERVICE
+            : service;
+    return resolvedService + chatGuid.substring("any".length());
   }
 
   public List<ApiV1ChatChatGuidMessageGet200ResponseDataInner> getMessagesInChat(String chatGuid) {

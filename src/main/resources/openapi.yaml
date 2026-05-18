@@ -20,6 +20,8 @@ tags:
     description: Agent workflow callback endpoints
   - name: websiteAccount
     description: Website account management endpoints
+  - name: admin
+    description: Admin-only operational endpoints
 paths:
 
   /api/v1/bluebubbles/messageReceived.message:
@@ -100,34 +102,30 @@ paths:
         - name: code
           in: query
           description: OAuth authorization code from Google
-          required: true
+          required: false
           schema:
             type: string
         - name: state
           in: query
           description: Account key used to associate the OAuth session
-          required: true
+          required: false
+          schema:
+            type: string
+        - name: error
+          in: query
+          description: OAuth error returned by Google when authorization is denied
+          required: false
           schema:
             type: string
       responses:
-        '200':
-          description: OAuth completed
-          content:
-            text/html:
+        '303':
+          description: Browser redirected to the frontend OAuth result page
+          headers:
+            Location:
+              description: Frontend OAuth result URL
               schema:
                 type: string
-        '400':
-          description: Missing or invalid parameters
-          content:
-            text/html:
-              schema:
-                type: string
-        '500':
-          description: OAuth exchange failed
-          content:
-            text/html:
-              schema:
-                type: string
+                format: uri-reference
   /api/v1/coder/completeOauth.coder:
     get:
       operationId: coderCompleteOauth
@@ -155,24 +153,14 @@ paths:
           schema:
             type: string
       responses:
-        '200':
-          description: OAuth completed
-          content:
-            text/html:
+        '303':
+          description: Browser redirected to the frontend OAuth result page
+          headers:
+            Location:
+              description: Frontend OAuth result URL
               schema:
                 type: string
-        '400':
-          description: Missing, invalid, or denied OAuth parameters
-          content:
-            text/html:
-              schema:
-                type: string
-        '500':
-          description: OAuth exchange failed
-          content:
-            text/html:
-              schema:
-                type: string
+                format: uri-reference
   /api/v1/workflowCallback/receive.workflowCallbacks:
     post:
       operationId: workflowCallbackReceive
@@ -322,33 +310,79 @@ paths:
           description: Link token already redeemed by another account
         '410':
           description: Link token expired
-  /api/v1/websiteAccount/deleteLink.websiteAccountLinks:
+  /api/v1/websiteAccount/deleteLinkedAccount.websiteAccountLinks:
     delete:
-      operationId: websiteAccountDeleteLink
+      operationId: websiteAccountDeleteLinkedAccount
       tags:
         - websiteAccount
-      summary: Deletes an iMessage sender link
-      description: Unlinks an iMessage identity from the authenticated website account.
+      summary: Deletes a linked integration account
+      description: Unlinks an integration account derived from a linked iMessage identity.
       security:
         - bearerAuth: []
       parameters:
-        - name: link_id
+        - name: type
           in: query
-          description: Link identifier to remove.
+          description: Integration account type to unlink.
+          required: true
+          schema:
+            type: string
+            enum:
+              - gcal
+              - coder
+        - name: account_key
+          in: query
+          description: Integration account key to remove.
           required: true
           schema:
             type: string
       responses:
         '200':
-          description: Link deleted
+          description: Linked integration account deleted
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/WebsiteAccountDeleteLinkResponse'
+                $ref: '#/components/schemas/WebsiteAccountDeleteLinkedAccountResponse'
         '401':
           description: Authentication required
         '404':
-          description: Link not found
+          description: Linked integration account not found
+  /api/v1/admin/get.statistics:
+    get:
+      operationId: adminGetStatistics
+      tags:
+        - admin
+      summary: Gets recent agent statistics
+      description: Returns message, model, and active-user statistics for an admin-selected time period.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: from
+          in: query
+          description: Inclusive start of the statistics period. Defaults to 24 hours before now.
+          required: false
+          schema:
+            type: string
+            format: date-time
+        - name: to
+          in: query
+          description: Exclusive end of the statistics period. Defaults to now.
+          required: false
+          schema:
+            type: string
+            format: date-time
+      responses:
+        '200':
+          description: Admin statistics
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminStatsResponse'
+        '400':
+          description: Invalid time period
+        '401':
+          description: Authentication required
+        '403':
+          description: Admin role required
 
 
 components:
@@ -362,8 +396,12 @@ components:
       type: object
       required:
         - subject
+        - account_id
       properties:
         subject:
+          type: string
+          nullable: true
+        account_id:
           type: string
         email:
           type: string
@@ -382,26 +420,39 @@ components:
           type: string
           format: date-time
           nullable: true
+    WebsiteAccountIdentity:
+      type: object
+      required:
+        - type
+        - identifier
+        - normalized_identifier
+      properties:
+        type:
+          type: string
+          enum:
+            - imessage_email
+            - imessage_phone
+            - lxmf_address
+        identifier:
+          type: string
+        normalized_identifier:
+          type: string
     WebsiteAccountLink:
       type: object
       required:
         - link_id
-        - account_base
-        - coder_account_base
-        - gcal_account_base
-        - is_group
+        - account_id
+        - identities
       properties:
         link_id:
           type: string
-        account_base:
+        account_id:
           type: string
-          description: Stable display identity for the linked iMessage sender.
-        coder_account_base:
-          type: string
-          description: Account base used by Coder tools for this sender.
-        gcal_account_base:
-          type: string
-          description: Account base used by Google Calendar tools for this sender/chat.
+          description: Canonical account id shared across chat identities and integrations.
+        identities:
+          type: array
+          items:
+            $ref: '#/components/schemas/WebsiteAccountIdentity'
         chat_guid:
           type: string
           nullable: true
@@ -411,8 +462,6 @@ components:
         service:
           type: string
           nullable: true
-        is_group:
-          type: boolean
         created_at:
           type: string
           format: date-time
@@ -433,9 +482,37 @@ components:
       type: object
       required:
         - account_id
+        - account_key
       properties:
         account_id:
           type: string
+        account_key:
+          type: string
+        email:
+          type: string
+          nullable: true
+    WebsiteLinkedIntegrationAccount:
+      type: object
+      required:
+        - type
+        - account_key
+        - label
+        - unlinkable
+      properties:
+        type:
+          type: string
+          enum:
+            - gcal
+            - coder
+        account_key:
+          type: string
+        email:
+          type: string
+          nullable: true
+        label:
+          type: string
+        unlinkable:
+          type: boolean
     WebsiteModelOption:
       type: object
       required:
@@ -465,10 +542,10 @@ components:
         - model_selection_configurable
         - available_models
       properties:
-        account_base:
+        account_id:
           type: string
           nullable: true
-          description: Sender/account base used by the model picker.
+          description: Canonical account id used by the model picker.
         plan:
           type: string
           enum:
@@ -500,6 +577,7 @@ components:
         - link
         - coder_linked
         - gcal_accounts
+        - linked_accounts
         - model_access
       properties:
         link:
@@ -510,6 +588,10 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/WebsiteCalendarAccountSummary'
+        linked_accounts:
+          type: array
+          items:
+            $ref: '#/components/schemas/WebsiteLinkedIntegrationAccount'
         model_access:
           $ref: '#/components/schemas/WebsiteModelAccessSummary'
     WebsiteLinkedAccountsResponse:
@@ -541,13 +623,165 @@ components:
           type: string
         link:
           $ref: '#/components/schemas/WebsiteAccountLink'
-    WebsiteAccountDeleteLinkResponse:
+    WebsiteAccountDeleteLinkedAccountResponse:
       type: object
       required:
         - deleted
       properties:
         deleted:
           type: boolean
+    AdminStatsPeriod:
+      type: object
+      required:
+        - from
+        - to
+        - bucket_size
+      properties:
+        from:
+          type: string
+          format: date-time
+        to:
+          type: string
+          format: date-time
+        bucket_size:
+          type: string
+          enum:
+            - hour
+            - day
+    AdminModelStats:
+      type: object
+      required:
+        - model_key
+        - model_label
+        - responses_model
+        - plan
+        - is_premium
+        - message_count
+        - active_users
+        - percentage
+      properties:
+        model_key:
+          type: string
+        model_label:
+          type: string
+        responses_model:
+          type: string
+        plan:
+          type: string
+        is_premium:
+          type: boolean
+        message_count:
+          type: integer
+          format: int64
+        active_users:
+          type: integer
+          format: int64
+        percentage:
+          type: number
+          format: double
+    AdminBucketModelStats:
+      type: object
+      required:
+        - model_key
+        - model_label
+        - message_count
+      properties:
+        model_key:
+          type: string
+        model_label:
+          type: string
+        message_count:
+          type: integer
+          format: int64
+    AdminSenderStats:
+      type: object
+      required:
+        - account_key_hash
+        - account_bucket
+        - message_count
+        - percentage
+        - last_seen_at
+        - models
+      properties:
+        account_key_hash:
+          type: string
+          description: SHA-256 hash of the sender/account bucket used for metrics grouping.
+        account_bucket:
+          type: string
+          description: Short stable display bucket derived from the account hash.
+        message_count:
+          type: integer
+          format: int64
+        percentage:
+          type: number
+          format: double
+        last_seen_at:
+          type: string
+          format: date-time
+        models:
+          type: array
+          items:
+            $ref: '#/components/schemas/AdminBucketModelStats'
+    AdminStatsBucket:
+      type: object
+      required:
+        - bucket_start
+        - bucket_end
+        - message_count
+        - active_users
+        - models
+      properties:
+        bucket_start:
+          type: string
+          format: date-time
+        bucket_end:
+          type: string
+          format: date-time
+        message_count:
+          type: integer
+          format: int64
+        active_users:
+          type: integer
+          format: int64
+        models:
+          type: array
+          items:
+            $ref: '#/components/schemas/AdminBucketModelStats'
+    AdminStatsResponse:
+      type: object
+      required:
+        - period
+        - total_messages
+        - active_users
+        - average_messages_per_user
+        - models
+        - senders
+        - timeline
+      properties:
+        period:
+          $ref: '#/components/schemas/AdminStatsPeriod'
+        total_messages:
+          type: integer
+          format: int64
+        active_users:
+          type: integer
+          format: int64
+        average_messages_per_user:
+          type: number
+          format: double
+        models:
+          type: array
+          items:
+            $ref: '#/components/schemas/AdminModelStats'
+        senders:
+          type: array
+          description: Top sender/account buckets by message volume for the selected period.
+          items:
+            $ref: '#/components/schemas/AdminSenderStats'
+        timeline:
+          type: array
+          items:
+            $ref: '#/components/schemas/AdminStatsBucket'
     WorkflowCallbackPayload:
       type: object
       required:
@@ -719,7 +953,7 @@ components:
               type: string
               nullable: true
             associatedMessageType:
-              type: integer
+              type: string
               nullable: true
             expressiveSendStyleId:
               type: string

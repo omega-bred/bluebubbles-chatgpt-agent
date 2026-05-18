@@ -6,7 +6,6 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 import io.breland.bbagent.server.agent.tools.AgentTool;
 import io.breland.bbagent.server.agent.tools.ToolProvider;
 import io.swagger.v3.oas.annotations.media.Schema;
-import java.util.LinkedHashMap;
 import java.util.Map;
 
 public class CoderAuthAgentTool implements ToolProvider {
@@ -49,8 +48,8 @@ public class CoderAuthAgentTool implements ToolProvider {
           if (request.action() == null) {
             return "missing action";
           }
-          String accountBase = CoderMcpClient.resolveAccountBase(context);
-          if (accountBase == null || accountBase.isBlank()) {
+          String accountId = context.accountId();
+          if (accountId == null || accountId.isBlank()) {
             return "no account";
           }
           try {
@@ -59,14 +58,14 @@ public class CoderAuthAgentTool implements ToolProvider {
                   context
                       .getMapper()
                       .writeValueAsString(
-                          mapOf(
+                          Map.of(
                               "linked",
-                              coderMcpClient.isLinked(accountBase),
+                              coderMcpClient.isLinked(accountId),
                               "tool_prefix",
                               CoderMcpClient.TOOL_PREFIX));
               case AUTH_URL -> {
-                if (coderMcpClient.isLinked(accountBase)) {
-                  yield context.getMapper().writeValueAsString(mapOf("linked", true));
+                if (coderMcpClient.isLinked(accountId)) {
+                  yield context.getMapper().writeValueAsString(Map.of("linked", true));
                 }
                 String chatGuid = context.message() != null ? context.message().chatGuid() : null;
                 String messageGuid =
@@ -74,32 +73,19 @@ public class CoderAuthAgentTool implements ToolProvider {
                 if (chatGuid == null || chatGuid.isBlank()) {
                   yield "missing chat";
                 }
-                var authUrl = coderMcpClient.getAuthUrl(accountBase, chatGuid, messageGuid);
+                var authUrl = coderMcpClient.getAuthUrl(accountId, chatGuid, messageGuid);
                 if (authUrl.isEmpty()) {
                   yield "not configured";
                 }
                 yield context
                     .getMapper()
-                    .writeValueAsString(mapOf("auth_url", authUrl.get(), "linked", false));
+                    .writeValueAsString(Map.of("auth_url", authUrl.get(), "linked", false));
               }
-              case REVOKE -> coderMcpClient.revoke(accountBase) ? "revoked" : "not found";
+              case REVOKE -> coderMcpClient.revoke(accountId) ? "revoked" : "not found";
             };
           } catch (Exception e) {
             return "error: " + e.getMessage();
           }
         });
-  }
-
-  private Map<String, Object> mapOf(String key1, Object value1) {
-    Map<String, Object> response = new LinkedHashMap<>();
-    response.put(key1, value1);
-    return response;
-  }
-
-  private Map<String, Object> mapOf(String key1, Object value1, String key2, Object value2) {
-    Map<String, Object> response = new LinkedHashMap<>();
-    response.put(key1, value1);
-    response.put(key2, value2);
-    return response;
   }
 }

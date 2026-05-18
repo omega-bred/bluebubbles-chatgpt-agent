@@ -2,13 +2,14 @@ package io.breland.bbagent.server.agent;
 
 import io.breland.bbagent.server.agent.tools.giphy.GiphyClient;
 import java.util.Optional;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.condition.DisabledOnOs;
+import org.junit.jupiter.api.condition.OS;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 
 @SpringBootTest()
-@Disabled
+@DisabledOnOs(OS.LINUX)
 public class GiphyClientTest {
 
   @Autowired public GiphyClient giphyClient;

@@ -18,7 +18,7 @@ class CoderOauthStateCodecTest {
     Optional<CoderOauthStateCodec.OauthState> parsed = codec.parseState(state);
 
     assertTrue(parsed.isPresent());
-    assertEquals("sender", parsed.get().accountBase());
+    assertEquals("sender", parsed.get().accountId());
     assertEquals("pending-id", parsed.get().pendingId());
     assertEquals("chat-guid", parsed.get().chatGuid());
     assertEquals("message-guid", parsed.get().messageGuid());

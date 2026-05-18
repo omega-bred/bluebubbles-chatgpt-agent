@@ -2,6 +2,8 @@ package io.breland.bbagent.server.agent.persistence;
 
 import io.breland.bbagent.server.agent.AgentSettingsStore;
 import io.breland.bbagent.server.agent.BBMessageAgent;
+import io.breland.bbagent.server.agent.persistence.account.AgentAccountEntity;
+import io.breland.bbagent.server.agent.persistence.account.AgentAccountRepository;
 import java.util.Optional;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -12,13 +14,13 @@ import org.springframework.transaction.annotation.Transactional;
 @Slf4j
 public class PostgresAgentSettingsStore implements AgentSettingsStore {
   private final AssistantResponsivenessRepository responsivenessRepository;
-  private final GlobalContactRepository globalContactRepository;
+  private final AgentAccountRepository accountRepository;
 
   public PostgresAgentSettingsStore(
       AssistantResponsivenessRepository responsivenessRepository,
-      GlobalContactRepository globalContactRepository) {
+      AgentAccountRepository accountRepository) {
     this.responsivenessRepository = responsivenessRepository;
-    this.globalContactRepository = globalContactRepository;
+    this.accountRepository = accountRepository;
   }
 
   @Override
@@ -61,23 +63,37 @@ public class PostgresAgentSettingsStore implements AgentSettingsStore {
 
   @Override
   @Transactional(readOnly = true)
-  public Optional<String> findGlobalName(String sender) {
-    return globalContactRepository.findById(sender).map(GlobalContactEntity::getName);
+  public Optional<String> findGlobalName(String accountId) {
+    return accountRepository.findById(accountId).map(AgentAccountEntity::getGlobalContactName);
   }
 
   @Override
-  public void saveGlobalName(String sender, String name) {
-    if (sender == null || sender.isBlank() || name == null || name.isBlank()) {
+  public void saveGlobalName(String accountId, String name) {
+    if (accountId == null || accountId.isBlank() || name == null || name.isBlank()) {
       return;
     }
-    globalContactRepository.save(new GlobalContactEntity(sender, name.trim()));
+    accountRepository
+        .findById(accountId)
+        .ifPresent(
+            account -> {
+              account.setGlobalContactName(name.trim());
+              account.setUpdatedAt(java.time.Instant.now());
+              accountRepository.save(account);
+            });
   }
 
   @Override
-  public void deleteGlobalName(String sender) {
-    if (sender == null || sender.isBlank()) {
+  public void deleteGlobalName(String accountId) {
+    if (accountId == null || accountId.isBlank()) {
       return;
     }
-    globalContactRepository.deleteById(sender);
+    accountRepository
+        .findById(accountId)
+        .ifPresent(
+            account -> {
+              account.setGlobalContactName(null);
+              account.setUpdatedAt(java.time.Instant.now());
+              accountRepository.save(account);
+            });
   }
 }

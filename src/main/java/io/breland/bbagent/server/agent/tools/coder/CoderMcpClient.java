@@ -6,9 +6,6 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.openai.core.JsonValue;
 import com.openai.models.responses.FunctionTool;
-import io.breland.bbagent.server.agent.AgentAccountIdentity;
-import io.breland.bbagent.server.agent.persistence.coder.CoderOauthClientEntity;
-import io.breland.bbagent.server.agent.persistence.coder.CoderOauthClientRepository;
 import io.breland.bbagent.server.agent.persistence.coder.CoderOauthCredentialEntity;
 import io.breland.bbagent.server.agent.persistence.coder.CoderOauthCredentialRepository;
 import io.breland.bbagent.server.agent.persistence.coder.CoderOauthPendingAuthorizationEntity;
@@ -36,6 +33,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
+import org.springframework.lang.Nullable;
 import org.springframework.stereotype.Component;
 import org.springframework.util.LinkedMultiValueMap;
 import org.springframework.util.MultiValueMap;
@@ -55,7 +53,6 @@ public class CoderMcpClient {
   private final CoderToolNameMapper toolNameMapper = new CoderToolNameMapper();
   private final CoderToolResultFormatter toolResultFormatter;
   private final RestClient restClient;
-  private final CoderOauthClientRepository clientRepository;
   private final CoderOauthCredentialRepository credentialRepository;
   private final CoderOauthPendingAuthorizationRepository pendingAuthorizationRepository;
   private final String serverUrl;
@@ -63,7 +60,6 @@ public class CoderMcpClient {
   private final String configuredClientId;
   private final String configuredClientSecret;
   private final String scopes;
-  private final String clientName;
   private final Duration requestTimeout;
   private final Duration toolCacheTtl;
   private final CoderOauthStateCodec stateCodec;
@@ -79,11 +75,9 @@ public class CoderMcpClient {
       @Value("${coder.oauth.client_id:}") String configuredClientId,
       @Value("${coder.oauth.client_secret:}") String configuredClientSecret,
       @Value("${coder.oauth.scopes:coder:all}") String scopes,
-      @Value("${coder.oauth.client_name:BlueBubbles ChatGPT Agent}") String clientName,
       @Value("${coder.mcp.request_timeout_seconds:30}") long requestTimeoutSeconds,
       @Value("${coder.mcp.tool_cache_ttl_seconds:300}") long toolCacheTtlSeconds,
       RestClient.Builder restClientBuilder,
-      CoderOauthClientRepository clientRepository,
       CoderOauthCredentialRepository credentialRepository,
       CoderOauthPendingAuthorizationRepository pendingAuthorizationRepository,
       ObjectMapper objectMapper) {
@@ -93,11 +87,9 @@ public class CoderMcpClient {
     this.configuredClientId = configuredClientId;
     this.configuredClientSecret = configuredClientSecret;
     this.scopes = scopes;
-    this.clientName = clientName;
     this.requestTimeout = Duration.ofSeconds(Math.max(1, requestTimeoutSeconds));
     this.toolCacheTtl = Duration.ofSeconds(Math.max(1, toolCacheTtlSeconds));
     this.restClient = restClientBuilder.build();
-    this.clientRepository = clientRepository;
     this.credentialRepository = credentialRepository;
     this.pendingAuthorizationRepository = pendingAuthorizationRepository;
     this.objectMapper = objectMapper;
@@ -109,15 +101,17 @@ public class CoderMcpClient {
         && !serverUrl.isBlank()
         && redirectUri != null
         && !redirectUri.isBlank()
+        && configuredClientId != null
+        && !configuredClientId.isBlank()
         && stateCodec.isConfigured();
   }
 
-  public boolean isLinked(String accountBase) {
-    return resolveLinkedAccountBase(accountBase).isPresent();
+  public boolean isLinked(String accountId) {
+    return resolveLinkedAccountId(accountId).isPresent();
   }
 
-  public Optional<String> getAuthUrl(String accountBase, String chatGuid, String messageGuid) {
-    if (!isConfigured() || accountBase == null || accountBase.isBlank()) {
+  public Optional<String> getAuthUrl(String accountId, String chatGuid, String messageGuid) {
+    if (!isConfigured() || accountId == null || accountId.isBlank()) {
       return Optional.empty();
     }
     try {
@@ -127,8 +121,7 @@ public class CoderMcpClient {
       ProtectedResourceMetadata resourceMetadata = getProtectedResourceMetadata();
       String pendingId = UUID.randomUUID().toString();
       String codeVerifier = stateCodec.generateCodeVerifier();
-      Optional<String> state =
-          stateCodec.createState(accountBase, pendingId, chatGuid, messageGuid);
+      Optional<String> state = stateCodec.createState(accountId, pendingId, chatGuid, messageGuid);
       if (state.isEmpty()) {
         return Optional.empty();
       }
@@ -136,7 +129,7 @@ public class CoderMcpClient {
       pendingAuthorizationRepository.save(
           new CoderOauthPendingAuthorizationEntity(
               pendingId,
-              accountBase,
+              accountId,
               chatGuid,
               messageGuid,
               codeVerifier,
@@ -181,59 +174,59 @@ public class CoderMcpClient {
       pendingAuthorizationRepository.deleteById(pendingAuth.getPendingId());
       return Optional.empty();
     }
-    if (!pendingAuth.getAccountBase().equals(oauthState.accountBase())) {
+    if (!pendingAuth.getAccountId().equals(oauthState.accountId())) {
       return Optional.empty();
     }
     try {
       TokenResponse tokenResponse =
           requestAuthorizationCodeToken(code, pendingAuth.getCodeVerifier());
-      saveCredential(oauthState.accountBase(), tokenResponse);
+      saveCredential(oauthState.accountId(), tokenResponse);
       pendingAuthorizationRepository.deleteById(pendingAuth.getPendingId());
-      toolsCache.remove(oauthState.accountBase());
+      toolsCache.remove(oauthState.accountId());
       return Optional.of(
           new OauthCompletion(
-              oauthState.accountBase(), oauthState.chatGuid(), oauthState.messageGuid()));
+              oauthState.accountId(), oauthState.chatGuid(), oauthState.messageGuid()));
     } catch (Exception e) {
       log.warn("Failed to complete Coder OAuth", e);
       return Optional.empty();
     }
   }
 
-  public boolean revoke(String accountBase) {
-    Optional<String> linkedAccountBase = resolveLinkedAccountBase(accountBase);
-    if (linkedAccountBase.isEmpty()) {
+  public boolean revoke(String accountId) {
+    Optional<String> linkedAccountId = resolveLinkedAccountId(accountId);
+    if (linkedAccountId.isEmpty()) {
       return false;
     }
-    String credentialAccountBase = linkedAccountBase.get();
+    String credentialAccountId = linkedAccountId.get();
     Optional<CoderOauthCredentialEntity> existing =
-        credentialRepository.findById(credentialAccountBase);
+        credentialRepository.findById(credentialAccountId);
     existing.ifPresent(this::tryRevokeRemote);
-    credentialRepository.deleteById(credentialAccountBase);
-    toolsCache.remove(credentialAccountBase);
+    credentialRepository.deleteById(credentialAccountId);
+    toolsCache.remove(credentialAccountId);
     return existing.isPresent();
   }
 
-  public List<AgentTool> getAgentTools(String accountBase) {
-    return getAgentTools(accountBase, java.util.Set.of());
+  public List<AgentTool> getAgentTools(String accountId) {
+    return getAgentTools(accountId, java.util.Set.of());
   }
 
-  public List<AgentTool> getAgentTools(String accountBase, java.util.Set<String> excludedMcpNames) {
+  public List<AgentTool> getAgentTools(String accountId, java.util.Set<String> excludedMcpNames) {
     if (!isConfigured()) {
       return List.of();
     }
-    Optional<String> linkedAccountBase = resolveLinkedAccountBase(accountBase);
-    if (linkedAccountBase.isEmpty()) {
+    Optional<String> linkedAccountId = resolveLinkedAccountId(accountId);
+    if (linkedAccountId.isEmpty()) {
       return List.of();
     }
     try {
-      String credentialAccountBase = linkedAccountBase.get();
-      List<CoderToolDefinition> definitions = getToolDefinitions(credentialAccountBase);
+      String credentialAccountId = linkedAccountId.get();
+      List<CoderToolDefinition> definitions = getToolDefinitions(credentialAccountId);
       List<AgentTool> result = new ArrayList<>();
       for (CoderToolDefinition definition : definitions) {
         if (excludedMcpNames != null && excludedMcpNames.contains(definition.mcpName())) {
           continue;
         }
-        result.add(toAgentTool(accountBase, credentialAccountBase, definition));
+        result.add(toAgentTool(accountId, credentialAccountId, definition));
       }
       return result;
     } catch (Exception e) {
@@ -242,38 +235,38 @@ public class CoderMcpClient {
     }
   }
 
-  public Optional<AgentTool> getAgentTool(String accountBase, String agentToolName) {
-    return getAgentTool(accountBase, agentToolName, java.util.Set.of());
+  public Optional<AgentTool> getAgentTool(String accountId, String agentToolName) {
+    return getAgentTool(accountId, agentToolName, java.util.Set.of());
   }
 
   public Optional<AgentTool> getAgentTool(
-      String accountBase, String agentToolName, java.util.Set<String> excludedMcpNames) {
+      String accountId, String agentToolName, java.util.Set<String> excludedMcpNames) {
     if (agentToolName == null || !agentToolName.startsWith(TOOL_PREFIX)) {
       return Optional.empty();
     }
-    return getAgentTools(accountBase, excludedMcpNames).stream()
+    return getAgentTools(accountId, excludedMcpNames).stream()
         .filter(tool -> agentToolName.equals(tool.name()))
         .findFirst();
   }
 
-  public String callMcpTool(String accountBase, String mcpToolName, Map<String, Object> arguments)
+  public String callMcpTool(String accountId, String mcpToolName, Map<String, Object> arguments)
       throws IOException {
     if (mcpToolName == null || mcpToolName.isBlank()) {
       throw new IOException("missing Coder MCP tool name");
     }
-    Optional<String> linkedAccountBase = resolveLinkedAccountBase(accountBase);
-    if (linkedAccountBase.isEmpty()) {
+    Optional<String> linkedAccountId = resolveLinkedAccountId(accountId);
+    if (linkedAccountId.isEmpty()) {
       throw new IOException("Coder account is not linked");
     }
-    String credentialAccountBase = linkedAccountBase.get();
+    String credentialAccountId = linkedAccountId.get();
     CoderToolDefinition definition =
-        getToolDefinitions(credentialAccountBase).stream()
+        getToolDefinitions(credentialAccountId).stream()
             .filter(tool -> mcpToolName.equals(tool.mcpName()))
             .findFirst()
             .orElseThrow(() -> new IOException("Unknown Coder MCP tool: " + mcpToolName));
     McpSchema.CallToolResult result =
         withClient(
-            credentialAccountBase,
+            credentialAccountId,
             client ->
                 client.callTool(
                     new McpSchema.CallToolRequest(
@@ -283,7 +276,7 @@ public class CoderMcpClient {
   }
 
   private AgentTool toAgentTool(
-      String requestedAccountBase, String credentialAccountBase, CoderToolDefinition definition) {
+      String requestedAccountId, String credentialAccountId, CoderToolDefinition definition) {
     return new AgentTool(
         definition.agentName(),
         toolDescription(definition),
@@ -291,11 +284,11 @@ public class CoderMcpClient {
         false,
         (context, args) -> {
           try {
-            String resolvedAccountBase = resolveAccountBase(context);
-            if (resolvedAccountBase == null || !resolvedAccountBase.equals(requestedAccountBase)) {
+            String resolvedAccountId = context.accountId();
+            if (resolvedAccountId == null || !resolvedAccountId.equals(requestedAccountId)) {
               return "Coder account mismatch";
             }
-            return callTool(credentialAccountBase, definition.agentName(), args);
+            return callTool(credentialAccountId, definition.agentName(), args);
           } catch (Exception e) {
             log.warn("Coder MCP tool call failed: {}", definition.mcpName(), e);
             return "Coder MCP tool call failed: " + e.getMessage();
@@ -303,10 +296,10 @@ public class CoderMcpClient {
         });
   }
 
-  private String callTool(String accountBase, String agentToolName, JsonNode args)
+  private String callTool(String accountId, String agentToolName, JsonNode args)
       throws IOException {
     CoderToolDefinition definition =
-        getToolDefinitions(accountBase).stream()
+        getToolDefinitions(accountId).stream()
             .filter(tool -> agentToolName.equals(tool.agentName()))
             .findFirst()
             .orElseThrow(() -> new IOException("Unknown Coder MCP tool: " + agentToolName));
@@ -314,20 +307,20 @@ public class CoderMcpClient {
         args == null || args.isNull() ? Map.of() : objectMapper.convertValue(args, MAP_TYPE);
     McpSchema.CallToolResult result =
         withClient(
-            accountBase,
+            accountId,
             client ->
                 client.callTool(new McpSchema.CallToolRequest(definition.mcpName(), arguments)));
     return toolResultFormatter.format(result);
   }
 
-  private List<CoderToolDefinition> getToolDefinitions(String accountBase) throws IOException {
-    CachedTools cached = toolsCache.get(accountBase);
+  private List<CoderToolDefinition> getToolDefinitions(String accountId) throws IOException {
+    CachedTools cached = toolsCache.get(accountId);
     if (cached != null && cached.expiresAt().isAfter(Instant.now())) {
       return cached.tools();
     }
     List<McpSchema.Tool> mcpTools =
         withClient(
-            accountBase,
+            accountId,
             client -> {
               List<McpSchema.Tool> allTools = new ArrayList<>();
               String cursor = null;
@@ -354,13 +347,13 @@ public class CoderMcpClient {
       }
     }
     CachedTools next = new CachedTools(List.copyOf(definitions), Instant.now().plus(toolCacheTtl));
-    toolsCache.put(accountBase, next);
+    toolsCache.put(accountId, next);
     return next.tools();
   }
 
-  private <T> T withClient(String accountBase, Function<McpSyncClient, T> callback)
+  private <T> T withClient(String accountId, Function<McpSyncClient, T> callback)
       throws IOException {
-    if (!isLinked(accountBase)) {
+    if (!isLinked(accountId)) {
       throw new IOException("Coder account is not linked");
     }
     ParsedMcpServer parsedServer = parseServerUrl();
@@ -371,10 +364,10 @@ public class CoderMcpClient {
                 (builder, method, endpoint, body, context) ->
                     builder.header(
                         HttpHeaders.AUTHORIZATION,
-                        "Bearer " + getValidAccessTokenUnchecked(accountBase)))
+                        "Bearer " + getValidAccessTokenUnchecked(accountId)))
             .authorizationErrorHandler(
                 McpHttpClientAuthorizationErrorHandler.fromSync(
-                    (responseInfo, context) -> refreshCredential(accountBase, true).isPresent()))
+                    (responseInfo, context) -> refreshCredential(accountId, true).isPresent()))
             .connectTimeout(requestTimeout)
             .build();
     McpSyncClient client =
@@ -411,42 +404,86 @@ public class CoderMcpClient {
     return message == null || message.isBlank() ? throwable.getClass().getSimpleName() : message;
   }
 
-  private String getValidAccessToken(String accountBase) throws IOException {
+  private String getValidAccessToken(String accountId) throws IOException {
     CoderOauthCredentialEntity credential =
         credentialRepository
-            .findById(accountBase)
+            .findById(accountId)
             .orElseThrow(() -> new IOException("Coder account is not linked"));
     if (!isExpired(credential)) {
       return credential.getAccessToken();
     }
-    return refreshCredential(accountBase, false)
+    return refreshCredential(accountId, false)
         .map(CoderOauthCredentialEntity::getAccessToken)
         .orElseThrow(() -> new IOException("Coder token expired; please relink Coder"));
   }
 
-  private Optional<String> resolveLinkedAccountBase(String accountBase) {
-    if (accountBase == null || accountBase.isBlank()) {
+  private Optional<String> resolveLinkedAccountId(String accountId) {
+    if (accountId == null || accountId.isBlank()) {
       return Optional.empty();
     }
-    if (credentialRepository.existsById(accountBase)) {
-      return Optional.of(accountBase);
+    if (credentialRepository.existsById(accountId)) {
+      return Optional.of(accountId);
     }
-    return credentialRepository
-        .findFirstByAccountBaseEndingWithOrderByUpdatedAtDesc("|" + accountBase)
-        .map(CoderOauthCredentialEntity::getAccountBase);
+    return Optional.empty();
   }
 
-  private String getValidAccessTokenUnchecked(String accountBase) {
+  public Optional<String> findLinkedAccountId(String accountId) {
+    return resolveLinkedAccountId(accountId);
+  }
+
+  public Optional<CoderLinkedAccount> findLinkedAccount(String accountId) {
+    return resolveLinkedAccountId(accountId)
+        .map(
+            linkedAccountId -> {
+              Optional<CoderUserProfile> profile = getCurrentUserProfile(linkedAccountId);
+              return new CoderLinkedAccount(
+                  linkedAccountId,
+                  profile
+                      .map(CoderUserProfile::email)
+                      .filter(email -> !email.isBlank())
+                      .orElse(null),
+                  profile.map(CoderMcpClient::profileLabel).orElse("Coder"));
+            });
+  }
+
+  private String getValidAccessTokenUnchecked(String accountId) {
     try {
-      return getValidAccessToken(accountBase);
+      return getValidAccessToken(accountId);
     } catch (IOException e) {
       throw new IllegalStateException(e);
     }
   }
 
+  private Optional<CoderUserProfile> getCurrentUserProfile(String accountId) {
+    try {
+      CoderUserProfile profile =
+          restClient
+              .get()
+              .uri(serverOrigin(URI.create(serverUrl)) + "/api/v2/users/me")
+              .accept(MediaType.APPLICATION_JSON)
+              .header(HttpHeaders.AUTHORIZATION, "Bearer " + getValidAccessToken(accountId))
+              .retrieve()
+              .body(CoderUserProfile.class);
+      return Optional.ofNullable(profile);
+    } catch (Exception e) {
+      log.warn("Failed to load Coder user profile", e);
+      return Optional.empty();
+    }
+  }
+
+  private static String profileLabel(CoderUserProfile profile) {
+    if (profile.name() != null && !profile.name().isBlank()) {
+      return profile.name();
+    }
+    if (profile.username() != null && !profile.username().isBlank()) {
+      return profile.username();
+    }
+    return "Coder";
+  }
+
   private Optional<CoderOauthCredentialEntity> refreshCredential(
-      String accountBase, boolean forceRefresh) {
-    Optional<CoderOauthCredentialEntity> existing = credentialRepository.findById(accountBase);
+      String accountId, boolean forceRefresh) {
+    Optional<CoderOauthCredentialEntity> existing = credentialRepository.findById(accountId);
     if (existing.isEmpty()) {
       return Optional.empty();
     }
@@ -459,8 +496,8 @@ public class CoderMcpClient {
     }
     try {
       TokenResponse tokenResponse = requestRefreshToken(credential.getRefreshToken());
-      CoderOauthCredentialEntity saved = saveCredential(accountBase, tokenResponse);
-      toolsCache.remove(accountBase);
+      CoderOauthCredentialEntity saved = saveCredential(accountId, tokenResponse);
+      toolsCache.remove(accountId);
       return Optional.of(saved);
     } catch (Exception e) {
       log.warn("Failed to refresh Coder OAuth token", e);
@@ -514,15 +551,14 @@ public class CoderMcpClient {
         .body(TokenResponse.class);
   }
 
-  private CoderOauthCredentialEntity saveCredential(
-      String accountBase, TokenResponse tokenResponse) {
+  private CoderOauthCredentialEntity saveCredential(String accountId, TokenResponse tokenResponse) {
     if (tokenResponse == null
         || tokenResponse.accessToken() == null
         || tokenResponse.accessToken().isBlank()) {
       throw new IllegalArgumentException("Token response did not include an access token");
     }
     Instant now = Instant.now();
-    CoderOauthCredentialEntity existing = credentialRepository.findById(accountBase).orElse(null);
+    CoderOauthCredentialEntity existing = credentialRepository.findById(accountId).orElse(null);
     String refreshToken = tokenResponse.refreshToken();
     if ((refreshToken == null || refreshToken.isBlank()) && existing != null) {
       refreshToken = existing.getRefreshToken();
@@ -531,7 +567,7 @@ public class CoderMcpClient {
         tokenResponse.expiresIn() == null ? null : now.plusSeconds(tokenResponse.expiresIn());
     CoderOauthCredentialEntity entity =
         new CoderOauthCredentialEntity(
-            accountBase,
+            accountId,
             tokenResponse.accessToken(),
             refreshToken,
             tokenResponse.tokenType(),
@@ -580,53 +616,7 @@ public class CoderMcpClient {
       return new OAuthClientRegistration(
           metadata.issuer(), configuredClientId, configuredClientSecret, "client_secret_post");
     }
-    Optional<CoderOauthClientEntity> existing = clientRepository.findById(metadata.issuer());
-    if (existing.isPresent() && redirectUri.equals(existing.get().getRedirectUri())) {
-      CoderOauthClientEntity entity = existing.get();
-      return new OAuthClientRegistration(
-          entity.getIssuer(),
-          entity.getClientId(),
-          entity.getClientSecret(),
-          entity.getTokenEndpointAuthMethod());
-    }
-    if (metadata.registrationEndpoint() == null || metadata.registrationEndpoint().isBlank()) {
-      throw new IllegalStateException("Coder OAuth dynamic registration endpoint is unavailable");
-    }
-    Map<String, Object> request = new LinkedHashMap<>();
-    request.put("client_name", clientName);
-    request.put("redirect_uris", List.of(redirectUri));
-    request.put("grant_types", List.of("authorization_code", "refresh_token"));
-    request.put("response_types", List.of("code"));
-    request.put("scope", scopes);
-    request.put("token_endpoint_auth_method", "client_secret_post");
-    RegistrationResponse response =
-        restClient
-            .post()
-            .uri(metadata.registrationEndpoint())
-            .contentType(MediaType.APPLICATION_JSON)
-            .accept(MediaType.APPLICATION_JSON)
-            .body(request)
-            .retrieve()
-            .body(RegistrationResponse.class);
-    if (response == null || response.clientId() == null || response.clientId().isBlank()) {
-      throw new IllegalStateException("Coder OAuth registration failed");
-    }
-    Instant now = Instant.now();
-    CoderOauthClientEntity entity =
-        clientRepository.save(
-            new CoderOauthClientEntity(
-                metadata.issuer(),
-                response.clientId(),
-                response.clientSecret(),
-                redirectUri,
-                response.tokenEndpointAuthMethod(),
-                now,
-                now));
-    return new OAuthClientRegistration(
-        entity.getIssuer(),
-        entity.getClientId(),
-        entity.getClientSecret(),
-        entity.getTokenEndpointAuthMethod());
+    throw new IllegalStateException("Coder OAuth client id is not configured");
   }
 
   private ProtectedResourceMetadata getProtectedResourceMetadata() {
@@ -731,20 +721,10 @@ public class CoderMcpClient {
     return builder.build();
   }
 
-  public static String resolveAccountBase(
-      io.breland.bbagent.server.agent.tools.ToolContext context) {
-    if (context == null || context.message() == null) {
-      return null;
-    }
-    return resolveAccountBase(context.message());
-  }
+  public record OauthCompletion(String accountId, String chatGuid, String messageGuid) {}
 
-  public static String resolveAccountBase(io.breland.bbagent.server.agent.IncomingMessage message) {
-    AgentAccountIdentity identity = AgentAccountIdentity.from(message);
-    return identity.hasAccountBase() ? identity.accountBase() : null;
-  }
-
-  public record OauthCompletion(String accountBase, String chatGuid, String messageGuid) {}
+  public record CoderLinkedAccount(
+      String accountId, @Nullable String email, @Nullable String label) {}
 
   private record OAuthClientRegistration(
       String issuer, String clientId, String clientSecret, String tokenEndpointAuthMethod) {}
@@ -768,10 +748,10 @@ public class CoderMcpClient {
       @JsonProperty("revocation_endpoint") String revocationEndpoint,
       @JsonProperty("scopes_supported") List<String> scopesSupported) {}
 
-  private record RegistrationResponse(
-      @JsonProperty("client_id") String clientId,
-      @JsonProperty("client_secret") String clientSecret,
-      @JsonProperty("token_endpoint_auth_method") String tokenEndpointAuthMethod) {}
+  private record CoderUserProfile(
+      @JsonProperty("email") String email,
+      @JsonProperty("username") String username,
+      @JsonProperty("name") String name) {}
 
   private record TokenResponse(
       @JsonProperty("access_token") String accessToken,

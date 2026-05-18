@@ -5,13 +5,17 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import io.breland.bbagent.generated.bluebubblesclient.api.V1ContactApi;
 import io.breland.bbagent.generated.bluebubblesclient.api.V1ICloudApi;
 import io.breland.bbagent.generated.bluebubblesclient.api.V1MessageApi;
+import io.breland.bbagent.generated.bluebubblesclient.model.AddressEntry;
 import io.breland.bbagent.generated.bluebubblesclient.model.ApiResponseFindMyFriendsLocations;
+import io.breland.bbagent.generated.bluebubblesclient.model.ApiV1ContactGet200Response;
+import io.breland.bbagent.generated.bluebubblesclient.model.Contact;
 import io.breland.bbagent.generated.bluebubblesclient.model.FindMyFriendLocation;
 import io.breland.bbagent.server.agent.transport.bb.BBHttpClientWrapper;
 import java.util.List;
@@ -50,6 +54,22 @@ class BBHttpClientWrapperTest {
   }
 
   @Test
+  void getFindMyLocationCanMatchFallbackEmailAfterRefreshingOnce() {
+    V1ICloudApi icloudApi = Mockito.mock(V1ICloudApi.class);
+    BBHttpClientWrapper wrapper = wrapper(icloudApi);
+    FindMyFriendLocation alice = location("alice@example.com");
+
+    when(icloudApi.apiV1IcloudFindmyFriendsRefreshPost("pw"))
+        .thenReturn(Mono.just(success(List.of(alice))));
+
+    FindMyFriendLocation result =
+        wrapper.getFindMyLocation(List.of("tel:+1 (555) 555-0123", "mailto:alice@example.com"));
+
+    assertEquals(alice, result);
+    verify(icloudApi, times(1)).apiV1IcloudFindmyFriendsRefreshPost("pw");
+  }
+
+  @Test
   void getFindMyLocationRequiresSuccessfulBlueBubblesResponse() {
     V1ICloudApi icloudApi = Mockito.mock(V1ICloudApi.class);
     BBHttpClientWrapper wrapper = wrapper(icloudApi);
@@ -64,6 +84,31 @@ class BBHttpClientWrapperTest {
                     .build()));
 
     assertThrows(IllegalStateException.class, () -> wrapper.getFindMyLocation("alice@example.com"));
+  }
+
+  @Test
+  void getContactAddressesForReturnsPhoneAndEmailAliasesFromMatchingContact() {
+    V1ContactApi contactApi = Mockito.mock(V1ContactApi.class);
+    BBHttpClientWrapper wrapper =
+        new BBHttpClientWrapper("pw", Mockito.mock(V1MessageApi.class), contactApi);
+
+    when(contactApi.apiV1ContactGet("pw"))
+        .thenReturn(
+            Mono.just(
+                ApiV1ContactGet200Response.builder()
+                    .status(200)
+                    .message("Successfully fetched contacts")
+                    .data(
+                        List.of(
+                            new Contact()
+                                .phoneNumbers(
+                                    List.of(new AddressEntry().address("+1 (555) 555-0123")))
+                                .emails(List.of(new AddressEntry().address("alice@example.com")))))
+                    .build()));
+
+    assertEquals(
+        List.of("+1 (555) 555-0123", "alice@example.com"),
+        wrapper.getContactAddressesFor("tel:555-555-0123"));
   }
 
   @Test

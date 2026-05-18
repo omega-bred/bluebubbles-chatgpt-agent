@@ -11,11 +11,14 @@ import com.uber.cadence.WorkflowExecution;
 import com.uber.cadence.workflow.Workflow;
 import com.uber.cadence.workflow.WorkflowInfo;
 import io.breland.bbagent.generated.bluebubblesclient.model.FindMyFriendLocation;
+import io.breland.bbagent.server.admin.AdminStatsService;
 import io.breland.bbagent.server.agent.cadence.CadenceWorkflowLauncher;
 import io.breland.bbagent.server.agent.cadence.models.CadenceMessageWorkflowRequest;
 import io.breland.bbagent.server.agent.cadence.models.GeneratedImage;
 import io.breland.bbagent.server.agent.cadence.models.IncomingAttachment;
+import io.breland.bbagent.server.agent.location.ReverseLocationLookup;
 import io.breland.bbagent.server.agent.model_picker.ModelPicker;
+import io.breland.bbagent.server.agent.persistence.account.AgentAccountIdentityEntity;
 import io.breland.bbagent.server.agent.tools.AgentTool;
 import io.breland.bbagent.server.agent.tools.ToolContext;
 import io.breland.bbagent.server.agent.tools.assistant.AssistantNameAgentTool;
@@ -60,6 +63,7 @@ import java.util.function.Supplier;
 import java.util.stream.Collectors;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.lang3.StringUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.lang.Nullable;
 import org.springframework.stereotype.Service;
@@ -148,9 +152,13 @@ public class BBMessageAgent {
   private WebsiteAccountService websiteAccountService;
   private GiphyClient giphyClient;
   private ModelPicker modelPicker;
+  private AdminStatsService adminStatsService;
+  private final ReverseLocationLookup reverseLocationLookup;
+  private final AgentAccountResolver accountResolver;
 
   @Autowired
   public BBMessageAgent(
+      @Nullable OpenAIClient openAiClient,
       BBHttpClientWrapper bbHttpClientWrapper,
       Mem0Client mem0Client,
       GcalClient gcalClient,
@@ -159,12 +167,18 @@ public class BBMessageAgent {
       CoderAsyncTaskStartStore coderAsyncTaskStartStore,
       WebsiteAccountService websiteAccountService,
       GiphyClient giphyClient,
+      ReverseLocationLookup reverseLocationLookup,
       AgentSettingsStore agentSettingsStore,
       AgentWorkflowProperties workflowProperties,
       MessageTransportRegistry transportRegistry,
-      ObjectMapper objectMapper,
+      @Nullable ObjectMapper objectMapper,
       @Nullable CadenceWorkflowLauncher cadenceWorkflowLauncher,
+      @Nullable AgentAccountResolver accountResolver,
+      @Nullable AdminStatsService adminStatsService,
       ModelPicker modelPicker) {
+    if (openAiClient != null) {
+      this.openAIClient = openAiClient;
+    }
     this.bbHttpClientWrapper = bbHttpClientWrapper;
     this.mem0Client = mem0Client;
     this.gcalClient = gcalClient;
@@ -173,77 +187,18 @@ public class BBMessageAgent {
     this.coderAsyncTaskStartStore = coderAsyncTaskStartStore;
     this.websiteAccountService = websiteAccountService;
     this.giphyClient = giphyClient;
+    this.reverseLocationLookup =
+        reverseLocationLookup == null ? ReverseLocationLookup.noop() : reverseLocationLookup;
     this.agentSettingsStore = agentSettingsStore;
     this.workflowProperties = workflowProperties;
     this.transportRegistry =
         transportRegistry != null
             ? transportRegistry
             : MessageTransportRegistry.blueBubblesOnly(bbHttpClientWrapper);
-    this.objectMapper = objectMapper;
+    this.objectMapper = objectMapper == null ? new ObjectMapper() : objectMapper;
     this.cadenceWorkflowLauncher = cadenceWorkflowLauncher;
-    this.modelPicker = modelPicker;
-    registerBuiltInTools();
-  }
-
-  BBMessageAgent(
-      OpenAIClient openAIClient,
-      BBHttpClientWrapper bbHttpClientWrapper,
-      Mem0Client mem0Client,
-      GcalClient gcalClient,
-      GiphyClient giphyClient,
-      AgentSettingsStore agentSettingsStore,
-      AgentWorkflowProperties workflowProperties,
-      @Nullable CadenceWorkflowLauncher cadenceWorkflowLauncher,
-      ModelPicker modelPicker) {
-    this(
-        openAIClient,
-        bbHttpClientWrapper,
-        mem0Client,
-        gcalClient,
-        null,
-        null,
-        null,
-        null,
-        giphyClient,
-        agentSettingsStore,
-        workflowProperties,
-        null,
-        cadenceWorkflowLauncher,
-        modelPicker);
-  }
-
-  BBMessageAgent(
-      OpenAIClient openAIClient,
-      BBHttpClientWrapper bbHttpClientWrapper,
-      Mem0Client mem0Client,
-      GcalClient gcalClient,
-      @Nullable CoderMcpClient coderMcpClient,
-      @Nullable WorkflowCallbackService workflowCallbackService,
-      @Nullable CoderAsyncTaskStartStore coderAsyncTaskStartStore,
-      @Nullable WebsiteAccountService websiteAccountService,
-      GiphyClient giphyClient,
-      AgentSettingsStore agentSettingsStore,
-      AgentWorkflowProperties workflowProperties,
-      @Nullable MessageTransportRegistry transportRegistry,
-      @Nullable CadenceWorkflowLauncher cadenceWorkflowLauncher,
-      ModelPicker modelPicker) {
-    this.openAIClient = openAIClient;
-    this.bbHttpClientWrapper = bbHttpClientWrapper;
-    this.mem0Client = mem0Client;
-    this.gcalClient = gcalClient;
-    this.coderMcpClient = coderMcpClient;
-    this.workflowCallbackService = workflowCallbackService;
-    this.coderAsyncTaskStartStore = coderAsyncTaskStartStore;
-    this.websiteAccountService = websiteAccountService;
-    this.giphyClient = giphyClient;
-    this.agentSettingsStore = agentSettingsStore;
-    this.workflowProperties = workflowProperties;
-    this.transportRegistry =
-        transportRegistry != null
-            ? transportRegistry
-            : MessageTransportRegistry.blueBubblesOnly(bbHttpClientWrapper);
-    this.objectMapper = new ObjectMapper();
-    this.cadenceWorkflowLauncher = cadenceWorkflowLauncher;
+    this.accountResolver = accountResolver;
+    this.adminStatsService = adminStatsService;
     this.modelPicker = modelPicker;
     registerBuiltInTools();
   }
@@ -273,6 +228,7 @@ public class BBMessageAgent {
       return;
     }
     log.info("Processing Message {}", message);
+    recordAccountAliases(message);
     ConversationState state =
         conversations.computeIfAbsent(
             message.chatGuid(), key -> this.computeConversationState(key, message));
@@ -301,6 +257,7 @@ public class BBMessageAgent {
       }
       state.markIncomingMessageSeen(message);
     }
+    recordAcceptedMessageMetric(message);
     if (workflowProperties.useCadenceWorkflow()) {
       if (cadenceWorkflowLauncher == null) {
         log.error(
@@ -323,6 +280,17 @@ public class BBMessageAgent {
     }
     log.info("Responding via inline workflow");
     runMessageWorkflow(state, message, workflowContext);
+  }
+
+  private void recordAcceptedMessageMetric(IncomingMessage message) {
+    if (adminStatsService == null) {
+      return;
+    }
+    try {
+      adminStatsService.recordAcceptedMessage(message, workflowProperties.getMode());
+    } catch (RuntimeException e) {
+      log.warn("Failed to record admin message metric for {}", message, e);
+    }
   }
 
   private boolean shouldProcess(IncomingMessage message) {
@@ -753,10 +721,10 @@ public class BBMessageAgent {
       args = applyThreadReplyDefaults(toolCall.name(), args, message);
       ToolContext toolContext = new ToolContext(this, message, workflowContext);
       if (tool == null && coderMcpClient != null) {
-        String accountBase = CoderMcpClient.resolveAccountBase(message);
+        String accountId = resolveOrCreateAccountId(message).orElse(null);
         tool =
             coderMcpClient
-                .getAgentTool(accountBase, toolCall.name(), HIDDEN_CODER_MCP_TOOL_NAMES)
+                .getAgentTool(accountId, toolCall.name(), HIDDEN_CODER_MCP_TOOL_NAMES)
                 .orElse(null);
       }
       if (tool == null) {
@@ -823,8 +791,8 @@ public class BBMessageAgent {
   private List<AgentTool> availableTools(IncomingMessage message) {
     List<AgentTool> available = new ArrayList<>(tools.values());
     if (coderMcpClient != null) {
-      String accountBase = CoderMcpClient.resolveAccountBase(message);
-      available.addAll(coderMcpClient.getAgentTools(accountBase, HIDDEN_CODER_MCP_TOOL_NAMES));
+      String accountId = resolveOrCreateAccountId(message).orElse(null);
+      available.addAll(coderMcpClient.getAgentTools(accountId, HIDDEN_CODER_MCP_TOOL_NAMES));
     }
     return available;
   }
@@ -976,7 +944,8 @@ public class BBMessageAgent {
       return Optional.empty();
     }
     try {
-      FindMyFriendLocation location = bbHttpClientWrapper.getFindMyLocation(message.sender());
+      FindMyFriendLocation location =
+          bbHttpClientWrapper.getFindMyLocation(findMyLocationIdentifiers(message));
       String locationContext = formatFindMyLocationContext(location);
       if (locationContext == null || locationContext.isBlank()) {
         locationContext = missingFindMyLocationContext();
@@ -997,6 +966,47 @@ public class BBMessageAgent {
               .role(EasyInputMessage.Role.DEVELOPER)
               .content(missingFindMyLocationContext())
               .build());
+    }
+  }
+
+  private List<String> findMyLocationIdentifiers(IncomingMessage message) {
+    if (message == null || message.sender() == null || message.sender().isBlank()) {
+      return List.of();
+    }
+    LinkedHashSet<String> identifiers = new LinkedHashSet<>();
+    identifiers.add(message.sender());
+    resolveAccountIdentities(message).stream()
+        .map(AgentAccountIdentityEntity::getIdentifier)
+        .filter(StringUtils::isNotBlank)
+        .forEach(identifiers::add);
+    linkedWebsiteAccountEmail(message)
+        .filter(email -> !email.isBlank())
+        .filter(
+            email -> identifiers.stream().noneMatch(existing -> existing.equalsIgnoreCase(email)))
+        .ifPresent(identifiers::add);
+    return List.copyOf(identifiers);
+  }
+
+  private void recordAccountAliases(IncomingMessage message) {
+    if (accountResolver == null) {
+      return;
+    }
+    try {
+      accountResolver.recordMessageIdentities(message);
+    } catch (Exception e) {
+      log.debug("Failed to record account identities", e);
+    }
+  }
+
+  private Optional<String> linkedWebsiteAccountEmail(IncomingMessage message) {
+    if (websiteAccountService == null) {
+      return Optional.empty();
+    }
+    try {
+      return websiteAccountService.findLinkedAccountEmail(message);
+    } catch (Exception e) {
+      log.debug("Failed to resolve linked website account email for Find My lookup", e);
+      return Optional.empty();
     }
   }
 
@@ -1026,6 +1036,7 @@ public class BBMessageAgent {
             "Current Find My location context for the current iMessage sender. "
                 + "Use this as background for location-aware answers, but do not mention it unless relevant. ");
     text.append("latitude=").append(latitude).append(" longitude=").append(longitude);
+    appendReverseLocationLookupField(text, latitude, longitude);
     appendFindMyLocationField(text, "short_address", location.getShortAddress());
     appendFindMyLocationField(text, "long_address", location.getLongAddress());
     appendFindMyLocationField(text, "title", location.getTitle());
@@ -1038,9 +1049,24 @@ public class BBMessageAgent {
     return text.toString();
   }
 
+  private void appendReverseLocationLookupField(
+      StringBuilder text, double latitude, double longitude) {
+    try {
+      reverseLocationLookup
+          .reverseLookup(latitude, longitude)
+          .map(location -> location.approximateAddress())
+          .filter(address -> address != null && !address.isBlank())
+          .ifPresent(
+              address ->
+                  appendFindMyLocationField(text, "reverse_geocoded_approximate_address", address));
+    } catch (Exception e) {
+      log.warn("Failed to append reverse geocoded location context", e);
+    }
+  }
+
   private void appendFindMyLocationField(StringBuilder text, String name, String value) {
     if (value != null && !value.isBlank()) {
-      text.append(" ").append(name).append("=").append(value);
+      text.append(" ").append(name).append("=").append(value.replaceAll("\\s+", " ").trim());
     }
   }
 
@@ -1148,10 +1174,10 @@ public class BBMessageAgent {
                 + GetThreadContextAgentTool.TOOL_NAME
                 + " when asked about the last message or previously sent images in this thread. "
                 + "For group chats, you can rename the conversation or set a group icon when requested. "
-                + "When the user asks to log in, sign up, manage their web account, connect iMessage to the website, or see linked integrations on the website, call "
+                + "When the user asks to log in, sign up, manage their web account, connect the current chat identity to the website, or see linked integrations on the website, call "
                 + LinkWebsiteAccountAgentTool.TOOL_NAME
                 + " and send the returned user_facing_text. Do not invent account links manually. "
-                + "Incoming message context may include websiteAccountLinked and websiteAccountExactChatLinked for the current sender. When the user asks whether the current sender or another sender is linked to a website account, call "
+                + "Incoming message context may include websiteAccountLinked and websiteAccountExactChatLinked for the current sender or chat identity. When the user asks whether the current sender, current chat identity, or another sender is linked to a website account, call "
                 + GetWebsiteAccountLinkStatusAgentTool.TOOL_NAME
                 + " before answering if the context is absent, ambiguous, or the user names a different sender. "
                 + "Use "
@@ -1266,7 +1292,7 @@ public class BBMessageAgent {
       text.append(" from ").append(message.sender());
     }
     if (message.sender() != null && !message.sender().isBlank()) {
-      String knownName = getGlobalNameForSender(message.sender());
+      String knownName = getGlobalNameForMessage(message);
       if (knownName != null && !knownName.isBlank()) {
         text.append(" [sender name=").append(knownName).append("]");
       }
@@ -1408,7 +1434,7 @@ public class BBMessageAgent {
     }
     try {
       WebsiteAccountService.SenderLinkStatus status = websiteAccountService.getLinkStatus(message);
-      if (status.accountBase() == null || status.accountBase().isBlank()) {
+      if (status.accountId() == null || status.accountId().isBlank()) {
         return;
       }
       text.append(" [websiteAccountLinked=").append(status.linked()).append("]");
@@ -1552,20 +1578,83 @@ public class BBMessageAgent {
     if (sender == null || sender.isBlank()) {
       return null;
     }
-    return agentSettingsStore.findGlobalName(sender).orElse(null);
+    if (accountResolver == null) {
+      return agentSettingsStore.findGlobalName(sender).orElse(null);
+    }
+    return accountResolver
+        .resolveOrCreate(IncomingMessage.TRANSPORT_BLUEBUBBLES, sender)
+        .map(
+            resolved ->
+                agentSettingsStore.findGlobalName(resolved.account().getAccountId()).orElse(null))
+        .orElse(null);
+  }
+
+  private String getGlobalNameForMessage(IncomingMessage message) {
+    if (accountResolver == null) {
+      return message == null ? null : getGlobalNameForSender(message.sender());
+    }
+    return resolveOrCreateAccountId(message)
+        .flatMap(agentSettingsStore::findGlobalName)
+        .orElse(null);
   }
 
   public void setGlobalNameForSender(String sender, String name) {
     if (sender == null || sender.isBlank() || name == null || name.isBlank()) {
       return;
     }
-    agentSettingsStore.saveGlobalName(sender, name);
+    if (accountResolver == null) {
+      agentSettingsStore.saveGlobalName(sender, name);
+      return;
+    }
+    accountResolver
+        .resolveOrCreate(IncomingMessage.TRANSPORT_BLUEBUBBLES, sender)
+        .ifPresent(
+            resolved -> agentSettingsStore.saveGlobalName(resolved.account().getAccountId(), name));
   }
 
   public void removeGlobalNameForSender(String sender) {
     if (sender == null || sender.isBlank()) {
       return;
     }
-    agentSettingsStore.deleteGlobalName(sender);
+    if (accountResolver == null) {
+      agentSettingsStore.deleteGlobalName(sender);
+      return;
+    }
+    accountResolver
+        .resolveOrCreate(IncomingMessage.TRANSPORT_BLUEBUBBLES, sender)
+        .ifPresent(
+            resolved -> agentSettingsStore.deleteGlobalName(resolved.account().getAccountId()));
+  }
+
+  public Optional<String> resolveOrCreateAccountId(IncomingMessage message) {
+    if (message == null) {
+      return Optional.empty();
+    }
+    if (accountResolver == null) {
+      return Optional.ofNullable(StringUtils.defaultIfBlank(message.sender(), null));
+    }
+    return accountResolver
+        .resolveOrCreate(message)
+        .map(resolved -> resolved.account().getAccountId());
+  }
+
+  public Optional<String> resolveAccountId(IncomingMessage message) {
+    if (message == null) {
+      return Optional.empty();
+    }
+    if (accountResolver == null) {
+      return Optional.ofNullable(StringUtils.defaultIfBlank(message.sender(), null));
+    }
+    return accountResolver.resolve(message).map(resolved -> resolved.account().getAccountId());
+  }
+
+  private List<AgentAccountIdentityEntity> resolveAccountIdentities(IncomingMessage message) {
+    if (message == null || accountResolver == null) {
+      return List.of();
+    }
+    return accountResolver
+        .resolve(message)
+        .map(resolved -> accountResolver.identitiesForAccount(resolved.account().getAccountId()))
+        .orElseGet(List::of);
   }
 }

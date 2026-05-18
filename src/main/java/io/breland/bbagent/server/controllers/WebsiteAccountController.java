@@ -1,6 +1,6 @@
 package io.breland.bbagent.server.controllers;
 
-import io.breland.bbagent.generated.model.WebsiteAccountDeleteLinkResponse;
+import io.breland.bbagent.generated.model.WebsiteAccountDeleteLinkedAccountResponse;
 import io.breland.bbagent.generated.model.WebsiteAccountRedeemLinkRequest;
 import io.breland.bbagent.generated.model.WebsiteAccountRedeemLinkResponse;
 import io.breland.bbagent.generated.model.WebsiteAccountResponse;
@@ -53,11 +53,15 @@ public class WebsiteAccountController {
   }
 
   @DeleteMapping(
-      path = "/api/v1/websiteAccount/deleteLink.websiteAccountLinks",
+      path = "/api/v1/websiteAccount/deleteLinkedAccount.websiteAccountLinks",
       produces = MediaType.APPLICATION_JSON_VALUE)
-  public ResponseEntity<WebsiteAccountDeleteLinkResponse> websiteAccountDeleteLink(
-      @RequestParam("link_id") String linkId, @AuthenticationPrincipal Jwt jwt) {
+  public ResponseEntity<WebsiteAccountDeleteLinkedAccountResponse>
+      websiteAccountDeleteLinkedAccount(
+          @RequestParam("type") String type,
+          @RequestParam("account_key") String accountKey,
+          @AuthenticationPrincipal Jwt jwt) {
     return ResponseEntity.ok(
-        new WebsiteAccountDeleteLinkResponse().deleted(accountService.deleteLink(jwt, linkId)));
+        new WebsiteAccountDeleteLinkedAccountResponse()
+            .deleted(accountService.deleteLinkedAccount(jwt, type, accountKey)));
   }
 }
