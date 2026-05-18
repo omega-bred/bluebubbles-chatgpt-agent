@@ -63,6 +63,12 @@ public class CadenceAgentActivitiesImpl implements CadenceAgentActivities {
   }
 
   @Override
+  public boolean notifyIfMessageResponseLimitExceeded(
+      IncomingMessage message, AgentWorkflowContext workflowContext) {
+    return messageAgent.notifyIfMessageResponseLimitExceeded(message, workflowContext);
+  }
+
+  @Override
   public CadenceResponseBundle createResponseBundle(
       String inputItemsJson, IncomingMessage message) {
     try {
@@ -193,6 +199,9 @@ public class CadenceAgentActivitiesImpl implements CadenceAgentActivities {
     if (!messageAgent.canSendResponses(workflowContext)) {
       return new ImageSendResult(false, false);
     }
+    if (!messageAgent.consumeMessageResponseQuota(message, workflowContext)) {
+      return new ImageSendResult(false, false, true);
+    }
     boolean sent = transport.sendMultipartMessage(message.chatGuid(), caption, attachments);
     boolean captionSent = sent && caption != null && !caption.isBlank();
     return new ImageSendResult(sent, captionSent);
@@ -208,6 +217,9 @@ public class CadenceAgentActivitiesImpl implements CadenceAgentActivities {
     if (!transport.supportsReactions()) {
       return false;
     }
+    if (!messageAgent.consumeMessageResponseQuota(message, workflowContext)) {
+      return false;
+    }
     boolean sent = transport.sendReaction(message, reaction);
     if (sent) {
       recordAssistantTurn(message, "[reaction: " + reaction + "]", workflowContext);
@@ -221,9 +233,11 @@ public class CadenceAgentActivitiesImpl implements CadenceAgentActivities {
     if (!messageAgent.canSendResponses(workflowContext)) {
       return false;
     }
-    messageAgent.sendThreadAwareText(message, text);
-    recordAssistantTurn(message, text, workflowContext);
-    return true;
+    boolean sent = messageAgent.sendThreadAwareText(message, text, workflowContext);
+    if (sent) {
+      recordAssistantTurn(message, text, workflowContext);
+    }
+    return sent;
   }
 
   @Override

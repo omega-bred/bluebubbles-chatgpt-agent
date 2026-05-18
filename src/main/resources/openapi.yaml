@@ -383,6 +383,43 @@ paths:
           description: Authentication required
         '403':
           description: Admin role required
+  /api/v1/admin/get.rate_limit_usage:
+    get:
+      operationId: adminGetRateLimitUsage
+      tags:
+        - admin
+      summary: Gets current rate-limit usage
+      description: Returns current usage for app rate limits, including daily assistant response usage by account.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: limit_key
+          in: query
+          description: Rate limit key to inspect. Defaults to daily assistant response usage.
+          required: false
+          schema:
+            type: string
+        - name: limit
+          in: query
+          description: Maximum number of usage rows to return.
+          required: false
+          schema:
+            type: integer
+            format: int32
+            default: 50
+            minimum: 1
+            maximum: 500
+      responses:
+        '200':
+          description: Admin rate-limit usage
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminRateLimitUsageResponse'
+        '401':
+          description: Authentication required
+        '403':
+          description: Admin role required
   /api/v1/admin/list.feedback:
     get:
       operationId: adminListFeedback
@@ -883,6 +920,88 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/AdminStatsBucket'
+    AdminRateLimitUsage:
+      type: object
+      required:
+        - limit_key
+        - limit_label
+        - scope_type
+        - scope_key
+        - account_id
+        - account_bucket
+        - plan
+        - is_premium
+        - used
+        - limit
+        - remaining
+        - percentage
+        - exhausted
+        - window_start
+        - window_end
+        - updated_at
+      properties:
+        limit_key:
+          type: string
+          description: Stable app limit key, such as message_responses_per_day.
+        limit_label:
+          type: string
+        scope_type:
+          type: string
+          description: Generic limit scope type, such as account.
+        scope_key:
+          type: string
+          description: Scope identifier. For account-scoped limits this is the canonical account id.
+        account_id:
+          type: string
+          nullable: true
+          description: Canonical agent account id when the scope is an account.
+        account_bucket:
+          type: string
+          nullable: true
+          description: Short stable display bucket derived from the account id.
+        plan:
+          type: string
+        is_premium:
+          type: boolean
+        used:
+          type: integer
+          format: int64
+        limit:
+          type: integer
+          format: int64
+        remaining:
+          type: integer
+          format: int64
+        percentage:
+          type: number
+          format: double
+        exhausted:
+          type: boolean
+        window_start:
+          type: string
+          format: date-time
+        window_end:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    AdminRateLimitUsageResponse:
+      type: object
+      required:
+        - generated_at
+        - limit_key
+        - usages
+      properties:
+        generated_at:
+          type: string
+          format: date-time
+        limit_key:
+          type: string
+        usages:
+          type: array
+          items:
+            $ref: '#/components/schemas/AdminRateLimitUsage'
     AdminFeedbackItem:
       type: object
       required:

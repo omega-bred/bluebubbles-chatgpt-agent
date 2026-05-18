@@ -51,6 +51,10 @@ public class CadenceMessageWorkflowImpl implements CadenceMessageWorkflow {
     }
     log.info("Handling message via cadence: {}", request.workflowContext());
     IncomingMessage message = request.message();
+    if (activities.notifyIfMessageResponseLimitExceeded(message, request.workflowContext())) {
+      activities.finalizeWorkflow(message, request.workflowContext(), true);
+      return;
+    }
     String inputItemsJson =
         activities.buildConversationInputJson(activities.getConversationHistory(message), message);
     CadenceResponseBundle bundle = activities.createResponseBundle(inputItemsJson, message);
@@ -108,6 +112,10 @@ public class CadenceMessageWorkflowImpl implements CadenceMessageWorkflow {
     ImageSendResult imageResult =
         activities.handleGeneratedImages(
             bundle.responseJson(), assistantText, message, request.workflowContext());
+    if (imageResult.rateLimited()) {
+      activities.finalizeWorkflow(message, request.workflowContext(), true);
+      return;
+    }
     boolean sentImageByMultipart = imageResult.sentImage();
     if (imageResult.captionSent()) {
       sentTextByTool = true;

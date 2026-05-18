@@ -57,21 +57,25 @@ public class ToolContext {
   }
 
   public boolean sendText(OutgoingTextMessage outgoingMessage) {
-    return bbMessageAgent.sendTextFromTool(message, outgoingMessage);
+    return bbMessageAgent.sendTextFromTool(message, outgoingMessage, workflowContext);
   }
 
   public boolean sendReaction(String reaction) {
-    return bbMessageAgent.sendReactionFromTool(message, reaction);
+    return bbMessageAgent.sendReactionFromTool(message, reaction, workflowContext);
   }
 
   public boolean sendReaction(
       String conversationId, String selectedMessageGuid, String reaction, Integer partIndex) {
     return bbMessageAgent.sendReactionFromTool(
-        message, conversationId, selectedMessageGuid, reaction, partIndex);
+        message, conversationId, selectedMessageGuid, reaction, partIndex, workflowContext);
   }
 
   public boolean canSendResponses() {
     return bbMessageAgent.canSendResponses(workflowContext);
+  }
+
+  public boolean consumeMessageResponseQuota() {
+    return bbMessageAgent.consumeMessageResponseQuota(message, workflowContext);
   }
 
   public AgentWorkflowContext workflowContext() {

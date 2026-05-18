@@ -91,6 +91,9 @@ public class SendGiphyAgentTool implements ToolProvider {
     }
     String filename =
         selected.id() == null || selected.id().isBlank() ? "giphy.gif" : selected.id() + ".gif";
+    if (!context.consumeMessageResponseQuota()) {
+      return "rate limited";
+    }
     boolean sent =
         bbHttpClientWrapper.sendMultipartMessage(
             message.chatGuid(),

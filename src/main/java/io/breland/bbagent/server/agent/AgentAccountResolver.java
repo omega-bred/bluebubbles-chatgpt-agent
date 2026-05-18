@@ -8,6 +8,7 @@ import io.breland.bbagent.server.agent.transport.bb.BBHttpClientWrapper;
 import java.time.Instant;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import lombok.extern.slf4j.Slf4j;
@@ -289,6 +290,7 @@ public class AgentAccountResolver {
     updateAccountColumn(
         "website_account_link_tokens", "redeemed_account_id", targetAccountId, sourceAccountId);
     updateAccountColumn("agent_feedback", "account_id", targetAccountId, sourceAccountId);
+    mergeAccountScopedRateLimitUsage(targetAccountId, sourceAccountId);
 
     String sourceWebsiteSubject = source.getWebsiteSubject();
     if (StringUtils.isBlank(target.getWebsiteSubject())
@@ -344,6 +346,44 @@ public class AgentAccountResolver {
         "update " + table + " set " + column + " = ? where " + column + " = ?",
         targetAccountId,
         sourceAccountId);
+  }
+
+  private void mergeAccountScopedRateLimitUsage(String targetAccountId, String sourceAccountId) {
+    List<Map<String, Object>> sourceRows =
+        jdbcTemplate.queryForList(
+            "select id, limit_key, window_start, amount from app_rate_limit_usage"
+                + " where scope_type = ? and scope_key = ?",
+            "account",
+            sourceAccountId);
+    for (Map<String, Object> sourceRow : sourceRows) {
+      String sourceId = String.valueOf(sourceRow.get("id"));
+      Object limitKey = sourceRow.get("limit_key");
+      Object windowStart = sourceRow.get("window_start");
+      Number amount = (Number) sourceRow.get("amount");
+      List<Map<String, Object>> targetRows =
+          jdbcTemplate.queryForList(
+              "select id from app_rate_limit_usage"
+                  + " where limit_key = ? and scope_type = ? and scope_key = ? and window_start = ?",
+              limitKey,
+              "account",
+              targetAccountId,
+              windowStart);
+      if (targetRows.isEmpty()) {
+        jdbcTemplate.update(
+            "update app_rate_limit_usage set scope_key = ?, updated_at = current_timestamp"
+                + " where id = ?",
+            targetAccountId,
+            sourceId);
+        continue;
+      }
+      String targetId = String.valueOf(targetRows.get(0).get("id"));
+      jdbcTemplate.update(
+          "update app_rate_limit_usage set amount = amount + ?, updated_at = current_timestamp"
+              + " where id = ?",
+          amount.longValue(),
+          targetId);
+      jdbcTemplate.update("delete from app_rate_limit_usage where id = ?", sourceId);
+    }
   }
 
   private void applyWebsiteClaims(AgentAccountEntity account, Jwt jwt, Instant now) {

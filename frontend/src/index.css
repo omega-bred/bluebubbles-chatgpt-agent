@@ -548,7 +548,7 @@ a {
 }
 
 .admin-stat-grid {
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   margin-bottom: 16px;
 }
 
@@ -606,13 +606,15 @@ a {
 
 .model-usage-list,
 .sender-usage-list,
+.rate-limit-usage-list,
 .timeline-list {
   display: grid;
   gap: 14px;
 }
 
 .model-usage-row,
-.sender-usage-row {
+.sender-usage-row,
+.rate-limit-usage-row {
   display: grid;
   grid-template-columns: minmax(160px, 1fr);
   gap: 8px;
@@ -621,19 +623,22 @@ a {
 }
 
 .model-usage-row:last-child,
-.sender-usage-row:last-child {
+.sender-usage-row:last-child,
+.rate-limit-usage-row:last-child {
   border-bottom: 0;
   padding-bottom: 0;
 }
 
 .model-usage-row div:first-child,
-.sender-usage-row div:first-child {
+.sender-usage-row div:first-child,
+.rate-limit-usage-row div:first-child {
   display: grid;
   gap: 4px;
 }
 
 .model-usage-row strong,
-.sender-usage-row strong {
+.sender-usage-row strong,
+.rate-limit-usage-row strong {
   color: #111111;
   font-size: 1.04rem;
 }
@@ -642,6 +647,8 @@ a {
 .model-usage-row p,
 .sender-usage-row span,
 .sender-usage-row p,
+.rate-limit-usage-row span,
+.rate-limit-usage-row p,
 .timeline-row small {
   margin: 0;
   color: #62625d;
@@ -650,6 +657,7 @@ a {
 
 .model-usage-meter,
 .sender-usage-meter,
+.rate-limit-usage-meter,
 .timeline-bar {
   overflow: hidden;
   height: 10px;
@@ -659,6 +667,7 @@ a {
 
 .model-usage-meter span,
 .sender-usage-meter span,
+.rate-limit-usage-meter span,
 .timeline-bar span {
   display: block;
   height: 100%;
