@@ -3,9 +3,11 @@ package io.breland.bbagent.server.controllers;
 import io.breland.bbagent.generated.model.AdminFeedbackItem;
 import io.breland.bbagent.generated.model.AdminFeedbackListResponse;
 import io.breland.bbagent.generated.model.AdminFeedbackStatusUpdateRequest;
+import io.breland.bbagent.generated.model.AdminRateLimitUsageResponse;
 import io.breland.bbagent.generated.model.AdminStatsResponse;
 import io.breland.bbagent.server.admin.AdminStatsService;
 import io.breland.bbagent.server.feedback.FeedbackService;
+import io.breland.bbagent.server.ratelimit.MessageResponseRateLimitService;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.OffsetDateTime;
@@ -27,10 +29,15 @@ public class AdminController {
 
   private final AdminStatsService adminStatsService;
   private final FeedbackService feedbackService;
+  private final MessageResponseRateLimitService messageResponseRateLimitService;
 
-  public AdminController(AdminStatsService adminStatsService, FeedbackService feedbackService) {
+  public AdminController(
+      AdminStatsService adminStatsService,
+      FeedbackService feedbackService,
+      MessageResponseRateLimitService messageResponseRateLimitService) {
     this.adminStatsService = adminStatsService;
     this.feedbackService = feedbackService;
+    this.messageResponseRateLimitService = messageResponseRateLimitService;
   }
 
   @GetMapping(path = "/api/v1/admin/get.statistics", produces = MediaType.APPLICATION_JSON_VALUE)
@@ -47,6 +54,15 @@ public class AdminController {
       return ResponseEntity.badRequest().build();
     }
     return ResponseEntity.ok(adminStatsService.getStatistics(resolvedFrom, resolvedTo));
+  }
+
+  @GetMapping(
+      path = "/api/v1/admin/get.rate_limit_usage",
+      produces = MediaType.APPLICATION_JSON_VALUE)
+  public ResponseEntity<AdminRateLimitUsageResponse> adminGetRateLimitUsage(
+      @RequestParam(value = "limit_key", required = false) String limitKey,
+      @RequestParam(value = "limit", required = false, defaultValue = "50") int limit) {
+    return ResponseEntity.ok(messageResponseRateLimitService.adminUsage(limitKey, limit));
   }
 
   @GetMapping(path = "/api/v1/admin/list.feedback", produces = MediaType.APPLICATION_JSON_VALUE)

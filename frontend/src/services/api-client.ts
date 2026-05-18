@@ -75,6 +75,11 @@ export const adminApi = {
     return (await client.adminGetStatistics(from, to)).data;
   },
 
+  getRateLimitUsage: async (limitKey?: string, limit?: number) => {
+    const client = await adminClient();
+    return (await client.adminGetRateLimitUsage(limitKey, limit)).data;
+  },
+
   listFeedback: async (status: AdminFeedbackFilter = "unread", limit = 100) => {
     const client = await adminClient();
     const feedbackStatus = status as Parameters<AdminApi["adminListFeedback"]>[0];

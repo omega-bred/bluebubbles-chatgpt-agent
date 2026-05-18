@@ -13,6 +13,9 @@ public interface CadenceAgentActivities {
 
   List<ConversationTurn> getConversationHistory(IncomingMessage message);
 
+  boolean notifyIfMessageResponseLimitExceeded(
+      IncomingMessage message, AgentWorkflowContext workflowContext);
+
   CadenceResponseBundle createResponseBundle(String inputItemsJson, IncomingMessage message);
 
   String executeToolCallsJson(

@@ -95,9 +95,16 @@ public class SendTextAgentTool implements ToolProvider {
           }
           String effectId =
               Optional.ofNullable(toolRequest.effect()).map(this::effectId).orElse(null);
-          context.sendText(
-              new OutgoingTextMessage(
-                  message, toolRequest.selectedMessageGuid(), effectId, toolRequest.partIndex()));
+          boolean sent =
+              context.sendText(
+                  new OutgoingTextMessage(
+                      message,
+                      toolRequest.selectedMessageGuid(),
+                      effectId,
+                      toolRequest.partIndex()));
+          if (!sent) {
+            return "failed";
+          }
           context.recordAssistantTurn(message);
           return "sent";
         });

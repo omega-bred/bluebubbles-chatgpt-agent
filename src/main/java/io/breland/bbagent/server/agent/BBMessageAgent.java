@@ -40,6 +40,7 @@ import io.breland.bbagent.server.agent.tools.giphy.GiphyClient;
 import io.breland.bbagent.server.agent.tools.giphy.SendGiphyAgentTool;
 import io.breland.bbagent.server.agent.tools.kubernetes.KubernetesPodLogsAgentTool;
 import io.breland.bbagent.server.agent.tools.kubernetes.KubernetesReadOnlyAgentTool;
+import io.breland.bbagent.server.agent.tools.limits.GetUsageLimitsAgentTool;
 import io.breland.bbagent.server.agent.tools.memory.*;
 import io.breland.bbagent.server.agent.tools.scheduled.ScheduledEventDeleteTool;
 import io.breland.bbagent.server.agent.tools.scheduled.ScheduledEventListTool;
@@ -52,6 +53,9 @@ import io.breland.bbagent.server.agent.transport.OutgoingTextMessage;
 import io.breland.bbagent.server.agent.transport.bb.BBHttpClientWrapper;
 import io.breland.bbagent.server.agent.workflowcallback.WorkflowCallbackService;
 import io.breland.bbagent.server.feedback.FeedbackService;
+import io.breland.bbagent.server.ratelimit.MessageResponseRateLimitService;
+import io.breland.bbagent.server.ratelimit.RateLimitDecision;
+import io.breland.bbagent.server.ratelimit.RateLimitStatus;
 import io.breland.bbagent.server.website.WebsiteAccountService;
 import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
@@ -59,6 +63,7 @@ import java.net.URL;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.time.Instant;
+import java.time.format.DateTimeFormatter;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Supplier;
@@ -156,6 +161,7 @@ public class BBMessageAgent {
   private ModelPicker modelPicker;
   private AdminStatsService adminStatsService;
   private FeedbackService feedbackService;
+  private MessageResponseRateLimitService messageResponseRateLimitService;
   private final ReverseLocationLookup reverseLocationLookup;
   private final AgentAccountResolver accountResolver;
 
@@ -179,6 +185,7 @@ public class BBMessageAgent {
       @Nullable AgentAccountResolver accountResolver,
       @Nullable AdminStatsService adminStatsService,
       @Nullable FeedbackService feedbackService,
+      @Nullable MessageResponseRateLimitService messageResponseRateLimitService,
       ModelPicker modelPicker) {
     if (openAiClient != null) {
       this.openAIClient = openAiClient;
@@ -204,6 +211,7 @@ public class BBMessageAgent {
     this.accountResolver = accountResolver;
     this.adminStatsService = adminStatsService;
     this.feedbackService = feedbackService;
+    this.messageResponseRateLimitService = messageResponseRateLimitService;
     this.modelPicker = modelPicker;
     registerBuiltInTools();
   }
@@ -458,6 +466,9 @@ public class BBMessageAgent {
         newestTurnTimestamp(historySnapshot),
         latestSeenTimestamp,
         lastSeenGuid);
+    if (notifyIfMessageResponseLimitExceeded(message, workflowContext)) {
+      return null;
+    }
     List<ResponseInputItem> inputItems = buildConversationInput(historySnapshot, message);
     log.trace("Getting response for {}", inputItems.toString());
     Response response = createResponse(inputItems, message, workflowContext);
@@ -536,6 +547,9 @@ public class BBMessageAgent {
         attachments.add(new BBHttpClientWrapper.AttachmentData(image.filename(), image.bytes()));
       }
       if (canSendResponses(workflowContext)) {
+        if (!consumeMessageResponseQuota(message, workflowContext)) {
+          return response;
+        }
         sentImageByMultipart =
             transport.sendMultipartMessage(message.chatGuid(), caption, attachments);
         if (sentImageByMultipart && caption != null && !caption.isBlank()) {
@@ -552,7 +566,9 @@ public class BBMessageAgent {
       String reaction = parsedReaction.get();
       if (sentReactionByTool) {
         log.debug("Skipping reaction text output since reaction tool already ran");
-      } else if (canSendResponses(workflowContext) && transport.sendReaction(message, reaction)) {
+      } else if (canSendResponses(workflowContext)
+          && consumeMessageResponseQuota(message, workflowContext)
+          && transport.sendReaction(message, reaction)) {
         recordAssistantTurnForCurrentMessage(
             message, "[reaction: " + reaction + "]", workflowContext);
       } else {
@@ -562,12 +578,16 @@ public class BBMessageAgent {
     }
     if (!assistantText.isBlank() && !NO_RESPONSE_TEXT.equalsIgnoreCase(assistantText.trim())) {
       log.info("Assistant reply text: {}", assistantText);
+      boolean shouldRecordAssistantText = false;
       if (!sentTextByTool && !sentImageByMultipart && canSendResponses(workflowContext)) {
-        sendThreadAwareText(message, assistantText.trim());
+        shouldRecordAssistantText =
+            sendThreadAwareText(message, assistantText.trim(), workflowContext);
       } else if (!canSendResponses(workflowContext)) {
         log.info("Skipping direct response send for outdated workflow {}", workflowContext);
+      } else {
+        shouldRecordAssistantText = true;
       }
-      if (canSendResponses(workflowContext)) {
+      if (shouldRecordAssistantText && canSendResponses(workflowContext)) {
         recordAssistantTurnForCurrentMessage(message, assistantText.trim(), workflowContext);
       }
     } else {
@@ -625,13 +645,28 @@ public class BBMessageAgent {
         .orElse(null);
   }
 
-  public void sendThreadAwareText(IncomingMessage message, String text) {
+  public boolean sendThreadAwareText(IncomingMessage message, String text) {
+    return sendThreadAwareText(message, text, null);
+  }
+
+  public boolean sendThreadAwareText(
+      IncomingMessage message, String text, AgentWorkflowContext workflowContext) {
     if (message == null || text == null || text.isBlank()) {
-      return;
+      return false;
+    }
+    if (!consumeMessageResponseQuota(message, workflowContext)) {
+      return false;
+    }
+    return sendThreadAwareTextUnmetered(message, text);
+  }
+
+  private boolean sendThreadAwareTextUnmetered(IncomingMessage message, String text) {
+    if (message == null || text == null || text.isBlank()) {
+      return false;
     }
     MessageTransport transport = transportFor(message);
     String replyTarget = transport.supportsThreadReplies() ? resolveThreadRootGuid(message) : null;
-    transport.sendText(message, new OutgoingTextMessage(text, replyTarget, null, null));
+    return transport.sendText(message, new OutgoingTextMessage(text, replyTarget, null, null));
   }
 
   BBHttpClientWrapper getBbHttpClientWrapper() {
@@ -639,18 +674,36 @@ public class BBMessageAgent {
   }
 
   public boolean sendTextFromTool(IncomingMessage message, OutgoingTextMessage outgoingMessage) {
+    return sendTextFromTool(message, outgoingMessage, null);
+  }
+
+  public boolean sendTextFromTool(
+      IncomingMessage message,
+      OutgoingTextMessage outgoingMessage,
+      AgentWorkflowContext workflowContext) {
     if (message == null || outgoingMessage == null || outgoingMessage.text() == null) {
+      return false;
+    }
+    if (!consumeMessageResponseQuota(message, workflowContext)) {
       return false;
     }
     return transportFor(message).sendText(message, outgoingMessage);
   }
 
   public boolean sendReactionFromTool(IncomingMessage message, String reaction) {
+    return sendReactionFromTool(message, reaction, null);
+  }
+
+  public boolean sendReactionFromTool(
+      IncomingMessage message, String reaction, AgentWorkflowContext workflowContext) {
     if (message == null || reaction == null || reaction.isBlank()) {
       return false;
     }
     MessageTransport transport = transportFor(message);
     if (!transport.supportsReactions()) {
+      return false;
+    }
+    if (!consumeMessageResponseQuota(message, workflowContext)) {
       return false;
     }
     return transport.sendReaction(message, reaction);
@@ -662,6 +715,17 @@ public class BBMessageAgent {
       String selectedMessageGuid,
       String reaction,
       Integer partIndex) {
+    return sendReactionFromTool(
+        message, conversationId, selectedMessageGuid, reaction, partIndex, null);
+  }
+
+  public boolean sendReactionFromTool(
+      IncomingMessage message,
+      String conversationId,
+      String selectedMessageGuid,
+      String reaction,
+      Integer partIndex,
+      AgentWorkflowContext workflowContext) {
     if (message == null || reaction == null || reaction.isBlank()) {
       return false;
     }
@@ -669,8 +733,111 @@ public class BBMessageAgent {
     if (!transport.supportsReactions()) {
       return false;
     }
+    if (!consumeMessageResponseQuota(message, workflowContext)) {
+      return false;
+    }
     return transport.sendReaction(
         message, conversationId, selectedMessageGuid, reaction, partIndex);
+  }
+
+  public boolean notifyIfMessageResponseLimitExceeded(
+      IncomingMessage message, AgentWorkflowContext workflowContext) {
+    if (messageResponseRateLimitService == null || message == null) {
+      return false;
+    }
+    try {
+      MessageResponseRateLimitService.MessageResponseLimitStatus status =
+          messageResponseRateLimitService.statusFor(message);
+      if (!status.tracked() || status.rateLimit() == null || !status.rateLimit().exhausted()) {
+        return false;
+      }
+      sendRateLimitExceededNotice(message, status, workflowContext);
+      return true;
+    } catch (RuntimeException e) {
+      log.warn("Failed to check message response rate limit for {}", message, e);
+      return false;
+    }
+  }
+
+  public boolean consumeMessageResponseQuota(
+      IncomingMessage message, AgentWorkflowContext workflowContext) {
+    if (messageResponseRateLimitService == null) {
+      return true;
+    }
+    if (!canSendResponses(workflowContext)) {
+      return false;
+    }
+    try {
+      RateLimitDecision decision = messageResponseRateLimitService.tryConsume(message);
+      if (decision.allowed()) {
+        return true;
+      }
+      sendRateLimitExceededNotice(
+          message, messageResponseRateLimitService.statusFor(message), workflowContext);
+      return false;
+    } catch (RuntimeException e) {
+      log.warn("Failed to consume message response rate limit for {}", message, e);
+      return true;
+    }
+  }
+
+  private void sendRateLimitExceededNotice(
+      IncomingMessage message,
+      MessageResponseRateLimitService.MessageResponseLimitStatus status,
+      AgentWorkflowContext workflowContext) {
+    if (message == null || status == null || !canSendResponses(workflowContext)) {
+      return;
+    }
+    String text = rateLimitExceededText(message, status);
+    if (sendThreadAwareTextUnmetered(message, text)) {
+      recordAssistantTurnForCurrentMessage(message, text, workflowContext);
+    }
+  }
+
+  private String rateLimitExceededText(
+      IncomingMessage message, MessageResponseRateLimitService.MessageResponseLimitStatus status) {
+    RateLimitStatus rateLimit = status.rateLimit();
+    String resetAt =
+        rateLimit == null
+            ? "the next UTC day"
+            : DateTimeFormatter.ISO_INSTANT.format(rateLimit.windowEnd());
+    long limit = rateLimit == null ? 0L : rateLimit.limit();
+    if (!status.premium()) {
+      StringBuilder text =
+          new StringBuilder(
+              "You've hit the free daily limit of "
+                  + limit
+                  + " assistant responses. Paid accounts currently get 5000 responses per day. ");
+      createUpgradeLinkText(message)
+          .ifPresentOrElse(
+              text::append,
+              () ->
+                  text.append(
+                      "Link this chat identity to the website and upgrade to keep chatting today. "));
+      text.append("Your free limit resets at ").append(resetAt).append(".");
+      return text.toString();
+    }
+    return "You've hit the paid daily limit of "
+        + limit
+        + " assistant responses. Your limit resets at "
+        + resetAt
+        + ".";
+  }
+
+  private Optional<String> createUpgradeLinkText(IncomingMessage message) {
+    if (websiteAccountService == null || message == null) {
+      return Optional.empty();
+    }
+    try {
+      WebsiteAccountService.CreatedLinkToken link = websiteAccountService.createLinkToken(message);
+      return Optional.of(
+          "Open this link to log in or sign up, connect this chat identity, and upgrade: "
+              + link.url()
+              + " ");
+    } catch (RuntimeException e) {
+      log.warn("Failed to create upgrade account link for rate limit notice", e);
+      return Optional.empty();
+    }
   }
 
   public MessageTransport transportFor(IncomingMessage message) {
@@ -1128,6 +1295,9 @@ public class BBMessageAgent {
                   + SendTextAgentTool.TOOL_NAME
                   + " when you specifically need to send an extra message; plain text is fine otherwise. "
                   + "Use available tools for tasks like calendars, memory, Coder, scheduled follow-ups, or lookups when asked. "
+                  + "When the user asks about quota, usage limits, daily messages, or remaining messages, call "
+                  + GetUsageLimitsAgentTool.TOOL_NAME
+                  + " before answering. "
                   + "If the user asks the assistant to be more or less responsive, call "
                   + AssistantResponsivenessAgentTool.TOOL_NAME
                   + " to update the setting. The silent mode will only invoke responses when the message starts with 'Chat' (case-insensitive). "
@@ -1162,6 +1332,9 @@ public class BBMessageAgent {
                 + "When sending a text, you may optionally apply an iMessage effect via the effect parameter, but use effects sparingly (e.g. happy_birthday for birthday wishes). "
                 + "Use available tools for tasks like calendars or lookups when asked. "
                 + "Use web_search for current info or external lookups when relevant. "
+                + "When the user asks about quota, usage limits, daily messages, or remaining messages, call "
+                + GetUsageLimitsAgentTool.TOOL_NAME
+                + " before answering. "
                 + "If the user requests an image and has attached images, use those images as starting references for image generation. "
                 + "If the user asks the assistant to be more or less responsive (especially in group chats), call "
                 + AssistantResponsivenessAgentTool.TOOL_NAME
@@ -1560,6 +1733,9 @@ public class BBMessageAgent {
     if (websiteAccountService != null) {
       registerTool(new LinkWebsiteAccountAgentTool(websiteAccountService).getTool());
       registerTool(new GetWebsiteAccountLinkStatusAgentTool(websiteAccountService).getTool());
+    }
+    if (messageResponseRateLimitService != null) {
+      registerTool(new GetUsageLimitsAgentTool(messageResponseRateLimitService).getTool());
     }
     registerTool(new KubernetesReadOnlyAgentTool(objectMapper).getTool());
     registerTool(new KubernetesPodLogsAgentTool(objectMapper).getTool());

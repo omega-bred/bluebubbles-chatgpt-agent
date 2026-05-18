@@ -1,7 +1,13 @@
 import React from "react";
 
 import type { AuthState } from "../auth/useKeycloak";
-import type { AdminSenderStats, AdminStatsBucket, AdminStatsResponse } from "../client";
+import type {
+  AdminRateLimitUsage,
+  AdminRateLimitUsageResponse,
+  AdminSenderStats,
+  AdminStatsBucket,
+  AdminStatsResponse,
+} from "../client";
 import { AuthGate } from "../components/AuthGate";
 import { CenteredMessage } from "../components/CenteredMessage";
 import { SiteNav } from "../components/SiteNav";
@@ -28,6 +34,7 @@ export function AdminPage({ auth }: { auth: AuthState }) {
   );
   const [toInput, setToInput] = React.useState(() => toLocalInputValue(new Date()));
   const [data, setData] = React.useState<AdminStatsResponse | null>(null);
+  const [limitData, setLimitData] = React.useState<AdminRateLimitUsageResponse | null>(null);
   const [error, setError] = React.useState<string | null>(null);
   const [loading, setLoading] = React.useState(false);
 
@@ -37,7 +44,12 @@ export function AdminPage({ auth }: { auth: AuthState }) {
     }
     setLoading(true);
     try {
-      setData(await adminApi.getStatistics(toIso(fromInput), toIso(toInput)));
+      const [stats, limits] = await Promise.all([
+        adminApi.getStatistics(toIso(fromInput), toIso(toInput)),
+        adminApi.getRateLimitUsage(),
+      ]);
+      setData(stats);
+      setLimitData(limits);
       setError(null);
     } catch (err) {
       const status = (err as { response?: { status?: number } })?.response?.status;
@@ -75,6 +87,7 @@ export function AdminPage({ auth }: { auth: AuthState }) {
   }
 
   const topModel = data?.models?.[0];
+  const topLimitUsage = limitData?.usages?.[0];
 
   return (
     <div className="account-shell admin-shell">
@@ -133,6 +146,10 @@ export function AdminPage({ auth }: { auth: AuthState }) {
             value={(data?.average_messages_per_user || 0).toFixed(1)}
           />
           <MetricTile label="Top model" value={topModel?.model_label || "None"} />
+          <MetricTile
+            label="Highest quota use"
+            value={formatPercent(topLimitUsage?.percentage)}
+          />
         </section>
 
         <section className="admin-content-grid">
@@ -172,6 +189,14 @@ export function AdminPage({ auth }: { auth: AuthState }) {
               <h2>Top accounts</h2>
             </header>
             <SenderUsage senders={data?.senders || []} />
+          </article>
+
+          <article className="admin-panel">
+            <header>
+              <p className="eyebrow">Rate limits</p>
+              <h2>Daily response usage</h2>
+            </header>
+            <RateLimitUsage usages={limitData?.usages || []} />
           </article>
 
           <article className="admin-panel">
@@ -223,6 +248,33 @@ function SenderUsage({ senders }: { senders: AdminSenderStats[] }) {
           </div>
         );
       })}
+    </div>
+  );
+}
+
+function RateLimitUsage({ usages }: { usages: AdminRateLimitUsage[] }) {
+  if (usages.length === 0) {
+    return <p className="muted">No rate-limit usage in the current daily window.</p>;
+  }
+  return (
+    <div className="rate-limit-usage-list">
+      {usages.map((usage) => (
+        <div className="rate-limit-usage-row" key={`${usage.limit_key}-${usage.scope_key}`}>
+          <div>
+            <strong>#{usage.account_bucket || "unknown"}</strong>
+            <span>
+              {usage.is_premium ? "Paid" : "Free"} / resets {formatDateTime(usage.window_end)}
+            </span>
+          </div>
+          <div className="rate-limit-usage-meter" aria-hidden="true">
+            <span style={{ width: `${Math.max(usage.percentage || 0, 0.02) * 100}%` }} />
+          </div>
+          <p>
+            {formatCount(usage.used)} of {formatCount(usage.limit)} used /{" "}
+            {formatCount(usage.remaining)} remaining
+          </p>
+        </div>
+      ))}
     </div>
   );
 }
