@@ -72,6 +72,7 @@ import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.lang.Nullable;
 import org.springframework.stereotype.Service;
 
@@ -82,6 +83,11 @@ public class BBMessageAgent {
   public static final int MAX_HISTORY = 50;
   public static final String NO_RESPONSE_TEXT = "NO_RESPONSE";
   public static final String AGENT_PHONE_NUMBER = "+1 (415) 867-4956";
+  static final String TERMS_ACCEPTANCE_REPLY =
+      "Before I can help, you need to agree to the Terms of Use: %s\n\n"
+          + "Reply YES to confirm that you are at least 18, agree not to use this service for spam, abuse, illegal activity, or harmful content, understand that AI output may be inaccurate, and accept that the service is provided as-is with no refunds, no SLA, and no liability guarantees.";
+  static final String TERMS_ACCEPTED_REPLY =
+      "Thanks, you're all set. Send your request and I'll help.";
   private static final int MAX_TOOL_LOOPS = 50;
   private static final int MAX_CONSECUTIVE_BLOCKED_TOOL_LOOPS = 2;
   private static final int MAX_IMAGE_ATTACHMENTS = 4;
@@ -165,6 +171,9 @@ public class BBMessageAgent {
   private MessageResponseRateLimitService messageResponseRateLimitService;
   private final ReverseLocationLookup reverseLocationLookup;
   private final AgentAccountResolver accountResolver;
+
+  @Value("${website.base-url:http://localhost:8080}")
+  private String websiteBaseUrl = "http://localhost:8080";
 
   @Autowired
   public BBMessageAgent(
@@ -271,6 +280,9 @@ public class BBMessageAgent {
       }
       state.markIncomingMessageSeen(message);
     }
+    if (handleTermsGate(state, message)) {
+      return;
+    }
     recordAcceptedMessageMetric(message);
     if (workflowProperties.useCadenceWorkflow()) {
       if (cadenceWorkflowLauncher == null) {
@@ -336,6 +348,70 @@ public class BBMessageAgent {
       return isSilentInvocation(message.text());
     }
     return true;
+  }
+
+  private boolean handleTermsGate(ConversationState state, IncomingMessage message) {
+    if (accountResolver == null || message == null) {
+      return false;
+    }
+    AgentAccountResolver.ResolvedAccount resolved;
+    try {
+      Optional<AgentAccountResolver.ResolvedAccount> resolvedAccount =
+          accountResolver.resolveOrCreate(message);
+      if (resolvedAccount.isEmpty()) {
+        return false;
+      }
+      resolved = resolvedAccount.get();
+    } catch (RuntimeException e) {
+      log.warn("Failed to resolve account for terms gate {}", message, e);
+      return false;
+    }
+    if (resolved.account().getTermsAcceptedAt() != null) {
+      return false;
+    }
+    String reply;
+    if (isTermsAgreementText(message.text())) {
+      try {
+        accountResolver.acceptTerms(message);
+      } catch (RuntimeException e) {
+        log.warn("Failed to accept terms for {}", message, e);
+        reply =
+            "I couldn't save your Terms agreement just now. Please try replying YES again in a moment.";
+        sendAndRecordTermsGateReply(state, message, reply);
+        return true;
+      }
+      reply = TERMS_ACCEPTED_REPLY;
+    } else {
+      reply = TERMS_ACCEPTANCE_REPLY.formatted(termsUrl());
+    }
+    sendAndRecordTermsGateReply(state, message, reply);
+    return true;
+  }
+
+  private void sendAndRecordTermsGateReply(
+      ConversationState state, IncomingMessage message, String reply) {
+    if (sendThreadAwareTextUnmetered(message, reply) && state != null) {
+      recordAssistantTurnForCurrentMessage(message, reply, null);
+      updateThreadContext(state, message);
+    }
+  }
+
+  private static boolean isTermsAgreementText(String text) {
+    if (text == null) {
+      return false;
+    }
+    String normalized =
+        text.trim().toLowerCase(Locale.ROOT).replaceAll("[\\p{Punct}\\s]+", " ").trim();
+    return Set.of("yes", "y", "agree", "i agree").contains(normalized);
+  }
+
+  private String termsUrl() {
+    String baseUrl = websiteBaseUrl == null ? "" : websiteBaseUrl.trim();
+    if (baseUrl.isBlank()) {
+      return "/terms";
+    }
+    return (baseUrl.endsWith("/") ? baseUrl.substring(0, baseUrl.length() - 1) : baseUrl)
+        + "/terms";
   }
 
   private String resolveWorkflowId(IncomingMessage message) {

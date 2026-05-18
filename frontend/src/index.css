@@ -271,8 +271,45 @@ a {
   padding: 72px 32px;
 }
 
+.terms-main {
+  max-width: 900px;
+}
+
+.terms-content {
+  display: grid;
+  gap: 28px;
+  color: #30302d;
+}
+
+.terms-content section {
+  display: grid;
+  gap: 10px;
+  border-top: 1px solid #dedede;
+  padding-top: 24px;
+}
+
+.terms-content h2,
+.terms-content p {
+  margin: 0;
+}
+
+.terms-content h2 {
+  color: #111111;
+  font-size: 1.35rem;
+  line-height: 1.2;
+}
+
+.terms-content p {
+  font-size: 1.04rem;
+  line-height: 1.7;
+}
+
 .account-main.narrow {
   max-width: 840px;
+}
+
+.account-main.narrow.terms-main {
+  max-width: 900px;
 }
 
 .account-heading {

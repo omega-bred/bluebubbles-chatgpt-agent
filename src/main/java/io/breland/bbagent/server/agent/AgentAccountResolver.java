@@ -132,6 +132,22 @@ public class AgentAccountResolver {
     resolveOrCreate(message);
   }
 
+  @Transactional
+  public Optional<ResolvedAccount> acceptTerms(IncomingMessage message) {
+    Optional<ResolvedAccount> resolved = resolveOrCreate(message);
+    if (resolved.isEmpty()) {
+      return Optional.empty();
+    }
+    AgentAccountEntity account = resolved.get().account();
+    if (account.getTermsAcceptedAt() == null) {
+      Instant now = Instant.now();
+      account.setTermsAcceptedAt(now);
+      account.setUpdatedAt(now);
+      accountRepository.save(account);
+    }
+    return Optional.of(resolveByAccountId(account.getAccountId()));
+  }
+
   @Transactional(readOnly = true)
   public List<AgentAccountIdentityEntity> identitiesForAccount(String accountId) {
     if (StringUtils.isBlank(accountId)) {
@@ -320,6 +336,9 @@ public class AgentAccountResolver {
     }
     if (StringUtils.isBlank(target.getSelectedModel())) {
       target.setSelectedModel(source.getSelectedModel());
+    }
+    if (target.getTermsAcceptedAt() == null) {
+      target.setTermsAcceptedAt(source.getTermsAcceptedAt());
     }
     target.setUpdatedAt(Instant.now());
     accountRepository.save(target);

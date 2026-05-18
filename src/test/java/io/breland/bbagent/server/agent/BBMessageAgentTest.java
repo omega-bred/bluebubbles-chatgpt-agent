@@ -38,6 +38,7 @@ import io.breland.bbagent.server.agent.location.ReverseLocationLookup;
 import io.breland.bbagent.server.agent.location.ReverseLocationLookupResult;
 import io.breland.bbagent.server.agent.model_picker.ModelAccessService;
 import io.breland.bbagent.server.agent.model_picker.ModelPicker;
+import io.breland.bbagent.server.agent.persistence.account.AgentAccountEntity;
 import io.breland.bbagent.server.agent.tools.AgentTool;
 import io.breland.bbagent.server.agent.tools.ToolContext;
 import io.breland.bbagent.server.agent.tools.bb.RenameConversationAgentTool;
@@ -52,6 +53,7 @@ import io.breland.bbagent.server.agent.transport.bb.BBHttpClientWrapper;
 import io.breland.bbagent.server.agent.workflowcallback.WorkflowCallbackService;
 import io.breland.bbagent.server.website.WebsiteAccountService;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -131,6 +133,53 @@ class BBMessageAgentTest {
     agent.handleIncomingMessage(incoming);
 
     verify(responseService, times(2)).create(any(ResponseCreateParams.class));
+  }
+
+  @Test
+  void blocksNormalProcessingUntilTermsAccepted() {
+    OpenAIClient openAIClient = Mockito.mock(OpenAIClient.class);
+    var responseService = Mockito.mock(com.openai.services.blocking.ResponseService.class);
+    when(openAIClient.responses()).thenReturn(responseService);
+    AgentAccountResolver accountResolver = Mockito.mock(AgentAccountResolver.class);
+    AgentAccountEntity account = account("account-terms", null);
+    when(accountResolver.resolveOrCreate(any(IncomingMessage.class)))
+        .thenReturn(Optional.of(new AgentAccountResolver.ResolvedAccount(account, List.of())));
+    StubBBHttpClientWrapper bbHttpClientWrapper = new StubBBHttpClientWrapper();
+    BBMessageAgent agent = newAgent(openAIClient, bbHttpClientWrapper, accountResolver);
+
+    agent.handleIncomingMessage(
+        incomingMessage("iMessage;+;chat-terms", "msg-terms-1", "what can you do?", 1_000L));
+
+    verify(responseService, never()).create(any(ResponseCreateParams.class));
+    assertEquals(1, bbHttpClientWrapper.sentTexts.size());
+    assertTrue(bbHttpClientWrapper.sentTexts.getFirst().contains("Terms of Use"));
+    assertTrue(bbHttpClientWrapper.sentTexts.getFirst().contains("Reply YES"));
+  }
+
+  @Test
+  void acceptsTermsWhenUserRepliesYes() {
+    OpenAIClient openAIClient = Mockito.mock(OpenAIClient.class);
+    var responseService = Mockito.mock(com.openai.services.blocking.ResponseService.class);
+    when(openAIClient.responses()).thenReturn(responseService);
+    AgentAccountResolver accountResolver = Mockito.mock(AgentAccountResolver.class);
+    AgentAccountEntity pendingAccount = account("account-terms", null);
+    AgentAccountEntity acceptedAccount = account("account-terms", Instant.now());
+    when(accountResolver.resolveOrCreate(any(IncomingMessage.class)))
+        .thenReturn(
+            Optional.of(new AgentAccountResolver.ResolvedAccount(pendingAccount, List.of())));
+    when(accountResolver.acceptTerms(any(IncomingMessage.class)))
+        .thenReturn(
+            Optional.of(new AgentAccountResolver.ResolvedAccount(acceptedAccount, List.of())));
+    StubBBHttpClientWrapper bbHttpClientWrapper = new StubBBHttpClientWrapper();
+    BBMessageAgent agent = newAgent(openAIClient, bbHttpClientWrapper, accountResolver);
+    IncomingMessage incoming =
+        incomingMessage("iMessage;+;chat-terms", "msg-terms-yes", "YES", 1_000L);
+
+    agent.handleIncomingMessage(incoming);
+
+    verify(accountResolver).acceptTerms(incoming);
+    verify(responseService, never()).create(any(ResponseCreateParams.class));
+    assertEquals(List.of(BBMessageAgent.TERMS_ACCEPTED_REPLY), bbHttpClientWrapper.sentTexts);
   }
 
   @Test
@@ -863,6 +912,33 @@ class BBMessageAgentTest {
   private static BBMessageAgent newAgent(
       OpenAIClient openAIClient,
       BBHttpClientWrapper bbHttpClientWrapper,
+      AgentAccountResolver accountResolver) {
+    return new BBMessageAgent(
+        openAIClient,
+        bbHttpClientWrapper,
+        Mockito.mock(Mem0Client.class),
+        Mockito.mock(GcalClient.class),
+        Mockito.mock(CoderMcpClient.class),
+        null,
+        Mockito.mock(CoderAsyncTaskStartStore.class),
+        null,
+        Mockito.mock(GiphyClient.class),
+        ReverseLocationLookup.noop(),
+        new InMemoryAgentSettingsStore(),
+        new AgentWorkflowProperties(),
+        null,
+        null,
+        null,
+        accountResolver,
+        null,
+        null,
+        null,
+        new ModelPicker());
+  }
+
+  private static BBMessageAgent newAgent(
+      OpenAIClient openAIClient,
+      BBHttpClientWrapper bbHttpClientWrapper,
       ReverseLocationLookup reverseLocationLookup) {
     return newAgent(openAIClient, bbHttpClientWrapper, null, reverseLocationLookup);
   }
@@ -950,6 +1026,7 @@ class BBMessageAgentTest {
     private int findMyLookupCalls;
     private String lastFindMyUserId;
     private List<String> lastFindMyUserIds = List.of();
+    private final List<String> sentTexts = new ArrayList<>();
 
     StubBBHttpClientWrapper() {
       super("pw", Mockito.mock(V1MessageApi.class), Mockito.mock(V1ContactApi.class));
@@ -991,7 +1068,9 @@ class BBMessageAgentTest {
     public void sendTextDirect(IncomingMessage message, String text) {}
 
     @Override
-    public void sendTextDirect(ApiV1MessageTextPostRequest request) {}
+    public void sendTextDirect(ApiV1MessageTextPostRequest request) {
+      sentTexts.add(request.getMessage());
+    }
 
     @Override
     public boolean sendReactionDirect(ApiV1MessageReactPostRequest request) {
@@ -1027,6 +1106,13 @@ class BBMessageAgentTest {
         Instant.ofEpochSecond(epochSecond),
         List.of(),
         false);
+  }
+
+  private static AgentAccountEntity account(String accountId, Instant termsAcceptedAt) {
+    Instant now = Instant.now();
+    AgentAccountEntity account = new AgentAccountEntity(accountId, now, now);
+    account.setTermsAcceptedAt(termsAcceptedAt);
+    return account;
   }
 
   private static ApiV1ChatChatGuidMessageGet200ResponseDataInner blueBubblesMessage(

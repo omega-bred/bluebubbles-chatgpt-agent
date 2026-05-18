@@ -1,9 +1,11 @@
 package io.breland.bbagent.server.agent;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.breland.bbagent.server.agent.persistence.account.AgentAccountRepository;
+import java.time.Instant;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -45,6 +47,58 @@ class AgentAccountResolverTest {
                     value.equals("imessage_phone:+18033861737")
                         || value.equals("imessage_email:mindstorms6+apple@gmail.com"))
             .count());
+  }
+
+  @Test
+  void acceptsTermsForResolvedMessageAccount() {
+    accountRepository.deleteAll();
+    IncomingMessage message =
+        new IncomingMessage(
+            "iMessage;+;chat-terms",
+            "msg-terms",
+            null,
+            "YES",
+            false,
+            "iMessage",
+            "+1 (803) 386-1737",
+            false,
+            Instant.now(),
+            java.util.List.of(),
+            false);
+
+    String accountId =
+        accountResolver.resolveOrCreate(message).orElseThrow().account().getAccountId();
+
+    accountResolver.acceptTerms(message);
+
+    assertNotNull(accountRepository.findById(accountId).orElseThrow().getTermsAcceptedAt());
+  }
+
+  @Test
+  void mergingAccountsPreservesTermsAcceptance() {
+    accountRepository.deleteAll();
+    String acceptedEmailAccountId =
+        accountResolver
+            .resolveOrCreate(IncomingMessage.TRANSPORT_BLUEBUBBLES, "mindstorms6+apple@gmail.com")
+            .orElseThrow()
+            .account()
+            .getAccountId();
+    var acceptedEmailAccount = accountRepository.findById(acceptedEmailAccountId).orElseThrow();
+    acceptedEmailAccount.setTermsAcceptedAt(Instant.parse("2026-05-18T00:00:00Z"));
+    acceptedEmailAccount.setUpdatedAt(Instant.now());
+    accountRepository.save(acceptedEmailAccount);
+    String phoneAccountId =
+        accountResolver
+            .resolveOrCreate(IncomingMessage.TRANSPORT_BLUEBUBBLES, "+1 (803) 386-1737")
+            .orElseThrow()
+            .account()
+            .getAccountId();
+
+    accountResolver.linkWebsiteAccount(
+        phoneAccountId, jwt("keycloak-sub", "mindstorms6+apple@gmail.com"));
+
+    assertNotNull(accountRepository.findById(phoneAccountId).orElseThrow().getTermsAcceptedAt());
+    assertTrue(accountRepository.findById(acceptedEmailAccountId).isEmpty());
   }
 
   private Jwt jwt(String subject, String email) {

@@ -10,6 +10,8 @@ export function SiteNav({ auth }: { auth: AuthState }) {
       </a>
       <nav>
         <a href="/account">Account</a>
+        <a href="/terms">Terms</a>
+        <a href="/privacy">Privacy</a>
         {auth.ready && auth.admin ? <a href="/admin">Admin</a> : null}
         {auth.ready && auth.authenticated ? (
           <button className="link-button" onClick={() => void logout()}>

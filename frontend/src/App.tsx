@@ -7,6 +7,8 @@ import { AccountLinkPage } from "./pages/AccountLinkPage";
 import { AccountPage } from "./pages/AccountPage";
 import { LandingPage } from "./pages/LandingPage";
 import { OauthCallbackPage } from "./pages/OauthCallbackPage";
+import { PrivacyPage } from "./pages/PrivacyPage";
+import { TermsPage } from "./pages/TermsPage";
 
 export default function App() {
   const [path, setPath] = React.useState(window.location.pathname);
@@ -36,6 +38,14 @@ export default function App() {
 
   if (path.startsWith("/admin")) {
     return <AdminPage auth={auth} />;
+  }
+
+  if (path.startsWith("/terms")) {
+    return <TermsPage auth={auth} />;
+  }
+
+  if (path.startsWith("/privacy")) {
+    return <PrivacyPage auth={auth} />;
   }
 
   return <LandingPage auth={auth} />;

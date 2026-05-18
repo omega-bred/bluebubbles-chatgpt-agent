@@ -41,6 +41,9 @@ public class AgentAccountEntity {
   @Column(name = "selected_model", length = 128)
   private String selectedModel;
 
+  @Column(name = "terms_accepted_at")
+  private Instant termsAcceptedAt;
+
   @Column(name = "created_at", nullable = false)
   private Instant createdAt;
 
