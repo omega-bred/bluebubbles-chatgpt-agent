@@ -131,7 +131,13 @@ public class CadenceMessageWorkflowImpl implements CadenceMessageWorkflow {
     String trimmedText = assistantText == null ? "" : assistantText.trim();
     if (!trimmedText.isBlank() && !BBMessageAgent.NO_RESPONSE_TEXT.equalsIgnoreCase(trimmedText)) {
       if (!sentTextByTool && !sentImageByMultipart) {
-        activities.sendThreadAwareText(message, trimmedText, request.workflowContext());
+        boolean sent =
+            activities.sendThreadAwareText(message, trimmedText, request.workflowContext());
+        if (!sent) {
+          log.warn(
+              "Assistant text send was not confirmed for cadence workflow {}",
+              request.workflowContext());
+        }
       } else {
         activities.recordAssistantTurn(message, trimmedText, request.workflowContext());
       }

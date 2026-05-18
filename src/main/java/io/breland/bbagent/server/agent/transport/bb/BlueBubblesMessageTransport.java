@@ -106,8 +106,7 @@ public class BlueBubblesMessageTransport implements MessageTransport {
     if (outgoingMessage.partIndex() != null) {
       request.setPartIndex(outgoingMessage.partIndex());
     }
-    bbHttpClientWrapper.sendTextDirect(request);
-    return true;
+    return bbHttpClientWrapper.sendTextDirect(request);
   }
 
   @Override

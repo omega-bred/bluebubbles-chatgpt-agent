@@ -18,6 +18,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.*;
+import java.util.concurrent.TimeoutException;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
@@ -37,7 +38,7 @@ import org.springframework.util.MultiValueMap;
 @Component
 public class BBHttpClientWrapper {
 
-  private static final Duration API_TIMEOUT = Duration.ofSeconds(10);
+  private static final Duration DEFAULT_API_TIMEOUT = Duration.ofSeconds(30);
   private static final String ANY_DIRECT_CHAT_PREFIX = "any;-;";
 
   private final V1ContactApi contactApi;
@@ -49,6 +50,7 @@ public class BBHttpClientWrapper {
   private final V1ICloudApi icloudApi;
 
   private final String password;
+  private final Duration apiTimeout;
 
   @Getter private final ObjectMapper objectMapper;
 
@@ -56,8 +58,10 @@ public class BBHttpClientWrapper {
   public BBHttpClientWrapper(
       @Value("${bluebubbles.basePath}") String basePath,
       @Value("${bluebubbles.password}") String password,
+      @Value("${bluebubbles.request-timeout-seconds:30}") long requestTimeoutSeconds,
       ObjectMapper objectMapper) {
     this.password = password;
+    this.apiTimeout = normalizedTimeout(requestTimeoutSeconds);
     this.apiClient = new ApiClient();
     this.apiClient.setBasePath(basePath);
     this.messageApi = new V1MessageApi(apiClient);
@@ -90,6 +94,7 @@ public class BBHttpClientWrapper {
       V1ICloudApi icloudApi,
       ObjectMapper objectMapper) {
     this.password = password;
+    this.apiTimeout = DEFAULT_API_TIMEOUT;
     this.apiClient = new ApiClient();
     this.messageApi = messageApi;
     this.contactApi = contactApi;
@@ -101,6 +106,25 @@ public class BBHttpClientWrapper {
   }
 
   public record AttachmentData(String filename, byte[] bytes) {}
+
+  private static Duration normalizedTimeout(long timeoutSeconds) {
+    return Duration.ofSeconds(Math.max(1, timeoutSeconds));
+  }
+
+  private static long elapsedMillis(long startedNanos) {
+    return Duration.ofNanos(System.nanoTime() - startedNanos).toMillis();
+  }
+
+  private static boolean isTimeout(Throwable throwable) {
+    Throwable current = throwable;
+    while (current != null) {
+      if (current instanceof TimeoutException) {
+        return true;
+      }
+      current = current.getCause();
+    }
+    return false;
+  }
 
   private static void requireSuccessfulResponse(Integer status, String message, String operation) {
     if (status != null && status == 200 && StringUtils.containsIgnoreCase(message, "success")) {
@@ -131,7 +155,7 @@ public class BBHttpClientWrapper {
       return null;
     }
     ApiResponseFindMyFriendsLocations response =
-        this.icloudApi.apiV1IcloudFindmyFriendsRefreshPost(password).block(API_TIMEOUT);
+        this.icloudApi.apiV1IcloudFindmyFriendsRefreshPost(password).block(apiTimeout);
     response = requirePresent(response, "refresh Find My friends locations");
     requireSuccessfulResponse(
         response.getStatus(), response.getMessage(), "refresh Find My friends locations");
@@ -205,7 +229,7 @@ public class BBHttpClientWrapper {
     if (StringUtils.isBlank(address)) {
       return List.of();
     }
-    ApiV1ContactGet200Response response = contactApi.apiV1ContactGet(password).block(API_TIMEOUT);
+    ApiV1ContactGet200Response response = contactApi.apiV1ContactGet(password).block(apiTimeout);
     response = requirePresent(response, "get contacts");
     requireSuccessfulResponse(response.getStatus(), response.getMessage(), "get contacts");
     if (response.getData() == null || response.getData().isEmpty()) {
@@ -279,7 +303,7 @@ public class BBHttpClientWrapper {
     ApiResponseMessage response =
         this.messageApi
             .apiV1MessageMessageGuidGet(messageGuid, password, "chats,participants")
-            .block(API_TIMEOUT);
+            .block(apiTimeout);
     response = requirePresent(response, "get message");
     requireSuccessfulResponse(response.getStatus(), response.getMessage(), "get message");
     return requirePresent(response.getData(), "get message");
@@ -379,7 +403,7 @@ public class BBHttpClientWrapper {
     body.put("chatGuid", chatGuid);
     body.put("parts", parts);
     try {
-      messageApi.apiV1MessageMultipartPost(password, body).block(API_TIMEOUT);
+      messageApi.apiV1MessageMultipartPost(password, body).block(apiTimeout);
       log.info("Sent multipart message to {}", chatGuid);
       return true;
     } catch (Exception e) {
@@ -428,7 +452,7 @@ public class BBHttpClientWrapper {
       return null;
     }
     ApiResponseGetChat chat =
-        chatApi.apiV1ChatChatGuidGet(chatGuid, password, "participants").block(API_TIMEOUT);
+        chatApi.apiV1ChatChatGuidGet(chatGuid, password, "participants").block(apiTimeout);
     chat = requirePresent(chat, "get conversation info");
     requireSuccessfulResponse(chat.getStatus(), chat.getMessage(), "get conversation info");
     return requirePresent(chat.getData(), "get conversation info");
@@ -444,7 +468,7 @@ public class BBHttpClientWrapper {
                 chatGuid,
                 password,
                 ApiV1ChatChatGuidPutRequest.builder().displayName(displayName).build())
-            .block(API_TIMEOUT);
+            .block(apiTimeout);
     result = requirePresent(result, "rename conversation");
     requireSuccessfulResponse(result.getStatus(), result.getMessage(), "rename conversation");
     return true;
@@ -482,7 +506,7 @@ public class BBHttpClientWrapper {
                   new String[] {},
                   new ParameterizedTypeReference<JsonNode>() {})
               .bodyToMono(JsonNode.class)
-              .block(API_TIMEOUT);
+              .block(apiTimeout);
       log.debug("Set conversation icon response: {}", response);
       return true;
     } catch (Exception e) {
@@ -491,23 +515,54 @@ public class BBHttpClientWrapper {
     }
   }
 
-  public void sendTextDirect(IncomingMessage message, String text) {
+  public boolean sendTextDirect(IncomingMessage message, String text) {
     if (StringUtils.isBlank(message.chatGuid())) {
       log.warn("Cannot send message without chatGuid");
-      return;
+      return false;
     }
-    this.sendTextDirect(normalizeDirectAnyChatGuid(message.chatGuid(), message.service()), text);
+    return this.sendTextDirect(
+        normalizeDirectAnyChatGuid(message.chatGuid(), message.service()), text);
   }
 
-  public void sendTextDirect(ApiV1MessageTextPostRequest request) {
+  public boolean sendTextDirect(ApiV1MessageTextPostRequest request) {
+    if (request == null) {
+      return false;
+    }
+    long startedNanos = System.nanoTime();
     try {
       request.setChatGuid(normalizeDirectAnyChatGuid(request.getChatGuid()));
       applyTextFormatting(request);
-      log.info("Attempting to send direct text message {}", request.toString());
-      messageApi.apiV1MessageTextPost(password, request).block(API_TIMEOUT);
-      log.info("Sent direct message to {}", request.getChatGuid());
+      log.info(
+          "Attempting to send direct text message chatGuid={} tempGuid={} timeout={} request={}",
+          request.getChatGuid(),
+          request.getTempGuid(),
+          apiTimeout,
+          request);
+      messageApi.apiV1MessageTextPost(password, request).block(apiTimeout);
+      log.info(
+          "Sent direct message chatGuid={} tempGuid={} elapsedMs={}",
+          request.getChatGuid(),
+          request.getTempGuid(),
+          elapsedMillis(startedNanos));
+      return true;
     } catch (Exception e) {
-      log.warn("Failed to send direct message", e);
+      if (isTimeout(e)) {
+        log.warn(
+            "Timed out waiting for BlueBubbles direct text send response chatGuid={} tempGuid={} timeout={} elapsedMs={}. BlueBubbles may still deliver the message; check outgoing webhook logs before retrying.",
+            request.getChatGuid(),
+            request.getTempGuid(),
+            apiTimeout,
+            elapsedMillis(startedNanos),
+            e);
+      } else {
+        log.warn(
+            "Failed to send direct message chatGuid={} tempGuid={} elapsedMs={}",
+            request.getChatGuid(),
+            request.getTempGuid(),
+            elapsedMillis(startedNanos),
+            e);
+      }
+      return false;
     }
   }
 
@@ -534,12 +589,12 @@ public class BBHttpClientWrapper {
     }
   }
 
-  public void sendTextDirect(String chatGuid, String text) {
+  public boolean sendTextDirect(String chatGuid, String text) {
     ApiV1MessageTextPostRequest request = new ApiV1MessageTextPostRequest();
     request.chatGuid(chatGuid);
     request.tempGuid(UUID.randomUUID().toString());
     request.message(text);
-    this.sendTextDirect(request);
+    return this.sendTextDirect(request);
   }
 
   public boolean sendReactionDirect(IncomingMessage message, String reaction) {
@@ -566,7 +621,7 @@ public class BBHttpClientWrapper {
       return false;
     }
     try {
-      messageApi.apiV1MessageReactPost(password, request).block(API_TIMEOUT);
+      messageApi.apiV1MessageReactPost(password, request).block(apiTimeout);
       log.info("Sent reaction {} to {}", request.getReaction(), request.getChatGuid());
       return true;
     } catch (Exception e) {
@@ -595,14 +650,14 @@ public class BBHttpClientWrapper {
         this.chatApi
             .apiV1ChatChatGuidMessageGet(
                 chatGuid, password, "handle", null, null, null, 100, "DESC")
-            .block(API_TIMEOUT);
+            .block(apiTimeout);
     response = requirePresent(response, "get messages in chat");
     return requirePresent(response.getData(), "get messages in chat");
   }
 
   public boolean ping() {
     try {
-      this.otherApi.apiV1PingGet(password).block(API_TIMEOUT);
+      this.otherApi.apiV1PingGet(password).block(apiTimeout);
       return true;
     } catch (Exception e) {
       log.warn("Failed to ping", e);
@@ -612,7 +667,7 @@ public class BBHttpClientWrapper {
 
   public IcloudAccountInfo getAccount() {
     ApiResponseIcloudAccount account =
-        this.icloudApi.apiV1IcloudAccountGet(password).block(API_TIMEOUT);
+        this.icloudApi.apiV1IcloudAccountGet(password).block(apiTimeout);
     account = requirePresent(account, "get iCloud account");
     requireSuccessfulResponse(account.getStatus(), account.getMessage(), "get iCloud account");
     return requirePresent(account.getData(), "get iCloud account");

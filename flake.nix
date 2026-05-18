@@ -32,13 +32,16 @@
           jdk = pkgs.jdk25;
 
           python = pkgs.python313.withPackages (
-            ps: with ps; [
-              lxmf
-              pip
-              rns
-              setuptools
-              virtualenv
-              wheel
+            ps:
+            [
+              ps.pip
+              ps.setuptools
+              ps.virtualenv
+              ps.wheel
+            ]
+            ++ lib.optionals stdenv.isLinux [
+              ps.lxmf
+              ps.rns
             ]
           );
 
@@ -127,6 +130,11 @@
               echo "  Java:  $(java -version 2>&1 | head -n 1)"
               echo "  Node:  $(node --version) / npm $(npm --version)"
               echo "  Python: $(python --version)"
+            ''
+            + pkgs.lib.optionalString pkgs.stdenv.isDarwin ''
+              echo "  LXMF/RNS: omitted on Darwin because nixpkgs packages pull Linux Bluetooth deps"
+            ''
+            + ''
               echo "  Try:   ./gradlew test"
             '';
           };

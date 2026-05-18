@@ -19,7 +19,7 @@ export function LandingPage({ auth }: { auth: AuthState }) {
       >
         <div className="hero-copy">
           <p className="eyebrow">AI where the conversation already is</p>
-          <h1>AI is in your iMessage.</h1>
+          <h1>AI is in your messages.</h1>
           <p className="hero-lede">
             Text {agentPhoneDisplay} to try the agent from iMessage with ChatGPT, Gemini, Claude,
             or any other configured model.
@@ -46,8 +46,8 @@ export function LandingPage({ auth }: { auth: AuthState }) {
           </p>
         </div>
         <div className="image-strip">
-          <img src={screenOne} alt="One-on-one iMessage chat with ChatGPT or any AI Model" />
-          <img src={screenTwo} alt="iMessage chat asking ChatGPT for a party schedule" />
+          <img src={screenOne} alt="One-on-one message chat with ChatGPT or any AI Model" />
+          <img src={screenTwo} alt="message chat asking ChatGPT for a party schedule" />
         </div>
       </section>
 

@@ -722,6 +722,10 @@ public class BBMessageAgent {
         .orElse(null);
   }
 
+  private static long elapsedMillis(long startedNanos) {
+    return Duration.ofNanos(System.nanoTime() - startedNanos).toMillis();
+  }
+
   public boolean sendThreadAwareText(IncomingMessage message, String text) {
     return sendThreadAwareText(message, text, null);
   }
@@ -938,11 +942,30 @@ public class BBMessageAgent {
       }
     }
     try {
+      long startedNanos = System.nanoTime();
       ResponseCreateParams finalRequest = params.build();
+      log.info(
+          "Creating model response chat={} messageGuid={} workflowId={} inputItems={}",
+          message.chatGuid(),
+          message.messageGuid(),
+          workflowContext == null ? null : workflowContext.workflowId(),
+          requestInputItems.size());
       log.trace("Final message: {}", finalRequest.toString());
-      return openAiSupplier.get().responses().create(finalRequest);
+      Response response = openAiSupplier.get().responses().create(finalRequest);
+      log.info(
+          "Created model response chat={} messageGuid={} workflowId={} elapsedMs={}",
+          message.chatGuid(),
+          message.messageGuid(),
+          workflowContext == null ? null : workflowContext.workflowId(),
+          elapsedMillis(startedNanos));
+      return response;
     } catch (RuntimeException e) {
-      log.warn("OpenAI response failed", e);
+      log.warn(
+          "OpenAI response failed chat={} messageGuid={} workflowId={}",
+          message.chatGuid(),
+          message.messageGuid(),
+          workflowContext == null ? null : workflowContext.workflowId(),
+          e);
       return null;
     }
   }
