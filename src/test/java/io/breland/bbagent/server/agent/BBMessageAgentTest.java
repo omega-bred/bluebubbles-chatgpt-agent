@@ -405,6 +405,7 @@ class BBMessageAgentTest {
     assertEquals(EasyInputMessage.Role.SYSTEM, systemMessage.role());
     String systemText = systemMessage.content().asTextInput();
     assertTrue(systemText.contains("You are a chat assistant for iMessage via BlueBubbles."));
+    assertTrue(systemText.contains("The public phone number for this agent is +1 (415) 867-4956."));
     assertTrue(systemText.contains(DEVELOPER_PROMPT_MARKER));
   }
 

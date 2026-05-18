@@ -4,6 +4,8 @@ import { SiteNav } from "../components/SiteNav";
 const screenOne = new URL("../../../images/screen1.png", import.meta.url).href;
 const screenTwo = new URL("../../../images/screen2.png", import.meta.url).href;
 const screenThree = new URL("../../../images/screen3.jpg", import.meta.url).href;
+const agentPhoneDisplay = "+1 (415) 867-4956";
+const agentSmsHref = "sms:+14158674956";
 
 export function LandingPage({ auth }: { auth: AuthState }) {
   return (
@@ -19,16 +21,18 @@ export function LandingPage({ auth }: { auth: AuthState }) {
           <p className="eyebrow">AI where the conversation already is</p>
           <h1>AI is in your iMessage.</h1>
           <p className="hero-lede">
-            Talk to ChatGPT, Gemini, Claude, or any other configured model from iMessage.
+            Text {agentPhoneDisplay} to try the agent from iMessage with ChatGPT, Gemini, Claude,
+            or any other configured model.
           </p>
           <div className="hero-actions">
-            <a className="button button-primary" href="/account">
-              Manage account
+            <a className="button button-primary button-cta" href={agentSmsHref}>
+              Text {agentPhoneDisplay}
             </a>
             <a className="button button-secondary" href="#how-it-works">
               See how it works
             </a>
           </div>
+          <p className="hero-cta-note">Start a conversation from Messages. No app install needed.</p>
         </div>
       </section>
 
@@ -37,8 +41,8 @@ export function LandingPage({ auth }: { auth: AuthState }) {
           <p className="eyebrow">Text naturally</p>
           <h2>No app to open. No dashboard to babysit.</h2>
           <p>
-            Ask for plans, recipes, reminders, coding help, images, GIFs, or calendar changes from
-            the same thread your people are already using.
+            Text {agentPhoneDisplay} and ask for plans, recipes, reminders, coding help, images,
+            GIFs, or calendar changes from the same thread your people are already using.
           </p>
         </div>
         <div className="image-strip">

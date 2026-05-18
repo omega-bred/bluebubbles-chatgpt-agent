@@ -153,6 +153,13 @@ a {
   color: #f2f2f0;
 }
 
+.hero-cta-note {
+  margin: 14px 0 0;
+  color: #f2f2f0;
+  font-size: 0.98rem;
+  font-weight: 700;
+}
+
 .button {
   display: inline-flex;
   min-height: 44px;
@@ -173,6 +180,12 @@ a {
 .button-primary {
   color: #111111;
   background: #33d17a;
+}
+
+.button-cta {
+  min-height: 58px;
+  padding: 14px 24px;
+  font-size: 1.08rem;
 }
 
 .button-secondary {

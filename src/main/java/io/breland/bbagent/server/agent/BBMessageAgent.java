@@ -81,6 +81,7 @@ public class BBMessageAgent {
 
   public static final int MAX_HISTORY = 50;
   public static final String NO_RESPONSE_TEXT = "NO_RESPONSE";
+  public static final String AGENT_PHONE_NUMBER = "+1 (415) 867-4956";
   private static final int MAX_TOOL_LOOPS = 50;
   private static final int MAX_CONSECUTIVE_BLOCKED_TOOL_LOOPS = 2;
   private static final int MAX_IMAGE_ATTACHMENTS = 4;
@@ -1263,10 +1264,15 @@ public class BBMessageAgent {
             : "You are a chat assistant for iMessage via BlueBubbles. "
                 + "You can use reactions for quick acknowledgements and avoid spamming. "
                 + IMESSAGE_FORMATTING_INSTRUCTION;
+    String publicAgentInstruction =
+        "The public phone number for this agent is "
+            + AGENT_PHONE_NUMBER
+            + ". When someone asks how this program works, how to try it, or how to contact the agent, mention that they can text this number. ";
     return EasyInputMessage.builder()
         .role(EasyInputMessage.Role.SYSTEM)
         .content(
             transportInstruction
+                + publicAgentInstruction
                 + (groupMessage
                     ? "Only respond when it is helpful or requested - this is a group message and not all messages are for you. You MUST ONLY respond if the message was directed to you or if your response will add useful and helpful information."
                     : "This is a one on one message with a user. You should respond to messages unless no reply is needed.")
