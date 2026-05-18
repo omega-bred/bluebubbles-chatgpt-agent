@@ -20,6 +20,7 @@ import java.time.temporal.ChronoUnit;
 import java.util.*;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.lang3.StringUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.ParameterizedTypeReference;
@@ -69,12 +70,7 @@ public class BBHttpClientWrapper {
   }
 
   public BBHttpClientWrapper(String password, V1MessageApi messageApi, V1ContactApi contactApi) {
-    this(
-        password,
-        messageApi,
-        contactApi,
-        new V1ICloudApi(new ApiClient()),
-        new ObjectMapper().registerModule(new JavaTimeModule()));
+    this(password, messageApi, contactApi, new V1ICloudApi(new ApiClient()));
   }
 
   public BBHttpClientWrapper(
@@ -107,10 +103,7 @@ public class BBHttpClientWrapper {
   public record AttachmentData(String filename, byte[] bytes) {}
 
   private static void requireSuccessfulResponse(Integer status, String message, String operation) {
-    if (status != null
-        && status == 200
-        && message != null
-        && message.toLowerCase().contains("success")) {
+    if (status != null && status == 200 && StringUtils.containsIgnoreCase(message, "success")) {
       return;
     }
     throw new IllegalStateException(
@@ -125,7 +118,7 @@ public class BBHttpClientWrapper {
   }
 
   public FindMyFriendLocation getFindMyLocation(String userId) {
-    if (userId == null || userId.isBlank()) {
+    if (StringUtils.isBlank(userId)) {
       return null;
     }
     return getFindMyLocation(List.of(userId));
@@ -133,9 +126,7 @@ public class BBHttpClientWrapper {
 
   public FindMyFriendLocation getFindMyLocation(Collection<String> userIds) {
     List<String> candidates =
-        userIds == null
-            ? List.of()
-            : userIds.stream().filter(id -> id != null && !id.isBlank()).toList();
+        userIds == null ? List.of() : userIds.stream().filter(StringUtils::isNotBlank).toList();
     if (candidates.isEmpty()) {
       return null;
     }
@@ -211,7 +202,7 @@ public class BBHttpClientWrapper {
   }
 
   public List<String> getContactAddressesFor(String address) {
-    if (address == null || address.isBlank()) {
+    if (StringUtils.isBlank(address)) {
       return List.of();
     }
     ApiV1ContactGet200Response response = contactApi.apiV1ContactGet(password).block(API_TIMEOUT);
@@ -251,7 +242,7 @@ public class BBHttpClientWrapper {
     entries.stream()
         .filter(Objects::nonNull)
         .map(AddressEntry::getAddress)
-        .filter(value -> value != null && !value.isBlank())
+        .filter(StringUtils::isNotBlank)
         .map(String::trim)
         .forEach(addresses::add);
   }
@@ -322,7 +313,7 @@ public class BBHttpClientWrapper {
     if (bytes == null || bytes.length == 0) {
       return null;
     }
-    String safeName = (filename == null || filename.isBlank()) ? "attachment" : filename;
+    String safeName = StringUtils.defaultIfBlank(filename, "attachment");
     Path tempPath = null;
     try {
       String suffix = "";
@@ -349,7 +340,7 @@ public class BBHttpClientWrapper {
 
   public boolean sendMultipartMessage(
       String chatGuid, String message, List<AttachmentData> attachments) {
-    if (chatGuid == null || chatGuid.isBlank()) {
+    if (StringUtils.isBlank(chatGuid)) {
       log.warn("Cannot send multipart message without chatGuid");
       return false;
     }
@@ -357,7 +348,7 @@ public class BBHttpClientWrapper {
     log.info("Sending multipart message with chatGuid {} - message {}", chatGuid, message);
     List<Map<String, Object>> parts = new ArrayList<>();
     int partIndex = 0;
-    if (message != null && !message.isBlank()) {
+    if (StringUtils.isNotBlank(message)) {
       Map<String, Object> textPart = new LinkedHashMap<>();
       textPart.put("partIndex", partIndex++);
       textPart.put("text", message);
@@ -370,7 +361,7 @@ public class BBHttpClientWrapper {
         }
         String filename = attachment.filename() != null ? attachment.filename() : "attachment";
         String serverPath = uploadAttachment(filename, attachment.bytes());
-        if (serverPath == null || serverPath.isBlank()) {
+        if (StringUtils.isBlank(serverPath)) {
           continue;
         }
         Map<String, Object> attachmentPart = new LinkedHashMap<>();
@@ -399,7 +390,7 @@ public class BBHttpClientWrapper {
 
   public List<Message> searchConversationHistory(
       String chatGuid, String query, Integer limit, Integer offset) {
-    if (chatGuid == null || chatGuid.isBlank()) {
+    if (StringUtils.isBlank(chatGuid)) {
       return null;
     }
     ApiV1MessageQueryPostRequest.Builder requestBuilder =
@@ -413,7 +404,7 @@ public class BBHttpClientWrapper {
 
     List<WhereClause> whereClauses = new ArrayList<>();
 
-    if (query != null && !query.isBlank()) {
+    if (StringUtils.isNotBlank(query)) {
       whereClauses.add(
           WhereClause.builder()
               .statement("message.text LIKE :text")
@@ -433,7 +424,7 @@ public class BBHttpClientWrapper {
   }
 
   public Chat getConversationInfo(String chatGuid) {
-    if (chatGuid == null || chatGuid.isBlank()) {
+    if (StringUtils.isBlank(chatGuid)) {
       return null;
     }
     ApiResponseGetChat chat =
@@ -444,7 +435,7 @@ public class BBHttpClientWrapper {
   }
 
   public boolean renameConversation(String chatGuid, String displayName) {
-    if (chatGuid == null || chatGuid.isBlank()) {
+    if (StringUtils.isBlank(chatGuid)) {
       return false;
     }
     ApiResponseUpdateChat result =
@@ -460,7 +451,7 @@ public class BBHttpClientWrapper {
   }
 
   public boolean setConversationIcon(String chatGuid, Path iconPath) {
-    if (chatGuid == null || chatGuid.isBlank() || iconPath == null) {
+    if (StringUtils.isBlank(chatGuid) || iconPath == null) {
       return false;
     }
     try {
@@ -501,7 +492,7 @@ public class BBHttpClientWrapper {
   }
 
   public void sendTextDirect(IncomingMessage message, String text) {
-    if (message.chatGuid() == null || message.chatGuid().isBlank()) {
+    if (StringUtils.isBlank(message.chatGuid())) {
       log.warn("Cannot send message without chatGuid");
       return;
     }
@@ -525,7 +516,7 @@ public class BBHttpClientWrapper {
       return;
     }
     String message = request.getMessage();
-    if (message == null || message.isBlank()) {
+    if (StringUtils.isBlank(message)) {
       return;
     }
     if (request.getTextFormatting() != null && !request.getTextFormatting().isEmpty()) {
@@ -538,7 +529,7 @@ public class BBHttpClientWrapper {
     request.setMessage(parsed.text());
     request.setTextFormatting(parsed.formatting());
     String method = request.getMethod();
-    if (method == null || method.isBlank() || !"private-api".equalsIgnoreCase(method.trim())) {
+    if (StringUtils.isBlank(method) || !"private-api".equalsIgnoreCase(method.trim())) {
       request.setMethod("private-api");
     }
   }
@@ -552,11 +543,11 @@ public class BBHttpClientWrapper {
   }
 
   public boolean sendReactionDirect(IncomingMessage message, String reaction) {
-    if (message.chatGuid() == null || message.chatGuid().isBlank()) {
+    if (StringUtils.isBlank(message.chatGuid())) {
       log.warn("Cannot send reaction without chatGuid");
       return false;
     }
-    if (message.messageGuid() == null || message.messageGuid().isBlank()) {
+    if (StringUtils.isBlank(message.messageGuid())) {
       log.warn("Cannot send reaction without messageGuid");
       return false;
     }
@@ -593,7 +584,7 @@ public class BBHttpClientWrapper {
       return chatGuid;
     }
     String resolvedService =
-        service == null || service.isBlank() || "any".equalsIgnoreCase(service)
+        StringUtils.isBlank(service) || "any".equalsIgnoreCase(service)
             ? BBMessageAgent.IMESSAGE_SERVICE
             : service;
     return resolvedService + chatGuid.substring("any".length());
