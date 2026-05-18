@@ -383,6 +383,107 @@ paths:
           description: Authentication required
         '403':
           description: Admin role required
+  /api/v1/admin/list.feedback:
+    get:
+      operationId: adminListFeedback
+      tags:
+        - admin
+      summary: Lists agent feedback
+      description: Returns user feedback captured by the agent feedback tool as an admin inbox.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: status
+          in: query
+          description: Feedback read state to list. Defaults to unread.
+          required: false
+          schema:
+            type: string
+            enum:
+              - all
+              - unread
+              - read
+            default: unread
+        - name: limit
+          in: query
+          description: Maximum number of feedback items to return.
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 250
+            default: 100
+      responses:
+        '200':
+          description: Feedback inbox items
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminFeedbackListResponse'
+        '401':
+          description: Authentication required
+        '403':
+          description: Admin role required
+  /api/v1/admin/markRead.feedback:
+    post:
+      operationId: adminMarkFeedbackRead
+      tags:
+        - admin
+      summary: Marks feedback as read
+      description: Marks a feedback inbox item as read.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminFeedbackStatusUpdateRequest'
+      responses:
+        '200':
+          description: Feedback item after the update
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminFeedbackItem'
+        '400':
+          description: Missing feedback id
+        '401':
+          description: Authentication required
+        '403':
+          description: Admin role required
+        '404':
+          description: Feedback item not found
+  /api/v1/admin/markUnread.feedback:
+    post:
+      operationId: adminMarkFeedbackUnread
+      tags:
+        - admin
+      summary: Marks feedback as unread
+      description: Marks a feedback inbox item as unread.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminFeedbackStatusUpdateRequest'
+      responses:
+        '200':
+          description: Feedback item after the update
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminFeedbackItem'
+        '400':
+          description: Missing feedback id
+        '401':
+          description: Authentication required
+        '403':
+          description: Admin role required
+        '404':
+          description: Feedback item not found
 
 
 components:
@@ -782,6 +883,88 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/AdminStatsBucket'
+    AdminFeedbackItem:
+      type: object
+      required:
+        - feedback_id
+        - account_id
+        - account_bucket
+        - submitted_at
+        - feedback_text
+        - category
+        - transport
+        - read_status
+      properties:
+        feedback_id:
+          type: string
+        account_id:
+          type: string
+          description: Canonical agent account id that submitted the feedback.
+        account_bucket:
+          type: string
+          description: Short display bucket derived from the canonical account id.
+        submitted_at:
+          type: string
+          format: date-time
+        feedback_text:
+          type: string
+        category:
+          type: string
+        transport:
+          type: string
+        sender:
+          type: string
+          nullable: true
+        chat_guid:
+          type: string
+          nullable: true
+        message_guid:
+          type: string
+          nullable: true
+        read_status:
+          type: string
+          enum:
+            - unread
+            - read
+        read_at:
+          type: string
+          format: date-time
+          nullable: true
+    AdminFeedbackListResponse:
+      type: object
+      required:
+        - status
+        - items
+        - unread_count
+        - read_count
+        - total_count
+      properties:
+        status:
+          type: string
+          enum:
+            - all
+            - unread
+            - read
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/AdminFeedbackItem'
+        unread_count:
+          type: integer
+          format: int64
+        read_count:
+          type: integer
+          format: int64
+        total_count:
+          type: integer
+          format: int64
+    AdminFeedbackStatusUpdateRequest:
+      type: object
+      required:
+        - feedback_id
+      properties:
+        feedback_id:
+          type: string
     WorkflowCallbackPayload:
       type: object
       required:

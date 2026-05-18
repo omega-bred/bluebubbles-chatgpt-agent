@@ -88,6 +88,12 @@ export function AdminPage({ auth }: { auth: AuthState }) {
               ? `${formatDateTime(data.period.from)} to ${formatDateTime(data.period.to)}`
               : "Recent message activity"}
           </p>
+          <nav className="admin-page-nav" aria-label="Admin pages">
+            <a className="active" href="/admin">
+              Statistics
+            </a>
+            <a href="/admin/feedback">Feedback</a>
+          </nav>
         </section>
 
         <section className="admin-toolbar">

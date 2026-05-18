@@ -2,6 +2,7 @@ import React from "react";
 
 import { useKeycloak } from "./auth/useKeycloak";
 import { AdminPage } from "./pages/AdminPage";
+import { AdminFeedbackPage } from "./pages/AdminFeedbackPage";
 import { AccountLinkPage } from "./pages/AccountLinkPage";
 import { AccountPage } from "./pages/AccountPage";
 import { LandingPage } from "./pages/LandingPage";
@@ -27,6 +28,10 @@ export default function App() {
 
   if (path.startsWith("/account")) {
     return <AccountPage auth={auth} />;
+  }
+
+  if (path.startsWith("/admin/feedback")) {
+    return <AdminFeedbackPage auth={auth} />;
   }
 
   if (path.startsWith("/admin")) {

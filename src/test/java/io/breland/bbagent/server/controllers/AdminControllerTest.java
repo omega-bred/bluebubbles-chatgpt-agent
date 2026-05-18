@@ -5,15 +5,19 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.when;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import io.breland.bbagent.generated.model.AdminFeedbackItem;
+import io.breland.bbagent.generated.model.AdminFeedbackListResponse;
 import io.breland.bbagent.generated.model.AdminStatsBucket;
 import io.breland.bbagent.generated.model.AdminStatsPeriod;
 import io.breland.bbagent.generated.model.AdminStatsResponse;
 import io.breland.bbagent.server.admin.AdminStatsService;
 import io.breland.bbagent.server.config.BBChatGptAgentConfig;
 import io.breland.bbagent.server.config.SecurityConfig;
+import io.breland.bbagent.server.feedback.FeedbackService;
 import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.Map;
@@ -23,6 +27,7 @@ import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.context.annotation.Import;
 import org.springframework.core.convert.converter.Converter;
+import org.springframework.http.MediaType;
 import org.springframework.security.authentication.AbstractAuthenticationToken;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.oauth2.jwt.Jwt;
@@ -35,6 +40,7 @@ class AdminControllerTest {
   @Autowired private Converter<Jwt, AbstractAuthenticationToken> jwtAuthenticationConverter;
 
   @MockBean private AdminStatsService adminStatsService;
+  @MockBean private FeedbackService feedbackService;
 
   @Test
   void adminStatsRequiresAuthentication() throws Exception {
@@ -85,6 +91,69 @@ class AdminControllerTest {
         .andExpect(jsonPath("$.timeline[0].bucket_start").value("2026-05-01T00:00:00Z"))
         .andExpect(jsonPath("$.total_messages").value(12))
         .andExpect(jsonPath("$.active_users").value(3));
+  }
+
+  @Test
+  void adminFeedbackInboxReturnsItemsForAdminRole() throws Exception {
+    when(feedbackService.listFeedback("unread", 100))
+        .thenReturn(
+            new AdminFeedbackListResponse()
+                .status(AdminFeedbackListResponse.StatusEnum.UNREAD)
+                .unreadCount(1L)
+                .readCount(0L)
+                .totalCount(1L)
+                .items(
+                    List.of(
+                        new AdminFeedbackItem()
+                            .feedbackId("feedback-1")
+                            .accountId("account-1")
+                            .accountBucket("account")
+                            .submittedAt(OffsetDateTime.parse("2026-05-01T00:00:00Z"))
+                            .feedbackText("tell your creator this is useful")
+                            .category("general")
+                            .transport("bluebubbles")
+                            .readStatus(AdminFeedbackItem.ReadStatusEnum.UNREAD))));
+
+    mockMvc
+        .perform(
+            get("/api/v1/admin/list.feedback")
+                .with(
+                    jwt()
+                        .authorities(new SimpleGrantedAuthority("ROLE_bbagent-admin-role"))
+                        .jwt(token -> token.subject("sub-1"))))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.unread_count").value(1))
+        .andExpect(jsonPath("$.items[0].feedback_text").value("tell your creator this is useful"));
+  }
+
+  @Test
+  void adminMarkFeedbackReadUpdatesItemForAdminRole() throws Exception {
+    when(feedbackService.markRead("feedback-1"))
+        .thenReturn(
+            java.util.Optional.of(
+                new AdminFeedbackItem()
+                    .feedbackId("feedback-1")
+                    .accountId("account-1")
+                    .accountBucket("account")
+                    .submittedAt(OffsetDateTime.parse("2026-05-01T00:00:00Z"))
+                    .feedbackText("can you support this tool?")
+                    .category("tool")
+                    .transport("bluebubbles")
+                    .readStatus(AdminFeedbackItem.ReadStatusEnum.READ)
+                    .readAt(OffsetDateTime.parse("2026-05-01T01:00:00Z"))));
+
+    mockMvc
+        .perform(
+            post("/api/v1/admin/markRead.feedback")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"feedback_id\":\"feedback-1\"}")
+                .with(
+                    jwt()
+                        .authorities(new SimpleGrantedAuthority("ROLE_bbagent-admin-role"))
+                        .jwt(token -> token.subject("sub-1"))))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.feedback_id").value("feedback-1"))
+        .andExpect(jsonPath("$.read_status").value("read"));
   }
 
   @Test

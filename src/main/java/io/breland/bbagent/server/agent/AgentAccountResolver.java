@@ -288,6 +288,7 @@ public class AgentAccountResolver {
         "website_account_link_tokens", "account_id", targetAccountId, sourceAccountId);
     updateAccountColumn(
         "website_account_link_tokens", "redeemed_account_id", targetAccountId, sourceAccountId);
+    updateAccountColumn("agent_feedback", "account_id", targetAccountId, sourceAccountId);
 
     String sourceWebsiteSubject = source.getWebsiteSubject();
     if (StringUtils.isBlank(target.getWebsiteSubject())

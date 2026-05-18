@@ -74,4 +74,22 @@ export const adminApi = {
     const client = await adminClient();
     return (await client.adminGetStatistics(from, to)).data;
   },
+
+  listFeedback: async (status: AdminFeedbackFilter = "unread", limit = 100) => {
+    const client = await adminClient();
+    const feedbackStatus = status as Parameters<AdminApi["adminListFeedback"]>[0];
+    return (await client.adminListFeedback(feedbackStatus, limit)).data;
+  },
+
+  markFeedbackRead: async (feedbackId: string) => {
+    const client = await adminClient();
+    return (await client.adminMarkFeedbackRead({ feedback_id: feedbackId })).data;
+  },
+
+  markFeedbackUnread: async (feedbackId: string) => {
+    const client = await adminClient();
+    return (await client.adminMarkFeedbackUnread({ feedback_id: feedbackId })).data;
+  },
 };
+
+export type AdminFeedbackFilter = "all" | "unread" | "read";

@@ -51,6 +51,14 @@ class OauthCallbackControllerTest {
   }
 
   @Test
+  void adminFeedbackRouteServesFrontend() throws Exception {
+    mockMvc
+        .perform(get("/admin/feedback"))
+        .andExpect(status().isOk())
+        .andExpect(content().contentTypeCompatibleWith(MediaType.TEXT_HTML));
+  }
+
+  @Test
   void gcalDeniedOauthRedirectsToFrontendResult() throws Exception {
     mockMvc
         .perform(get("/api/v1/gcal/completeOauth.gcal").param("error", "access_denied"))

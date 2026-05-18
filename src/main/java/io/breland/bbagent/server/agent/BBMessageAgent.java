@@ -34,6 +34,7 @@ import io.breland.bbagent.server.agent.tools.coder.CoderAsyncTaskStartStore;
 import io.breland.bbagent.server.agent.tools.coder.CoderAuthAgentTool;
 import io.breland.bbagent.server.agent.tools.coder.CoderMcpClient;
 import io.breland.bbagent.server.agent.tools.coder.StartCoderAsyncTaskAgentTool;
+import io.breland.bbagent.server.agent.tools.feedback.FeedbackAgentTool;
 import io.breland.bbagent.server.agent.tools.gcal.*;
 import io.breland.bbagent.server.agent.tools.giphy.GiphyClient;
 import io.breland.bbagent.server.agent.tools.giphy.SendGiphyAgentTool;
@@ -50,6 +51,7 @@ import io.breland.bbagent.server.agent.transport.MessageTransportRegistry;
 import io.breland.bbagent.server.agent.transport.OutgoingTextMessage;
 import io.breland.bbagent.server.agent.transport.bb.BBHttpClientWrapper;
 import io.breland.bbagent.server.agent.workflowcallback.WorkflowCallbackService;
+import io.breland.bbagent.server.feedback.FeedbackService;
 import io.breland.bbagent.server.website.WebsiteAccountService;
 import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
@@ -153,6 +155,7 @@ public class BBMessageAgent {
   private GiphyClient giphyClient;
   private ModelPicker modelPicker;
   private AdminStatsService adminStatsService;
+  private FeedbackService feedbackService;
   private final ReverseLocationLookup reverseLocationLookup;
   private final AgentAccountResolver accountResolver;
 
@@ -175,6 +178,7 @@ public class BBMessageAgent {
       @Nullable CadenceWorkflowLauncher cadenceWorkflowLauncher,
       @Nullable AgentAccountResolver accountResolver,
       @Nullable AdminStatsService adminStatsService,
+      @Nullable FeedbackService feedbackService,
       ModelPicker modelPicker) {
     if (openAiClient != null) {
       this.openAIClient = openAiClient;
@@ -199,6 +203,7 @@ public class BBMessageAgent {
     this.cadenceWorkflowLauncher = cadenceWorkflowLauncher;
     this.accountResolver = accountResolver;
     this.adminStatsService = adminStatsService;
+    this.feedbackService = feedbackService;
     this.modelPicker = modelPicker;
     registerBuiltInTools();
   }
@@ -1135,6 +1140,7 @@ public class BBMessageAgent {
                   + "When the user shares information about themselves, or information that is helpful to remember, use the "
                   + MemorySaveAgentTool.TOOL_NAME
                   + " tool to persist that info. "
+                  + feedbackInstruction()
                   + "If asked to recall details about the user or prior interactions, or if memory could help answer a question, call "
                   + MemoryGetAgentTool.TOOL_NAME
                   + " before responding. "
@@ -1173,6 +1179,7 @@ public class BBMessageAgent {
                 + "Use "
                 + GetThreadContextAgentTool.TOOL_NAME
                 + " when asked about the last message or previously sent images in this thread. "
+                + feedbackInstruction()
                 + "For group chats, you can rename the conversation or set a group icon when requested. "
                 + "When the user asks to log in, sign up, manage their web account, connect the current chat identity to the website, or see linked integrations on the website, call "
                 + LinkWebsiteAccountAgentTool.TOOL_NAME
@@ -1282,6 +1289,15 @@ public class BBMessageAgent {
                 + NO_RESPONSE_TEXT
                 + ".")
         .build();
+  }
+
+  private String feedbackInstruction() {
+    if (feedbackService == null) {
+      return "";
+    }
+    return "When the incoming message is feedback about the assistant, model, tools, BlueBubbles/iMessage chat agent, bugs, missing or desired capabilities, complaints, praise, or asks to pass something to the creator/owner, call "
+        + FeedbackAgentTool.TOOL_NAME
+        + " with the user's exact feedback. Also call it for capability feedback phrased as questions like 'can you do this?' or 'why can't you do this?' when the message is about what the assistant or tools can or should do. Continue to answer normally after recording when a reply is useful. ";
   }
 
   private EasyInputMessage userMessage(IncomingMessage message) {
@@ -1512,6 +1528,9 @@ public class BBMessageAgent {
     registerTool(new MemoryGetAgentTool(mem0Client).getTool());
     registerTool(new MemoryUpdateAgentTool(mem0Client).getTool());
     registerTool(new MemoryDeleteAgentTool(mem0Client).getTool());
+    if (feedbackService != null) {
+      registerTool(new FeedbackAgentTool(feedbackService).getTool());
+    }
     registerTool(new ListCalendarsAgentTool(gcalClient).getTool());
     registerTool(new ListEventsAgentTool(gcalClient).getTool());
     registerTool(new SearchEventsAgentTool(gcalClient).getTool());
