@@ -12,7 +12,6 @@ import io.breland.bbagent.server.agent.IncomingMessage;
 import io.breland.bbagent.server.agent.cadence.models.IncomingAttachment;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotNull;
-import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -30,7 +29,6 @@ import org.springframework.web.context.request.NativeWebRequest;
 public class BluebubblesWebhookController extends BluebubblesApiController {
 
   private static final String GROUP_PREFIX = "iMessage;+;chat";
-  private static final String GROUP_PREFIX_2 = "any;+;chat";
 
   @Autowired private BBMessageAgent messageAgent;
 
@@ -66,7 +64,6 @@ public class BluebubblesWebhookController extends BluebubblesApiController {
     Boolean fromMe = data.getIsFromMe();
     String service = data.getHandle().getService();
     String sender = data.getHandle().getAddress();
-    Instant timestamp = parseTimestamp(data.getDateCreated());
     List<IncomingAttachment> attachments = parseAttachments(data.getAttachments());
     String chatGuid = data.getChats().getFirst().getGuid();
     boolean isGroup = resolveIsGroup(data);
@@ -82,23 +79,14 @@ public class BluebubblesWebhookController extends BluebubblesApiController {
         service,
         sender,
         isGroup,
-        timestamp,
+        IncomingMessage.parseTimestamp(data.getDateCreated()),
         attachments,
         isSystem);
   }
 
   private boolean isMessageEvent(BlueBubblesMessageReceivedRequest request) {
-    if (BlueBubblesMessageReceivedRequest.TypeEnum.NEW_MESSAGE.equals(request.getType())) {
-      return true;
-    }
-    if (BlueBubblesMessageReceivedRequest.TypeEnum.UPDATED_MESSAGE.equals(request.getType())) {
-      return true;
-    }
-    return false;
-  }
-
-  private static boolean isGroupGuid(String chatGuid) {
-    return chatGuid.startsWith(GROUP_PREFIX) || chatGuid.startsWith(GROUP_PREFIX_2);
+    return BlueBubblesMessageReceivedRequest.TypeEnum.NEW_MESSAGE.equals(request.getType())
+        || BlueBubblesMessageReceivedRequest.TypeEnum.UPDATED_MESSAGE.equals(request.getType());
   }
 
   public static boolean resolveIsGroup(ApiV1ChatChatGuidMessageGet200ResponseDataInner request) {
@@ -138,17 +126,6 @@ public class BluebubblesWebhookController extends BluebubblesApiController {
       return true;
     }
     return false;
-  }
-
-  private Instant parseTimestamp(Long value) {
-    if (value == null) {
-      return Instant.now();
-    }
-    long epoch = value;
-    if (epoch > 1_000_000_000_000L) {
-      return Instant.ofEpochMilli(epoch);
-    }
-    return Instant.ofEpochSecond(epoch);
   }
 
   private List<IncomingAttachment> parseAttachments(
