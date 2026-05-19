@@ -41,6 +41,7 @@ import io.breland.bbagent.server.agent.model_picker.ModelPicker;
 import io.breland.bbagent.server.agent.persistence.account.AgentAccountEntity;
 import io.breland.bbagent.server.agent.tools.AgentTool;
 import io.breland.bbagent.server.agent.tools.ToolContext;
+import io.breland.bbagent.server.agent.tools.assistant.AssistantNameAgentTool;
 import io.breland.bbagent.server.agent.tools.bb.RenameConversationAgentTool;
 import io.breland.bbagent.server.agent.tools.coder.CoderAsyncTaskStartStore;
 import io.breland.bbagent.server.agent.tools.coder.CoderAuthAgentTool;
@@ -51,6 +52,8 @@ import io.breland.bbagent.server.agent.tools.giphy.GiphyClient;
 import io.breland.bbagent.server.agent.tools.memory.Mem0Client;
 import io.breland.bbagent.server.agent.transport.bb.BBHttpClientWrapper;
 import io.breland.bbagent.server.agent.workflowcallback.WorkflowCallbackService;
+import io.breland.bbagent.server.metrics.AgentMetricsService;
+import io.breland.bbagent.server.metrics.AgentToolMetricEvent;
 import io.breland.bbagent.server.website.WebsiteAccountService;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -792,6 +795,64 @@ class BBMessageAgentTest {
     verify(coderMcpClient).getAgentTools(eq("Alice"), hiddenToolsCaptor.capture());
     assertTrue(
         hiddenToolsCaptor.getValue().contains(StartCoderAsyncTaskAgentTool.CREATE_TASK_MCP_TOOL));
+  }
+
+  @Test
+  void runToolActivityRecordsSuccessAndFailureMetrics() {
+    AgentMetricsService metricsService = Mockito.mock(AgentMetricsService.class);
+    BBMessageAgent agent =
+        new BBMessageAgent(
+            null,
+            new StubBBHttpClientWrapper(),
+            Mockito.mock(Mem0Client.class),
+            Mockito.mock(GcalClient.class),
+            null,
+            null,
+            null,
+            null,
+            Mockito.mock(GiphyClient.class),
+            ReverseLocationLookup.noop(),
+            new InMemoryAgentSettingsStore(),
+            new AgentWorkflowProperties(),
+            null,
+            null,
+            null,
+            null,
+            metricsService,
+            null,
+            null,
+            new ModelPicker());
+    IncomingMessage message =
+        incomingMessage("iMessage;+;chat-tool-metrics", "msg-tool-metrics", "remember my name", 1L);
+
+    agent.runToolActivity(
+        ResponseFunctionToolCall.builder()
+            .name(AssistantNameAgentTool.TOOL_NAME)
+            .arguments("{\"action\":\"store\",\"name\":\"Alice\"}")
+            .callId("call-success")
+            .build(),
+        message,
+        null);
+    agent.runToolActivity(
+        ResponseFunctionToolCall.builder()
+            .name("missing_tool")
+            .arguments("{}")
+            .callId("call-failure")
+            .build(),
+        message,
+        null);
+
+    ArgumentCaptor<AgentToolMetricEvent> metricsCaptor =
+        ArgumentCaptor.forClass(AgentToolMetricEvent.class);
+    verify(metricsService, times(2)).recordToolCall(metricsCaptor.capture());
+    List<AgentToolMetricEvent> events = metricsCaptor.getAllValues();
+    assertTrue(events.get(0).success());
+    assertEquals(AssistantNameAgentTool.TOOL_NAME, events.get(0).toolName());
+    assertEquals("assistant", events.get(0).toolCategory());
+    assertEquals(null, events.get(0).failureType());
+    assertFalse(events.get(1).success());
+    assertEquals("missing_tool", events.get(1).toolName());
+    assertEquals("unknown_tool", events.get(1).failureType());
   }
 
   @Test

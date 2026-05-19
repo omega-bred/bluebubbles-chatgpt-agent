@@ -85,6 +85,21 @@ export function TermsPage({ auth }: { auth: AuthState }) {
           </section>
 
           <section>
+            <h2>Apple, iMessage, and Third-Party Marks</h2>
+            <p>
+              This service is independent and is not affiliated with, sponsored by, endorsed by, or
+              approved by Apple Inc. iMessage is a trademark of Apple Inc., registered in the U.S.
+              and other countries and regions. References to Apple, iMessage, Messages, iPhone,
+              macOS, or related products and services are used only to identify compatibility,
+              transport, or interoperability context. No license, partnership, certification, or
+              endorsement is implied. Do not use the service in a way that violates Apple's terms,
+              third-party platform rules, trademark rights, anti-spam rules, or acceptable-use
+              policies. The service does not grant permission to use Apple logos, icons, trade
+              dress, screenshots, product images, or other Apple-owned materials.
+            </p>
+          </section>
+
+          <section>
             <h2>Privacy and Content</h2>
             <p>
               Do not submit sensitive information unless you are comfortable with it being processed

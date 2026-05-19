@@ -11,6 +11,8 @@ import io.breland.bbagent.server.agent.IncomingMessage;
 import io.breland.bbagent.server.agent.model_picker.ModelAccessService;
 import io.breland.bbagent.server.agent.persistence.account.AgentAccountRepository;
 import io.breland.bbagent.server.agent.persistence.metrics.AgentMessageMetricRepository;
+import io.breland.bbagent.server.agent.persistence.metrics.AgentToolMetricRepository;
+import io.breland.bbagent.server.metrics.AgentToolMetricEvent;
 import java.time.Instant;
 import java.util.List;
 import org.junit.jupiter.api.Test;
@@ -23,12 +25,14 @@ import org.springframework.transaction.annotation.Transactional;
 class AdminStatsServiceTest {
   @Autowired private AdminStatsService adminStatsService;
   @Autowired private AgentMessageMetricRepository metricRepository;
+  @Autowired private AgentToolMetricRepository toolMetricRepository;
   @Autowired private AgentAccountResolver accountResolver;
   @Autowired private AgentAccountRepository accountRepository;
 
   @Test
   void recordsAcceptedMessagesAndSummarizesByModelAndUser() {
     metricRepository.deleteAll();
+    toolMetricRepository.deleteAll();
     Instant now = Instant.now();
     var alice =
         accountResolver
@@ -70,6 +74,7 @@ class AdminStatsServiceTest {
   @Test
   void limitsSenderStatsToTopTenByVolume() {
     metricRepository.deleteAll();
+    toolMetricRepository.deleteAll();
     Instant now = Instant.now();
 
     for (int senderIndex = 0; senderIndex < 12; senderIndex++) {
@@ -89,6 +94,73 @@ class AdminStatsServiceTest {
 
     assertEquals(10, stats.getSenders().size());
     assertEquals(3L, stats.getSenders().get(0).getMessageCount());
+  }
+
+  @Test
+  void recordsToolCallsAndSummarizesByToolAndAccountType() {
+    metricRepository.deleteAll();
+    toolMetricRepository.deleteAll();
+    Instant now = Instant.now();
+    var alice =
+        accountResolver
+            .resolveOrCreate(IncomingMessage.TRANSPORT_BLUEBUBBLES, "Alice")
+            .orElseThrow()
+            .account();
+    alice.setPremium(true);
+    accountRepository.save(alice);
+
+    adminStatsService.recordToolCall(
+        new AgentToolMetricEvent(
+            incomingMessage("chat-1", "msg-1", "Alice"),
+            AgentWorkflowProperties.Mode.INLINE,
+            "send_text",
+            "bluebubbles",
+            true,
+            null,
+            25L));
+    adminStatsService.recordToolCall(
+        new AgentToolMetricEvent(
+            incomingMessage("chat-1", "msg-2", "Alice"),
+            AgentWorkflowProperties.Mode.INLINE,
+            "coder_auth",
+            "coder",
+            false,
+            "tool_error",
+            50L));
+    adminStatsService.recordToolCall(
+        new AgentToolMetricEvent(
+            incomingMessage("chat-2", "msg-3", "Bob"),
+            AgentWorkflowProperties.Mode.CADENCE,
+            "send_text",
+            "bluebubbles",
+            true,
+            null,
+            75L));
+
+    AdminStatsResponse stats =
+        adminStatsService.getStatistics(now.minusSeconds(60), now.plusSeconds(60));
+
+    assertEquals(3L, stats.getTotalToolCalls());
+    assertEquals(2L, stats.getSuccessfulToolCalls());
+    assertEquals(1L, stats.getFailedToolCalls());
+    assertEquals(2.0 / 3.0, stats.getToolSuccessRate(), 0.0001);
+    assertEquals("send_text", stats.getTools().get(0).getToolName());
+    assertEquals(2L, stats.getTools().get(0).getCallCount());
+    assertEquals(1.0, stats.getTools().get(0).getSuccessRate(), 0.0001);
+    assertTrue(
+        stats.getToolAccountTypes().stream()
+            .anyMatch(
+                accountType ->
+                    "premium".equals(accountType.getAccountType())
+                        && accountType.getCallCount() == 2L
+                        && accountType.getFailedCalls() == 1L));
+    assertTrue(
+        stats.getToolAccountTypes().stream()
+            .anyMatch(
+                accountType ->
+                    "standard".equals(accountType.getAccountType())
+                        && accountType.getCallCount() == 1L
+                        && accountType.getSuccessfulCalls() == 1L));
   }
 
   private IncomingMessage incomingMessage(String chatGuid, String messageGuid, String sender) {

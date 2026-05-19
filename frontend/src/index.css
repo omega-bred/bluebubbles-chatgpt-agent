@@ -304,6 +304,13 @@ a {
   line-height: 1.7;
 }
 
+.terms-content a {
+  color: #0f5fa8;
+  font-weight: 800;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
 .account-main.narrow {
   max-width: 840px;
 }
@@ -598,7 +605,7 @@ a {
 }
 
 .admin-stat-grid {
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
   margin-bottom: 16px;
 }
 
@@ -657,6 +664,8 @@ a {
 .model-usage-list,
 .sender-usage-list,
 .rate-limit-usage-list,
+.tool-usage-list,
+.tool-account-type-list,
 .timeline-list {
   display: grid;
   gap: 14px;
@@ -664,7 +673,9 @@ a {
 
 .model-usage-row,
 .sender-usage-row,
-.rate-limit-usage-row {
+.rate-limit-usage-row,
+.tool-usage-row,
+.tool-account-type-row {
   display: grid;
   grid-template-columns: minmax(160px, 1fr);
   gap: 8px;
@@ -674,21 +685,27 @@ a {
 
 .model-usage-row:last-child,
 .sender-usage-row:last-child,
-.rate-limit-usage-row:last-child {
+.rate-limit-usage-row:last-child,
+.tool-usage-row:last-child,
+.tool-account-type-row:last-child {
   border-bottom: 0;
   padding-bottom: 0;
 }
 
 .model-usage-row div:first-child,
 .sender-usage-row div:first-child,
-.rate-limit-usage-row div:first-child {
+.rate-limit-usage-row div:first-child,
+.tool-usage-row div:first-child,
+.tool-account-type-row div:first-child {
   display: grid;
   gap: 4px;
 }
 
 .model-usage-row strong,
 .sender-usage-row strong,
-.rate-limit-usage-row strong {
+.rate-limit-usage-row strong,
+.tool-usage-row strong,
+.tool-account-type-row strong {
   color: #111111;
   font-size: 1.04rem;
 }
@@ -699,6 +716,10 @@ a {
 .sender-usage-row p,
 .rate-limit-usage-row span,
 .rate-limit-usage-row p,
+.tool-usage-row span,
+.tool-usage-row p,
+.tool-account-type-row span,
+.tool-account-type-row p,
 .timeline-row small {
   margin: 0;
   color: #62625d;
@@ -708,6 +729,8 @@ a {
 .model-usage-meter,
 .sender-usage-meter,
 .rate-limit-usage-meter,
+.tool-usage-meter,
+.tool-account-type-meter,
 .timeline-bar {
   overflow: hidden;
   height: 10px;
@@ -718,6 +741,8 @@ a {
 .model-usage-meter span,
 .sender-usage-meter span,
 .rate-limit-usage-meter span,
+.tool-usage-meter span,
+.tool-account-type-meter span,
 .timeline-bar span {
   display: block;
   height: 100%;

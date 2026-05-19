@@ -11,7 +11,6 @@ import com.uber.cadence.WorkflowExecution;
 import com.uber.cadence.workflow.Workflow;
 import com.uber.cadence.workflow.WorkflowInfo;
 import io.breland.bbagent.generated.bluebubblesclient.model.FindMyFriendLocation;
-import io.breland.bbagent.server.admin.AdminStatsService;
 import io.breland.bbagent.server.agent.cadence.CadenceWorkflowLauncher;
 import io.breland.bbagent.server.agent.cadence.models.CadenceMessageWorkflowRequest;
 import io.breland.bbagent.server.agent.cadence.models.GeneratedImage;
@@ -53,6 +52,8 @@ import io.breland.bbagent.server.agent.transport.OutgoingTextMessage;
 import io.breland.bbagent.server.agent.transport.bb.BBHttpClientWrapper;
 import io.breland.bbagent.server.agent.workflowcallback.WorkflowCallbackService;
 import io.breland.bbagent.server.feedback.FeedbackService;
+import io.breland.bbagent.server.metrics.AgentMetricsService;
+import io.breland.bbagent.server.metrics.AgentToolMetricEvent;
 import io.breland.bbagent.server.ratelimit.MessageResponseRateLimitService;
 import io.breland.bbagent.server.ratelimit.RateLimitDecision;
 import io.breland.bbagent.server.ratelimit.RateLimitStatus;
@@ -119,6 +120,43 @@ public class BBMessageAgent {
           GetThreadContextAgentTool.TOOL_NAME);
   private static final Set<String> HIDDEN_CODER_MCP_TOOL_NAMES =
       Set.of(StartCoderAsyncTaskAgentTool.CREATE_TASK_MCP_TOOL);
+  private static final Set<String> BLUEBUBBLES_TOOL_NAMES =
+      Set.of(
+          SendTextAgentTool.TOOL_NAME,
+          SendReactionAgentTool.TOOL_NAME,
+          SearchConvoHistoryAgentTool.TOOL_NAME,
+          CurrentConversationInfoAgentTool.TOOL_NAME,
+          RenameConversationAgentTool.TOOL_NAME,
+          SetGroupIconAgentTool.TOOL_NAME,
+          SendGiphyAgentTool.TOOL_NAME,
+          GetThreadContextAgentTool.TOOL_NAME);
+  private static final Set<String> GCAL_TOOL_NAMES =
+      Set.of(
+          ListCalendarsAgentTool.TOOL_NAME,
+          ListEventsAgentTool.TOOL_NAME,
+          SearchEventsAgentTool.TOOL_NAME,
+          GetEventAgentTool.TOOL_NAME,
+          CreateEventAgentTool.TOOL_NAME,
+          UpdateEventAgentTool.TOOL_NAME,
+          DeleteEventAgentTool.TOOL_NAME,
+          RespondToEventAgentTool.TOOL_NAME,
+          GetFreebusyAgentTool.TOOL_NAME,
+          ManageAccountsAgentTool.TOOL_NAME,
+          ListColorsAgentTool.TOOL_NAME,
+          GetCurrentTimeAgentTool.TOOL_NAME);
+  private static final Set<String> CODER_TOOL_NAMES =
+      Set.of(CoderAuthAgentTool.TOOL_NAME, StartCoderAsyncTaskAgentTool.TOOL_NAME);
+  private static final Set<String> WEBSITE_TOOL_NAMES =
+      Set.of(LinkWebsiteAccountAgentTool.TOOL_NAME, GetWebsiteAccountLinkStatusAgentTool.TOOL_NAME);
+  private static final Set<String> ASSISTANT_TOOL_NAMES =
+      Set.of(AssistantResponsivenessAgentTool.TOOL_NAME, AssistantNameAgentTool.TOOL_NAME);
+  private static final Set<String> SCHEDULED_TOOL_NAMES =
+      Set.of(
+          ScheduledEventTool.TOOL_NAME,
+          ScheduledEventListTool.TOOL_NAME,
+          ScheduledEventDeleteTool.TOOL_NAME);
+  private static final Set<String> KUBERNETES_TOOL_NAMES =
+      Set.of(KubernetesReadOnlyAgentTool.TOOL_NAME, KubernetesPodLogsAgentTool.TOOL_NAME);
   public static final Set<String> SUPPORTED_REACTIONS =
       Set.of(
           "love",
@@ -166,7 +204,7 @@ public class BBMessageAgent {
   private WebsiteAccountService websiteAccountService;
   private GiphyClient giphyClient;
   private ModelPicker modelPicker;
-  private AdminStatsService adminStatsService;
+  private AgentMetricsService agentMetricsService;
   private FeedbackService feedbackService;
   private MessageResponseRateLimitService messageResponseRateLimitService;
   private final ReverseLocationLookup reverseLocationLookup;
@@ -193,7 +231,7 @@ public class BBMessageAgent {
       @Nullable ObjectMapper objectMapper,
       @Nullable CadenceWorkflowLauncher cadenceWorkflowLauncher,
       @Nullable AgentAccountResolver accountResolver,
-      @Nullable AdminStatsService adminStatsService,
+      @Nullable AgentMetricsService agentMetricsService,
       @Nullable FeedbackService feedbackService,
       @Nullable MessageResponseRateLimitService messageResponseRateLimitService,
       ModelPicker modelPicker) {
@@ -219,7 +257,7 @@ public class BBMessageAgent {
     this.objectMapper = objectMapper == null ? new ObjectMapper() : objectMapper;
     this.cadenceWorkflowLauncher = cadenceWorkflowLauncher;
     this.accountResolver = accountResolver;
-    this.adminStatsService = adminStatsService;
+    this.agentMetricsService = agentMetricsService;
     this.feedbackService = feedbackService;
     this.messageResponseRateLimitService = messageResponseRateLimitService;
     this.modelPicker = modelPicker;
@@ -309,13 +347,13 @@ public class BBMessageAgent {
   }
 
   private void recordAcceptedMessageMetric(IncomingMessage message) {
-    if (adminStatsService == null) {
+    if (agentMetricsService == null) {
       return;
     }
     try {
-      adminStatsService.recordAcceptedMessage(message, workflowProperties.getMode());
+      agentMetricsService.recordAcceptedMessage(message, workflowProperties.getMode());
     } catch (RuntimeException e) {
-      log.warn("Failed to record admin message metric for {}", message, e);
+      log.warn("Failed to record message metric for {}", message, e);
     }
   }
 
@@ -580,6 +618,13 @@ public class BBMessageAgent {
       for (ResponseFunctionToolCall toolCall : toolCalls) {
         if (toolLoopGuard.shouldBlock(toolCall.name(), toolCall.arguments())) {
           blockedAnyToolCall = true;
+          recordToolCallMetric(
+              toolCall.name(),
+              message,
+              false,
+              "loop_guard_blocked",
+              0L,
+              toolCategory(toolCall.name(), false));
           toolContinuation.add(
               AgentResponseHelper.blockedToolCallOutput(toolCall.callId(), toolCall.name()));
           continue;
@@ -988,6 +1033,10 @@ public class BBMessageAgent {
     log.info("Invoking tool {}", toolCall.name());
     AgentTool tool = tools.get(toolCall.name());
     String output;
+    String failureType = null;
+    String toolCategory = toolCategory(toolCall.name(), false);
+    boolean success = false;
+    Instant startedAt = Instant.now();
     try {
       JsonNode args = objectMapper.readTree(toolCall.arguments());
       args = applyThreadReplyDefaults(toolCall.name(), args, message);
@@ -998,16 +1047,26 @@ public class BBMessageAgent {
             coderMcpClient
                 .getAgentTool(accountId, toolCall.name(), HIDDEN_CODER_MCP_TOOL_NAMES)
                 .orElse(null);
+        if (tool != null) {
+          toolCategory = toolCategory(toolCall.name(), true);
+        }
       }
       if (tool == null) {
         output = "Unknown tool: " + toolCall.name();
+        failureType = "unknown_tool";
       } else {
         output = tool.handler().apply(toolContext, args);
+        failureType = classifyToolFailure(output);
+        success = failureType == null;
       }
     } catch (Exception e) {
       output = "Tool call failed: " + e.getMessage();
+      failureType = "exception";
       log.warn("Tool call failed: {}", toolCall.name(), e);
     }
+    long durationMillis = Duration.between(startedAt, Instant.now()).toMillis();
+    recordToolCallMetric(
+        toolCall.name(), message, success, failureType, durationMillis, toolCategory);
 
     ResponseInputItem.FunctionCallOutput toolOutput =
         ResponseInputItem.FunctionCallOutput.builder()
@@ -1015,6 +1074,97 @@ public class BBMessageAgent {
             .output(output)
             .build();
     return ResponseInputItem.ofFunctionCallOutput(toolOutput);
+  }
+
+  private void recordToolCallMetric(
+      String toolName,
+      IncomingMessage message,
+      boolean success,
+      @Nullable String failureType,
+      long durationMillis,
+      String toolCategory) {
+    if (agentMetricsService == null) {
+      return;
+    }
+    try {
+      agentMetricsService.recordToolCall(
+          new AgentToolMetricEvent(
+              message,
+              workflowProperties.getMode(),
+              toolName,
+              toolCategory,
+              success,
+              failureType,
+              durationMillis));
+    } catch (RuntimeException e) {
+      log.warn("Failed to record tool metric for {}", toolName, e);
+    }
+  }
+
+  private String classifyToolFailure(String output) {
+    String normalized = StringUtils.trimToEmpty(output).toLowerCase(Locale.ROOT);
+    if (normalized.isBlank()) {
+      return null;
+    }
+    if (normalized.startsWith("tool call failed:")) {
+      return "exception";
+    }
+    if (normalized.startsWith("unknown tool:")) {
+      return "unknown_tool";
+    }
+    if (normalized.startsWith("coder account mismatch")) {
+      return "account_mismatch";
+    }
+    if (normalized.startsWith("coder mcp tool call failed:")) {
+      return "tool_error";
+    }
+    if (normalized.startsWith("failed:")
+        || normalized.startsWith("failed ")
+        || normalized.startsWith("error:")
+        || normalized.startsWith("unable to ")) {
+      return "tool_error";
+    }
+    return null;
+  }
+
+  private String toolCategory(String toolName, boolean coderMcpTool) {
+    if (toolName == null || toolName.isBlank()) {
+      return "other";
+    }
+    if (coderMcpTool || toolName.startsWith(CoderMcpClient.TOOL_PREFIX)) {
+      return "coder_mcp";
+    }
+    if (BLUEBUBBLES_TOOL_NAMES.contains(toolName)) {
+      return "bluebubbles";
+    }
+    if (GCAL_TOOL_NAMES.contains(toolName)) {
+      return "google_calendar";
+    }
+    if (CODER_TOOL_NAMES.contains(toolName)) {
+      return "coder";
+    }
+    if (WEBSITE_TOOL_NAMES.contains(toolName)) {
+      return "website";
+    }
+    if (ASSISTANT_TOOL_NAMES.contains(toolName)) {
+      return "assistant";
+    }
+    if (SCHEDULED_TOOL_NAMES.contains(toolName)) {
+      return "scheduled";
+    }
+    if (KUBERNETES_TOOL_NAMES.contains(toolName)) {
+      return "kubernetes";
+    }
+    if (toolName.startsWith("memory_")) {
+      return "memory";
+    }
+    if (FeedbackAgentTool.TOOL_NAME.equals(toolName)) {
+      return "feedback";
+    }
+    if (GetUsageLimitsAgentTool.TOOL_NAME.equals(toolName)) {
+      return "limits";
+    }
+    return "other";
   }
 
   private JsonNode applyThreadReplyDefaults(

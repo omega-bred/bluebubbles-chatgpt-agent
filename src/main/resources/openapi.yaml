@@ -352,7 +352,7 @@ paths:
       tags:
         - admin
       summary: Gets recent agent statistics
-      description: Returns message, model, and active-user statistics for an admin-selected time period.
+      description: Returns message, model, tool, and active-user statistics for an admin-selected time period.
       security:
         - bearerAuth: []
       parameters:
@@ -860,6 +860,87 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/AdminBucketModelStats'
+    AdminToolStats:
+      type: object
+      required:
+        - tool_name
+        - tool_category
+        - call_count
+        - successful_calls
+        - failed_calls
+        - active_users
+        - success_rate
+        - average_duration_ms
+        - last_used_at
+        - percentage
+      properties:
+        tool_name:
+          type: string
+        tool_category:
+          type: string
+          description: Coarse tool grouping such as bluebubbles, google_calendar, coder, coder_mcp, memory, website, or other.
+        call_count:
+          type: integer
+          format: int64
+        successful_calls:
+          type: integer
+          format: int64
+        failed_calls:
+          type: integer
+          format: int64
+        active_users:
+          type: integer
+          format: int64
+        success_rate:
+          type: number
+          format: double
+        average_duration_ms:
+          type: number
+          format: double
+        last_used_at:
+          type: string
+          format: date-time
+        percentage:
+          type: number
+          format: double
+    AdminToolAccountTypeStats:
+      type: object
+      required:
+        - account_type
+        - plan
+        - is_premium
+        - call_count
+        - successful_calls
+        - failed_calls
+        - active_users
+        - success_rate
+        - percentage
+      properties:
+        account_type:
+          type: string
+          description: Stable account tier label for metrics grouping.
+        plan:
+          type: string
+        is_premium:
+          type: boolean
+        call_count:
+          type: integer
+          format: int64
+        successful_calls:
+          type: integer
+          format: int64
+        failed_calls:
+          type: integer
+          format: int64
+        active_users:
+          type: integer
+          format: int64
+        success_rate:
+          type: number
+          format: double
+        percentage:
+          type: number
+          format: double
     AdminStatsBucket:
       type: object
       required:
@@ -892,9 +973,15 @@ components:
         - total_messages
         - active_users
         - average_messages_per_user
+        - total_tool_calls
+        - successful_tool_calls
+        - failed_tool_calls
+        - tool_success_rate
         - models
         - senders
         - timeline
+        - tools
+        - tool_account_types
       properties:
         period:
           $ref: '#/components/schemas/AdminStatsPeriod'
@@ -905,6 +992,18 @@ components:
           type: integer
           format: int64
         average_messages_per_user:
+          type: number
+          format: double
+        total_tool_calls:
+          type: integer
+          format: int64
+        successful_tool_calls:
+          type: integer
+          format: int64
+        failed_tool_calls:
+          type: integer
+          format: int64
+        tool_success_rate:
           type: number
           format: double
         models:
@@ -920,6 +1019,16 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/AdminStatsBucket'
+        tools:
+          type: array
+          description: Tool usage grouped by tool name for the selected period.
+          items:
+            $ref: '#/components/schemas/AdminToolStats'
+        tool_account_types:
+          type: array
+          description: Tool usage grouped by account type and plan for the selected period.
+          items:
+            $ref: '#/components/schemas/AdminToolAccountTypeStats'
     AdminRateLimitUsage:
       type: object
       required:

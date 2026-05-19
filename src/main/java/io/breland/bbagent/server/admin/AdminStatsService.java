@@ -6,12 +6,19 @@ import io.breland.bbagent.generated.model.AdminSenderStats;
 import io.breland.bbagent.generated.model.AdminStatsBucket;
 import io.breland.bbagent.generated.model.AdminStatsPeriod;
 import io.breland.bbagent.generated.model.AdminStatsResponse;
+import io.breland.bbagent.generated.model.AdminToolAccountTypeStats;
+import io.breland.bbagent.generated.model.AdminToolStats;
 import io.breland.bbagent.server.agent.AgentAccountResolver;
 import io.breland.bbagent.server.agent.AgentWorkflowProperties;
 import io.breland.bbagent.server.agent.IncomingMessage;
 import io.breland.bbagent.server.agent.model_picker.ModelAccessService;
-import io.breland.bbagent.server.agent.persistence.metrics.AgentMessageMetricEntity;
-import io.breland.bbagent.server.agent.persistence.metrics.AgentMessageMetricRepository;
+import io.breland.bbagent.server.metrics.AgentMessageMetric;
+import io.breland.bbagent.server.metrics.AgentMetricsService;
+import io.breland.bbagent.server.metrics.AgentMetricsStore;
+import io.breland.bbagent.server.metrics.AgentToolMetric;
+import io.breland.bbagent.server.metrics.AgentToolMetricEvent;
+import io.breland.bbagent.server.metrics.MessageMetricTotals;
+import io.breland.bbagent.server.metrics.ToolMetricTotals;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
@@ -34,70 +41,100 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 @Service
-public class AdminStatsService {
+public class AdminStatsService implements AgentMetricsService {
   private static final String HASH_ALGORITHM = "SHA-256";
   private static final int TOP_SENDER_LIMIT = 10;
   private static final int ACCOUNT_BUCKET_PREFIX_LENGTH = 12;
 
-  private final AgentMessageMetricRepository repository;
+  private final AgentMetricsStore metricsStore;
   private final ModelAccessService modelAccessService;
   private final AgentAccountResolver accountResolver;
 
   public AdminStatsService(
-      AgentMessageMetricRepository repository,
+      AgentMetricsStore metricsStore,
       ModelAccessService modelAccessService,
       @Nullable AgentAccountResolver accountResolver) {
-    this.repository = repository;
+    this.metricsStore = metricsStore;
     this.modelAccessService = modelAccessService;
     this.accountResolver = accountResolver;
   }
 
   @Transactional
+  @Override
   public void recordAcceptedMessage(
       IncomingMessage message, AgentWorkflowProperties.Mode workflowMode) {
     if (message == null) {
       return;
     }
-    ModelAccessService.ModelAccess modelAccess = modelAccessService.resolve(message);
-    String userKey =
-        accountResolver == null
-            ? null
-            : accountResolver
-                .resolveOrCreate(message)
-                .map(resolved -> resolved.account().getAccountId())
-                .orElse(null);
-    userKey = firstNonBlank(userKey, message.sender(), message.chatGuid());
-    if (userKey == null) {
-      userKey = "unknown";
-    }
+    MetricContext context = metricContext(message);
     Instant now = Instant.now();
-    repository.save(
-        new AgentMessageMetricEntity(
+    metricsStore.saveMessageMetric(
+        new AgentMessageMetric(
             UUID.randomUUID().toString(),
             now,
             firstNonBlank(message.transportOrDefault(), "unknown"),
             StringUtils.trimToNull(message.messageGuid()),
             hashNullable(message.chatGuid()),
-            hash(userKey),
-            firstNonBlank(modelAccess.currentModelKey(), "unknown"),
+            context.userKeyHash(),
+            firstNonBlank(context.modelAccess().currentModelKey(), "unknown"),
             firstNonBlank(
-                modelAccess.currentModelLabel(), modelAccess.currentModelKey(), "Unknown"),
-            firstNonBlank(modelAccess.responsesModel(), "unknown"),
-            firstNonBlank(modelAccess.plan(), "standard"),
-            modelAccess.premium(),
+                context.modelAccess().currentModelLabel(),
+                context.modelAccess().currentModelKey(),
+                "Unknown"),
+            firstNonBlank(context.modelAccess().responsesModel(), "unknown"),
+            firstNonBlank(context.modelAccess().plan(), "standard"),
+            context.modelAccess().premium(),
             workflowMode == null ? "INLINE" : workflowMode.name(),
             now));
   }
 
+  @Transactional
+  @Override
+  public void recordToolCall(AgentToolMetricEvent event) {
+    if (event == null || event.message() == null) {
+      return;
+    }
+    IncomingMessage message = event.message();
+    MetricContext context = metricContext(message);
+    Instant now = Instant.now();
+    String plan = firstNonBlank(context.modelAccess().plan(), "standard");
+    boolean premium = context.modelAccess().premium();
+    metricsStore.saveToolMetric(
+        new AgentToolMetric(
+            UUID.randomUUID().toString(),
+            now,
+            firstNonBlank(message.transportOrDefault(), "unknown"),
+            StringUtils.trimToNull(message.messageGuid()),
+            hashNullable(message.chatGuid()),
+            context.userKeyHash(),
+            firstNonBlank(event.toolName(), "unknown"),
+            firstNonBlank(event.toolCategory(), "other"),
+            event.success(),
+            StringUtils.trimToNull(event.failureType()),
+            Math.max(0L, event.durationMillis()),
+            firstNonBlank(context.modelAccess().currentModelKey(), "unknown"),
+            firstNonBlank(
+                context.modelAccess().currentModelLabel(),
+                context.modelAccess().currentModelKey(),
+                "Unknown"),
+            firstNonBlank(context.modelAccess().responsesModel(), "unknown"),
+            plan,
+            premium,
+            premium ? "premium" : "standard",
+            event.workflowMode() == null ? "INLINE" : event.workflowMode().name(),
+            now));
+  }
+
   @Transactional(readOnly = true)
+  @Override
   public AdminStatsResponse getStatistics(Instant from, Instant to) {
-    AgentMessageMetricRepository.TotalProjection totals = repository.summarize(from, to);
-    long messageCount = valueOrZero(totals == null ? null : totals.getMessageCount());
-    long activeUsers = valueOrZero(totals == null ? null : totals.getActiveUsers());
+    MessageMetricTotals totals = metricsStore.summarizeMessages(from, to);
+    long messageCount = totals.messageCount();
+    long activeUsers = totals.activeUsers();
+    ToolMetricTotals toolTotals = metricsStore.summarizeTools(from, to);
+    long toolCallCount = toolTotals.toolCallCount();
     BucketSize bucketSize = chooseBucketSize(from, to);
-    List<AgentMessageMetricEntity> events =
-        repository.findAllByOccurredAtGreaterThanEqualAndOccurredAtLessThanOrderByOccurredAtAsc(
-            from, to);
+    List<AgentMessageMetric> events = metricsStore.findMessageMetrics(from, to);
 
     return new AdminStatsResponse()
         .period(
@@ -108,35 +145,76 @@ public class AdminStatsService {
         .totalMessages(messageCount)
         .activeUsers(activeUsers)
         .averageMessagesPerUser(activeUsers == 0 ? 0.0 : (double) messageCount / activeUsers)
+        .totalToolCalls(toolCallCount)
+        .successfulToolCalls(toolTotals.successfulToolCalls())
+        .failedToolCalls(toolTotals.failedToolCalls())
+        .toolSuccessRate(successRate(toolTotals.successfulToolCalls(), toolCallCount))
         .models(modelStats(from, to, messageCount))
         .senders(senderStats(events, messageCount))
-        .timeline(bucketStats(from, to, bucketSize, events));
+        .timeline(bucketStats(from, to, bucketSize, events))
+        .tools(toolStats(from, to, toolCallCount))
+        .toolAccountTypes(toolAccountTypeStats(from, to, toolCallCount));
   }
 
   private List<AdminModelStats> modelStats(Instant from, Instant to, long totalMessages) {
-    return repository.summarizeByModel(from, to).stream()
+    return metricsStore.summarizeMessagesByModel(from, to).stream()
         .map(
             row ->
                 new AdminModelStats()
-                    .modelKey(firstNonBlank(row.getModelKey(), "unknown"))
-                    .modelLabel(firstNonBlank(row.getModelLabel(), row.getModelKey(), "Unknown"))
-                    .responsesModel(firstNonBlank(row.getResponsesModel(), "unknown"))
-                    .plan(firstNonBlank(row.getPlan(), "standard"))
-                    .isPremium(Boolean.TRUE.equals(row.getPremium()))
-                    .messageCount(valueOrZero(row.getMessageCount()))
-                    .activeUsers(valueOrZero(row.getActiveUsers()))
+                    .modelKey(firstNonBlank(row.modelKey(), "unknown"))
+                    .modelLabel(firstNonBlank(row.modelLabel(), row.modelKey(), "Unknown"))
+                    .responsesModel(firstNonBlank(row.responsesModel(), "unknown"))
+                    .plan(firstNonBlank(row.plan(), "standard"))
+                    .isPremium(row.premium())
+                    .messageCount(row.messageCount())
+                    .activeUsers(row.activeUsers())
                     .percentage(
-                        totalMessages == 0
-                            ? 0.0
-                            : (double) valueOrZero(row.getMessageCount()) / totalMessages))
+                        totalMessages == 0 ? 0.0 : (double) row.messageCount() / totalMessages))
         .toList();
   }
 
-  private List<AdminSenderStats> senderStats(
-      List<AgentMessageMetricEntity> events, long totalMessages) {
+  private List<AdminToolStats> toolStats(Instant from, Instant to, long totalToolCalls) {
+    return metricsStore.summarizeToolsByTool(from, to).stream()
+        .map(
+            row ->
+                new AdminToolStats()
+                    .toolName(firstNonBlank(row.toolName(), "unknown"))
+                    .toolCategory(firstNonBlank(row.toolCategory(), "other"))
+                    .callCount(row.callCount())
+                    .successfulCalls(row.successfulCalls())
+                    .failedCalls(row.failedCalls())
+                    .activeUsers(row.activeUsers())
+                    .successRate(successRate(row.successfulCalls(), row.callCount()))
+                    .averageDurationMs(row.averageDurationMs())
+                    .lastUsedAt(offset(row.lastUsedAt()))
+                    .percentage(
+                        totalToolCalls == 0 ? 0.0 : (double) row.callCount() / totalToolCalls))
+        .toList();
+  }
+
+  private List<AdminToolAccountTypeStats> toolAccountTypeStats(
+      Instant from, Instant to, long totalToolCalls) {
+    return metricsStore.summarizeToolsByAccountType(from, to).stream()
+        .map(
+            row ->
+                new AdminToolAccountTypeStats()
+                    .accountType(firstNonBlank(row.accountType(), "standard"))
+                    .plan(firstNonBlank(row.plan(), "standard"))
+                    .isPremium(row.premium())
+                    .callCount(row.callCount())
+                    .successfulCalls(row.successfulCalls())
+                    .failedCalls(row.failedCalls())
+                    .activeUsers(row.activeUsers())
+                    .successRate(successRate(row.successfulCalls(), row.callCount()))
+                    .percentage(
+                        totalToolCalls == 0 ? 0.0 : (double) row.callCount() / totalToolCalls))
+        .toList();
+  }
+
+  private List<AdminSenderStats> senderStats(List<AgentMessageMetric> events, long totalMessages) {
     Map<String, MutableSenderStats> senders = new HashMap<>();
-    for (AgentMessageMetricEntity event : events) {
-      String accountKeyHash = firstNonBlank(event.getUserKeyHash(), "unknown");
+    for (AgentMessageMetric event : events) {
+      String accountKeyHash = firstNonBlank(event.userKeyHash(), "unknown");
       MutableSenderStats sender = senders.computeIfAbsent(accountKeyHash, MutableSenderStats::new);
       sender.record(event);
     }
@@ -152,20 +230,20 @@ public class AdminStatsService {
   }
 
   private List<AdminStatsBucket> bucketStats(
-      Instant from, Instant to, BucketSize bucketSize, List<AgentMessageMetricEntity> events) {
+      Instant from, Instant to, BucketSize bucketSize, List<AgentMessageMetric> events) {
     TreeMap<Instant, MutableBucket> buckets = new TreeMap<>();
     Instant cursor = bucketStart(from, bucketSize);
     while (cursor.isBefore(to)) {
       buckets.put(cursor, new MutableBucket(cursor, bucketEnd(cursor, bucketSize)));
       cursor = bucketEnd(cursor, bucketSize);
     }
-    for (AgentMessageMetricEntity event : events) {
-      Instant start = bucketStart(event.getOccurredAt(), bucketSize);
+    for (AgentMessageMetric event : events) {
+      Instant start = bucketStart(event.occurredAt(), bucketSize);
       MutableBucket bucket =
           buckets.computeIfAbsent(start, key -> new MutableBucket(key, bucketEnd(key, bucketSize)));
       bucket.messageCount++;
-      bucket.users.add(event.getUserKeyHash());
-      BucketModelKey modelKey = new BucketModelKey(event.getModelKey(), event.getModelLabel());
+      bucket.users.add(event.userKeyHash());
+      BucketModelKey modelKey = new BucketModelKey(event.modelKey(), event.modelLabel());
       bucket.modelCounts.merge(modelKey, 1L, Long::sum);
     }
     return buckets.values().stream().map(MutableBucket::toResponse).toList();
@@ -193,10 +271,6 @@ public class AdminStatsService {
     return OffsetDateTime.ofInstant(instant, ZoneOffset.UTC);
   }
 
-  private long valueOrZero(Long value) {
-    return value == null ? 0L : value;
-  }
-
   private String hashNullable(String value) {
     String trimmed = StringUtils.trimToNull(value);
     return trimmed == null ? null : hash(trimmed);
@@ -215,6 +289,23 @@ public class AdminStatsService {
     return StringUtils.trimToNull(StringUtils.firstNonBlank(values));
   }
 
+  private double successRate(long successfulCalls, long totalCalls) {
+    return totalCalls == 0 ? 0.0 : (double) successfulCalls / totalCalls;
+  }
+
+  private MetricContext metricContext(IncomingMessage message) {
+    ModelAccessService.ModelAccess modelAccess = modelAccessService.resolve(message);
+    String userKey =
+        accountResolver == null
+            ? null
+            : accountResolver
+                .resolveOrCreate(message)
+                .map(resolved -> resolved.account().getAccountId())
+                .orElse(null);
+    userKey = firstNonBlank(userKey, message.sender(), message.chatGuid(), "unknown");
+    return new MetricContext(hash(userKey), modelAccess);
+  }
+
   private enum BucketSize {
     HOUR("hour"),
     DAY("day");
@@ -227,6 +318,8 @@ public class AdminStatsService {
   }
 
   private record BucketModelKey(String modelKey, String modelLabel) {}
+
+  private record MetricContext(String userKeyHash, ModelAccessService.ModelAccess modelAccess) {}
 
   private static class MutableSenderStats {
     private final String accountKeyHash;
@@ -246,12 +339,12 @@ public class AdminStatsService {
       return messageCount;
     }
 
-    private void record(AgentMessageMetricEntity event) {
+    private void record(AgentMessageMetric event) {
       messageCount++;
-      if (lastSeenAt == null || event.getOccurredAt().isAfter(lastSeenAt)) {
-        lastSeenAt = event.getOccurredAt();
+      if (lastSeenAt == null || event.occurredAt().isAfter(lastSeenAt)) {
+        lastSeenAt = event.occurredAt();
       }
-      BucketModelKey modelKey = new BucketModelKey(event.getModelKey(), event.getModelLabel());
+      BucketModelKey modelKey = new BucketModelKey(event.modelKey(), event.modelLabel());
       modelCounts.merge(modelKey, 1L, Long::sum);
     }
 

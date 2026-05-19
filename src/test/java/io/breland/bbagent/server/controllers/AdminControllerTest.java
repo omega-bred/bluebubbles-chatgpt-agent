@@ -72,8 +72,14 @@ class AdminControllerTest {
                 .totalMessages(12L)
                 .activeUsers(3L)
                 .averageMessagesPerUser(4.0)
+                .totalToolCalls(5L)
+                .successfulToolCalls(4L)
+                .failedToolCalls(1L)
+                .toolSuccessRate(0.8)
                 .models(List.of())
                 .senders(List.of())
+                .tools(List.of())
+                .toolAccountTypes(List.of())
                 .timeline(
                     List.of(
                         new AdminStatsBucket()
@@ -94,7 +100,9 @@ class AdminControllerTest {
         .andExpect(jsonPath("$.period.from").value("2026-05-01T00:00:00Z"))
         .andExpect(jsonPath("$.timeline[0].bucket_start").value("2026-05-01T00:00:00Z"))
         .andExpect(jsonPath("$.total_messages").value(12))
-        .andExpect(jsonPath("$.active_users").value(3));
+        .andExpect(jsonPath("$.active_users").value(3))
+        .andExpect(jsonPath("$.total_tool_calls").value(5))
+        .andExpect(jsonPath("$.tool_success_rate").value(0.8));
   }
 
   @Test

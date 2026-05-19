@@ -7,6 +7,8 @@ import type {
   AdminSenderStats,
   AdminStatsBucket,
   AdminStatsResponse,
+  AdminToolAccountTypeStats,
+  AdminToolStats,
 } from "../client";
 import { AuthGate } from "../components/AuthGate";
 import { CenteredMessage } from "../components/CenteredMessage";
@@ -87,6 +89,7 @@ export function AdminPage({ auth }: { auth: AuthState }) {
   }
 
   const topModel = data?.models?.[0];
+  const topTool = data?.tools?.[0];
   const topLimitUsage = limitData?.usages?.[0];
 
   return (
@@ -145,7 +148,10 @@ export function AdminPage({ auth }: { auth: AuthState }) {
             label="Messages per user"
             value={(data?.average_messages_per_user || 0).toFixed(1)}
           />
+          <MetricTile label="Tool calls" value={formatCount(data?.total_tool_calls)} />
+          <MetricTile label="Tool success" value={formatPercent(data?.tool_success_rate)} />
           <MetricTile label="Top model" value={topModel?.model_label || "None"} />
+          <MetricTile label="Top tool" value={formatToolLabel(topTool?.tool_name)} />
           <MetricTile
             label="Highest quota use"
             value={formatPercent(topLimitUsage?.percentage)}
@@ -201,6 +207,22 @@ export function AdminPage({ auth }: { auth: AuthState }) {
 
           <article className="admin-panel">
             <header>
+              <p className="eyebrow">Tools</p>
+              <h2>Usage by tool</h2>
+            </header>
+            <ToolUsage tools={data?.tools || []} />
+          </article>
+
+          <article className="admin-panel">
+            <header>
+              <p className="eyebrow">Account types</p>
+              <h2>Tool success mix</h2>
+            </header>
+            <ToolAccountTypes accountTypes={data?.tool_account_types || []} />
+          </article>
+
+          <article className="admin-panel">
+            <header>
               <p className="eyebrow">Timeline</p>
               <h2>Message volume</h2>
             </header>
@@ -208,6 +230,79 @@ export function AdminPage({ auth }: { auth: AuthState }) {
           </article>
         </section>
       </main>
+    </div>
+  );
+}
+
+function ToolUsage({ tools }: { tools: AdminToolStats[] }) {
+  const max = Math.max(1, ...tools.map((tool) => tool.call_count || 0));
+  if (tools.length === 0) {
+    return <p className="muted">No tool calls in this period.</p>;
+  }
+  return (
+    <div className="tool-usage-list">
+      {tools.map((tool) => {
+        const count = tool.call_count || 0;
+        return (
+          <div className="tool-usage-row" key={`${tool.tool_category}-${tool.tool_name}`}>
+            <div>
+              <strong>{formatToolLabel(tool.tool_name)}</strong>
+              <span>
+                {formatCategory(tool.tool_category)} / last used {formatDateTime(tool.last_used_at)}
+              </span>
+            </div>
+            <div className="tool-usage-meter" aria-hidden="true">
+              <span style={{ width: `${(count / max) * 100}%` }} />
+            </div>
+            <p>
+              {formatCount(count)} calls / {formatCount(tool.successful_calls)} ok /{" "}
+              {formatCount(tool.failed_calls)} failed / {formatPercent(tool.success_rate)} success
+              / avg {formatDurationMs(tool.average_duration_ms)}
+            </p>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function ToolAccountTypes({
+  accountTypes,
+}: {
+  accountTypes: AdminToolAccountTypeStats[];
+}) {
+  const max = Math.max(1, ...accountTypes.map((accountType) => accountType.call_count || 0));
+  if (accountTypes.length === 0) {
+    return <p className="muted">No tool calls by account type in this period.</p>;
+  }
+  return (
+    <div className="tool-account-type-list">
+      {accountTypes.map((accountType) => {
+        const count = accountType.call_count || 0;
+        return (
+          <div
+            className="tool-account-type-row"
+            key={`${accountType.account_type}-${accountType.plan}-${String(
+              accountType.is_premium,
+            )}`}
+          >
+            <div>
+              <strong>{formatCategory(accountType.account_type)}</strong>
+              <span>
+                {accountType.is_premium ? "Paid" : "Free"} / {accountType.plan}
+              </span>
+            </div>
+            <div className="tool-account-type-meter" aria-hidden="true">
+              <span style={{ width: `${(count / max) * 100}%` }} />
+            </div>
+            <p>
+              {formatCount(count)} calls / {formatCount(accountType.active_users)} users /{" "}
+              {formatPercent(accountType.success_rate)} success /{" "}
+              {formatPercent(accountType.percentage)} of tool volume
+            </p>
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -329,6 +424,31 @@ function formatCount(value: number | undefined): string {
 
 function formatPercent(value: number | undefined): string {
   return `${Math.round((value || 0) * 100)}%`;
+}
+
+function formatDurationMs(value: number | undefined): string {
+  if (!value || value < 1) {
+    return "0 ms";
+  }
+  if (value < 1000) {
+    return `${Math.round(value)} ms`;
+  }
+  return `${(value / 1000).toFixed(1)} s`;
+}
+
+function formatToolLabel(value: string | undefined): string {
+  if (!value) {
+    return "None";
+  }
+  return value
+    .split(/[_-]+/)
+    .filter(Boolean)
+    .map((part) => part[0].toUpperCase() + part.slice(1))
+    .join(" ");
+}
+
+function formatCategory(value: string | undefined): string {
+  return formatToolLabel(value || "other");
 }
 
 function formatDateTime(value: ApiDateValue): string {
