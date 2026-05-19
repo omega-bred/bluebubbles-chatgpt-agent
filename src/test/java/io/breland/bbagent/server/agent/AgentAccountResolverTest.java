@@ -22,11 +22,11 @@ class AgentAccountResolverTest {
   @Test
   void linkingWebsiteAccountMergesExistingWebsiteAndPhoneAccounts() {
     accountRepository.deleteAll();
-    Jwt jwt = jwt("keycloak-sub", "mindstorms6+apple@gmail.com");
+    Jwt jwt = jwt("keycloak-sub", "alex.agent@example.com");
     String websiteAccountId = accountResolver.upsertWebsiteAccount(jwt).getAccountId();
     String phoneAccountId =
         accountResolver
-            .resolveOrCreate(IncomingMessage.TRANSPORT_BLUEBUBBLES, "+1 (803) 386-1737")
+            .resolveOrCreate(IncomingMessage.TRANSPORT_BLUEBUBBLES, "+1 (212) 555-0199")
             .orElseThrow()
             .account()
             .getAccountId();
@@ -36,7 +36,7 @@ class AgentAccountResolverTest {
     assertEquals(1, accountRepository.count());
     var merged = accountRepository.findById(phoneAccountId).orElseThrow();
     assertEquals("keycloak-sub", merged.getWebsiteSubject());
-    assertEquals("mindstorms6+apple@gmail.com", merged.getWebsiteEmail());
+    assertEquals("alex.agent@example.com", merged.getWebsiteEmail());
     assertTrue(accountRepository.findById(websiteAccountId).isEmpty());
     assertEquals(
         2,
@@ -44,8 +44,8 @@ class AgentAccountResolverTest {
             .map(identity -> identity.getIdentityType() + ":" + identity.getNormalizedIdentifier())
             .filter(
                 value ->
-                    value.equals("imessage_phone:+18033861737")
-                        || value.equals("imessage_email:mindstorms6+apple@gmail.com"))
+                    value.equals("imessage_phone:+12125550199")
+                        || value.equals("imessage_email:alex.agent@example.com"))
             .count());
   }
 
@@ -60,7 +60,7 @@ class AgentAccountResolverTest {
             "YES",
             false,
             "iMessage",
-            "+1 (803) 386-1737",
+            "+1 (212) 555-0199",
             false,
             Instant.now(),
             java.util.List.of(),
@@ -79,7 +79,7 @@ class AgentAccountResolverTest {
     accountRepository.deleteAll();
     String acceptedEmailAccountId =
         accountResolver
-            .resolveOrCreate(IncomingMessage.TRANSPORT_BLUEBUBBLES, "mindstorms6+apple@gmail.com")
+            .resolveOrCreate(IncomingMessage.TRANSPORT_BLUEBUBBLES, "alex.agent@example.com")
             .orElseThrow()
             .account()
             .getAccountId();
@@ -89,13 +89,13 @@ class AgentAccountResolverTest {
     accountRepository.save(acceptedEmailAccount);
     String phoneAccountId =
         accountResolver
-            .resolveOrCreate(IncomingMessage.TRANSPORT_BLUEBUBBLES, "+1 (803) 386-1737")
+            .resolveOrCreate(IncomingMessage.TRANSPORT_BLUEBUBBLES, "+1 (212) 555-0199")
             .orElseThrow()
             .account()
             .getAccountId();
 
     accountResolver.linkWebsiteAccount(
-        phoneAccountId, jwt("keycloak-sub", "mindstorms6+apple@gmail.com"));
+        phoneAccountId, jwt("keycloak-sub", "alex.agent@example.com"));
 
     assertNotNull(accountRepository.findById(phoneAccountId).orElseThrow().getTermsAcceptedAt());
     assertTrue(accountRepository.findById(acceptedEmailAccountId).isEmpty());
