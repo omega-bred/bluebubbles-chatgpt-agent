@@ -151,9 +151,7 @@ class WebsiteAccountServiceTest {
             .findFirst()
             .orElseThrow()
             .getEmail());
-    assertEquals(
-        WebsiteModelAccessSummary.PlanEnum.STANDARD,
-        response.getIntegrations().get(0).getModelAccess().getPlan());
+    assertFalse(response.getIntegrations().get(0).getModelAccess().getIsPremium());
   }
 
   @Test
@@ -240,7 +238,6 @@ class WebsiteAccountServiceTest {
   private WebsiteModelAccessSummary modelAccess(String accountId) {
     return new WebsiteModelAccessSummary()
         .accountId(accountId)
-        .plan(WebsiteModelAccessSummary.PlanEnum.STANDARD)
         .isPremium(false)
         .currentModel("local")
         .currentModelLabel("Free")

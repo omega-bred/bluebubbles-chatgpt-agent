@@ -77,7 +77,7 @@ public class GetUsageLimitsAgentTool implements ToolProvider {
       return "I could not determine your usage limits for this chat identity.";
     }
     RateLimitStatus status = messageStatus.rateLimit();
-    String plan = messageStatus.premium() ? "paid" : "free";
+    String accountType = messageStatus.premium() ? "paid" : "free";
     String resetAt = INSTANT_FORMATTER.format(status.windowEnd());
     String text =
         "You have used "
@@ -85,8 +85,8 @@ public class GetUsageLimitsAgentTool implements ToolProvider {
             + " of "
             + status.limit()
             + " daily assistant responses on the "
-            + plan
-            + " plan. "
+            + accountType
+            + " account. "
             + status.remaining()
             + " remain before the limit resets at "
             + resetAt

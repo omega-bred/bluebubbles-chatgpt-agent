@@ -72,7 +72,6 @@ public class ModelPicker {
       return new ModelAccessService.ModelAccess(
           null,
           false,
-          "standard",
           ModelAccessService.STANDARD_MODEL_KEY,
           ModelAccessService.STANDARD_MODEL_LABEL,
           ModelAccessService.STANDARD_RESPONSES_MODEL,

@@ -538,7 +538,6 @@ class BBMessageAgentTest {
             new ModelAccessService.ModelAccess(
                 "Alice",
                 true,
-                "premium",
                 ModelAccessService.PREMIUM_MODEL_KEY,
                 ModelAccessService.PREMIUM_MODEL_LABEL,
                 ModelAccessService.PREMIUM_RESPONSES_MODEL,

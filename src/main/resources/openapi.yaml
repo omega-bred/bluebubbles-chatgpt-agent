@@ -672,7 +672,6 @@ components:
     WebsiteModelAccessSummary:
       type: object
       required:
-        - plan
         - is_premium
         - current_model
         - current_model_label
@@ -684,11 +683,6 @@ components:
           type: string
           nullable: true
           description: Canonical account id used by the model picker.
-        plan:
-          type: string
-          enum:
-            - standard
-            - premium
         is_premium:
           type: boolean
         current_model:
@@ -698,7 +692,7 @@ components:
           type: string
         model_selection_allowed:
           type: boolean
-          description: Whether this plan is allowed to choose models once model selection is enabled.
+          description: Whether this account is allowed to choose models once model selection is enabled.
         model_selection_configurable:
           type: boolean
           description: Whether model selection can currently be changed from the website.
@@ -1016,7 +1010,7 @@ components:
             $ref: '#/components/schemas/AdminToolStats'
         tool_account_types:
           type: array
-          description: Tool usage grouped by account type and plan for the selected period.
+          description: Tool usage grouped by account type for the selected period.
           items:
             $ref: '#/components/schemas/AdminToolAccountTypeStats'
     AdminRateLimitUsage:

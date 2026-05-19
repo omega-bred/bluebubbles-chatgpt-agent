@@ -120,11 +120,11 @@ function LinkedIdentity({
   const linkedAccounts = integration.linked_accounts || [];
   const modelAccess = integration.model_access;
   const modelLabel = modelAccess ? displayModelLabel(modelAccess.current_model_label) : "";
-  const planLabel = modelAccess?.is_premium ? "Premium" : "Free";
+  const accountLabel = modelAccess?.is_premium ? "Premium" : "Free";
   const accessNote =
     modelAccess && modelAccess.is_premium
-      ? `${planLabel} account · ${modelLabel}`
-      : `${planLabel} account`;
+      ? `${accountLabel} account · ${modelLabel}`
+      : `${accountLabel} account`;
   return (
     <article className="linked-item">
       <div>

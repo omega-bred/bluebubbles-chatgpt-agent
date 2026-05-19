@@ -120,9 +120,12 @@ public class GetWebsiteAccountLinkStatusAgentTool implements ToolProvider {
     if (status.modelAccess() == null) {
       return "Model access could not be determined.";
     }
-    String plan = Boolean.TRUE.equals(status.modelAccess().getIsPremium()) ? "premium" : "standard";
+    String accountType =
+        Boolean.TRUE.equals(status.modelAccess().getIsPremium())
+            ? "premium account"
+            : "free account";
     return "Model access: "
-        + plan
+        + accountType
         + ", current model: "
         + status.modelAccess().getCurrentModelLabel()
         + ".";

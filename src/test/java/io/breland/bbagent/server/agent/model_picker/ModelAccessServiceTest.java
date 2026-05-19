@@ -24,7 +24,7 @@ class ModelAccessServiceTest {
   private final ModelAccessService service = new ModelAccessService(repository, resolver);
 
   @Test
-  void defaultsUnconfiguredSenderToStandardFreePlan() {
+  void defaultsUnconfiguredSenderToStandardFreeAccount() {
     when(resolver.resolveOrCreate(any(IncomingMessage.class)))
         .thenReturn(
             Optional.of(new AgentAccountResolver.ResolvedAccount(account(false, null), List.of())));
@@ -32,7 +32,6 @@ class ModelAccessServiceTest {
     ModelAccessService.ModelAccess access = service.resolve(message());
 
     assertFalse(access.premium());
-    assertEquals("standard", access.plan());
     assertEquals("local", access.currentModelKey());
     assertEquals("Free", access.currentModelLabel());
     assertEquals("Qwen/Qwen3.6-27B", ModelAccessService.STANDARD_RESPONSES_MODEL);
@@ -48,7 +47,6 @@ class ModelAccessServiceTest {
     ModelAccessService.ModelAccess access = service.resolve(message());
 
     assertTrue(access.premium());
-    assertEquals("premium", access.plan());
     assertEquals("chatgpt", access.currentModelKey());
     assertEquals(ModelAccessService.PREMIUM_RESPONSES_MODEL, access.responsesModel());
   }
@@ -71,7 +69,6 @@ class ModelAccessServiceTest {
 
     WebsiteModelAccessSummary summary = service.toWebsiteSummary("account-1");
 
-    assertEquals(WebsiteModelAccessSummary.PlanEnum.PREMIUM, summary.getPlan());
     assertTrue(summary.getIsPremium());
     assertEquals("chatgpt", summary.getCurrentModel());
     assertFalse(summary.getModelSelectionConfigurable());
