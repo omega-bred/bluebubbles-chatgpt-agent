@@ -14,21 +14,16 @@ import { AuthGate } from "../components/AuthGate";
 import { CenteredMessage } from "../components/CenteredMessage";
 import { SiteNav } from "../components/SiteNav";
 import { adminApi } from "../services/api-client";
-
-const numberFormat = new Intl.NumberFormat();
-const dateTimeFormat = new Intl.DateTimeFormat(undefined, {
-  dateStyle: "medium",
-  timeStyle: "short",
-});
-const bucketDateFormat = new Intl.DateTimeFormat(undefined, {
-  month: "short",
-  day: "numeric",
-  hour: "numeric",
-  minute: "2-digit",
-});
-const epochSecondsCutoff = 10_000_000_000;
-
-type ApiDateValue = Date | number | string | null | undefined;
+import {
+  formatBucket,
+  formatCount,
+  formatDateTime,
+  formatDurationMs,
+  formatPercent,
+  formatTitleLabel,
+  toIso,
+  toLocalInputValue,
+} from "../utils/admin-format";
 
 export function AdminPage({ auth }: { auth: AuthState }) {
   const [fromInput, setFromInput] = React.useState(() =>
@@ -405,89 +400,12 @@ function applyPreset(
   setToInput(toLocalInputValue(to));
 }
 
-function toLocalInputValue(date: Date): string {
-  const local = new Date(date.getTime() - date.getTimezoneOffset() * 60_000);
-  return local.toISOString().slice(0, 16);
-}
-
-function toIso(value: string): string {
-  return new Date(value).toISOString();
-}
-
-function formatCount(value: number | undefined): string {
-  return numberFormat.format(value || 0);
-}
-
-function formatPercent(value: number | undefined): string {
-  return `${Math.round((value || 0) * 100)}%`;
-}
-
-function formatDurationMs(value: number | undefined): string {
-  if (!value || value < 1) {
-    return "0 ms";
-  }
-  if (value < 1000) {
-    return `${Math.round(value)} ms`;
-  }
-  return `${(value / 1000).toFixed(1)} s`;
-}
-
 function formatToolLabel(value: string | undefined): string {
-  if (!value) {
-    return "None";
-  }
-  return value
-    .split(/[_-]+/)
-    .filter(Boolean)
-    .map((part) => part[0].toUpperCase() + part.slice(1))
-    .join(" ");
+  return formatTitleLabel(value, "None");
 }
 
 function formatCategory(value: string | undefined): string {
   return formatToolLabel(value || "other");
-}
-
-function formatDateTime(value: ApiDateValue): string {
-  const date = parseApiDate(value);
-  if (!date) {
-    return "";
-  }
-  return dateTimeFormat.format(date);
-}
-
-function formatBucket(value: ApiDateValue): string {
-  const date = parseApiDate(value);
-  if (!date) {
-    return "";
-  }
-  return bucketDateFormat.format(date);
-}
-
-function parseApiDate(value: ApiDateValue): Date | null {
-  if (value === null || value === undefined || value === "") {
-    return null;
-  }
-  if (value instanceof Date) {
-    return isValidDate(value) ? value : null;
-  }
-  if (typeof value === "number") {
-    const milliseconds = Math.abs(value) < epochSecondsCutoff ? value * 1000 : value;
-    const date = new Date(milliseconds);
-    return isValidDate(date) ? date : null;
-  }
-  const trimmed = value.trim();
-  if (!trimmed) {
-    return null;
-  }
-  if (/^-?\d+(\.\d+)?$/.test(trimmed)) {
-    return parseApiDate(Number(trimmed));
-  }
-  const date = new Date(trimmed);
-  return isValidDate(date) ? date : null;
-}
-
-function isValidDate(date: Date): boolean {
-  return Number.isFinite(date.getTime());
 }
 
 function bucketModelSummary(bucket: AdminStatsBucket): string {
