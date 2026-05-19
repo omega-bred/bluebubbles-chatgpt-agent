@@ -54,7 +54,6 @@ public class GetUsageLimitsAgentTool implements ToolProvider {
     Map<String, Object> response = new LinkedHashMap<>();
     response.put("tracked", messageStatus.tracked());
     response.put("account_id", messageStatus.accountId());
-    response.put("plan", messageStatus.plan());
     response.put("is_premium", messageStatus.premium());
     RateLimitStatus status = messageStatus.rateLimit();
     if (status != null) {

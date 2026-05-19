@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.breland.bbagent.generated.model.AdminRateLimitUsage;
 import io.breland.bbagent.generated.model.AdminRateLimitUsageResponse;
 import io.breland.bbagent.server.agent.AgentAccountResolver;
 import io.breland.bbagent.server.agent.IncomingMessage;
@@ -59,8 +60,42 @@ class MessageResponseRateLimitServiceTest {
         service.statusFor(incomingMessage("Alice"));
 
     assertTrue(status.premium());
-    assertEquals("premium", status.plan());
     assertEquals(5000L, status.rateLimit().limit());
+  }
+
+  @Test
+  void upgradedAccountsUsePaidLimitForExistingDailyUsageAndAdminMetering() {
+    usageRepository.deleteAll();
+    IncomingMessage message = incomingMessage("Alice");
+
+    for (int i = 0; i < 200; i++) {
+      assertTrue(service.tryConsume(message).allowed());
+    }
+    assertFalse(service.tryConsume(message).allowed());
+
+    var account =
+        accountResolver
+            .resolveOrCreate(IncomingMessage.TRANSPORT_BLUEBUBBLES, "Alice")
+            .orElseThrow()
+            .account();
+    account.setPremium(true);
+    accountRepository.saveAndFlush(account);
+
+    MessageResponseRateLimitService.MessageResponseLimitStatus status = service.statusFor(message);
+
+    assertTrue(status.premium());
+    assertEquals(5000L, status.rateLimit().limit());
+    assertEquals(200L, status.rateLimit().used());
+    assertEquals(4800L, status.rateLimit().remaining());
+
+    assertTrue(service.tryConsume(message).allowed());
+
+    AdminRateLimitUsage usage = service.adminUsage(null, 10).getUsages().get(0);
+    assertEquals(account.getAccountId(), usage.getAccountId());
+    assertTrue(usage.getIsPremium());
+    assertEquals(201L, usage.getUsed());
+    assertEquals(5000L, usage.getLimit());
+    assertEquals(4799L, usage.getRemaining());
   }
 
   @Test

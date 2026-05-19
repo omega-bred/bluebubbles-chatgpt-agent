@@ -23,7 +23,6 @@ public interface AgentMessageMetricRepository
       select metric.modelKey as modelKey,
              metric.modelLabel as modelLabel,
              metric.responsesModel as responsesModel,
-             metric.plan as plan,
              metric.premium as premium,
              count(metric) as messageCount,
              count(distinct metric.userKeyHash) as activeUsers
@@ -32,7 +31,6 @@ public interface AgentMessageMetricRepository
       group by metric.modelKey,
                metric.modelLabel,
                metric.responsesModel,
-               metric.plan,
                metric.premium
       order by count(metric) desc
       """)
@@ -54,8 +52,6 @@ public interface AgentMessageMetricRepository
     String getModelLabel();
 
     String getResponsesModel();
-
-    String getPlan();
 
     Boolean getPremium();
 

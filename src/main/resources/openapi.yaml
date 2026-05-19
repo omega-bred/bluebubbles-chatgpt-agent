@@ -792,7 +792,6 @@ components:
         - model_key
         - model_label
         - responses_model
-        - plan
         - is_premium
         - message_count
         - active_users
@@ -803,8 +802,6 @@ components:
         model_label:
           type: string
         responses_model:
-          type: string
-        plan:
           type: string
         is_premium:
           type: boolean
@@ -906,8 +903,6 @@ components:
     AdminToolAccountTypeStats:
       type: object
       required:
-        - account_type
-        - plan
         - is_premium
         - call_count
         - successful_calls
@@ -916,11 +911,6 @@ components:
         - success_rate
         - percentage
       properties:
-        account_type:
-          type: string
-          description: Stable account tier label for metrics grouping.
-        plan:
-          type: string
         is_premium:
           type: boolean
         call_count:
@@ -1038,7 +1028,6 @@ components:
         - scope_key
         - account_id
         - account_bucket
-        - plan
         - is_premium
         - used
         - limit
@@ -1068,8 +1057,6 @@ components:
           type: string
           nullable: true
           description: Short stable display bucket derived from the account id.
-        plan:
-          type: string
         is_premium:
           type: boolean
         used:

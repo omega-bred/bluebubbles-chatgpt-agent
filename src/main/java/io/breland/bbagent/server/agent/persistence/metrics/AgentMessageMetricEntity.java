@@ -44,9 +44,6 @@ public class AgentMessageMetricEntity {
   @Column(name = "responses_model", nullable = false, length = 255)
   private String responsesModel;
 
-  @Column(name = "plan", nullable = false, length = 64)
-  private String plan;
-
   @Column(name = "is_premium", nullable = false)
   private boolean premium;
 
@@ -66,7 +63,6 @@ public class AgentMessageMetricEntity {
       String modelKey,
       String modelLabel,
       String responsesModel,
-      String plan,
       boolean premium,
       String workflowMode,
       Instant createdAt) {
@@ -79,7 +75,6 @@ public class AgentMessageMetricEntity {
     this.modelKey = modelKey;
     this.modelLabel = modelLabel;
     this.responsesModel = responsesModel;
-    this.plan = plan;
     this.premium = premium;
     this.workflowMode = workflowMode;
     this.createdAt = createdAt;

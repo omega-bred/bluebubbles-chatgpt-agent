@@ -151,14 +151,14 @@ class AdminStatsServiceTest {
         stats.getToolAccountTypes().stream()
             .anyMatch(
                 accountType ->
-                    "premium".equals(accountType.getAccountType())
+                    Boolean.TRUE.equals(accountType.getIsPremium())
                         && accountType.getCallCount() == 2L
                         && accountType.getFailedCalls() == 1L));
     assertTrue(
         stats.getToolAccountTypes().stream()
             .anyMatch(
                 accountType ->
-                    "standard".equals(accountType.getAccountType())
+                    !Boolean.TRUE.equals(accountType.getIsPremium())
                         && accountType.getCallCount() == 1L
                         && accountType.getSuccessfulCalls() == 1L));
   }

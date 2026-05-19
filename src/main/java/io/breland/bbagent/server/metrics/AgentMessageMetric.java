@@ -12,7 +12,6 @@ public record AgentMessageMetric(
     String modelKey,
     String modelLabel,
     String responsesModel,
-    String plan,
     boolean premium,
     String workflowMode,
     Instant createdAt) {}
