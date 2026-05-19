@@ -6,15 +6,9 @@ import { AuthGate } from "../components/AuthGate";
 import { CenteredMessage } from "../components/CenteredMessage";
 import { SiteNav } from "../components/SiteNav";
 import { adminApi, type AdminFeedbackFilter } from "../services/api-client";
+import { formatCount, formatDateTime, formatTitleLabel } from "../utils/admin-format";
 
-const numberFormat = new Intl.NumberFormat();
-const dateTimeFormat = new Intl.DateTimeFormat(undefined, {
-  dateStyle: "medium",
-  timeStyle: "short",
-});
 const filters: AdminFeedbackFilter[] = ["unread", "read", "all"];
-
-type ApiDateValue = Date | number | string | null | undefined;
 
 export function AdminFeedbackPage({ auth }: { auth: AuthState }) {
   const [status, setStatus] = React.useState<AdminFeedbackFilter>("unread");
@@ -194,24 +188,5 @@ function statusLabel(value: string | undefined): string {
 }
 
 function formatCategory(value: string | undefined): string {
-  if (!value) {
-    return "General";
-  }
-  return value
-    .split(/[_-]/)
-    .filter(Boolean)
-    .map((part) => part[0].toUpperCase() + part.slice(1))
-    .join(" ");
-}
-
-function formatCount(value: number | undefined): string {
-  return numberFormat.format(value || 0);
-}
-
-function formatDateTime(value: ApiDateValue): string {
-  if (value === null || value === undefined || value === "") {
-    return "";
-  }
-  const date = value instanceof Date ? value : new Date(value);
-  return Number.isFinite(date.getTime()) ? dateTimeFormat.format(date) : "";
+  return formatTitleLabel(value, "General");
 }
