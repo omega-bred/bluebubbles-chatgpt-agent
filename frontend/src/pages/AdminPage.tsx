@@ -8,12 +8,12 @@ import type {
   AdminStatsBucket,
   AdminStatsResponse,
 } from "../client";
+import { formatCount, MetricTile } from "../components/AdminMetrics";
 import { AuthGate } from "../components/AuthGate";
 import { CenteredMessage } from "../components/CenteredMessage";
 import { SiteNav } from "../components/SiteNav";
 import { adminApi } from "../services/api-client";
 
-const numberFormat = new Intl.NumberFormat();
 const dateTimeFormat = new Intl.DateTimeFormat(undefined, {
   dateStyle: "medium",
   timeStyle: "short",
@@ -212,15 +212,6 @@ export function AdminPage({ auth }: { auth: AuthState }) {
   );
 }
 
-function MetricTile({ label, value }: { label: string; value: string }) {
-  return (
-    <article className="metric-tile">
-      <span>{label}</span>
-      <strong>{value}</strong>
-    </article>
-  );
-}
-
 function SenderUsage({ senders }: { senders: AdminSenderStats[] }) {
   const max = Math.max(1, ...senders.map((sender) => sender.message_count || 0));
   if (senders.length === 0) {
@@ -321,10 +312,6 @@ function toLocalInputValue(date: Date): string {
 
 function toIso(value: string): string {
   return new Date(value).toISOString();
-}
-
-function formatCount(value: number | undefined): string {
-  return numberFormat.format(value || 0);
 }
 
 function formatPercent(value: number | undefined): string {

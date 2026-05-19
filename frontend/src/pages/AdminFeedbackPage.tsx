@@ -2,12 +2,12 @@ import React from "react";
 
 import type { AuthState } from "../auth/useKeycloak";
 import type { AdminFeedbackItem, AdminFeedbackListResponse } from "../client";
+import { formatCount, MetricTile } from "../components/AdminMetrics";
 import { AuthGate } from "../components/AuthGate";
 import { CenteredMessage } from "../components/CenteredMessage";
 import { SiteNav } from "../components/SiteNav";
 import { adminApi, type AdminFeedbackFilter } from "../services/api-client";
 
-const numberFormat = new Intl.NumberFormat();
 const dateTimeFormat = new Intl.DateTimeFormat(undefined, {
   dateStyle: "medium",
   timeStyle: "short",
@@ -176,15 +176,6 @@ export function AdminFeedbackPage({ auth }: { auth: AuthState }) {
   );
 }
 
-function MetricTile({ label, value }: { label: string; value: string }) {
-  return (
-    <article className="metric-tile">
-      <span>{label}</span>
-      <strong>{value}</strong>
-    </article>
-  );
-}
-
 function filterLabel(filter: AdminFeedbackFilter): string {
   return filter[0].toUpperCase() + filter.slice(1);
 }
@@ -202,10 +193,6 @@ function formatCategory(value: string | undefined): string {
     .filter(Boolean)
     .map((part) => part[0].toUpperCase() + part.slice(1))
     .join(" ");
-}
-
-function formatCount(value: number | undefined): string {
-  return numberFormat.format(value || 0);
 }
 
 function formatDateTime(value: ApiDateValue): string {
