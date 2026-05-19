@@ -59,14 +59,8 @@ public class AgentToolMetricEntity {
   @Column(name = "responses_model", nullable = false, length = 255)
   private String responsesModel;
 
-  @Column(name = "plan", nullable = false, length = 64)
-  private String plan;
-
   @Column(name = "is_premium", nullable = false)
   private boolean premium;
-
-  @Column(name = "account_type", nullable = false, length = 64)
-  private String accountType;
 
   @Column(name = "workflow_mode", nullable = false, length = 64)
   private String workflowMode;
@@ -89,9 +83,7 @@ public class AgentToolMetricEntity {
       String modelKey,
       String modelLabel,
       String responsesModel,
-      String plan,
       boolean premium,
-      String accountType,
       String workflowMode,
       Instant createdAt) {
     this.id = id;
@@ -108,9 +100,7 @@ public class AgentToolMetricEntity {
     this.modelKey = modelKey;
     this.modelLabel = modelLabel;
     this.responsesModel = responsesModel;
-    this.plan = plan;
     this.premium = premium;
-    this.accountType = accountType;
     this.workflowMode = workflowMode;
     this.createdAt = createdAt;
   }

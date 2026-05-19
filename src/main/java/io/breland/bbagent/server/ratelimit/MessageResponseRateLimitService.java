@@ -85,14 +85,10 @@ public class MessageResponseRateLimitService {
 
   private MessageResponseLimitStatus statusFor(ModelAccessService.ModelAccess access) {
     if (StringUtils.isBlank(access.accountId())) {
-      return new MessageResponseLimitStatus(false, null, access.plan(), access.premium(), null);
+      return new MessageResponseLimitStatus(false, null, access.premium(), null);
     }
     return new MessageResponseLimitStatus(
-        true,
-        access.accountId(),
-        access.plan(),
-        access.premium(),
-        rateLimitService.check(policyFor(access)));
+        true, access.accountId(), access.premium(), rateLimitService.check(policyFor(access)));
   }
 
   private RateLimitPolicy policyFor(ModelAccessService.ModelAccess access) {
@@ -134,7 +130,6 @@ public class MessageResponseRateLimitService {
         .scopeKey(usage.getScopeKey())
         .accountId(usage.getScopeKey())
         .accountBucket(accountBucket(usage.getScopeKey()))
-        .plan(status.plan())
         .isPremium(status.premium())
         .used(usage.getAmount())
         .limit(limit)
@@ -171,5 +166,5 @@ public class MessageResponseRateLimitService {
   }
 
   public record MessageResponseLimitStatus(
-      boolean tracked, String accountId, String plan, boolean premium, RateLimitStatus rateLimit) {}
+      boolean tracked, String accountId, boolean premium, RateLimitStatus rateLimit) {}
 }

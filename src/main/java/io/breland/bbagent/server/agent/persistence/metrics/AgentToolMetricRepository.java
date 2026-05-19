@@ -39,18 +39,14 @@ public interface AgentToolMetricRepository extends JpaRepository<AgentToolMetric
 
   @Query(
       """
-      select metric.accountType as accountType,
-             metric.plan as plan,
-             metric.premium as premium,
+      select metric.premium as premium,
              count(metric) as callCount,
              sum(case when metric.success = true then 1 else 0 end) as successfulCalls,
              sum(case when metric.success = false then 1 else 0 end) as failedCalls,
              count(distinct metric.userKeyHash) as activeUsers
       from AgentToolMetricEntity metric
       where metric.occurredAt >= :from and metric.occurredAt < :to
-      group by metric.accountType,
-               metric.plan,
-               metric.premium
+      group by metric.premium
       order by count(metric) desc
       """)
   List<AccountTypeProjection> summarizeByAccountType(
@@ -85,10 +81,6 @@ public interface AgentToolMetricRepository extends JpaRepository<AgentToolMetric
   }
 
   interface AccountTypeProjection {
-    String getAccountType();
-
-    String getPlan();
-
     Boolean getPremium();
 
     Long getCallCount();

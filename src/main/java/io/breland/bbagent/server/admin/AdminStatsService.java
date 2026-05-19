@@ -82,7 +82,6 @@ public class AdminStatsService implements AgentMetricsService {
                 context.modelAccess().currentModelKey(),
                 "Unknown"),
             firstNonBlank(context.modelAccess().responsesModel(), "unknown"),
-            firstNonBlank(context.modelAccess().plan(), "standard"),
             context.modelAccess().premium(),
             workflowMode == null ? "INLINE" : workflowMode.name(),
             now));
@@ -97,7 +96,6 @@ public class AdminStatsService implements AgentMetricsService {
     IncomingMessage message = event.message();
     MetricContext context = metricContext(message);
     Instant now = Instant.now();
-    String plan = firstNonBlank(context.modelAccess().plan(), "standard");
     boolean premium = context.modelAccess().premium();
     metricsStore.saveToolMetric(
         new AgentToolMetric(
@@ -118,9 +116,7 @@ public class AdminStatsService implements AgentMetricsService {
                 context.modelAccess().currentModelKey(),
                 "Unknown"),
             firstNonBlank(context.modelAccess().responsesModel(), "unknown"),
-            plan,
             premium,
-            premium ? "premium" : "standard",
             event.workflowMode() == null ? "INLINE" : event.workflowMode().name(),
             now));
   }
@@ -164,7 +160,6 @@ public class AdminStatsService implements AgentMetricsService {
                     .modelKey(firstNonBlank(row.modelKey(), "unknown"))
                     .modelLabel(firstNonBlank(row.modelLabel(), row.modelKey(), "Unknown"))
                     .responsesModel(firstNonBlank(row.responsesModel(), "unknown"))
-                    .plan(firstNonBlank(row.plan(), "standard"))
                     .isPremium(row.premium())
                     .messageCount(row.messageCount())
                     .activeUsers(row.activeUsers())
@@ -198,8 +193,6 @@ public class AdminStatsService implements AgentMetricsService {
         .map(
             row ->
                 new AdminToolAccountTypeStats()
-                    .accountType(firstNonBlank(row.accountType(), "standard"))
-                    .plan(firstNonBlank(row.plan(), "standard"))
                     .isPremium(row.premium())
                     .callCount(row.callCount())
                     .successfulCalls(row.successfulCalls())

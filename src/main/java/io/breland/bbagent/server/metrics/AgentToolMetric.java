@@ -17,8 +17,6 @@ public record AgentToolMetric(
     String modelKey,
     String modelLabel,
     String responsesModel,
-    String plan,
     boolean premium,
-    String accountType,
     String workflowMode,
     Instant createdAt) {}

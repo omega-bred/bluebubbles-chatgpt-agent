@@ -33,7 +33,6 @@ public class PostgresAgentMetricsStore implements AgentMetricsStore {
             metric.modelKey(),
             metric.modelLabel(),
             metric.responsesModel(),
-            metric.plan(),
             metric.premium(),
             metric.workflowMode(),
             metric.createdAt()));
@@ -57,9 +56,7 @@ public class PostgresAgentMetricsStore implements AgentMetricsStore {
             metric.modelKey(),
             metric.modelLabel(),
             metric.responsesModel(),
-            metric.plan(),
             metric.premium(),
-            metric.accountType(),
             metric.workflowMode(),
             metric.createdAt()));
   }
@@ -81,7 +78,6 @@ public class PostgresAgentMetricsStore implements AgentMetricsStore {
                     row.getModelKey(),
                     row.getModelLabel(),
                     row.getResponsesModel(),
-                    row.getPlan(),
                     Boolean.TRUE.equals(row.getPremium()),
                     valueOrZero(row.getMessageCount()),
                     valueOrZero(row.getActiveUsers())))
@@ -130,8 +126,6 @@ public class PostgresAgentMetricsStore implements AgentMetricsStore {
         .map(
             row ->
                 new ToolAccountTypeMetricSummary(
-                    row.getAccountType(),
-                    row.getPlan(),
                     Boolean.TRUE.equals(row.getPremium()),
                     valueOrZero(row.getCallCount()),
                     valueOrZero(row.getSuccessfulCalls()),
@@ -151,7 +145,6 @@ public class PostgresAgentMetricsStore implements AgentMetricsStore {
         entity.getModelKey(),
         entity.getModelLabel(),
         entity.getResponsesModel(),
-        entity.getPlan(),
         entity.isPremium(),
         entity.getWorkflowMode(),
         entity.getCreatedAt());

@@ -169,11 +169,11 @@ export function AdminPage({ auth }: { auth: AuthState }) {
                 <p className="muted">No messages in this period.</p>
               ) : (
                 data?.models?.map((model) => (
-                  <div className="model-usage-row" key={`${model.model_key}-${model.plan}`}>
+                  <div className="model-usage-row" key={`${model.model_key}-${String(model.is_premium)}`}>
                     <div>
                       <strong>{model.model_label}</strong>
                       <span>
-                        {model.responses_model} / {model.plan}
+                        {model.responses_model} / {model.is_premium ? "Paid" : "Free"}
                       </span>
                     </div>
                     <div className="model-usage-meter" aria-hidden="true">
@@ -282,15 +282,11 @@ function ToolAccountTypes({
         return (
           <div
             className="tool-account-type-row"
-            key={`${accountType.account_type}-${accountType.plan}-${String(
-              accountType.is_premium,
-            )}`}
+            key={String(accountType.is_premium)}
           >
             <div>
-              <strong>{formatCategory(accountType.account_type)}</strong>
-              <span>
-                {accountType.is_premium ? "Paid" : "Free"} / {accountType.plan}
-              </span>
+              <strong>{accountType.is_premium ? "Paid" : "Free"}</strong>
+              <span>{accountType.is_premium ? "Premium accounts" : "Free accounts"}</span>
             </div>
             <div className="tool-account-type-meter" aria-hidden="true">
               <span style={{ width: `${(count / max) * 100}%` }} />
