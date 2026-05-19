@@ -1884,7 +1884,6 @@ public class BBMessageAgent {
       text.append(" [websiteAccountLinked=").append(status.linked()).append("]");
       text.append(" [websiteAccountExactChatLinked=").append(status.exactChatLinked()).append("]");
       if (status.modelAccess() != null) {
-        text.append(" [modelPlan=").append(status.modelAccess().getPlan()).append("]");
         text.append(" [modelPremium=").append(status.modelAccess().getIsPremium()).append("]");
         text.append(" [currentModel=").append(status.modelAccess().getCurrentModel()).append("]");
       }

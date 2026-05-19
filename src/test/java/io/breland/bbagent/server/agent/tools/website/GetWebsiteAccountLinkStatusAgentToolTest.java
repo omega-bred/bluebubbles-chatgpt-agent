@@ -112,7 +112,6 @@ class GetWebsiteAccountLinkStatusAgentToolTest {
         1,
         new WebsiteModelAccessSummary()
             .accountId(accountId)
-            .plan(WebsiteModelAccessSummary.PlanEnum.PREMIUM)
             .isPremium(true)
             .currentModel("chatgpt")
             .currentModelLabel("ChatGPT")

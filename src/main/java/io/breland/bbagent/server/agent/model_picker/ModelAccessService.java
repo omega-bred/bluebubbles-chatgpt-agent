@@ -78,7 +78,6 @@ public class ModelAccessService {
   public WebsiteModelAccessSummary toWebsiteSummary(ModelAccess access) {
     return new WebsiteModelAccessSummary()
         .accountId(access.accountId())
-        .plan(WebsiteModelAccessSummary.PlanEnum.fromValue(access.plan()))
         .isPremium(access.premium())
         .currentModel(access.currentModelKey())
         .currentModelLabel(access.currentModelLabel())
@@ -108,7 +107,6 @@ public class ModelAccessService {
       return new ModelAccess(
           entity.getAccountId(),
           true,
-          "premium",
           modelKey,
           displayNameFor(modelKey),
           responsesModelFor(modelKey),
@@ -122,7 +120,6 @@ public class ModelAccessService {
     return new ModelAccess(
         accountId,
         false,
-        "standard",
         STANDARD_MODEL_KEY,
         STANDARD_MODEL_LABEL,
         STANDARD_RESPONSES_MODEL,
@@ -154,7 +151,6 @@ public class ModelAccessService {
   public record ModelAccess(
       String accountId,
       boolean premium,
-      String plan,
       String currentModelKey,
       String currentModelLabel,
       String responsesModel,
