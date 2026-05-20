@@ -3,11 +3,16 @@ package io.breland.bbagent.server.controllers;
 import io.breland.bbagent.generated.model.AdminFeedbackItem;
 import io.breland.bbagent.generated.model.AdminFeedbackListResponse;
 import io.breland.bbagent.generated.model.AdminFeedbackStatusUpdateRequest;
+import io.breland.bbagent.generated.model.AdminPremiumGrantRequest;
 import io.breland.bbagent.generated.model.AdminRateLimitUsageResponse;
 import io.breland.bbagent.generated.model.AdminStatsResponse;
+import io.breland.bbagent.generated.model.AdminSubscriptionActionRequest;
+import io.breland.bbagent.generated.model.AdminSubscriptionActionResponse;
+import io.breland.bbagent.generated.model.AdminSubscriptionListResponse;
 import io.breland.bbagent.server.admin.AdminStatsService;
 import io.breland.bbagent.server.feedback.FeedbackService;
 import io.breland.bbagent.server.ratelimit.MessageResponseRateLimitService;
+import io.breland.bbagent.server.subscriptions.SubscriptionService;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.OffsetDateTime;
@@ -30,14 +35,17 @@ public class AdminController {
   private final AdminStatsService adminStatsService;
   private final FeedbackService feedbackService;
   private final MessageResponseRateLimitService messageResponseRateLimitService;
+  private final SubscriptionService subscriptionService;
 
   public AdminController(
       AdminStatsService adminStatsService,
       FeedbackService feedbackService,
-      MessageResponseRateLimitService messageResponseRateLimitService) {
+      MessageResponseRateLimitService messageResponseRateLimitService,
+      SubscriptionService subscriptionService) {
     this.adminStatsService = adminStatsService;
     this.feedbackService = feedbackService;
     this.messageResponseRateLimitService = messageResponseRateLimitService;
+    this.subscriptionService = subscriptionService;
   }
 
   @GetMapping(path = "/api/v1/admin/get.statistics", produces = MediaType.APPLICATION_JSON_VALUE)
@@ -86,6 +94,60 @@ public class AdminController {
   public ResponseEntity<AdminFeedbackItem> adminMarkFeedbackUnread(
       @RequestBody(required = false) AdminFeedbackStatusUpdateRequest request) {
     return feedbackStatusResponse(request, false);
+  }
+
+  @GetMapping(
+      path = "/api/v1/admin/list.subscriptions",
+      produces = MediaType.APPLICATION_JSON_VALUE)
+  public ResponseEntity<AdminSubscriptionListResponse> adminListSubscriptions(
+      @RequestParam(value = "limit", required = false, defaultValue = "100") Integer limit) {
+    return ResponseEntity.ok(
+        subscriptionService.adminListSubscriptions(limit == null ? 100 : limit));
+  }
+
+  @PostMapping(
+      path = "/api/v1/admin/sync.subscription",
+      consumes = MediaType.APPLICATION_JSON_VALUE,
+      produces = MediaType.APPLICATION_JSON_VALUE)
+  public ResponseEntity<AdminSubscriptionActionResponse> adminSyncSubscription(
+      @RequestBody(required = false) AdminSubscriptionActionRequest request) {
+    return ResponseEntity.ok(subscriptionService.adminSync(request));
+  }
+
+  @PostMapping(
+      path = "/api/v1/admin/suspend.subscription",
+      consumes = MediaType.APPLICATION_JSON_VALUE,
+      produces = MediaType.APPLICATION_JSON_VALUE)
+  public ResponseEntity<AdminSubscriptionActionResponse> adminSuspendSubscription(
+      @RequestBody(required = false) AdminSubscriptionActionRequest request) {
+    return ResponseEntity.ok(subscriptionService.adminSuspend(request));
+  }
+
+  @PostMapping(
+      path = "/api/v1/admin/unsuspend.subscription",
+      consumes = MediaType.APPLICATION_JSON_VALUE,
+      produces = MediaType.APPLICATION_JSON_VALUE)
+  public ResponseEntity<AdminSubscriptionActionResponse> adminUnsuspendSubscription(
+      @RequestBody(required = false) AdminSubscriptionActionRequest request) {
+    return ResponseEntity.ok(subscriptionService.adminUnsuspend(request));
+  }
+
+  @PostMapping(
+      path = "/api/v1/admin/grantPremium.subscription",
+      consumes = MediaType.APPLICATION_JSON_VALUE,
+      produces = MediaType.APPLICATION_JSON_VALUE)
+  public ResponseEntity<AdminSubscriptionActionResponse> adminGrantPremium(
+      @RequestBody(required = false) AdminPremiumGrantRequest request) {
+    return ResponseEntity.ok(subscriptionService.adminGrantPremium(request));
+  }
+
+  @PostMapping(
+      path = "/api/v1/admin/revokePremium.subscription",
+      consumes = MediaType.APPLICATION_JSON_VALUE,
+      produces = MediaType.APPLICATION_JSON_VALUE)
+  public ResponseEntity<AdminSubscriptionActionResponse> adminRevokePremium(
+      @RequestBody(required = false) AdminPremiumGrantRequest request) {
+    return ResponseEntity.ok(subscriptionService.adminRevokeManualPremium(request));
   }
 
   private ResponseEntity<AdminFeedbackItem> feedbackStatusResponse(

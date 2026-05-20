@@ -306,6 +306,10 @@ public class AgentAccountResolver {
     updateAccountColumn(
         "website_account_link_tokens", "redeemed_account_id", targetAccountId, sourceAccountId);
     updateAccountColumn("agent_feedback", "account_id", targetAccountId, sourceAccountId);
+    updateAccountColumn(
+        "payment_checkout_sessions", "account_id", targetAccountId, sourceAccountId);
+    updateAccountColumn("payment_subscriptions", "account_id", targetAccountId, sourceAccountId);
+    updateAccountColumn("payment_provider_events", "account_id", targetAccountId, sourceAccountId);
     mergeAccountScopedRateLimitUsage(targetAccountId, sourceAccountId);
 
     String sourceWebsiteSubject = source.getWebsiteSubject();
@@ -333,6 +337,9 @@ public class AgentAccountResolver {
     }
     if (!target.isPremium()) {
       target.setPremium(source.isPremium());
+      target.setPremiumEntitlementSource(source.getPremiumEntitlementSource());
+      target.setPremiumSubscriptionExpiresAt(source.getPremiumSubscriptionExpiresAt());
+      target.setPremiumEntitlementSyncedAt(source.getPremiumEntitlementSyncedAt());
     }
     if (StringUtils.isBlank(target.getSelectedModel())) {
       target.setSelectedModel(source.getSelectedModel());

@@ -20,6 +20,8 @@ tags:
     description: Agent workflow callback endpoints
   - name: websiteAccount
     description: Website account management endpoints
+  - name: subscription
+    description: Payment subscription and billing endpoints
   - name: admin
     description: Admin-only operational endpoints
 paths:
@@ -346,6 +348,292 @@ paths:
           description: Authentication required
         '404':
           description: Linked integration account not found
+  /api/v1/subscription/list.subscriptionPlans:
+    get:
+      operationId: subscriptionListPlans
+      tags:
+        - subscription
+      summary: Lists available subscription plans
+      description: Lists active billing plans and the default subscription provider.
+      responses:
+        '200':
+          description: Available subscription plans
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SubscriptionPlansResponse'
+  /api/v1/subscription/get.subscription:
+    get:
+      operationId: subscriptionGet
+      tags:
+        - subscription
+      summary: Gets current subscription status
+      description: Returns billing and entitlement state for the authenticated website account.
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Current subscription status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SubscriptionSummaryResponse'
+        '401':
+          description: Authentication required
+  /api/v1/subscription/createCheckout.subscriptionCheckouts:
+    post:
+      operationId: subscriptionCreateCheckout
+      tags:
+        - subscription
+      summary: Creates a subscription checkout session
+      description: Creates a provider checkout session for the authenticated website account.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SubscriptionCheckoutRequest'
+      responses:
+        '200':
+          description: Checkout created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SubscriptionCheckoutResponse'
+        '400':
+          description: Invalid checkout request
+        '401':
+          description: Authentication required
+  /api/v1/subscription/createPortal.subscriptionPortals:
+    post:
+      operationId: subscriptionCreatePortal
+      tags:
+        - subscription
+      summary: Creates a subscription management portal session
+      description: Creates a provider portal session for the authenticated website account.
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Portal session created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SubscriptionPortalResponse'
+        '401':
+          description: Authentication required
+        '404':
+          description: No subscription found
+  /api/v1/subscription/receiveWebhook.subscriptionProviderEvents:
+    post:
+      operationId: subscriptionReceiveWebhook
+      tags:
+        - subscription
+      summary: Receives payment provider webhook events
+      description: Receives raw provider webhook payloads. The provider adapter validates signatures before processing.
+      parameters:
+        - name: provider
+          in: query
+          description: Subscription provider key, such as btcpay.
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        '200':
+          description: Webhook processed, ignored, or duplicate
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SubscriptionProviderWebhookResponse'
+        '401':
+          description: Invalid provider webhook signature
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SubscriptionProviderWebhookResponse'
+  /api/v1/admin/list.subscriptions:
+    get:
+      operationId: adminListSubscriptions
+      tags:
+        - admin
+      summary: Lists subscription state for admins
+      description: Returns payment subscription stats and recent subscription rows.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 500
+            default: 100
+      responses:
+        '200':
+          description: Subscription admin list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminSubscriptionListResponse'
+        '401':
+          description: Authentication required
+        '403':
+          description: Admin role required
+  /api/v1/admin/sync.subscription:
+    post:
+      operationId: adminSyncSubscription
+      tags:
+        - admin
+      summary: Syncs one provider subscription
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminSubscriptionActionRequest'
+      responses:
+        '200':
+          description: Subscription synced
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminSubscriptionActionResponse'
+        '400':
+          description: Invalid request
+        '401':
+          description: Authentication required
+        '403':
+          description: Admin role required
+        '404':
+          description: Subscription not found
+  /api/v1/admin/suspend.subscription:
+    post:
+      operationId: adminSuspendSubscription
+      tags:
+        - admin
+      summary: Suspends one provider subscription
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminSubscriptionActionRequest'
+      responses:
+        '200':
+          description: Subscription suspended
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminSubscriptionActionResponse'
+        '400':
+          description: Invalid request
+        '401':
+          description: Authentication required
+        '403':
+          description: Admin role required
+        '404':
+          description: Subscription not found
+  /api/v1/admin/unsuspend.subscription:
+    post:
+      operationId: adminUnsuspendSubscription
+      tags:
+        - admin
+      summary: Unsuspends one provider subscription
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminSubscriptionActionRequest'
+      responses:
+        '200':
+          description: Subscription unsuspended
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminSubscriptionActionResponse'
+        '400':
+          description: Invalid request
+        '401':
+          description: Authentication required
+        '403':
+          description: Admin role required
+        '404':
+          description: Subscription not found
+  /api/v1/admin/grantPremium.subscription:
+    post:
+      operationId: adminGrantPremium
+      tags:
+        - admin
+      summary: Grants manual premium access
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminPremiumGrantRequest'
+      responses:
+        '200':
+          description: Manual premium granted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminSubscriptionActionResponse'
+        '400':
+          description: Invalid request
+        '401':
+          description: Authentication required
+        '403':
+          description: Admin role required
+        '404':
+          description: Account not found
+  /api/v1/admin/revokePremium.subscription:
+    post:
+      operationId: adminRevokePremium
+      tags:
+        - admin
+      summary: Revokes manual premium access
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminPremiumGrantRequest'
+      responses:
+        '200':
+          description: Manual premium revoked
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminSubscriptionActionResponse'
+        '400':
+          description: Invalid request
+        '401':
+          description: Authentication required
+        '403':
+          description: Admin role required
+        '404':
+          description: Account not found
   /api/v1/admin/get.statistics:
     get:
       operationId: adminGetStatistics
@@ -762,6 +1050,259 @@ components:
       properties:
         deleted:
           type: boolean
+    SubscriptionPlan:
+      type: object
+      required:
+        - key
+        - display_name
+        - price_amount
+        - currency
+        - billing_interval
+        - provider
+        - active
+      properties:
+        key:
+          type: string
+        display_name:
+          type: string
+        description:
+          type: string
+          nullable: true
+        price_amount:
+          type: string
+          description: Decimal plan price as configured by the app.
+        currency:
+          type: string
+        billing_interval:
+          type: string
+        provider:
+          type: string
+        active:
+          type: boolean
+    SubscriptionPlansResponse:
+      type: object
+      required:
+        - default_provider
+        - plans
+      properties:
+        default_provider:
+          type: string
+        plans:
+          type: array
+          items:
+            $ref: '#/components/schemas/SubscriptionPlan'
+    SubscriptionCheckoutRequest:
+      type: object
+      properties:
+        plan_key:
+          type: string
+          nullable: true
+        provider:
+          type: string
+          nullable: true
+    SubscriptionCheckoutResponse:
+      type: object
+      required:
+        - checkout_session_id
+        - provider
+        - plan_key
+        - checkout_url
+      properties:
+        checkout_session_id:
+          type: string
+        provider:
+          type: string
+        plan_key:
+          type: string
+        checkout_url:
+          type: string
+          format: uri-reference
+        expires_at:
+          type: string
+          format: date-time
+          nullable: true
+    SubscriptionPortalResponse:
+      type: object
+      required:
+        - provider
+        - portal_url
+      properties:
+        provider:
+          type: string
+        portal_url:
+          type: string
+          format: uri-reference
+    SubscriptionSummaryResponse:
+      type: object
+      required:
+        - account_id
+        - is_premium
+        - entitlement_source
+        - plans
+        - subscriptions
+      properties:
+        account_id:
+          type: string
+        is_premium:
+          type: boolean
+        entitlement_source:
+          type: string
+        premium_until:
+          type: string
+          format: date-time
+          nullable: true
+        plans:
+          type: array
+          items:
+            $ref: '#/components/schemas/SubscriptionPlan'
+        subscriptions:
+          type: array
+          items:
+            $ref: '#/components/schemas/AdminSubscriptionItem'
+        latest_checkout:
+          type: string
+          nullable: true
+    SubscriptionProviderWebhookResponse:
+      type: object
+      required:
+        - status
+        - message
+      properties:
+        status:
+          type: string
+        message:
+          type: string
+          nullable: true
+        account_id:
+          type: string
+          nullable: true
+        subscription_id:
+          type: string
+          nullable: true
+    AdminSubscriptionStats:
+      type: object
+      required:
+        - total_subscriptions
+        - active_subscriptions
+        - past_due_subscriptions
+        - inactive_subscriptions
+        - monthly_recurring_amount
+        - currency
+      properties:
+        total_subscriptions:
+          type: integer
+          format: int64
+        active_subscriptions:
+          type: integer
+          format: int64
+        past_due_subscriptions:
+          type: integer
+          format: int64
+        inactive_subscriptions:
+          type: integer
+          format: int64
+        monthly_recurring_amount:
+          type: string
+        currency:
+          type: string
+    AdminSubscriptionItem:
+      type: object
+      required:
+        - subscription_id
+        - account_id
+        - provider
+        - plan_key
+        - status
+        - updated_at
+      properties:
+        subscription_id:
+          type: string
+        account_id:
+          type: string
+        account_bucket:
+          type: string
+          nullable: true
+        provider:
+          type: string
+        plan_key:
+          type: string
+        status:
+          type: string
+        provider_status:
+          type: string
+          nullable: true
+        provider_subscription_id:
+          type: string
+          nullable: true
+        provider_customer_id:
+          type: string
+          nullable: true
+        current_period_end:
+          type: string
+          format: date-time
+          nullable: true
+        grace_period_end:
+          type: string
+          format: date-time
+          nullable: true
+        management_url:
+          type: string
+          nullable: true
+        last_synced_at:
+          type: string
+          format: date-time
+          nullable: true
+        updated_at:
+          type: string
+          format: date-time
+    AdminSubscriptionListResponse:
+      type: object
+      required:
+        - generated_at
+        - stats
+        - subscriptions
+      properties:
+        generated_at:
+          type: string
+          format: date-time
+        stats:
+          $ref: '#/components/schemas/AdminSubscriptionStats'
+        subscriptions:
+          type: array
+          items:
+            $ref: '#/components/schemas/AdminSubscriptionItem'
+    AdminSubscriptionActionRequest:
+      type: object
+      required:
+        - subscription_id
+      properties:
+        subscription_id:
+          type: string
+        reason:
+          type: string
+          nullable: true
+    AdminPremiumGrantRequest:
+      type: object
+      required:
+        - account_id
+      properties:
+        account_id:
+          type: string
+    AdminSubscriptionActionResponse:
+      type: object
+      required:
+        - status
+      properties:
+        status:
+          type: string
+        account_id:
+          type: string
+          nullable: true
+        subscription_id:
+          type: string
+          nullable: true
+        subscription:
+          $ref: '#/components/schemas/AdminSubscriptionItem'
     AdminStatsPeriod:
       type: object
       required:

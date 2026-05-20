@@ -38,6 +38,15 @@ public class AgentAccountEntity {
   @Column(name = "is_premium", nullable = false)
   private boolean premium;
 
+  @Column(name = "premium_entitlement_source", nullable = false, length = 64)
+  private String premiumEntitlementSource = "none";
+
+  @Column(name = "premium_subscription_expires_at")
+  private Instant premiumSubscriptionExpiresAt;
+
+  @Column(name = "premium_entitlement_synced_at")
+  private Instant premiumEntitlementSyncedAt;
+
   @Column(name = "selected_model", length = 128)
   private String selectedModel;
 
