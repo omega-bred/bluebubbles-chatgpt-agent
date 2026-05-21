@@ -34,6 +34,8 @@ import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import org.apache.commons.lang3.StringUtils;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.http.HttpHeaders;
@@ -42,10 +44,12 @@ import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.client.RestClientException;
+import org.springframework.web.client.RestClientResponseException;
 import org.springframework.web.server.ResponseStatusException;
 
 @Service
 public class SubscriptionService {
+  private static final Logger log = LoggerFactory.getLogger(SubscriptionService.class);
   private static final String SOURCE_NONE = "none";
   private static final String SOURCE_MANUAL = "manual";
   private static final String SOURCE_SUBSCRIPTION = "subscription";
@@ -128,7 +132,7 @@ public class SubscriptionService {
     } catch (IllegalStateException e) {
       throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, e.getMessage(), e);
     } catch (RestClientException e) {
-      throw new ResponseStatusException(HttpStatus.BAD_GATEWAY, "Provider request failed", e);
+      throw providerRequestFailed(providerKey, "create checkout", e);
     }
     if (providerCheckout == null || StringUtils.isBlank(providerCheckout.checkoutUrl())) {
       throw new ResponseStatusException(
@@ -178,7 +182,7 @@ public class SubscriptionService {
     } catch (IllegalStateException e) {
       throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, e.getMessage(), e);
     } catch (RestClientException e) {
-      throw new ResponseStatusException(HttpStatus.BAD_GATEWAY, "Provider request failed", e);
+      throw providerRequestFailed(provider.providerKey(), "create portal", e);
     }
     if (portal == null || StringUtils.isBlank(portal.portalUrl())) {
       throw new ResponseStatusException(
@@ -650,6 +654,22 @@ public class SubscriptionService {
     } catch (IllegalArgumentException e) {
       throw new ResponseStatusException(HttpStatus.BAD_REQUEST, e.getMessage(), e);
     }
+  }
+
+  private ResponseStatusException providerRequestFailed(
+      String providerKey, String operation, RestClientException e) {
+    if (e instanceof RestClientResponseException response) {
+      log.warn(
+          "Subscription provider {} {} failed: status={} body={}",
+          providerKey,
+          operation,
+          response.getStatusCode(),
+          StringUtils.truncate(response.getResponseBodyAsString(), 500),
+          e);
+    } else {
+      log.warn("Subscription provider {} {} failed: {}", providerKey, operation, e.getMessage(), e);
+    }
+    return new ResponseStatusException(HttpStatus.BAD_GATEWAY, "Provider request failed", e);
   }
 
   private SubscriptionProperties.Plan requirePlan(String planKey) {

@@ -103,7 +103,7 @@ public class BtcpaySubscriptionProvider implements SubscriptionProvider {
                 settings().getStoreId(),
                 lookup.providerPlan().getOfferingId(),
                 lookup.customerSelector())
-            .header(HttpHeaders.AUTHORIZATION, "token " + settings().getApiKey())
+            .header(HttpHeaders.AUTHORIZATION, authHeader())
             .retrieve()
             .body(JsonNode.class);
     return toProviderSubscription(
@@ -124,7 +124,7 @@ public class BtcpaySubscriptionProvider implements SubscriptionProvider {
                 settings().getStoreId(),
                 lookup.providerPlan().getOfferingId(),
                 lookup.customerSelector())
-            .header(HttpHeaders.AUTHORIZATION, "token " + settings().getApiKey())
+            .header(HttpHeaders.AUTHORIZATION, authHeader())
             .body(body)
             .retrieve()
             .body(JsonNode.class);
@@ -144,7 +144,7 @@ public class BtcpaySubscriptionProvider implements SubscriptionProvider {
                 settings().getStoreId(),
                 lookup.providerPlan().getOfferingId(),
                 lookup.customerSelector())
-            .header(HttpHeaders.AUTHORIZATION, "token " + settings().getApiKey())
+            .header(HttpHeaders.AUTHORIZATION, authHeader())
             .retrieve()
             .body(JsonNode.class);
     return toProviderSubscription(
@@ -261,12 +261,16 @@ public class BtcpaySubscriptionProvider implements SubscriptionProvider {
     return metadata;
   }
 
+  private String authHeader() {
+    return "token " + StringUtils.trimToEmpty(settings().getApiKey());
+  }
+
   private JsonNode postJson(String uri, Map<String, Object> body) {
     JsonNode response =
         restClient
             .post()
             .uri(uri)
-            .header(HttpHeaders.AUTHORIZATION, "token " + settings().getApiKey())
+            .header(HttpHeaders.AUTHORIZATION, authHeader())
             .body(body)
             .retrieve()
             .body(JsonNode.class);
