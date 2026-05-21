@@ -161,6 +161,7 @@ repositories {
 configurations.all {
 	exclude group: 'ch.qos.logback', module: 'logback-classic'
 	exclude group: 'org.apache.logging.log4j', module: 'log4j-to-slf4j'
+	exclude group: 'commons-logging', module: 'commons-logging'
 }
 
 
