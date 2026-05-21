@@ -3,6 +3,7 @@ import axios from "axios";
 import {
   AdminApi,
   Configuration,
+  SubscriptionApi,
   WebsiteAccountApi,
   type WebsiteAccountDeleteLinkedAccountTypeEnum,
 } from "../client";
@@ -29,6 +30,11 @@ async function websiteAccountClient(): Promise<WebsiteAccountApi> {
 async function adminClient(): Promise<AdminApi> {
   const config = await authenticatedConfiguration();
   return new AdminApi(config, config.basePath, axiosInstance);
+}
+
+async function subscriptionClient(): Promise<SubscriptionApi> {
+  const config = await authenticatedConfiguration();
+  return new SubscriptionApi(config, config.basePath, axiosInstance);
 }
 
 async function authenticatedConfiguration(): Promise<Configuration> {
@@ -69,6 +75,23 @@ export const websiteAccountApi = {
   },
 };
 
+export const subscriptionApi = {
+  get: async () => {
+    const client = await subscriptionClient();
+    return (await client.subscriptionGet()).data;
+  },
+
+  createCheckout: async (planKey?: string, provider?: string) => {
+    const client = await subscriptionClient();
+    return (await client.subscriptionCreateCheckout({ plan_key: planKey, provider })).data;
+  },
+
+  createPortal: async () => {
+    const client = await subscriptionClient();
+    return (await client.subscriptionCreatePortal()).data;
+  },
+};
+
 export const adminApi = {
   getStatistics: async (from: string, to: string) => {
     const client = await adminClient();
@@ -94,6 +117,36 @@ export const adminApi = {
   markFeedbackUnread: async (feedbackId: string) => {
     const client = await adminClient();
     return (await client.adminMarkFeedbackUnread({ feedback_id: feedbackId })).data;
+  },
+
+  listSubscriptions: async (limit = 100) => {
+    const client = await adminClient();
+    return (await client.adminListSubscriptions(limit)).data;
+  },
+
+  syncSubscription: async (subscriptionId: string) => {
+    const client = await adminClient();
+    return (await client.adminSyncSubscription({ subscription_id: subscriptionId })).data;
+  },
+
+  suspendSubscription: async (subscriptionId: string, reason?: string) => {
+    const client = await adminClient();
+    return (await client.adminSuspendSubscription({ subscription_id: subscriptionId, reason })).data;
+  },
+
+  unsuspendSubscription: async (subscriptionId: string) => {
+    const client = await adminClient();
+    return (await client.adminUnsuspendSubscription({ subscription_id: subscriptionId })).data;
+  },
+
+  grantPremium: async (accountId: string) => {
+    const client = await adminClient();
+    return (await client.adminGrantPremium({ account_id: accountId })).data;
+  },
+
+  revokePremium: async (accountId: string) => {
+    const client = await adminClient();
+    return (await client.adminRevokePremium({ account_id: accountId })).data;
   },
 };
 

@@ -3,6 +3,8 @@ import React from "react";
 import type { AuthState } from "../auth/useKeycloak";
 import type {
   WebsiteAccountIdentity,
+  AdminSubscriptionItem,
+  SubscriptionSummaryResponse,
   WebsiteIntegrationSummary,
   WebsiteLinkedAccountsResponse,
   WebsiteLinkedIntegrationAccount,
@@ -10,13 +12,15 @@ import type {
 import { AuthGate } from "../components/AuthGate";
 import { CenteredMessage } from "../components/CenteredMessage";
 import { SiteNav } from "../components/SiteNav";
-import { websiteAccountApi } from "../services/api-client";
+import { subscriptionApi, websiteAccountApi } from "../services/api-client";
 import { displayModelLabel } from "../utils/model-label";
 
 export function AccountPage({ auth }: { auth: AuthState }) {
   const [data, setData] = React.useState<WebsiteLinkedAccountsResponse | null>(null);
+  const [subscription, setSubscription] = React.useState<SubscriptionSummaryResponse | null>(null);
   const [error, setError] = React.useState<string | null>(null);
   const [loading, setLoading] = React.useState(false);
+  const [billingBusy, setBillingBusy] = React.useState(false);
   const hasLoaded = data !== null || error !== null;
 
   const load = React.useCallback(async () => {
@@ -25,7 +29,12 @@ export function AccountPage({ auth }: { auth: AuthState }) {
     }
     setLoading(true);
     try {
-      setData(await websiteAccountApi.listLinkedAccounts());
+      const [linkedAccounts, billing] = await Promise.all([
+        websiteAccountApi.listLinkedAccounts(),
+        subscriptionApi.get(),
+      ]);
+      setData(linkedAccounts);
+      setSubscription(billing);
       setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to load linked accounts.");
@@ -37,6 +46,31 @@ export function AccountPage({ auth }: { auth: AuthState }) {
   React.useEffect(() => {
     void load();
   }, [load]);
+
+  const createCheckout = React.useCallback(async () => {
+    const plan = subscription?.plans?.[0];
+    setBillingBusy(true);
+    try {
+      const checkout = await subscriptionApi.createCheckout(plan?.key);
+      window.location.assign(checkout.checkout_url);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to create checkout.");
+    } finally {
+      setBillingBusy(false);
+    }
+  }, [subscription?.plans]);
+
+  const openPortal = React.useCallback(async () => {
+    setBillingBusy(true);
+    try {
+      const portal = await subscriptionApi.createPortal();
+      window.location.assign(portal.portal_url);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to open billing portal.");
+    } finally {
+      setBillingBusy(false);
+    }
+  }, []);
 
   if (!auth.ready) {
     return <CenteredMessage title="Loading account" body="Getting your session ready." />;
@@ -61,6 +95,13 @@ export function AccountPage({ auth }: { auth: AuthState }) {
         {error ? <p className="error-banner">{error}</p> : null}
         {loading && hasLoaded ? <p className="muted">Refreshing linked accounts.</p> : null}
 
+        <BillingPanel
+          subscription={subscription}
+          busy={billingBusy}
+          onUpgrade={createCheckout}
+          onManage={openPortal}
+        />
+
         <section className="linked-list" aria-busy={!hasLoaded || loading}>
           {!hasLoaded ? (
             <AccountLoader />
@@ -79,6 +120,98 @@ export function AccountPage({ auth }: { auth: AuthState }) {
       </main>
     </div>
   );
+}
+
+function BillingPanel({
+  subscription,
+  busy,
+  onUpgrade,
+  onManage,
+}: {
+  subscription: SubscriptionSummaryResponse | null;
+  busy: boolean;
+  onUpgrade: () => Promise<void>;
+  onManage: () => Promise<void>;
+}) {
+  const activeSubscription = subscription?.subscriptions?.[0];
+  const plan = subscription?.plans?.[0];
+  const isPremium = Boolean(subscription?.is_premium);
+  return (
+    <article className="billing-panel">
+      <div>
+        <p className="eyebrow">Billing</p>
+        <h2>{isPremium ? "Premium access" : "Free access"}</h2>
+        <p className="muted">
+          {isPremium
+            ? premiumAccessText(subscription, activeSubscription)
+            : plan
+              ? `${plan.display_name} is ${plan.price_amount} ${plan.currency} ${plan.billing_interval}.`
+              : "Premium billing is not configured yet."}
+        </p>
+      </div>
+      <div className="billing-actions">
+        {activeSubscription ? (
+          <button className="button button-secondary" disabled={busy} onClick={() => void onManage()}>
+            {busy ? "Opening" : "Manage billing"}
+          </button>
+        ) : null}
+        <button className="button button-primary" disabled={busy || !plan} onClick={() => void onUpgrade()}>
+          {isPremium ? "Extend premium" : "Upgrade"}
+        </button>
+      </div>
+      {activeSubscription ? <SubscriptionRows subscriptions={subscription?.subscriptions || []} /> : null}
+    </article>
+  );
+}
+
+function SubscriptionRows({ subscriptions }: { subscriptions: AdminSubscriptionItem[] }) {
+  return (
+    <div className="subscription-row-list">
+      {subscriptions.slice(0, 3).map((subscription) => (
+        <div className="subscription-row" key={subscription.subscription_id}>
+          <div>
+            <strong>{formatSubscriptionStatus(subscription.status)}</strong>
+            <span>{subscription.provider} / {subscription.plan_key}</span>
+          </div>
+          <p>{subscription.current_period_end ? `Renews ${formatAccountDate(subscription.current_period_end)}` : "No renewal date"}</p>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function premiumAccessText(
+  subscription: SubscriptionSummaryResponse | null,
+  activeSubscription: AdminSubscriptionItem | undefined,
+) {
+  if (subscription?.premium_until) {
+    return `Premium through ${formatAccountDate(subscription.premium_until)}.`;
+  }
+  if (activeSubscription?.status) {
+    return `Premium subscription is ${formatSubscriptionStatus(activeSubscription.status).toLowerCase()}.`;
+  }
+  return "Premium is active.";
+}
+
+function formatSubscriptionStatus(value: string | undefined) {
+  if (!value) {
+    return "Unknown";
+  }
+  return value
+    .split(/[_-]+/)
+    .filter(Boolean)
+    .map((part) => part[0].toUpperCase() + part.slice(1))
+    .join(" ");
+}
+
+function formatAccountDate(value: Date | number | string | null | undefined) {
+  if (!value) {
+    return "";
+  }
+  const date = value instanceof Date ? value : new Date(value);
+  return Number.isFinite(date.getTime())
+    ? new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" }).format(date)
+    : "";
 }
 
 function AccountLoader() {

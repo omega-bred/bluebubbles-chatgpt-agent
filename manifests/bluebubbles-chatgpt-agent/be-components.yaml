@@ -77,6 +77,14 @@ metadata:
 spec:
   itemPath: "vaults/Kubernetes/items/coder-bb-agent-client-id-secret"
 ---
+apiVersion: onepassword.com/v1
+kind: OnePasswordItem
+metadata:
+  name: btcpay-bbagent-subscriptions #this name will also be used for naming the generated kubernetes secret
+  namespace: bluebubbles-chatgpt-agent
+spec:
+  itemPath: "vaults/Kubernetes/items/btcpay-bbagent-subscriptions"
+---
 apiVersion: v1
 kind: ServiceAccount
 metadata:
@@ -236,6 +244,33 @@ spec:
               value: "https://keycloak.bre.land/realms/bbagent"
             - name: KEYCLOAK_JWK_SET_URI
               value: "https://keycloak.bre.land/realms/bbagent/protocol/openid-connect/certs"
+            - name: BTCPAY_BASE_URL
+              value: "https://btcpay.bre.land"
+            - name: BTCPAY_STORE_ID
+              valueFrom:
+                secretKeyRef:
+                  key: "store-id"
+                  name: btcpay-bbagent-subscriptions
+            - name: BTCPAY_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  key: "api-key"
+                  name: btcpay-bbagent-subscriptions
+            - name: BTCPAY_WEBHOOK_SECRET
+              valueFrom:
+                secretKeyRef:
+                  key: "webhook-secret"
+                  name: btcpay-bbagent-subscriptions
+            - name: BTCPAY_SUBSCRIPTION_OFFERING_ID
+              valueFrom:
+                secretKeyRef:
+                  key: "offering-id"
+                  name: btcpay-bbagent-subscriptions
+            - name: BTCPAY_SUBSCRIPTION_PLAN_ID
+              valueFrom:
+                secretKeyRef:
+                  key: "premium-plan-id"
+                  name: btcpay-bbagent-subscriptions
           image: ghcr.io/omega-bred/bluebubbles-chatgpt-agent:latest
           imagePullPolicy: Always
           securityContext:

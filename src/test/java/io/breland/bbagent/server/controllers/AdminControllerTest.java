@@ -16,11 +16,14 @@ import io.breland.bbagent.generated.model.AdminRateLimitUsageResponse;
 import io.breland.bbagent.generated.model.AdminStatsBucket;
 import io.breland.bbagent.generated.model.AdminStatsPeriod;
 import io.breland.bbagent.generated.model.AdminStatsResponse;
+import io.breland.bbagent.generated.model.AdminSubscriptionListResponse;
+import io.breland.bbagent.generated.model.AdminSubscriptionStats;
 import io.breland.bbagent.server.admin.AdminStatsService;
 import io.breland.bbagent.server.config.BBChatGptAgentConfig;
 import io.breland.bbagent.server.config.SecurityConfig;
 import io.breland.bbagent.server.feedback.FeedbackService;
 import io.breland.bbagent.server.ratelimit.MessageResponseRateLimitService;
+import io.breland.bbagent.server.subscriptions.SubscriptionService;
 import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.Map;
@@ -45,6 +48,7 @@ class AdminControllerTest {
   @MockBean private AdminStatsService adminStatsService;
   @MockBean private FeedbackService feedbackService;
   @MockBean private MessageResponseRateLimitService messageResponseRateLimitService;
+  @MockBean private SubscriptionService subscriptionService;
 
   @Test
   void adminStatsRequiresAuthentication() throws Exception {
@@ -124,6 +128,35 @@ class AdminControllerTest {
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.limit_key").value(MessageResponseRateLimitService.LIMIT_KEY))
         .andExpect(jsonPath("$.usages").isArray());
+  }
+
+  @Test
+  void adminSubscriptionListReturnsStatsForAdminRole() throws Exception {
+    when(subscriptionService.adminListSubscriptions(100))
+        .thenReturn(
+            new AdminSubscriptionListResponse()
+                .generatedAt(OffsetDateTime.parse("2026-05-01T00:00:00Z"))
+                .stats(
+                    new AdminSubscriptionStats()
+                        .totalSubscriptions(2L)
+                        .activeSubscriptions(1L)
+                        .pastDueSubscriptions(0L)
+                        .inactiveSubscriptions(1L)
+                        .monthlyRecurringAmount("10.00")
+                        .currency("USD"))
+                .subscriptions(List.of()));
+
+    mockMvc
+        .perform(
+            get("/api/v1/admin/list.subscriptions")
+                .with(
+                    jwt()
+                        .authorities(new SimpleGrantedAuthority("ROLE_bbagent-admin-role"))
+                        .jwt(token -> token.subject("sub-1"))))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.stats.total_subscriptions").value(2))
+        .andExpect(jsonPath("$.stats.active_subscriptions").value(1))
+        .andExpect(jsonPath("$.stats.monthly_recurring_amount").value("10.00"));
   }
 
   @Test

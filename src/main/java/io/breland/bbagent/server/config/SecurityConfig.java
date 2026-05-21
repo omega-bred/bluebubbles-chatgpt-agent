@@ -7,6 +7,7 @@ import java.util.Set;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.convert.converter.Converter;
+import org.springframework.http.HttpMethod;
 import org.springframework.security.authentication.AbstractAuthenticationToken;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
@@ -37,6 +38,13 @@ public class SecurityConfig {
                     .requestMatchers("/api/v1/admin/**")
                     .hasAuthority(roleAuthority(ADMIN_ROLE))
                     .requestMatchers("/api/v1/websiteAccount/**")
+                    .authenticated()
+                    .requestMatchers(
+                        "/api/v1/subscription/receiveWebhook.subscriptionProviderEvents")
+                    .permitAll()
+                    .requestMatchers(HttpMethod.GET, "/api/v1/subscription/list.subscriptionPlans")
+                    .permitAll()
+                    .requestMatchers("/api/v1/subscription/**")
                     .authenticated()
                     .anyRequest()
                     .permitAll())

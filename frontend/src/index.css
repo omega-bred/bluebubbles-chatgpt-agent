@@ -957,3 +957,112 @@ a {
     font-size: 2.15rem;
   }
 }
+
+.billing-panel {
+  display: grid;
+  gap: 18px;
+  margin-bottom: 16px;
+  border-radius: 8px;
+  border: 1px solid #dedede;
+  padding: 24px;
+  background: #ffffff;
+}
+
+.billing-panel h2 {
+  margin: 0;
+  color: #111111;
+  font-size: 1.6rem;
+  line-height: 1.15;
+}
+
+.billing-actions,
+.subscription-admin-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.subscription-row-list,
+.subscription-admin-list {
+  display: grid;
+  gap: 12px;
+  border-top: 1px solid #eeeeee;
+  padding-top: 14px;
+}
+
+.subscription-row,
+.subscription-admin-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 14px;
+  align-items: center;
+}
+
+.subscription-row div,
+.subscription-admin-row div:first-child {
+  display: grid;
+  gap: 4px;
+}
+
+.subscription-row strong,
+.subscription-admin-row strong {
+  color: #111111;
+}
+
+.subscription-row span,
+.subscription-row p,
+.subscription-admin-row span,
+.subscription-admin-row p {
+  margin: 0;
+  color: #62625d;
+  line-height: 1.45;
+}
+
+.wide-panel {
+  grid-column: span 2;
+}
+
+@media (max-width: 860px) {
+  .subscription-row,
+  .subscription-admin-row,
+  .wide-panel {
+    grid-column: auto;
+    grid-template-columns: 1fr;
+  }
+}
+
+.subscription-admin-stack {
+  display: grid;
+  gap: 16px;
+}
+
+.subscription-manual-controls {
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) auto auto;
+  gap: 10px;
+  align-items: end;
+}
+
+.subscription-manual-controls label {
+  display: grid;
+  gap: 6px;
+  color: #62625d;
+  font-size: 0.82rem;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.subscription-manual-controls input {
+  min-height: 40px;
+  border: 1px solid #d8d8d3;
+  border-radius: 8px;
+  padding: 0 12px;
+  color: #111111;
+  font: inherit;
+}
+
+@media (max-width: 860px) {
+  .subscription-manual-controls {
+    grid-template-columns: 1fr;
+  }
+}

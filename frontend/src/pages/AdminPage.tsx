@@ -6,6 +6,8 @@ import type {
   AdminRateLimitUsageResponse,
   AdminSenderStats,
   AdminStatsBucket,
+  AdminSubscriptionItem,
+  AdminSubscriptionListResponse,
   AdminStatsResponse,
   AdminToolAccountTypeStats,
   AdminToolStats,
@@ -37,8 +39,12 @@ export function AdminPage({ auth }: { auth: AuthState }) {
   const [toInput, setToInput] = React.useState(() => toLocalInputValue(new Date()));
   const [data, setData] = React.useState<AdminStatsResponse | null>(null);
   const [limitData, setLimitData] = React.useState<AdminRateLimitUsageResponse | null>(null);
+  const [subscriptionData, setSubscriptionData] = React.useState<AdminSubscriptionListResponse | null>(null);
   const [error, setError] = React.useState<string | null>(null);
   const [loading, setLoading] = React.useState(false);
+  const [subscriptionAction, setSubscriptionAction] = React.useState<string | null>(null);
+  const [manualPremiumAction, setManualPremiumAction] = React.useState<"grant" | "revoke" | null>(null);
+  const [manualAccountId, setManualAccountId] = React.useState("");
 
   const load = React.useCallback(async () => {
     if (!auth.authenticated || !auth.admin || !fromInput || !toInput) {
@@ -46,12 +52,14 @@ export function AdminPage({ auth }: { auth: AuthState }) {
     }
     setLoading(true);
     try {
-      const [stats, limits] = await Promise.all([
+      const [stats, limits, subscriptions] = await Promise.all([
         adminApi.getStatistics(toIso(fromInput), toIso(toInput)),
         adminApi.getRateLimitUsage(),
+        adminApi.listSubscriptions(),
       ]);
       setData(stats);
       setLimitData(limits);
+      setSubscriptionData(subscriptions);
       setError(null);
     } catch (err) {
       const status = (err as { response?: { status?: number } })?.response?.status;
@@ -70,6 +78,54 @@ export function AdminPage({ auth }: { auth: AuthState }) {
   React.useEffect(() => {
     void load();
   }, [load]);
+
+  const runSubscriptionAction = React.useCallback(
+    async (action: "sync" | "suspend" | "unsuspend", subscriptionId: string) => {
+      setSubscriptionAction(`${action}:${subscriptionId}`);
+      try {
+        if (action === "sync") {
+          await adminApi.syncSubscription(subscriptionId);
+        } else if (action === "suspend") {
+          await adminApi.suspendSubscription(subscriptionId, "Suspended from admin UI");
+        } else {
+          await adminApi.unsuspendSubscription(subscriptionId);
+        }
+        setSubscriptionData(await adminApi.listSubscriptions());
+        setError(null);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Unable to update subscription.");
+      } finally {
+        setSubscriptionAction(null);
+      }
+    },
+    [],
+  );
+
+  const runManualPremiumAction = React.useCallback(
+    async (action: "grant" | "revoke") => {
+      const accountId = manualAccountId.trim();
+      if (!accountId) {
+        setError("Enter an account id before changing premium access.");
+        return;
+      }
+      setManualPremiumAction(action);
+      try {
+        if (action === "grant") {
+          await adminApi.grantPremium(accountId);
+        } else {
+          await adminApi.revokePremium(accountId);
+        }
+        setSubscriptionData(await adminApi.listSubscriptions());
+        setManualAccountId("");
+        setError(null);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Unable to update premium access.");
+      } finally {
+        setManualPremiumAction(null);
+      }
+    },
+    [manualAccountId],
+  );
 
   if (!auth.ready) {
     return <CenteredMessage title="Loading admin" body="Getting your session ready." />;
@@ -91,6 +147,7 @@ export function AdminPage({ auth }: { auth: AuthState }) {
   const topModel = data?.models?.[0];
   const topTool = data?.tools?.[0];
   const topLimitUsage = limitData?.usages?.[0];
+  const subscriptionStats = subscriptionData?.stats;
 
   return (
     <div className="account-shell admin-shell">
@@ -150,6 +207,14 @@ export function AdminPage({ auth }: { auth: AuthState }) {
           />
           <MetricTile label="Tool calls" value={formatCount(data?.total_tool_calls)} />
           <MetricTile label="Tool success" value={formatPercent(data?.tool_success_rate)} />
+          <MetricTile
+            label="Subscriptions"
+            value={formatCount(subscriptionStats?.active_subscriptions)}
+          />
+          <MetricTile
+            label="Monthly recurring"
+            value={formatMoney(subscriptionStats?.monthly_recurring_amount, subscriptionStats?.currency)}
+          />
           <MetricTile label="Top model" value={topModel?.model_label || "None"} />
           <MetricTile label="Top tool" value={formatToolLabel(topTool?.tool_name)} />
           <MetricTile
@@ -205,6 +270,22 @@ export function AdminPage({ auth }: { auth: AuthState }) {
             <RateLimitUsage usages={limitData?.usages || []} />
           </article>
 
+          <article className="admin-panel wide-panel">
+            <header>
+              <p className="eyebrow">Payments</p>
+              <h2>Subscriptions</h2>
+            </header>
+            <SubscriptionAdmin
+              subscriptions={subscriptionData?.subscriptions || []}
+              action={subscriptionAction}
+              manualAccountId={manualAccountId}
+              manualAction={manualPremiumAction}
+              onAction={runSubscriptionAction}
+              onManualAccountIdChange={setManualAccountId}
+              onManualAction={runManualPremiumAction}
+            />
+          </article>
+
           <article className="admin-panel">
             <header>
               <p className="eyebrow">Tools</p>
@@ -232,6 +313,113 @@ export function AdminPage({ auth }: { auth: AuthState }) {
       </main>
     </div>
   );
+}
+
+function SubscriptionAdmin({
+  subscriptions,
+  action,
+  manualAccountId,
+  manualAction,
+  onAction,
+  onManualAccountIdChange,
+  onManualAction,
+}: {
+  subscriptions: AdminSubscriptionItem[];
+  action: string | null;
+  manualAccountId: string;
+  manualAction: "grant" | "revoke" | null;
+  onAction: (action: "sync" | "suspend" | "unsuspend", subscriptionId: string) => Promise<void>;
+  onManualAccountIdChange: (value: string) => void;
+  onManualAction: (action: "grant" | "revoke") => Promise<void>;
+}) {
+  return (
+    <div className="subscription-admin-stack">
+      <div className="subscription-manual-controls">
+        <label>
+          <span>Account ID</span>
+          <input
+            value={manualAccountId}
+            onChange={(event) => onManualAccountIdChange(event.target.value)}
+            placeholder="canonical account id"
+          />
+        </label>
+        <button
+          className="button compact button-primary"
+          disabled={manualAction !== null}
+          onClick={() => void onManualAction("grant")}
+        >
+          {manualAction === "grant" ? "Granting" : "Grant premium"}
+        </button>
+        <button
+          className="button compact button-secondary"
+          disabled={manualAction !== null}
+          onClick={() => void onManualAction("revoke")}
+        >
+          {manualAction === "revoke" ? "Revoking" : "Revoke manual"}
+        </button>
+      </div>
+      {subscriptions.length === 0 ? (
+        <p className="muted">No subscriptions yet.</p>
+      ) : (
+        <div className="subscription-admin-list">
+          {subscriptions.map((subscription) => {
+            const busy = action?.endsWith(subscription.subscription_id || "") || false;
+            const suspended = subscription.status === "suspended";
+            return (
+              <div className="subscription-admin-row" key={subscription.subscription_id}>
+                <div>
+                  <strong>#{subscription.account_bucket || "unknown"}</strong>
+                  <span>
+                    {formatSubscriptionStatus(subscription.status)} / {subscription.provider} / {subscription.plan_key}
+                  </span>
+                  <p>
+                    {subscription.provider_status ? `${subscription.provider_status} / ` : ""}
+                    {subscription.current_period_end
+                      ? `renews ${formatDateTime(subscription.current_period_end)}`
+                      : "no renewal date"}
+                  </p>
+                </div>
+                <div className="subscription-admin-actions">
+                  <button
+                    className="button compact button-secondary"
+                    disabled={busy}
+                    onClick={() => void onAction("sync", subscription.subscription_id)}
+                  >
+                    Sync
+                  </button>
+                  <button
+                    className="button compact button-secondary"
+                    disabled={busy}
+                    onClick={() =>
+                      void onAction(suspended ? "unsuspend" : "suspend", subscription.subscription_id)
+                    }
+                  >
+                    {suspended ? "Unsuspend" : "Suspend"}
+                  </button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function formatSubscriptionStatus(value: string | undefined): string {
+  return formatToolLabel(value || "unknown");
+}
+
+function formatMoney(amount: string | undefined, currency: string | undefined): string {
+  const numeric = Number(amount || 0);
+  if (!Number.isFinite(numeric)) {
+    return `${amount || "0"} ${currency || ""}`.trim();
+  }
+  return new Intl.NumberFormat(undefined, {
+    style: "currency",
+    currency: currency || "USD",
+    maximumFractionDigits: 2,
+  }).format(numeric);
 }
 
 function ToolUsage({ tools }: { tools: AdminToolStats[] }) {
