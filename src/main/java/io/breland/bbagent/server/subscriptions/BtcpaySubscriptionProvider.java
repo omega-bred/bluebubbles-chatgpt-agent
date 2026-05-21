@@ -9,6 +9,7 @@ import java.util.HexFormat;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.Map.Entry;
 import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
 import org.apache.commons.lang3.StringUtils;
@@ -42,21 +43,7 @@ public class BtcpaySubscriptionProvider implements SubscriptionProvider {
   public ProviderCheckoutSession createCheckout(CheckoutRequest request) {
     ensureConfigured();
     ensureProviderPlanConfigured(request.providerPlan());
-    String customerSelector = customerSelector(request.accountId());
-    Map<String, Object> body = new LinkedHashMap<>();
-    body.put("storeId", settings().getStoreId());
-    body.put("offeringId", request.providerPlan().getOfferingId());
-    body.put("planId", request.providerPlan().getPlanId());
-    body.put("customerSelector", customerSelector);
-    body.put("durationMinutes", request.durationMinutes());
-    body.put("isTrial", false);
-    body.put("successRedirectLink", request.returnUrl());
-    if (StringUtils.isNotBlank(request.email())) {
-      body.put("newSubscriberEmail", request.email());
-    }
-    body.put("metadata", metadata(request));
-    body.put("invoiceMetadata", metadata(request));
-    body.put("newSubscriberMetadata", metadata(request));
+    Map<String, Object> body = checkoutBody(settings().getStoreId(), request);
 
     JsonNode response = postJson("/api/v1/plan-checkout", body);
     String id = firstText(response, "id", "planCheckoutId", "checkoutId");
@@ -67,7 +54,7 @@ public class BtcpaySubscriptionProvider implements SubscriptionProvider {
     return new ProviderCheckoutSession(
         firstNonBlank(id, request.internalCheckoutSessionId()),
         url,
-        customerSelector,
+        null,
         epoch(firstText(response, "expiration", "expires", "expiresAt")),
         json(response));
   }
@@ -185,7 +172,7 @@ public class BtcpaySubscriptionProvider implements SubscriptionProvider {
             findText(payload, "checkoutPlanId"),
             findText(payload, "checkoutId")),
         firstNonBlank(findText(payload, "subscriberId"), findText(payload, "subscriptionId")),
-        findText(payload, "customerSelector"),
+        providerCustomerSelector(payload),
         rawPayload);
   }
 
@@ -196,6 +183,23 @@ public class BtcpaySubscriptionProvider implements SubscriptionProvider {
 
   static String customerSelector(String accountId) {
     return CUSTOMER_SELECTOR_KEY + ":" + accountId;
+  }
+
+  static Map<String, Object> checkoutBody(String storeId, CheckoutRequest request) {
+    Map<String, Object> body = new LinkedHashMap<>();
+    body.put("storeId", storeId);
+    body.put("offeringId", request.providerPlan().getOfferingId());
+    body.put("planId", request.providerPlan().getPlanId());
+    body.put("durationMinutes", request.durationMinutes());
+    body.put("isTrial", false);
+    body.put("successRedirectLink", request.returnUrl());
+    if (StringUtils.isNotBlank(request.email())) {
+      body.put("newSubscriberEmail", request.email());
+    }
+    body.put("metadata", metadata(request));
+    body.put("invoiceMetadata", metadata(request));
+    body.put("newSubscriberMetadata", metadata(request));
+    return body;
   }
 
   private ProviderSubscription toProviderSubscription(
@@ -252,13 +256,40 @@ public class BtcpaySubscriptionProvider implements SubscriptionProvider {
     return SubscriptionStatuses.SUBSCRIPTION_EXPIRED;
   }
 
-  private Map<String, Object> metadata(CheckoutRequest request) {
+  private static Map<String, Object> metadata(CheckoutRequest request) {
     Map<String, Object> metadata = new LinkedHashMap<>();
     metadata.put("bbagent_account_id", request.accountId());
     metadata.put("bbagent_checkout_id", request.internalCheckoutSessionId());
     metadata.put("bbagent_plan_key", request.plan().getKey());
     metadata.put("bbagent_provider", PROVIDER_KEY);
     return metadata;
+  }
+
+  private String providerCustomerSelector(JsonNode payload) {
+    String explicit =
+        firstNonBlank(findText(payload, "customerSelector"), findText(payload, "CustomerSelector"));
+    if (StringUtils.isNotBlank(explicit)) {
+      return explicit;
+    }
+    JsonNode identities =
+        firstNonNull(findObject(payload, "identities"), findObject(payload, "Identities"));
+    if (identities != null && identities.isObject()) {
+      String email = firstText(identities, "Email", "email");
+      if (StringUtils.isNotBlank(email)) {
+        return "Email:" + email;
+      }
+      Iterator<Entry<String, JsonNode>> fields = identities.fields();
+      while (fields.hasNext()) {
+        Entry<String, JsonNode> field = fields.next();
+        String value = field.getValue().asText(null);
+        if (StringUtils.isNoneBlank(field.getKey(), value)) {
+          return field.getKey() + ":" + value;
+        }
+      }
+    }
+    JsonNode customer =
+        firstNonNull(findObject(payload, "customer"), findObject(payload, "Customer"));
+    return firstText(customer, "id", "Id");
   }
 
   private String authHeader() {
@@ -375,6 +406,33 @@ public class BtcpaySubscriptionProvider implements SubscriptionProvider {
     return null;
   }
 
+  private JsonNode findObject(JsonNode node, String fieldName) {
+    if (node == null || node.isNull()) {
+      return null;
+    }
+    JsonNode direct = node.get(fieldName);
+    if (direct != null && direct.isObject()) {
+      return direct;
+    }
+    if (node.isObject()) {
+      Iterator<JsonNode> values = node.elements();
+      while (values.hasNext()) {
+        JsonNode found = findObject(values.next(), fieldName);
+        if (found != null) {
+          return found;
+        }
+      }
+    } else if (node.isArray()) {
+      for (JsonNode item : node) {
+        JsonNode found = findObject(item, fieldName);
+        if (found != null) {
+          return found;
+        }
+      }
+    }
+    return null;
+  }
+
   private String json(JsonNode node) {
     try {
       return objectMapper.writeValueAsString(node);
@@ -433,5 +491,14 @@ public class BtcpaySubscriptionProvider implements SubscriptionProvider {
 
   private String firstNonBlank(String... values) {
     return StringUtils.trimToNull(StringUtils.firstNonBlank(values));
+  }
+
+  private JsonNode firstNonNull(JsonNode... nodes) {
+    for (JsonNode node : nodes) {
+      if (node != null && !node.isNull()) {
+        return node;
+      }
+    }
+    return null;
   }
 }
