@@ -6,6 +6,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.nio.charset.StandardCharsets;
 import java.util.HexFormat;
+import java.util.Map;
 import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
 import org.junit.jupiter.api.Test;
@@ -59,6 +60,71 @@ class BtcpaySubscriptionProviderTest {
                     headers, "{\"deliveryId\":\"delivery-1\"}".getBytes(StandardCharsets.UTF_8)))
         .isInstanceOf(WebhookVerificationException.class)
         .hasMessageContaining("Invalid BTCPay webhook signature");
+  }
+
+  @Test
+  @SuppressWarnings("unchecked")
+  void checkoutBodyCreatesNewSubscriberCheckoutWithoutCustomerSelector() {
+    SubscriptionProperties.Plan plan = new SubscriptionProperties.Plan();
+    plan.setKey("premium_monthly");
+    SubscriptionProperties.ProviderPlan providerPlan = new SubscriptionProperties.ProviderPlan();
+    providerPlan.setOfferingId("offering-1");
+    providerPlan.setPlanId("plan-1");
+    SubscriptionProvider.CheckoutRequest request =
+        new SubscriptionProvider.CheckoutRequest(
+            "account-1",
+            "person@example.com",
+            "checkout-1",
+            plan,
+            providerPlan,
+            "https://bbagent.example/account",
+            30);
+
+    Map<String, Object> body = BtcpaySubscriptionProvider.checkoutBody("store-1", request);
+
+    assertThat(body)
+        .containsEntry("storeId", "store-1")
+        .containsEntry("offeringId", "offering-1")
+        .containsEntry("planId", "plan-1")
+        .containsEntry("newSubscriberEmail", "person@example.com")
+        .doesNotContainKey("customerSelector");
+    assertThat((Map<String, Object>) body.get("newSubscriberMetadata"))
+        .containsEntry("bbagent_account_id", "account-1")
+        .containsEntry("bbagent_checkout_id", "checkout-1");
+  }
+
+  @Test
+  void verifyAndParseWebhookDerivesCustomerSelectorFromSubscriberIdentity() {
+    BtcpaySubscriptionProvider provider = provider();
+    byte[] payload =
+        """
+        {
+          "deliveryId": "delivery-2",
+          "type": "SubscriberCreated",
+          "subscriber": {
+            "metadata": {
+              "bbagent_account_id": "account-2",
+              "bbagent_checkout_id": "checkout-2"
+            },
+            "customer": {
+              "id": "cust_customer-2",
+              "identities": {
+                "Email": "person@example.com"
+              }
+            }
+          }
+        }
+        """
+            .getBytes(StandardCharsets.UTF_8);
+    HttpHeaders headers = new HttpHeaders();
+    headers.add("BTCPAY-SIG", "sha256=" + hmac(payload));
+
+    SubscriptionProvider.ProviderWebhookEvent event =
+        provider.verifyAndParseWebhook(headers, payload);
+
+    assertThat(event.accountId()).isEqualTo("account-2");
+    assertThat(event.checkoutSessionId()).isEqualTo("checkout-2");
+    assertThat(event.customerSelector()).isEqualTo("Email:person@example.com");
   }
 
   private BtcpaySubscriptionProvider provider() {
