@@ -71,7 +71,8 @@ class SubscriptionServiceTest {
         mock(AgentAccountRepository.class),
         mock(PaymentCheckoutSessionRepository.class),
         mock(PaymentSubscriptionRepository.class),
-        eventRepository);
+        eventRepository,
+        null);
   }
 
   private SubscriptionProperties properties() {

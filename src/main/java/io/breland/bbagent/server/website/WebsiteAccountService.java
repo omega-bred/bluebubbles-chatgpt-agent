@@ -20,6 +20,7 @@ import io.breland.bbagent.server.agent.persistence.website.WebsiteAccountLinkTok
 import io.breland.bbagent.server.agent.tools.coder.CoderMcpClient;
 import io.breland.bbagent.server.agent.tools.gcal.AccountKeyParts;
 import io.breland.bbagent.server.agent.tools.gcal.GcalClient;
+import io.breland.bbagent.server.analytics.UmamiAnalyticsService;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
@@ -33,6 +34,7 @@ import java.util.Base64;
 import java.util.HexFormat;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Optional;
 import java.util.stream.Stream;
 import org.apache.commons.lang3.StringUtils;
@@ -58,6 +60,7 @@ public class WebsiteAccountService {
   private final ModelAccessService modelAccessService;
   private final String websiteBaseUrl;
   private final Duration linkTokenTtl;
+  private final UmamiAnalyticsService umamiAnalyticsService;
   private final SecureRandom secureRandom = new SecureRandom();
 
   public WebsiteAccountService(
@@ -67,7 +70,8 @@ public class WebsiteAccountService {
       @Nullable CoderMcpClient coderMcpClient,
       ModelAccessService modelAccessService,
       @Value("${website.base-url:" + DEFAULT_WEBSITE_BASE_URL + "}") String websiteBaseUrl,
-      @Value("${website.account-link-token-ttl-minutes:30}") long linkTokenTtlMinutes) {
+      @Value("${website.account-link-token-ttl-minutes:30}") long linkTokenTtlMinutes,
+      @Nullable UmamiAnalyticsService umamiAnalyticsService) {
     this.accountResolver = accountResolver;
     this.tokenRepository = tokenRepository;
     this.gcalClient = gcalClient;
@@ -75,6 +79,7 @@ public class WebsiteAccountService {
     this.modelAccessService = modelAccessService;
     this.websiteBaseUrl = stripTrailingSlash(websiteBaseUrl);
     this.linkTokenTtl = Duration.ofMinutes(linkTokenTtlMinutes);
+    this.umamiAnalyticsService = umamiAnalyticsService;
   }
 
   @Transactional
@@ -117,6 +122,7 @@ public class WebsiteAccountService {
             expiresAt,
             now,
             now));
+    trackLinkTokenCreated(account.getAccountId(), message);
     return new CreatedLinkToken(buildLinkUrl(token), expiresAt, account.getAccountId());
   }
 
@@ -177,6 +183,7 @@ public class WebsiteAccountService {
     AgentAccountEntity linkedAccount =
         accountResolver.linkWebsiteAccount(tokenEntity.getAccountId(), jwt);
     markTokenRedeemed(tokenEntity, linkedAccount, now);
+    trackLinkTokenRedeemed(linkedAccount.getAccountId(), alreadyLinked);
 
     return new WebsiteAccountRedeemLinkResponse()
         .status(alreadyLinked ? "already_linked" : "linked")
@@ -204,7 +211,44 @@ public class WebsiteAccountService {
       throw new ResponseStatusException(
           HttpStatus.NOT_FOUND, "Linked integration account not found");
     }
+    trackLinkedIntegrationDeleted(account.getAccountId(), type);
     return true;
+  }
+
+  private void trackLinkTokenCreated(String accountId, IncomingMessage message) {
+    if (umamiAnalyticsService == null) {
+      return;
+    }
+    umamiAnalyticsService.track(
+        "website_link_token_created",
+        "/server/account/link-token",
+        accountId,
+        Map.of(
+            "transport", message.transportOrDefault(),
+            "is_group", message.isGroup(),
+            "ttl_minutes", linkTokenTtl.toMinutes()));
+  }
+
+  private void trackLinkTokenRedeemed(String accountId, boolean alreadyLinked) {
+    if (umamiAnalyticsService == null) {
+      return;
+    }
+    umamiAnalyticsService.track(
+        "website_account_linked",
+        "/server/account/link",
+        accountId,
+        Map.of("status", alreadyLinked ? "already_linked" : "linked"));
+  }
+
+  private void trackLinkedIntegrationDeleted(String accountId, String type) {
+    if (umamiAnalyticsService == null) {
+      return;
+    }
+    umamiAnalyticsService.track(
+        "website_integration_unlinked",
+        "/server/account/integration",
+        accountId,
+        Map.of("type", StringUtils.lowerCase(StringUtils.trimToEmpty(type))));
   }
 
   private String linkStatusIdentifier(String transport, String sender, String chatGuid) {

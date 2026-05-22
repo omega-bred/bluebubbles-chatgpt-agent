@@ -5,6 +5,7 @@ import { AuthGate } from "../components/AuthGate";
 import { CenteredMessage } from "../components/CenteredMessage";
 import { SiteNav } from "../components/SiteNav";
 import { websiteAccountApi } from "../services/api-client";
+import { trackEvent } from "../services/analytics";
 
 export function AccountLinkPage({ auth }: { auth: AuthState }) {
   const token = new URLSearchParams(window.location.search).get("token") || "";
@@ -24,10 +25,13 @@ export function AccountLinkPage({ auth }: { auth: AuthState }) {
             ? "This iMessage sender is already linked to your account."
             : "This iMessage sender is linked to your account.",
         );
+        trackEvent("web_account_link_redeemed", { status: response.status || "linked" });
         setDone(true);
       })
       .catch((err) => {
+        const statusCode = err?.response?.status;
         setStatus(err?.response?.data?.message || "This link could not be redeemed.");
+        trackEvent("web_account_link_failed", { status_code: statusCode || 0 });
       });
   }, [auth.authenticated, done, token]);
 
@@ -47,7 +51,11 @@ export function AccountLinkPage({ auth }: { auth: AuthState }) {
           <p className="eyebrow">Connect iMessage</p>
           <h1>{status}</h1>
           <p>Your website account can now show the services linked to this sender.</p>
-          <a className="button button-primary" href="/account">
+          <a
+            className="button button-primary"
+            href="/account"
+            onClick={() => trackEvent("web_account_link_account_click")}
+          >
             View account
           </a>
         </section>

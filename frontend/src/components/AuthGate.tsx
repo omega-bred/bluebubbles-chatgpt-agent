@@ -1,4 +1,5 @@
 import { login, register } from "../auth/keycloak";
+import { trackEvent } from "../services/analytics";
 import { SiteNav } from "./SiteNav";
 
 export function AuthGate({ title }: { title: string }) {
@@ -11,10 +12,22 @@ export function AuthGate({ title }: { title: string }) {
           <h1>{title}</h1>
           <p>Log in or create an account to manage linked iMessage senders.</p>
           <div className="hero-actions">
-            <button className="button button-primary" onClick={() => void login()}>
+            <button
+              className="button button-primary"
+              onClick={() => {
+                trackEvent("web_auth_login_start", { source: "auth_gate" });
+                void login();
+              }}
+            >
               Log in
             </button>
-            <button className="button button-secondary" onClick={() => void register()}>
+            <button
+              className="button button-secondary"
+              onClick={() => {
+                trackEvent("web_auth_register_start", { source: "auth_gate" });
+                void register();
+              }}
+            >
               Sign up
             </button>
           </div>

@@ -49,7 +49,8 @@ class WebsiteAccountServiceTest {
           coderMcpClient,
           modelAccessService,
           "https://chatagent.example",
-          30);
+          30,
+          null);
 
   @Test
   void createLinkTokenReturnsUrlAndStoresOnlyHashWithAccountId() {

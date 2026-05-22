@@ -9,13 +9,19 @@ import {
 } from "../client";
 import type { WebsiteAccountRedeemLinkRequest } from "../client";
 import { getAccessToken, login } from "../auth/keycloak";
+import { trackEvent } from "./analytics";
 
 const axiosInstance = axios.create();
 
 axiosInstance.interceptors.response.use(
   (response) => response,
   (error) => {
-    if (error?.response?.status === 401) {
+    const status = error?.response?.status || 0;
+    trackEvent("web_api_request_failed", {
+      status_code: status,
+      path: apiPath(error?.config?.url),
+    });
+    if (status === 401) {
       void login();
     }
     return Promise.reject(error);
@@ -151,3 +157,14 @@ export const adminApi = {
 };
 
 export type AdminFeedbackFilter = "all" | "unread" | "read";
+
+function apiPath(url: string | undefined): string {
+  if (!url) {
+    return "unknown";
+  }
+  try {
+    return new URL(url, window.location.origin).pathname;
+  } catch {
+    return "unknown";
+  }
+}

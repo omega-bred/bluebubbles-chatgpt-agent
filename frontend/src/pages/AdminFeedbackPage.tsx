@@ -6,6 +6,7 @@ import { AuthGate } from "../components/AuthGate";
 import { CenteredMessage } from "../components/CenteredMessage";
 import { SiteNav } from "../components/SiteNav";
 import { adminApi, type AdminFeedbackFilter } from "../services/api-client";
+import { trackEvent } from "../services/analytics";
 
 const numberFormat = new Intl.NumberFormat();
 const dateTimeFormat = new Intl.DateTimeFormat(undefined, {
@@ -29,10 +30,17 @@ export function AdminFeedbackPage({ auth }: { auth: AuthState }) {
     }
     setLoading(true);
     try {
-      setData(await adminApi.listFeedback(status, 100));
+      const feedback = await adminApi.listFeedback(status, 100);
+      setData(feedback);
+      trackEvent("web_admin_feedback_loaded", {
+        filter: status,
+        total_count: feedback.total_count || 0,
+        unread_count: feedback.unread_count || 0,
+      });
       setError(null);
     } catch (err) {
       const responseStatus = (err as { response?: { status?: number } })?.response?.status;
+      trackEvent("web_admin_feedback_failed", { filter: status, status_code: responseStatus || 0 });
       setError(
         responseStatus === 403
           ? "Your token is missing the bbagent-admin-role role."
@@ -74,11 +82,13 @@ export function AdminFeedbackPage({ auth }: { auth: AuthState }) {
     }
     setUpdatingId(item.feedback_id);
     try {
+      const action = item.read_status === "unread" ? "mark_read" : "mark_unread";
       if (item.read_status === "unread") {
         await adminApi.markFeedbackRead(item.feedback_id);
       } else {
         await adminApi.markFeedbackUnread(item.feedback_id);
       }
+      trackEvent("web_admin_feedback_action", { action });
       await load();
     } finally {
       setUpdatingId(null);
@@ -109,7 +119,10 @@ export function AdminFeedbackPage({ auth }: { auth: AuthState }) {
               <button
                 className={status === filter ? "active" : ""}
                 key={filter}
-                onClick={() => setStatus(filter)}
+                onClick={() => {
+                  trackEvent("web_admin_feedback_filter", { filter });
+                  setStatus(filter);
+                }}
               >
                 {filterLabel(filter)}
               </button>
