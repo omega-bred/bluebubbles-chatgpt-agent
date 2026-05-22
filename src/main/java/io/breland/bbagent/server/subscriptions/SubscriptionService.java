@@ -22,6 +22,7 @@ import io.breland.bbagent.server.agent.persistence.subscription.PaymentProviderE
 import io.breland.bbagent.server.agent.persistence.subscription.PaymentProviderEventRepository;
 import io.breland.bbagent.server.agent.persistence.subscription.PaymentSubscriptionEntity;
 import io.breland.bbagent.server.agent.persistence.subscription.PaymentSubscriptionRepository;
+import io.breland.bbagent.server.analytics.UmamiAnalyticsService;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.nio.charset.StandardCharsets;
@@ -30,7 +31,9 @@ import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.HexFormat;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import org.apache.commons.lang3.StringUtils;
@@ -40,6 +43,7 @@ import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
+import org.springframework.lang.Nullable;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -61,6 +65,7 @@ public class SubscriptionService {
   private final PaymentCheckoutSessionRepository checkoutRepository;
   private final PaymentSubscriptionRepository subscriptionRepository;
   private final PaymentProviderEventRepository eventRepository;
+  private final UmamiAnalyticsService umamiAnalyticsService;
 
   public SubscriptionService(
       SubscriptionProperties properties,
@@ -69,7 +74,8 @@ public class SubscriptionService {
       AgentAccountRepository accountRepository,
       PaymentCheckoutSessionRepository checkoutRepository,
       PaymentSubscriptionRepository subscriptionRepository,
-      PaymentProviderEventRepository eventRepository) {
+      PaymentProviderEventRepository eventRepository,
+      @Nullable UmamiAnalyticsService umamiAnalyticsService) {
     this.properties = properties;
     this.providerRegistry = providerRegistry;
     this.accountResolver = accountResolver;
@@ -77,6 +83,7 @@ public class SubscriptionService {
     this.checkoutRepository = checkoutRepository;
     this.subscriptionRepository = subscriptionRepository;
     this.eventRepository = eventRepository;
+    this.umamiAnalyticsService = umamiAnalyticsService;
   }
 
   public SubscriptionPlansResponse listPlans() {
@@ -145,6 +152,16 @@ public class SubscriptionService {
     checkout.setProviderPayload(providerCheckout.rawPayload());
     checkout.setUpdatedAt(Instant.now());
     checkoutRepository.save(checkout);
+    trackSubscriptionEvent(
+        "subscription_checkout_created",
+        "/server/subscription/checkout",
+        account.getAccountId(),
+        analyticsData(
+            "provider", providerKey,
+            "plan_key", plan.getKey(),
+            "currency", plan.getCurrency(),
+            "price_amount", plan.getPriceAmount(),
+            "billing_interval", plan.getBillingInterval()));
 
     return new SubscriptionCheckoutResponse()
         .checkoutSessionId(checkout.getCheckoutSessionId())
@@ -192,6 +209,12 @@ public class SubscriptionService {
         firstNonBlank(portal.portalUrl(), subscription.getManagementUrl()));
     subscription.setUpdatedAt(Instant.now());
     subscriptionRepository.save(subscription);
+    trackSubscriptionEvent(
+        "subscription_portal_created",
+        "/server/subscription/portal",
+        account.getAccountId(),
+        analyticsData(
+            "provider", subscription.getProvider(), "plan_key", subscription.getPlanKey()));
     return new SubscriptionPortalResponse()
         .provider(subscription.getProvider())
         .portalUrl(portal.portalUrl());
@@ -207,6 +230,11 @@ public class SubscriptionService {
     try {
       webhookEvent = provider.verifyAndParseWebhook(headers, body);
     } catch (WebhookVerificationException e) {
+      trackSubscriptionEvent(
+          "subscription_webhook_rejected",
+          "/server/subscription/webhook",
+          null,
+          analyticsData("provider", normalizedProviderKey, "status", "unauthorized"));
       return new SubscriptionProviderWebhookResponse()
           .status("unauthorized")
           .message(e.getMessage());
@@ -217,6 +245,11 @@ public class SubscriptionService {
             .findByProviderAndProviderEventId(normalizedProviderKey, webhookEvent.providerEventId())
             .orElse(null);
     if (event != null && !SubscriptionStatuses.EVENT_FAILED.equals(event.getStatus())) {
+      trackSubscriptionEvent(
+          "subscription_webhook_duplicate",
+          "/server/subscription/webhook",
+          event.getAccountId(),
+          analyticsData("provider", normalizedProviderKey, "event_type", event.getEventType()));
       return new SubscriptionProviderWebhookResponse()
           .status(SubscriptionStatuses.EVENT_DUPLICATE)
           .message("Webhook event already processed");
@@ -260,6 +293,15 @@ public class SubscriptionService {
       event.setSubscriptionId(processed.subscriptionId());
       event.setProcessedAt(Instant.now());
       eventRepository.save(event);
+      trackSubscriptionEvent(
+          "subscription_webhook_processed",
+          "/server/subscription/webhook",
+          event.getAccountId(),
+          analyticsData(
+              "provider", normalizedProviderKey,
+              "event_type", webhookEvent.eventType(),
+              "status", event.getStatus(),
+              "processed", processed.processed()));
       return new SubscriptionProviderWebhookResponse()
           .status(event.getStatus())
           .message(processed.message())
@@ -270,6 +312,14 @@ public class SubscriptionService {
       event.setErrorMessage(e.getMessage());
       event.setProcessedAt(Instant.now());
       eventRepository.save(event);
+      trackSubscriptionEvent(
+          "subscription_webhook_failed",
+          "/server/subscription/webhook",
+          event.getAccountId(),
+          analyticsData(
+              "provider", normalizedProviderKey,
+              "event_type", webhookEvent.eventType(),
+              "status", event.getStatus()));
       return new SubscriptionProviderWebhookResponse()
           .status(SubscriptionStatuses.EVENT_FAILED)
           .message("Webhook processing failed")
@@ -294,6 +344,7 @@ public class SubscriptionService {
   public AdminSubscriptionActionResponse adminSync(AdminSubscriptionActionRequest request) {
     PaymentSubscriptionEntity subscription = requireSubscription(request);
     PaymentSubscriptionEntity updated = syncSubscription(subscription);
+    trackAdminSubscriptionAction("sync", "synced", updated);
     return actionResponse("synced", updated);
   }
 
@@ -309,6 +360,7 @@ public class SubscriptionService {
     PaymentSubscriptionEntity updated =
         applyProviderSubscription(subscription, providerSubscription, Instant.now());
     recomputePremium(updated.getAccountId());
+    trackAdminSubscriptionAction("suspend", "suspended", updated);
     return actionResponse("suspended", updated);
   }
 
@@ -321,6 +373,7 @@ public class SubscriptionService {
     PaymentSubscriptionEntity updated =
         applyProviderSubscription(subscription, providerSubscription, Instant.now());
     recomputePremium(updated.getAccountId());
+    trackAdminSubscriptionAction("unsuspend", "unsuspended", updated);
     return actionResponse("unsuspended", updated);
   }
 
@@ -339,6 +392,11 @@ public class SubscriptionService {
     account.setPremiumEntitlementSyncedAt(Instant.now());
     account.setUpdatedAt(Instant.now());
     accountRepository.save(account);
+    trackSubscriptionEvent(
+        "admin_premium_granted",
+        "/server/admin/premium",
+        account.getAccountId(),
+        analyticsData("source", SOURCE_MANUAL));
     return new AdminSubscriptionActionResponse()
         .status("manual_granted")
         .accountId(account.getAccountId());
@@ -360,9 +418,51 @@ public class SubscriptionService {
       accountRepository.save(account);
     }
     recomputePremium(account.getAccountId());
+    trackSubscriptionEvent(
+        "admin_premium_revoked",
+        "/server/admin/premium",
+        account.getAccountId(),
+        analyticsData("source", SOURCE_MANUAL));
     return new AdminSubscriptionActionResponse()
         .status("manual_revoked")
         .accountId(account.getAccountId());
+  }
+
+  private void trackAdminSubscriptionAction(
+      String action, String status, PaymentSubscriptionEntity subscription) {
+    trackSubscriptionEvent(
+        "admin_subscription_action",
+        "/server/admin/subscription",
+        subscription.getAccountId(),
+        analyticsData(
+            "action",
+            action,
+            "status",
+            status,
+            "provider",
+            subscription.getProvider(),
+            "plan_key",
+            subscription.getPlanKey()));
+  }
+
+  private void trackSubscriptionEvent(
+      String name, String path, @Nullable String accountId, Map<String, ?> data) {
+    if (umamiAnalyticsService == null) {
+      return;
+    }
+    umamiAnalyticsService.track(name, path, accountId, data);
+  }
+
+  private Map<String, Object> analyticsData(Object... pairs) {
+    Map<String, Object> data = new LinkedHashMap<>();
+    for (int index = 0; index + 1 < pairs.length; index += 2) {
+      Object key = pairs[index];
+      Object value = pairs[index + 1];
+      if (key != null && value != null) {
+        data.put(String.valueOf(key), value);
+      }
+    }
+    return data;
   }
 
   private ProcessedWebhook processProviderEvent(

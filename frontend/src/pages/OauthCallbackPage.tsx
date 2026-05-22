@@ -1,5 +1,8 @@
+import React from "react";
+
 import type { AuthState } from "../auth/useKeycloak";
 import { SiteNav } from "../components/SiteNav";
+import { trackEvent } from "../services/analytics";
 
 type ServiceKey = "coder" | "gcal";
 type ResultStatus = "error" | "success";
@@ -27,6 +30,10 @@ export function OauthCallbackPage({ auth }: { auth: AuthState }) {
   const label = serviceLabels[service];
   const message = params.get("message") || defaultMessages[service][status];
 
+  React.useEffect(() => {
+    trackEvent("web_oauth_callback_view", { service, status });
+  }, [service, status]);
+
   return (
     <div className="account-shell">
       <SiteNav auth={auth} />
@@ -40,10 +47,18 @@ export function OauthCallbackPage({ auth }: { auth: AuthState }) {
               : "Return to iMessage and start the linking flow again."}
           </p>
           <div className="hero-actions">
-            <a className="button button-primary" href="/account">
+            <a
+              className="button button-primary"
+              href="/account"
+              onClick={() => trackEvent("web_oauth_account_click", { service, status })}
+            >
               View account
             </a>
-            <a className="button button-secondary" href="/">
+            <a
+              className="button button-secondary"
+              href="/"
+              onClick={() => trackEvent("web_oauth_home_click", { service, status })}
+            >
               Home
             </a>
           </div>

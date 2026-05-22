@@ -16,6 +16,7 @@ import { AuthGate } from "../components/AuthGate";
 import { CenteredMessage } from "../components/CenteredMessage";
 import { SiteNav } from "../components/SiteNav";
 import { adminApi } from "../services/api-client";
+import { trackEvent } from "../services/analytics";
 
 const numberFormat = new Intl.NumberFormat();
 const dateTimeFormat = new Intl.DateTimeFormat(undefined, {
@@ -60,9 +61,15 @@ export function AdminPage({ auth }: { auth: AuthState }) {
       setData(stats);
       setLimitData(limits);
       setSubscriptionData(subscriptions);
+      trackEvent("web_admin_stats_loaded", {
+        message_count: stats.total_messages || 0,
+        tool_call_count: stats.total_tool_calls || 0,
+        subscription_count: subscriptions.subscriptions?.length || 0,
+      });
       setError(null);
     } catch (err) {
       const status = (err as { response?: { status?: number } })?.response?.status;
+      trackEvent("web_admin_stats_failed", { status_code: status || 0 });
       setError(
         status === 403
           ? "Your token is missing the bbagent-admin-role role."
@@ -90,9 +97,11 @@ export function AdminPage({ auth }: { auth: AuthState }) {
         } else {
           await adminApi.unsuspendSubscription(subscriptionId);
         }
+        trackEvent("web_admin_subscription_action", { action, status: "success" });
         setSubscriptionData(await adminApi.listSubscriptions());
         setError(null);
       } catch (err) {
+        trackEvent("web_admin_subscription_action", { action, status: "failed" });
         setError(err instanceof Error ? err.message : "Unable to update subscription.");
       } finally {
         setSubscriptionAction(null);
@@ -115,10 +124,12 @@ export function AdminPage({ auth }: { auth: AuthState }) {
         } else {
           await adminApi.revokePremium(accountId);
         }
+        trackEvent("web_admin_premium_action", { action, status: "success" });
         setSubscriptionData(await adminApi.listSubscriptions());
         setManualAccountId("");
         setError(null);
       } catch (err) {
+        trackEvent("web_admin_premium_action", { action, status: "failed" });
         setError(err instanceof Error ? err.message : "Unable to update premium access.");
       } finally {
         setManualPremiumAction(null);

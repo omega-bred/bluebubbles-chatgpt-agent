@@ -13,6 +13,7 @@ import { AuthGate } from "../components/AuthGate";
 import { CenteredMessage } from "../components/CenteredMessage";
 import { SiteNav } from "../components/SiteNav";
 import { subscriptionApi, websiteAccountApi } from "../services/api-client";
+import { trackEvent } from "../services/analytics";
 import { displayModelLabel } from "../utils/model-label";
 
 export function AccountPage({ auth }: { auth: AuthState }) {
@@ -35,8 +36,14 @@ export function AccountPage({ auth }: { auth: AuthState }) {
       ]);
       setData(linkedAccounts);
       setSubscription(billing);
+      trackEvent("web_account_loaded", {
+        integration_count: linkedAccounts.integrations?.length || 0,
+        is_premium: Boolean(billing.is_premium),
+        subscription_count: billing.subscriptions?.length || 0,
+      });
       setError(null);
     } catch (err) {
+      trackEvent("web_account_load_failed");
       setError(err instanceof Error ? err.message : "Unable to load linked accounts.");
     } finally {
       setLoading(false);
@@ -50,10 +57,16 @@ export function AccountPage({ auth }: { auth: AuthState }) {
   const createCheckout = React.useCallback(async () => {
     const plan = subscription?.plans?.[0];
     setBillingBusy(true);
+    trackEvent("web_checkout_start", { plan_key: plan?.key || "unknown" });
     try {
       const checkout = await subscriptionApi.createCheckout(plan?.key);
+      trackEvent("web_checkout_created", {
+        provider: checkout.provider || "unknown",
+        plan_key: checkout.plan_key || plan?.key || "unknown",
+      });
       window.location.assign(checkout.checkout_url);
     } catch (err) {
+      trackEvent("web_checkout_failed", { plan_key: plan?.key || "unknown" });
       setError(err instanceof Error ? err.message : "Unable to create checkout.");
     } finally {
       setBillingBusy(false);
@@ -62,10 +75,13 @@ export function AccountPage({ auth }: { auth: AuthState }) {
 
   const openPortal = React.useCallback(async () => {
     setBillingBusy(true);
+    trackEvent("web_billing_portal_start");
     try {
       const portal = await subscriptionApi.createPortal();
+      trackEvent("web_billing_portal_created", { provider: portal.provider || "unknown" });
       window.location.assign(portal.portal_url);
     } catch (err) {
+      trackEvent("web_billing_portal_failed");
       setError(err instanceof Error ? err.message : "Unable to open billing portal.");
     } finally {
       setBillingBusy(false);
@@ -297,9 +313,14 @@ function LinkedIdentity({
               unlinking={unlinkingAccountKey === account.account_key}
               onUnlink={async () => {
                 setUnlinkingAccountKey(account.account_key);
+                trackEvent("web_integration_unlink_start", { type: account.type });
                 try {
                   await websiteAccountApi.deleteLinkedAccount(account.type, account.account_key);
+                  trackEvent("web_integration_unlinked", { type: account.type });
                   await onDeleted();
+                } catch (err) {
+                  trackEvent("web_integration_unlink_failed", { type: account.type });
+                  throw err;
                 } finally {
                   setUnlinkingAccountKey(null);
                 }

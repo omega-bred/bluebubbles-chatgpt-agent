@@ -1,5 +1,6 @@
 import type { AuthState } from "../auth/useKeycloak";
 import { SiteNav } from "../components/SiteNav";
+import { trackEvent } from "../services/analytics";
 
 const screenOne = new URL("../../../images/screen1.png", import.meta.url).href;
 const screenTwo = new URL("../../../images/screen2.png", import.meta.url).href;
@@ -25,10 +26,18 @@ export function LandingPage({ auth }: { auth: AuthState }) {
             or any other configured model.
           </p>
           <div className="hero-actions">
-            <a className="button button-primary button-cta" href={agentSmsHref}>
+            <a
+              className="button button-primary button-cta"
+              href={agentSmsHref}
+              onClick={() => trackEvent("web_landing_sms_click", { source: "hero" })}
+            >
               Text {agentPhoneDisplay}
             </a>
-            <a className="button button-secondary" href="#how-it-works">
+            <a
+              className="button button-secondary"
+              href="#how-it-works"
+              onClick={() => trackEvent("web_landing_how_click", { source: "hero" })}
+            >
               See how it works
             </a>
           </div>

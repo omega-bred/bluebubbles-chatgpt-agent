@@ -12,6 +12,7 @@ import io.breland.bbagent.server.agent.AgentAccountResolver;
 import io.breland.bbagent.server.agent.AgentWorkflowProperties;
 import io.breland.bbagent.server.agent.IncomingMessage;
 import io.breland.bbagent.server.agent.model_picker.ModelAccessService;
+import io.breland.bbagent.server.analytics.UmamiAnalyticsService;
 import io.breland.bbagent.server.metrics.AgentMessageMetric;
 import io.breland.bbagent.server.metrics.AgentMetricsService;
 import io.breland.bbagent.server.metrics.AgentMetricsStore;
@@ -49,14 +50,17 @@ public class AdminStatsService implements AgentMetricsService {
   private final AgentMetricsStore metricsStore;
   private final ModelAccessService modelAccessService;
   private final AgentAccountResolver accountResolver;
+  private final UmamiAnalyticsService umamiAnalyticsService;
 
   public AdminStatsService(
       AgentMetricsStore metricsStore,
       ModelAccessService modelAccessService,
-      @Nullable AgentAccountResolver accountResolver) {
+      @Nullable AgentAccountResolver accountResolver,
+      @Nullable UmamiAnalyticsService umamiAnalyticsService) {
     this.metricsStore = metricsStore;
     this.modelAccessService = modelAccessService;
     this.accountResolver = accountResolver;
+    this.umamiAnalyticsService = umamiAnalyticsService;
   }
 
   @Transactional
@@ -85,6 +89,7 @@ public class AdminStatsService implements AgentMetricsService {
             context.modelAccess().premium(),
             workflowMode == null ? "INLINE" : workflowMode.name(),
             now));
+    recordAcceptedMessageAnalytics(message, workflowMode, context);
   }
 
   @Transactional
@@ -119,6 +124,7 @@ public class AdminStatsService implements AgentMetricsService {
             premium,
             event.workflowMode() == null ? "INLINE" : event.workflowMode().name(),
             now));
+    recordToolCallAnalytics(event, context);
   }
 
   @Transactional(readOnly = true)
@@ -150,6 +156,48 @@ public class AdminStatsService implements AgentMetricsService {
         .timeline(bucketStats(from, to, bucketSize, events))
         .tools(toolStats(from, to, toolCallCount))
         .toolAccountTypes(toolAccountTypeStats(from, to, toolCallCount));
+  }
+
+  private void recordAcceptedMessageAnalytics(
+      IncomingMessage message, AgentWorkflowProperties.Mode workflowMode, MetricContext context) {
+    if (umamiAnalyticsService == null) {
+      return;
+    }
+    Map<String, Object> data = new HashMap<>();
+    data.put("transport", firstNonBlank(message.transportOrDefault(), "unknown"));
+    data.put("is_group", message.isGroup());
+    data.put("workflow_mode", workflowMode == null ? "INLINE" : workflowMode.name());
+    data.put("model_key", firstNonBlank(context.modelAccess().currentModelKey(), "unknown"));
+    data.put(
+        "model_label",
+        firstNonBlank(
+            context.modelAccess().currentModelLabel(),
+            context.modelAccess().currentModelKey(),
+            "Unknown"));
+    data.put("responses_model", firstNonBlank(context.modelAccess().responsesModel(), "unknown"));
+    data.put("is_premium", context.modelAccess().premium());
+    umamiAnalyticsService.track(
+        "agent_message_accepted", "/server/agent/message", context.userKeyHash(), data);
+  }
+
+  private void recordToolCallAnalytics(AgentToolMetricEvent event, MetricContext context) {
+    if (umamiAnalyticsService == null || event.message() == null) {
+      return;
+    }
+    IncomingMessage message = event.message();
+    Map<String, Object> data = new HashMap<>();
+    data.put("transport", firstNonBlank(message.transportOrDefault(), "unknown"));
+    data.put(
+        "workflow_mode", event.workflowMode() == null ? "INLINE" : event.workflowMode().name());
+    data.put("tool_name", firstNonBlank(event.toolName(), "unknown"));
+    data.put("tool_category", firstNonBlank(event.toolCategory(), "other"));
+    data.put("success", event.success());
+    data.put("failure_type", StringUtils.trimToNull(event.failureType()));
+    data.put("duration_ms", Math.max(0L, event.durationMillis()));
+    data.put("model_key", firstNonBlank(context.modelAccess().currentModelKey(), "unknown"));
+    data.put("is_premium", context.modelAccess().premium());
+    umamiAnalyticsService.track(
+        "agent_tool_call", "/server/agent/tool", context.userKeyHash(), data);
   }
 
   private List<AdminModelStats> modelStats(Instant from, Instant to, long totalMessages) {

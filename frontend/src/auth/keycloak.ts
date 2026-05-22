@@ -53,6 +53,11 @@ export function hasAdminRole(): boolean {
   return hasRole(ADMIN_ROLE);
 }
 
+export function currentUserSubject(): string | null {
+  const parsed = keycloak.tokenParsed as Record<string, unknown> | undefined;
+  return typeof parsed?.sub === "string" && parsed.sub.trim() ? parsed.sub.trim() : null;
+}
+
 function tokenRoles(): string[] {
   const parsed = keycloak.tokenParsed as Record<string, unknown> | undefined;
   if (!parsed) {

@@ -240,6 +240,14 @@ spec:
               value: "https://chatagent.bre.land"
             - name: WEBSITE_BASE_URL
               value: "https://chatagent.bre.land"
+            - name: UMAMI_ANALYTICS_ENABLED
+              value: "true"
+            - name: UMAMI_HOST_URL
+              value: "https://unami.bre.land"
+            - name: UMAMI_WEBSITE_ID
+              value: "944a19b7-0e55-4a9b-b67f-48503cbead0d"
+            - name: UMAMI_HOSTNAME
+              value: "chatagent.bre.land"
             - name: KEYCLOAK_ISSUER_URI
               value: "https://keycloak.bre.land/realms/bbagent"
             - name: KEYCLOAK_JWK_SET_URI
