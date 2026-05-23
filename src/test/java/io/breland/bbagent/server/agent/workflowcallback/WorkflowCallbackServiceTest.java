@@ -26,6 +26,7 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.Mockito;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpStatus;
 
 class WorkflowCallbackServiceTest {
   private final AgentWorkflowCallbackRepository repository =
@@ -69,6 +70,8 @@ class WorkflowCallbackServiceTest {
         service.receiveCallback("missing", new HttpHeaders(), payload());
 
     assertEquals(WorkflowCallbackService.ReceiveStatus.NOT_FOUND, result.status());
+    assertEquals(HttpStatus.NOT_FOUND, result.httpStatus());
+    assertEquals("not_found", result.body().get("status"));
   }
 
   @Test
@@ -110,6 +113,9 @@ class WorkflowCallbackServiceTest {
         service.receiveCallback("callback-1", signedHeaders(entity, payload), payload);
 
     assertEquals(WorkflowCallbackService.ReceiveStatus.PROCESSED, result.status());
+    assertEquals(HttpStatus.OK, result.httpStatus());
+    assertEquals("callback:callback-1", result.body().get("workflow_id"));
+    assertEquals("run-1", result.body().get("run_id"));
     ArgumentCaptor<CadenceMessageWorkflowRequest> requestCaptor =
         ArgumentCaptor.forClass(CadenceMessageWorkflowRequest.class);
     verify(launcher).startWorkflow(requestCaptor.capture());
