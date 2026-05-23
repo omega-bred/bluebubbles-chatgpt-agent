@@ -37,6 +37,11 @@ replay_pid*
 src/main/resources/static/client
 src/main/resources/static/assets
 src/main/resources/static/index.html
+src/main/resources/static/apple-touch-icon.png
+src/main/resources/static/bluechat-icon.png
+src/main/resources/static/favicon-32x32.png
+src/main/resources/static/icon-*.png
+src/main/resources/static/site.webmanifest
 
 .DS_Store
 
