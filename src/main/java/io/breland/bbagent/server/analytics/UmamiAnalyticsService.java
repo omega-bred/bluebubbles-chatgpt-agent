@@ -1,14 +1,10 @@
 package io.breland.bbagent.server.analytics;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
-import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
-import java.util.HexFormat;
 import java.util.LinkedHashMap;
-import java.util.Locale;
 import java.util.Map;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.codec.digest.DigestUtils;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
@@ -148,14 +144,7 @@ public class UmamiAnalyticsService {
     if (cleanKey == null) {
       return null;
     }
-    try {
-      MessageDigest digest = MessageDigest.getInstance("SHA-256");
-      return HexFormat.of()
-          .formatHex(digest.digest(cleanKey.getBytes(StandardCharsets.UTF_8)))
-          .substring(0, 50);
-    } catch (NoSuchAlgorithmException e) {
-      return Integer.toHexString(cleanKey.toLowerCase(Locale.ROOT).hashCode());
-    }
+    return DigestUtils.sha256Hex(cleanKey).substring(0, 50);
   }
 
   private String truncate(String value, int maxLength) {

@@ -14,17 +14,15 @@ import io.breland.bbagent.server.agent.tools.ToolProvider;
 import io.breland.bbagent.server.agent.tools.scheduled.ScheduledEventTool;
 import io.breland.bbagent.server.agent.workflowcallback.WorkflowCallbackService;
 import io.swagger.v3.oas.annotations.media.Schema;
-import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
 import java.time.Duration;
 import java.util.ArrayList;
-import java.util.HexFormat;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import javax.annotation.Nullable;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.codec.digest.DigestUtils;
 import org.apache.commons.lang3.StringUtils;
 
 @Slf4j
@@ -467,12 +465,7 @@ public class StartCoderAsyncTaskAgentTool implements ToolProvider {
   }
 
   private static String sha256(String value) {
-    try {
-      MessageDigest digest = MessageDigest.getInstance("SHA-256");
-      return HexFormat.of().formatHex(digest.digest(value.getBytes(StandardCharsets.UTF_8)));
-    } catch (Exception e) {
-      throw new IllegalStateException("SHA-256 is unavailable", e);
-    }
+    return DigestUtils.sha256Hex(value);
   }
 
   private record TemplateSelection(String templateVersionId, String displayName) {}

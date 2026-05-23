@@ -1,8 +1,6 @@
 package io.breland.bbagent.server.agent.tools.coder;
 
-import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
-import java.util.HexFormat;
+import org.apache.commons.codec.digest.DigestUtils;
 import org.apache.commons.lang3.StringUtils;
 
 final class CoderToolNameMapper {
@@ -34,12 +32,6 @@ final class CoderToolNameMapper {
   }
 
   private String shortHash(String value) {
-    try {
-      MessageDigest digest = MessageDigest.getInstance("SHA-256");
-      byte[] hashed = digest.digest(String.valueOf(value).getBytes(StandardCharsets.UTF_8));
-      return HexFormat.of().formatHex(hashed, 0, 6);
-    } catch (Exception e) {
-      return Integer.toHexString(String.valueOf(value).hashCode());
-    }
+    return DigestUtils.sha256Hex(String.valueOf(value)).substring(0, 12);
   }
 }

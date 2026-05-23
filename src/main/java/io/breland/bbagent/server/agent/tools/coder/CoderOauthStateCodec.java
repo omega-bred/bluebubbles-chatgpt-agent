@@ -6,7 +6,6 @@ import com.auth0.jwt.algorithms.Algorithm;
 import com.auth0.jwt.exceptions.JWTVerificationException;
 import com.auth0.jwt.interfaces.DecodedJWT;
 import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
 import java.security.SecureRandom;
 import java.time.Duration;
 import java.time.Instant;
@@ -14,6 +13,7 @@ import java.util.Base64;
 import java.util.Date;
 import java.util.Optional;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.codec.digest.DigestUtils;
 
 @Slf4j
 final class CoderOauthStateCodec {
@@ -82,13 +82,8 @@ final class CoderOauthStateCodec {
   }
 
   String codeChallenge(String verifier) {
-    try {
-      MessageDigest digest = MessageDigest.getInstance("SHA-256");
-      byte[] hashed = digest.digest(verifier.getBytes(StandardCharsets.US_ASCII));
-      return Base64.getUrlEncoder().withoutPadding().encodeToString(hashed);
-    } catch (Exception e) {
-      throw new IllegalStateException("Failed to create PKCE code challenge", e);
-    }
+    byte[] hashed = DigestUtils.sha256(verifier.getBytes(StandardCharsets.US_ASCII));
+    return Base64.getUrlEncoder().withoutPadding().encodeToString(hashed);
   }
 
   record OauthState(String accountId, String pendingId, String chatGuid, String messageGuid) {}

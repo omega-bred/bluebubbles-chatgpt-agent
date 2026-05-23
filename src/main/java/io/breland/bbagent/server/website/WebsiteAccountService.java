@@ -22,21 +22,18 @@ import io.breland.bbagent.server.agent.tools.gcal.AccountKeyParts;
 import io.breland.bbagent.server.agent.tools.gcal.GcalClient;
 import io.breland.bbagent.server.analytics.UmamiAnalyticsService;
 import java.net.URI;
-import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
 import java.security.SecureRandom;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.Base64;
-import java.util.HexFormat;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.stream.Stream;
+import org.apache.commons.codec.digest.DigestUtils;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
@@ -51,7 +48,6 @@ import org.springframework.web.util.UriComponentsBuilder;
 public class WebsiteAccountService {
   private static final String DEFAULT_WEBSITE_BASE_URL = "http://localhost:8080";
   private static final int LINK_TOKEN_BYTES = 32;
-  private static final String TOKEN_HASH_ALGORITHM = "SHA-256";
 
   private final AgentAccountResolver accountResolver;
   private final WebsiteAccountLinkTokenRepository tokenRepository;
@@ -359,13 +355,7 @@ public class WebsiteAccountService {
   }
 
   private String hashToken(String token) {
-    try {
-      MessageDigest digest = MessageDigest.getInstance(TOKEN_HASH_ALGORITHM);
-      byte[] hash = digest.digest(token.getBytes(StandardCharsets.UTF_8));
-      return HexFormat.of().formatHex(hash).toLowerCase(Locale.ROOT);
-    } catch (NoSuchAlgorithmException e) {
-      throw new IllegalStateException(TOKEN_HASH_ALGORITHM + " not available", e);
-    }
+    return DigestUtils.sha256Hex(token);
   }
 
   private String buildLinkUrl(String token) {
