@@ -321,7 +321,6 @@ public class AgentAccountResolver {
         "website_account_link_tokens", "account_id", targetAccountId, sourceAccountId);
     updateAccountColumn(
         "website_account_link_tokens", "redeemed_account_id", targetAccountId, sourceAccountId);
-    updateAccountColumn("agent_feedback", "account_id", targetAccountId, sourceAccountId);
     updateAccountColumn(
         "payment_checkout_sessions", "account_id", targetAccountId, sourceAccountId);
     updateAccountColumn("payment_subscriptions", "account_id", targetAccountId, sourceAccountId);

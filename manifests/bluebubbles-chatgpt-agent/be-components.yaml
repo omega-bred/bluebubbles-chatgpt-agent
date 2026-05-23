@@ -101,6 +101,14 @@ metadata:
 spec:
   itemPath: "vaults/Kubernetes/items/cap-bbagent-contact"
 ---
+apiVersion: onepassword.com/v1
+kind: OnePasswordItem
+metadata:
+  name: linear-bbagent #this name will also be used for naming the generated kubernetes secret
+  namespace: bluebubbles-chatgpt-agent
+spec:
+  itemPath: "vaults/Kubernetes/items/linear-bbagent"
+---
 apiVersion: v1
 kind: ServiceAccount
 metadata:
@@ -280,6 +288,24 @@ spec:
                   key: "secret-key"
                   name: cap-bbagent-contact
                   optional: true
+            - name: LINEAR_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  key: "api-key"
+                  name: linear-bbagent
+                  optional: true
+            - name: LINEAR_TEAM_ID
+              valueFrom:
+                secretKeyRef:
+                  key: "team-id"
+                  name: linear-bbagent
+                  optional: true
+            - name: LINEAR_TEAM_NAME
+              value: "bluechat"
+            - name: LINEAR_CONTACT_LABEL
+              value: "Contact/Help"
+            - name: LINEAR_FEEDBACK_LABEL
+              value: "Improvement"
             - name: KEYCLOAK_ISSUER_URI
               value: "https://keycloak.bre.land/realms/bbagent"
             - name: KEYCLOAK_JWK_SET_URI

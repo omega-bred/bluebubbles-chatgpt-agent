@@ -4,12 +4,15 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import io.breland.bbagent.generated.model.ContactMessageRequest;
-import io.breland.bbagent.server.agent.persistence.contact.WebsiteContactMessageEntity;
-import io.breland.bbagent.server.agent.persistence.contact.WebsiteContactMessageRepository;
+import io.breland.bbagent.server.linear.LinearIssueService;
+import io.breland.bbagent.server.linear.LinearIssueService.ContactIssueInput;
+import io.breland.bbagent.server.linear.LinearIssueService.LinearIssue;
+import java.time.Instant;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.web.server.ResponseStatusException;
@@ -20,12 +23,19 @@ class ContactServiceTest {
   void storesVerifiedContactMessage() {
     ContactProperties properties = new ContactProperties();
     CapVerificationService capVerificationService = mock(CapVerificationService.class);
-    WebsiteContactMessageRepository repository = mock(WebsiteContactMessageRepository.class);
+    LinearIssueService linearIssueService = mock(LinearIssueService.class);
     when(capVerificationService.isConfigured()).thenReturn(true);
     when(capVerificationService.verify("cap-token")).thenReturn(true);
-    when(repository.save(any(WebsiteContactMessageEntity.class)))
-        .thenAnswer(invocation -> invocation.getArgument(0));
-    ContactService service = new ContactService(properties, capVerificationService, repository);
+    when(linearIssueService.createContactIssue(any(ContactIssueInput.class)))
+        .thenReturn(
+            new LinearIssue(
+                "issue-id",
+                "BLU-123",
+                "[Contact] Help",
+                "https://linear.app/bluechat/issue/BLU-123/help",
+                Instant.parse("2026-05-01T00:00:00Z")));
+    ContactService service =
+        new ContactService(properties, capVerificationService, linearIssueService);
 
     var response =
         service.createMessage(
@@ -37,24 +47,25 @@ class ContactServiceTest {
                 .capToken("cap-token"),
             null);
 
-    ArgumentCaptor<WebsiteContactMessageEntity> entityCaptor =
-        ArgumentCaptor.forClass(WebsiteContactMessageEntity.class);
-    verify(repository).save(entityCaptor.capture());
-    WebsiteContactMessageEntity entity = entityCaptor.getValue();
+    ArgumentCaptor<ContactIssueInput> issueCaptor =
+        ArgumentCaptor.forClass(ContactIssueInput.class);
+    verify(linearIssueService).createContactIssue(issueCaptor.capture());
+    ContactIssueInput issue = issueCaptor.getValue();
     assertThat(response.getStatus()).isEqualTo("accepted");
-    assertThat(response.getMessageId()).isEqualTo(entity.getMessageId());
-    assertThat(entity.isCapVerified()).isTrue();
-    assertThat(entity.getStatus()).isEqualTo("unread");
-    assertThat(entity.getEmail()).isEqualTo("ada@example.com");
+    assertThat(response.getMessageId()).isEqualTo("BLU-123");
+    assertThat(issue.capVerified()).isTrue();
+    assertThat(issue.email()).isEqualTo("ada@example.com");
+    assertThat(issue.message()).isEqualTo("I need a hand.");
   }
 
   @Test
   void rejectsContactMessageWhenCapIsRequiredAndMissing() {
     ContactProperties properties = new ContactProperties();
     CapVerificationService capVerificationService = mock(CapVerificationService.class);
-    WebsiteContactMessageRepository repository = mock(WebsiteContactMessageRepository.class);
+    LinearIssueService linearIssueService = mock(LinearIssueService.class);
     when(capVerificationService.isConfigured()).thenReturn(true);
-    ContactService service = new ContactService(properties, capVerificationService, repository);
+    ContactService service =
+        new ContactService(properties, capVerificationService, linearIssueService);
 
     assertThatThrownBy(
             () ->
@@ -68,5 +79,6 @@ class ContactServiceTest {
                     null))
         .isInstanceOf(ResponseStatusException.class)
         .hasMessageContaining("CAPTCHA verification failed");
+    verify(linearIssueService, never()).createContactIssue(any());
   }
 }

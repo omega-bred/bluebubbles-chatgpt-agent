@@ -3,16 +3,16 @@ package io.breland.bbagent.server.contact;
 import io.breland.bbagent.generated.model.ContactConfigResponse;
 import io.breland.bbagent.generated.model.ContactMessageRequest;
 import io.breland.bbagent.generated.model.ContactMessageResponse;
-import io.breland.bbagent.server.agent.persistence.contact.WebsiteContactMessageEntity;
-import io.breland.bbagent.server.agent.persistence.contact.WebsiteContactMessageRepository;
+import io.breland.bbagent.server.linear.LinearIssueService;
+import io.breland.bbagent.server.linear.LinearIssueService.ContactIssueInput;
+import io.breland.bbagent.server.linear.LinearIssueService.LinearIssue;
+import io.breland.bbagent.server.linear.LinearIssueService.LinearIssueException;
 import jakarta.servlet.http.HttpServletRequest;
 import java.time.Instant;
-import java.util.UUID;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
 @Service
@@ -25,15 +25,15 @@ public class ContactService {
 
   private final ContactProperties properties;
   private final CapVerificationService capVerificationService;
-  private final WebsiteContactMessageRepository repository;
+  private final LinearIssueService linearIssueService;
 
   public ContactService(
       ContactProperties properties,
       CapVerificationService capVerificationService,
-      WebsiteContactMessageRepository repository) {
+      LinearIssueService linearIssueService) {
     this.properties = properties;
     this.capVerificationService = capVerificationService;
-    this.repository = repository;
+    this.linearIssueService = linearIssueService;
   }
 
   public ContactConfigResponse config() {
@@ -44,7 +44,6 @@ public class ContactService {
         .capApiEndpoint(capVerificationService.apiEndpoint());
   }
 
-  @Transactional
   public ContactMessageResponse createMessage(
       ContactMessageRequest request, HttpServletRequest servletRequest) {
     if (!properties.isEnabled()) {
@@ -55,24 +54,27 @@ public class ContactService {
     }
     boolean capVerified = verifyCap(request.getCapToken());
     Instant now = Instant.now();
-    WebsiteContactMessageEntity entity =
-        repository.save(
-            new WebsiteContactMessageEntity(
-                UUID.randomUUID().toString(),
-                now,
-                requireText(request.getName(), "name", MAX_NAME_LENGTH),
-                requireText(request.getEmail(), "email", MAX_EMAIL_LENGTH),
-                requireText(request.getSubject(), "subject", MAX_SUBJECT_LENGTH),
-                requireText(request.getMessage(), "message", MAX_MESSAGE_LENGTH),
-                "unread",
-                remoteAddress(servletRequest),
-                truncate(
-                    servletRequest == null ? null : servletRequest.getHeader("User-Agent"), 512),
-                capVerified,
-                now,
-                now));
-    log.info("Stored contact message id={} email={}", entity.getMessageId(), entity.getEmail());
-    return new ContactMessageResponse().status("accepted").messageId(entity.getMessageId());
+    String email = requireText(request.getEmail(), "email", MAX_EMAIL_LENGTH);
+    try {
+      LinearIssue issue =
+          linearIssueService.createContactIssue(
+              new ContactIssueInput(
+                  requireText(request.getName(), "name", MAX_NAME_LENGTH),
+                  email,
+                  requireText(request.getSubject(), "subject", MAX_SUBJECT_LENGTH),
+                  requireText(request.getMessage(), "message", MAX_MESSAGE_LENGTH),
+                  remoteAddress(servletRequest),
+                  truncate(
+                      servletRequest == null ? null : servletRequest.getHeader("User-Agent"), 512),
+                  capVerified,
+                  now));
+      log.info("Created Linear contact issue reference={} email={}", issue.reference(), email);
+      return new ContactMessageResponse().status("accepted").messageId(issue.reference());
+    } catch (LinearIssueException e) {
+      log.warn("Could not create Linear contact issue: {}", e.getMessage());
+      throw new ResponseStatusException(
+          HttpStatus.SERVICE_UNAVAILABLE, "Contact issue tracker is not configured");
+    }
   }
 
   private boolean verifyCap(String token) {

@@ -3,57 +3,68 @@ package io.breland.bbagent.server.feedback;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 import io.breland.bbagent.generated.model.AdminFeedbackListResponse;
-import io.breland.bbagent.server.agent.AgentAccountResolver;
 import io.breland.bbagent.server.agent.IncomingMessage;
-import io.breland.bbagent.server.agent.persistence.feedback.AgentFeedbackRepository;
+import io.breland.bbagent.server.linear.LinearIssueService;
+import io.breland.bbagent.server.linear.LinearIssueService.FeedbackIssueInput;
+import io.breland.bbagent.server.linear.LinearIssueService.LinearIssue;
 import java.time.Instant;
 import java.util.List;
 import org.junit.jupiter.api.Test;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.transaction.annotation.Transactional;
+import org.mockito.ArgumentCaptor;
 
-@SpringBootTest
-@Transactional
 class FeedbackServiceTest {
-  @Autowired private FeedbackService feedbackService;
-  @Autowired private AgentFeedbackRepository feedbackRepository;
-  @Autowired private AgentAccountResolver accountResolver;
 
   @Test
-  void recordsFeedbackAndTogglesReadState() {
-    feedbackRepository.deleteAll();
-    String accountId =
-        accountResolver
-            .resolveOrCreate(IncomingMessage.TRANSPORT_BLUEBUBBLES, "Alice")
-            .orElseThrow()
-            .account()
-            .getAccountId();
+  void recordsFeedbackAsLinearIssue() {
+    LinearIssueService linearIssueService = mock(LinearIssueService.class);
+    when(linearIssueService.createFeedbackIssue(any(FeedbackIssueInput.class)))
+        .thenReturn(
+            new LinearIssue(
+                "issue-id",
+                "BLU-456",
+                "[Feedback/tool] model needs better tool hints",
+                "https://linear.app/bluechat/issue/BLU-456/model-needs-better-tool-hints",
+                Instant.parse("2026-05-01T00:00:00Z")));
+    FeedbackService feedbackService = new FeedbackService(linearIssueService);
 
     FeedbackService.RecordedFeedback recorded =
         feedbackService.recordFeedback(
             incomingMessage(),
-            accountId,
+            "account-1",
             "tell your creator the model needs better tool hints",
             "tool");
 
-    assertNotNull(recorded.feedbackId());
+    assertEquals("BLU-456", recorded.feedbackId());
+    assertNotNull(recorded.submittedAt());
+    ArgumentCaptor<FeedbackIssueInput> issueCaptor =
+        ArgumentCaptor.forClass(FeedbackIssueInput.class);
+    verify(linearIssueService).createFeedbackIssue(issueCaptor.capture());
+    FeedbackIssueInput issue = issueCaptor.getValue();
+    assertEquals("account-1", issue.accountId());
+    assertEquals("tool", issue.category());
+    assertEquals("tell your creator the model needs better tool hints", issue.feedbackText());
+    assertEquals("Alice", issue.sender());
+  }
+
+  @Test
+  void legacyAdminFeedbackInboxReturnsEmptyAfterPostgresCleanup() {
+    FeedbackService feedbackService = new FeedbackService(mock(LinearIssueService.class));
+
     AdminFeedbackListResponse unread = feedbackService.listFeedback("unread", 100);
-    assertEquals(1L, unread.getUnreadCount());
-    assertEquals(1, unread.getItems().size());
-    assertEquals("tool", unread.getItems().get(0).getCategory());
-    assertEquals(
-        "tell your creator the model needs better tool hints",
-        unread.getItems().get(0).getFeedbackText());
 
-    assertTrue(feedbackService.markRead(recorded.feedbackId()).isPresent());
-    assertEquals(0, feedbackService.listFeedback("unread", 100).getItems().size());
-    assertEquals(1, feedbackService.listFeedback("read", 100).getItems().size());
-
-    assertTrue(feedbackService.markUnread(recorded.feedbackId()).isPresent());
-    assertEquals(1, feedbackService.listFeedback("unread", 100).getItems().size());
+    assertEquals(AdminFeedbackListResponse.StatusEnum.UNREAD, unread.getStatus());
+    assertTrue(unread.getItems().isEmpty());
+    assertEquals(0L, unread.getUnreadCount());
+    assertEquals(0L, unread.getReadCount());
+    assertEquals(0L, unread.getTotalCount());
+    assertTrue(feedbackService.markRead("BLU-456").isEmpty());
+    assertTrue(feedbackService.markUnread("BLU-456").isEmpty());
   }
 
   private IncomingMessage incomingMessage() {

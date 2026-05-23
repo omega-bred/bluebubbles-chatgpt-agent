@@ -370,7 +370,7 @@ paths:
       tags:
         - contact
       summary: Creates a public contact message
-      description: Verifies the Cap token and stores a help/contact message for admin review.
+      description: Verifies the Cap token and creates a Linear help/contact issue for admin review.
       requestBody:
         required: true
         content:
@@ -843,7 +843,7 @@ paths:
       tags:
         - admin
       summary: Lists agent feedback
-      description: Returns user feedback captured by the agent feedback tool as an admin inbox.
+      description: Legacy feedback inbox endpoint. New user feedback is created as Linear issues instead of Postgres rows.
       security:
         - bearerAuth: []
       parameters:
@@ -1236,6 +1236,7 @@ components:
           type: string
         message_id:
           type: string
+          description: Linear issue identifier or ID for the accepted contact request.
     SubscriptionPlan:
       type: object
       required:
