@@ -55,7 +55,7 @@ public class BlueBubblesMessageTransport implements MessageTransport {
         || isCurrentMessage(msg.getGuid(), currentMessage)) {
       return;
     }
-    IncomingMessage hydratedMessage = IncomingMessage.create(msg);
+    IncomingMessage hydratedMessage = IncomingMessage.fromBlueBubblesHistory(msg);
     Instant timestamp =
         hydratedMessage != null && hydratedMessage.timestamp() != null
             ? hydratedMessage.timestamp()

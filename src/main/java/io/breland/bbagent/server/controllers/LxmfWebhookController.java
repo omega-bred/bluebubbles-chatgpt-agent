@@ -7,8 +7,6 @@ import io.breland.bbagent.server.agent.IncomingMessage;
 import jakarta.validation.Valid;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
-import java.time.Instant;
-import java.util.List;
 import java.util.Map;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
@@ -24,8 +22,6 @@ import org.springframework.web.context.request.NativeWebRequest;
 @RequestMapping("${openapi.bbagent.base-path:}")
 @Slf4j
 public class LxmfWebhookController extends LxmfApiController {
-  private static final String LXMF_SERVICE = "LXMF";
-
   private final BBMessageAgent messageAgent;
   private final String webhookSecret;
 
@@ -50,30 +46,10 @@ public class LxmfWebhookController extends LxmfApiController {
         || StringUtils.isBlank(requestBody.getSourceHash())) {
       return ResponseEntity.badRequest().body(Map.of("status", "bad_request"));
     }
-    IncomingMessage message = parseWebhookMessage(requestBody);
+    IncomingMessage message = IncomingMessage.fromLxmfWebhook(requestBody);
     log.info("Incoming LXMF message {}", message);
     messageAgent.handleIncomingMessage(message);
     return ResponseEntity.ok(Map.of("status", "ok"));
-  }
-
-  private IncomingMessage parseWebhookMessage(LxmfMessageReceivedRequest requestBody) {
-    String sourceHash = normalizeHash(requestBody.getSourceHash());
-    String chatGuid = IncomingMessage.transportPrefix(IncomingMessage.TRANSPORT_LXMF, sourceHash);
-    Instant timestamp =
-        requestBody.getTimestamp() != null ? requestBody.getTimestamp().toInstant() : Instant.now();
-    return new IncomingMessage(
-        IncomingMessage.TRANSPORT_LXMF,
-        chatGuid,
-        requestBody.getMessageId(),
-        null,
-        requestBody.getContent(),
-        false,
-        LXMF_SERVICE,
-        sourceHash,
-        false,
-        timestamp,
-        List.of(),
-        false);
   }
 
   private boolean isAuthorized(String providedSecret) {
@@ -87,9 +63,5 @@ public class LxmfWebhookController extends LxmfApiController {
     byte[] expected = webhookSecret.getBytes(StandardCharsets.UTF_8);
     byte[] actual = providedSecret.getBytes(StandardCharsets.UTF_8);
     return MessageDigest.isEqual(expected, actual);
-  }
-
-  private static String normalizeHash(String value) {
-    return value == null ? null : value.trim().toLowerCase();
   }
 }
