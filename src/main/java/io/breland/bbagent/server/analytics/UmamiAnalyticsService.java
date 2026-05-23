@@ -68,7 +68,8 @@ public class UmamiAnalyticsService {
     if (!properties.isEnabled() || StringUtils.isBlank(properties.getWebsiteId())) {
       return null;
     }
-    String name = truncate(firstNonBlank(eventName, "server_event"), MAX_EVENT_NAME_LENGTH);
+    String name =
+        StringUtils.truncate(firstNonBlank(eventName, "server_event"), MAX_EVENT_NAME_LENGTH);
     Map<String, Object> cleanedData = cleanData(data);
     UmamiPayload payload =
         new UmamiPayload(
@@ -95,7 +96,7 @@ public class UmamiAnalyticsService {
       }
       Object value = cleanValue(entry.getValue());
       if (value != null) {
-        cleaned.put(truncate(entry.getKey(), MAX_STRING_LENGTH), value);
+        cleaned.put(StringUtils.truncate(entry.getKey(), MAX_STRING_LENGTH), value);
       }
     }
     return cleaned;
@@ -112,7 +113,7 @@ public class UmamiAnalyticsService {
     if (value instanceof Number number) {
       return number.doubleValue();
     }
-    return truncate(String.valueOf(value), MAX_STRING_LENGTH);
+    return StringUtils.truncate(String.valueOf(value), MAX_STRING_LENGTH);
   }
 
   private String title(String name) {
@@ -156,10 +157,6 @@ public class UmamiAnalyticsService {
     } catch (NoSuchAlgorithmException e) {
       return Integer.toHexString(cleanKey.toLowerCase(Locale.ROOT).hashCode());
     }
-  }
-
-  private String truncate(String value, int maxLength) {
-    return value.length() > maxLength ? value.substring(0, maxLength) : value;
   }
 
   private String firstNonBlank(String... values) {
