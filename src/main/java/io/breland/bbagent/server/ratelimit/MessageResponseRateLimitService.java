@@ -148,7 +148,7 @@ public class MessageResponseRateLimitService {
 
   private String accountBucket(String accountId) {
     String hash = hash(accountId);
-    return hash.substring(0, Math.min(hash.length(), ACCOUNT_BUCKET_PREFIX_LENGTH));
+    return StringUtils.truncate(hash, ACCOUNT_BUCKET_PREFIX_LENGTH);
   }
 
   private String hash(String value) {

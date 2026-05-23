@@ -144,17 +144,15 @@ public class FeedbackService {
       return "general";
     }
     normalized = normalized.toLowerCase().replaceAll("[^a-z0-9_\\-]", "_");
-    if (normalized.length() > 64) {
-      normalized = normalized.substring(0, 64);
-    }
+    normalized = StringUtils.truncate(normalized, 64);
     return StringUtils.defaultIfBlank(normalized, "general");
   }
 
   private String accountBucket(String accountId) {
-    if (accountId == null || accountId.isBlank()) {
+    if (StringUtils.isBlank(accountId)) {
       return "unknown";
     }
-    return accountId.substring(0, Math.min(8, accountId.length()));
+    return StringUtils.truncate(accountId, 8);
   }
 
   public record RecordedFeedback(String feedbackId, Instant submittedAt) {}
