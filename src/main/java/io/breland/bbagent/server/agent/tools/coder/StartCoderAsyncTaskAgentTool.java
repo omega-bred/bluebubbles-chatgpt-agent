@@ -374,7 +374,7 @@ public class StartCoderAsyncTaskAgentTool implements ToolProvider {
               + "\nCallback expires at: "
               + callback.expiresAt()
               + "\nCoder task creation result: "
-              + truncate(coderResult)
+              + StringUtils.abbreviate(coderResult, MAX_INCLUDED_RESULT_CHARS)
               + "\n"
               + "Use the available Coder status/log tools to check progress. If the task is still"
               + " pending or running, call schedule_event again for another one-time check before"
@@ -416,14 +416,7 @@ public class StartCoderAsyncTaskAgentTool implements ToolProvider {
 
   private static String summarize(String text) {
     String singleLine = StringUtils.defaultString(StringUtils.normalizeSpace(text));
-    return singleLine.length() <= 120 ? singleLine : singleLine.substring(0, 117) + "...";
-  }
-
-  private static String truncate(String text) {
-    if (text == null || text.length() <= MAX_INCLUDED_RESULT_CHARS) {
-      return text;
-    }
-    return text.substring(0, MAX_INCLUDED_RESULT_CHARS - 3) + "...";
+    return StringUtils.abbreviate(singleLine, 120);
   }
 
   private static String text(JsonNode node, String... names) {

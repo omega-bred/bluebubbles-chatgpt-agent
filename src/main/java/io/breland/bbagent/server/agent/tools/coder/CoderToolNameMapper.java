@@ -17,8 +17,7 @@ final class CoderToolNameMapper {
     String hash = shortHash(mcpToolName);
     int maxBaseLength =
         MAX_TOOL_NAME_LENGTH - CoderMcpClient.TOOL_PREFIX.length() - hash.length() - 1;
-    String truncated =
-        normalized.length() > maxBaseLength ? normalized.substring(0, maxBaseLength) : normalized;
+    String truncated = StringUtils.truncate(normalized, maxBaseLength);
     return CoderMcpClient.TOOL_PREFIX + truncated + "_" + hash;
   }
 
@@ -28,7 +27,7 @@ final class CoderToolNameMapper {
     if (base.length() + suffix.length() <= MAX_TOOL_NAME_LENGTH) {
       return base + suffix;
     }
-    return base.substring(0, MAX_TOOL_NAME_LENGTH - suffix.length()) + suffix;
+    return StringUtils.truncate(base, MAX_TOOL_NAME_LENGTH - suffix.length()) + suffix;
   }
 
   private String shortHash(String value) {
