@@ -22,7 +22,7 @@ export function LandingPage({ auth }: { auth: AuthState }) {
           <p className="eyebrow">AI where the conversation already is</p>
           <h1>AI is in your messages.</h1>
           <p className="hero-lede">
-            Text {agentPhoneDisplay} to try the agent from iMessage with ChatGPT, Gemini, Claude,
+            Text {agentPhoneDisplay} to try BlueChat with ChatGPT, Gemini, Claude,
             or any other configured model.
           </p>
           <div className="hero-actions">
@@ -69,7 +69,7 @@ export function LandingPage({ auth }: { auth: AuthState }) {
           <h3>Group chats</h3>
           <p>
             Bring the model into the room only when it is useful, with replies and reactions that
-            fit iMessage.
+            fit BlueChat.
           </p>
         </article>
         <article>

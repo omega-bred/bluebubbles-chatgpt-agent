@@ -96,7 +96,7 @@ public class BBMessageAgent {
   private static final int MAX_GENERATED_IMAGES = 1;
   public static final String IMESSAGE_SERVICE = "iMessage";
   private static final String IMESSAGE_FORMATTING_INSTRUCTION =
-      "iMessage supports basic text formatting, specifically bold, italic, underline, and"
+      "BlueChat supports basic text formatting, specifically bold, italic, underline, and"
           + " strikethrough. Bold is delimited with **, underline with __, strikethrough with ~~, and"
           + " italic with *. Constrain output to those formatting markers, plain text, and emojis."
           + " Do not use unsupported markdown such as backticks, headings, tables, or lists. ";
@@ -290,6 +290,9 @@ public class BBMessageAgent {
     }
     log.info("Processing Message {}", message);
     recordAccountAliases(message);
+    if (isAccountProcessingBlocked(message)) {
+      return;
+    }
     ConversationState state =
         conversations.computeIfAbsent(
             message.chatGuid(), key -> this.computeConversationState(key, message));
@@ -344,6 +347,32 @@ public class BBMessageAgent {
     }
     log.info("Responding via inline workflow");
     runMessageWorkflow(state, message, workflowContext);
+  }
+
+  private boolean isAccountProcessingBlocked(IncomingMessage message) {
+    if (accountResolver == null || message == null) {
+      return false;
+    }
+    try {
+      return accountResolver
+          .resolve(message)
+          .map(AgentAccountResolver.ResolvedAccount::account)
+          .filter(account -> account.isProcessingBlocked())
+          .map(
+              account -> {
+                log.warn(
+                    "Dropping message for blocked account account_id={} chat={} message_guid={} reason={}",
+                    account.getAccountId(),
+                    message.chatGuid(),
+                    message.messageGuid(),
+                    account.getProcessingBlockedReason());
+                return true;
+              })
+          .orElse(false);
+    } catch (RuntimeException e) {
+      log.warn("Failed to check account block status for {}", message, e);
+      return false;
+    }
   }
 
   private void recordAcceptedMessageMetric(IncomingMessage message) {
@@ -1433,10 +1462,10 @@ public class BBMessageAgent {
   }
 
   private String missingFindMyLocationContext() {
-    return "No current Find My location is available for the current iMessage sender. "
+    return "No current location is available for the current BlueChat sender. "
         + "If the user asks where they are, asks for real-time location-based information or updates, "
         + "or asks something that would benefit from knowing their current location, do not guess. "
-        + "Tell them they can share their location via Find My if they want real-time location-based information or updates.";
+        + "Tell them they can share their location if they want real-time location-based information or updates.";
   }
 
   private String formatFindMyLocationContext(FindMyFriendLocation location) {
@@ -1455,7 +1484,7 @@ public class BBMessageAgent {
 
     StringBuilder text =
         new StringBuilder(
-            "Current Find My location context for the current iMessage sender. "
+            "Current location context for the current BlueChat sender. "
                 + "Use this as background for location-aware answers, but do not mention it unless relevant. ");
     text.append("latitude=").append(latitude).append(" longitude=").append(longitude);
     appendReverseLocationLookupField(text, latitude, longitude);
@@ -1510,7 +1539,7 @@ public class BBMessageAgent {
     String transportInstruction =
         message != null && message.isLxmfTransport()
             ? "You are a chat assistant over LXMF on Reticulum. This transport currently supports one-on-one plain text only. Do not use reactions, attachments, generated images, group controls, or markdown. "
-            : "You are a chat assistant for iMessage via BlueBubbles. "
+            : "You are a chat assistant for BlueChat. "
                 + "You can use reactions for quick acknowledgements and avoid spamming. "
                 + IMESSAGE_FORMATTING_INSTRUCTION;
     String publicAgentInstruction =
@@ -1584,7 +1613,7 @@ public class BBMessageAgent {
                 + " or "
                 + SendReactionAgentTool.TOOL_NAME
                 + " when you specifically need those actions; plain text is fine otherwise. "
-                + "When sending a text, you may optionally apply an iMessage effect via the effect parameter, but use effects sparingly (e.g. happy_birthday for birthday wishes). "
+                + "When sending a text, you may optionally apply a BlueChat effect via the effect parameter, but use effects sparingly (e.g. happy_birthday for birthday wishes). "
                 + "Use available tools for tasks like calendars or lookups when asked. "
                 + "Use web_search for current info or external lookups when relevant. "
                 + "When the user asks about quota, usage limits, daily messages, or remaining messages, call "
@@ -1723,7 +1752,7 @@ public class BBMessageAgent {
     if (feedbackService == null) {
       return "";
     }
-    return "When the incoming message is feedback about the assistant, model, tools, BlueBubbles/iMessage chat agent, bugs, missing or desired capabilities, complaints, praise, or asks to pass something to the creator/owner, call "
+    return "When the incoming message is feedback about the assistant, model, tools, BlueChat, bugs, missing or desired capabilities, complaints, praise, or asks to pass something to the creator/owner, call "
         + FeedbackAgentTool.TOOL_NAME
         + " with the user's exact feedback. Also call it for capability feedback phrased as questions like 'can you do this?' or 'why can't you do this?' when the message is about what the assistant or tools can or should do. Continue to answer normally after recording when a reply is useful. ";
   }

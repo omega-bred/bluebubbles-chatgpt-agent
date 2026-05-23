@@ -65,6 +65,22 @@ public class AgentAccountResolver {
   }
 
   @Transactional(readOnly = true)
+  public Optional<ResolvedAccount> resolveByIdentityType(String identityType, String identifier) {
+    return identityFromTyped(identityType, identifier).flatMap(this::resolve);
+  }
+
+  @Transactional
+  public Optional<ResolvedAccount> resolveOrCreateByIdentityType(
+      String identityType, String identifier) {
+    return identityFromTyped(identityType, identifier)
+        .map(
+            input -> {
+              ResolvedAccount resolved = resolveOrCreate(input);
+              return resolveByAccountId(resolved.account().getAccountId());
+            });
+  }
+
+  @Transactional(readOnly = true)
   public Optional<ResolvedAccount> resolveById(String accountId) {
     if (StringUtils.isBlank(accountId)) {
       return Optional.empty();
@@ -346,6 +362,12 @@ public class AgentAccountResolver {
     }
     if (target.getTermsAcceptedAt() == null) {
       target.setTermsAcceptedAt(source.getTermsAcceptedAt());
+    }
+    if (!target.isProcessingBlocked() && source.isProcessingBlocked()) {
+      target.setProcessingBlocked(true);
+      target.setProcessingBlockedReason(source.getProcessingBlockedReason());
+      target.setProcessingBlockedAt(source.getProcessingBlockedAt());
+      target.setProcessingBlockedBy(source.getProcessingBlockedBy());
     }
     target.setUpdatedAt(Instant.now());
     accountRepository.save(target);

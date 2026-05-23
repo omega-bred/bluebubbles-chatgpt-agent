@@ -85,17 +85,14 @@ export function TermsPage({ auth }: { auth: AuthState }) {
           </section>
 
           <section>
-            <h2>Apple, iMessage, and Third-Party Marks</h2>
+            <h2>Third-Party Services and Marks</h2>
             <p>
-              This service is independent and is not affiliated with, sponsored by, endorsed by, or
-              approved by Apple Inc. iMessage is a trademark of Apple Inc., registered in the U.S.
-              and other countries and regions. References to Apple, iMessage, Messages, iPhone,
-              macOS, or related products and services are used only to identify compatibility,
-              transport, or interoperability context. No license, partnership, certification, or
-              endorsement is implied. Do not use the service in a way that violates Apple's terms,
-              third-party platform rules, trademark rights, anti-spam rules, or acceptable-use
-              policies. The service does not grant permission to use Apple logos, icons, trade
-              dress, screenshots, product images, or other Apple-owned materials.
+              BlueChat is independent and is not affiliated with, sponsored by, endorsed by, or
+              approved by any third-party messaging, AI, billing, identity, calendar, or hosting
+              provider. Third-party names are used only to identify integrations or compatibility.
+              No license, partnership, certification, or endorsement is implied. Do not use the
+              service in a way that violates third-party platform rules, trademark rights,
+              anti-spam rules, or acceptable-use policies.
             </p>
           </section>
 

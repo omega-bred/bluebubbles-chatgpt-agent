@@ -4,6 +4,7 @@ import type { AuthState } from "../auth/useKeycloak";
 import type {
   WebsiteAccountIdentity,
   AdminSubscriptionItem,
+  SubscriptionPlan,
   SubscriptionSummaryResponse,
   WebsiteIntegrationSummary,
   WebsiteLinkedAccountsResponse,
@@ -54,24 +55,33 @@ export function AccountPage({ auth }: { auth: AuthState }) {
     void load();
   }, [load]);
 
-  const createCheckout = React.useCallback(async () => {
-    const plan = subscription?.plans?.[0];
+  const createCheckout = React.useCallback(async (plan?: SubscriptionPlan) => {
+    if (!plan) {
+      setError("Premium billing is not configured yet.");
+      return;
+    }
     setBillingBusy(true);
-    trackEvent("web_checkout_start", { plan_key: plan?.key || "unknown" });
+    trackEvent("web_checkout_start", {
+      plan_key: plan.key || "unknown",
+      provider: plan.provider || "unknown",
+    });
     try {
-      const checkout = await subscriptionApi.createCheckout(plan?.key);
+      const checkout = await subscriptionApi.createCheckout(plan.key, plan.provider);
       trackEvent("web_checkout_created", {
         provider: checkout.provider || "unknown",
-        plan_key: checkout.plan_key || plan?.key || "unknown",
+        plan_key: checkout.plan_key || plan.key || "unknown",
       });
       window.location.assign(checkout.checkout_url);
     } catch (err) {
-      trackEvent("web_checkout_failed", { plan_key: plan?.key || "unknown" });
+      trackEvent("web_checkout_failed", {
+        plan_key: plan.key || "unknown",
+        provider: plan.provider || "unknown",
+      });
       setError(err instanceof Error ? err.message : "Unable to create checkout.");
     } finally {
       setBillingBusy(false);
     }
-  }, [subscription?.plans]);
+  }, []);
 
   const openPortal = React.useCallback(async () => {
     setBillingBusy(true);
@@ -146,12 +156,14 @@ function BillingPanel({
 }: {
   subscription: SubscriptionSummaryResponse | null;
   busy: boolean;
-  onUpgrade: () => Promise<void>;
+  onUpgrade: (plan?: SubscriptionPlan) => Promise<void>;
   onManage: () => Promise<void>;
 }) {
   const activeSubscription = subscription?.subscriptions?.[0];
-  const plan = subscription?.plans?.[0];
+  const plans = subscription?.plans || [];
+  const plan = plans[0];
   const isPremium = Boolean(subscription?.is_premium);
+  const showCheckoutOptions = !activeSubscription;
   return (
     <article className="billing-panel">
       <div>
@@ -171,23 +183,56 @@ function BillingPanel({
             {busy ? "Opening" : "Manage billing"}
           </button>
         ) : null}
-        <button className="button button-primary" disabled={busy || !plan} onClick={() => void onUpgrade()}>
-          {isPremium ? "Extend premium" : "Upgrade"}
-        </button>
+        {showCheckoutOptions && plans.length <= 1 ? (
+          <button className="button button-primary" disabled={busy || !plan} onClick={() => void onUpgrade(plan)}>
+            Subscribe
+          </button>
+        ) : null}
       </div>
-      {activeSubscription ? <SubscriptionRows subscriptions={subscription?.subscriptions || []} /> : null}
+      {showCheckoutOptions && plans.length > 1 ? (
+        <div className="provider-plan-list">
+          {plans.map((availablePlan, index) => (
+            <button
+              className={`provider-plan-row ${index === 0 ? "primary" : ""}`}
+              disabled={busy}
+              key={`${availablePlan.provider}:${availablePlan.key}`}
+              onClick={() => void onUpgrade(availablePlan)}
+            >
+              <span>
+                <strong>{formatProviderLabel(availablePlan.provider)}</strong>
+                <small>
+                  {availablePlan.price_amount} {availablePlan.currency} {availablePlan.billing_interval}
+                </small>
+              </span>
+              <span>{busy ? "Opening" : "Subscribe"}</span>
+            </button>
+          ))}
+        </div>
+      ) : null}
+      {activeSubscription ? (
+        <SubscriptionRows plans={plans} subscriptions={subscription?.subscriptions || []} />
+      ) : null}
     </article>
   );
 }
 
-function SubscriptionRows({ subscriptions }: { subscriptions: AdminSubscriptionItem[] }) {
+function SubscriptionRows({
+  plans,
+  subscriptions,
+}: {
+  plans: SubscriptionPlan[];
+  subscriptions: AdminSubscriptionItem[];
+}) {
   return (
     <div className="subscription-row-list">
       {subscriptions.slice(0, 3).map((subscription) => (
         <div className="subscription-row" key={subscription.subscription_id}>
           <div>
             <strong>{formatSubscriptionStatus(subscription.status)}</strong>
-            <span>{subscription.provider} / {subscription.plan_key}</span>
+            <span>
+              {formatProviderLabel(subscription.provider)} /{" "}
+              {formatPlanLabel(subscription.plan_key, plans)}
+            </span>
           </div>
           <p>{subscription.current_period_end ? `Renews ${formatAccountDate(subscription.current_period_end)}` : "No renewal date"}</p>
         </div>
@@ -218,6 +263,25 @@ function formatSubscriptionStatus(value: string | undefined) {
     .filter(Boolean)
     .map((part) => part[0].toUpperCase() + part.slice(1))
     .join(" ");
+}
+
+function formatProviderLabel(value: string | undefined) {
+  switch ((value || "").toLowerCase()) {
+    case "btcpay":
+      return "BTCPay";
+    case "stripe":
+      return "Stripe";
+    default:
+      return formatSubscriptionStatus(value);
+  }
+}
+
+function formatPlanLabel(value: string | undefined, plans: SubscriptionPlan[]) {
+  const configuredName = plans.find((plan) => plan.key === value)?.display_name;
+  if (configuredName) {
+    return configuredName;
+  }
+  return formatSubscriptionStatus(value);
 }
 
 function formatAccountDate(value: Date | number | string | null | undefined) {
@@ -385,10 +449,10 @@ function LinkedAccountRow({
 function EmptyLinks() {
   return (
     <article className="empty-state">
-      <h2>No iMessage senders linked yet.</h2>
+      <h2>No BlueChat senders linked yet.</h2>
       <p>
         Text the bot and ask it to link your website account. It will send a short-lived login link
-        back in iMessage.
+        back in BlueChat.
       </p>
     </article>
   );
@@ -397,9 +461,9 @@ function EmptyLinks() {
 function identityTypeLabel(type: WebsiteAccountIdentity["type"]) {
   switch (type) {
     case "imessage_email":
-      return "iMessage email";
+      return "BlueChat email";
     case "imessage_phone":
-      return "iMessage phone";
+      return "BlueChat phone";
     case "lxmf_address":
       return "LXMF address";
     default:

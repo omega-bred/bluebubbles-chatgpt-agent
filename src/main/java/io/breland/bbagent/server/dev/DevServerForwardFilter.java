@@ -9,7 +9,9 @@ import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.net.Socket;
 import java.util.Collections;
+import java.util.Locale;
 import java.util.Optional;
+import java.util.Set;
 import org.apache.hc.client5.http.classic.methods.HttpDelete;
 import org.apache.hc.client5.http.classic.methods.HttpGet;
 import org.apache.hc.client5.http.classic.methods.HttpPatch;
@@ -47,6 +49,18 @@ public class DevServerForwardFilter extends OncePerRequestFilter {
   public static final String DEV_SERVER_HOST = "localhost";
   public static final String DEV_SERVER_URL =
       "http://%s:%d".formatted(DEV_SERVER_HOST, DEV_SERVER_PORT);
+  private static final Set<String> PROXY_MANAGED_REQUEST_HEADERS =
+      Set.of(
+          "connection",
+          "content-length",
+          "host",
+          "keep-alive",
+          "proxy-authenticate",
+          "proxy-authorization",
+          "te",
+          "trailer",
+          "transfer-encoding",
+          "upgrade");
   private final CloseableHttpClient httpClient = HttpClients.createDefault();
 
   @PreDestroy
@@ -93,19 +107,19 @@ public class DevServerForwardFilter extends OncePerRequestFilter {
           default -> new HttpGet(uri);
         };
 
-    Collections.list(request.getHeaderNames())
+    Collections.list(request.getHeaderNames()).stream()
+        .filter(DevServerForwardFilter::shouldForwardRequestHeader)
         .forEach(
             name ->
                 Collections.list(request.getHeaders(name))
                     .forEach(value -> proxyReq.addHeader(name, value)));
 
-    if (proxyReq instanceof HttpEntityContainer) {
-      ((HttpEntityContainer) proxyReq)
-          .setEntity(
-              new InputStreamEntity(
-                  request.getInputStream(),
-                  request.getContentLength(),
-                  ContentType.create(request.getContentType())));
+    if (proxyReq instanceof HttpEntityContainer entityContainer && hasRequestBody(request)) {
+      entityContainer.setEntity(
+          new InputStreamEntity(
+              request.getInputStream(),
+              request.getContentLengthLong(),
+              requestContentType(request)));
     }
 
     try (CloseableHttpResponse proxied = httpClient.execute(proxyReq)) {
@@ -138,6 +152,26 @@ public class DevServerForwardFilter extends OncePerRequestFilter {
     } catch (Exception ex) {
       throw new ServletException(ex);
     }
+  }
+
+  static boolean hasRequestBody(HttpServletRequest request) {
+    return request.getContentLengthLong() > 0 || request.getHeader("Transfer-Encoding") != null;
+  }
+
+  static ContentType requestContentType(HttpServletRequest request) {
+    String contentType = request.getContentType();
+    if (contentType == null || contentType.isBlank()) {
+      return ContentType.APPLICATION_OCTET_STREAM;
+    }
+    try {
+      return ContentType.parse(contentType);
+    } catch (RuntimeException e) {
+      return ContentType.APPLICATION_OCTET_STREAM;
+    }
+  }
+
+  static boolean shouldForwardRequestHeader(String name) {
+    return name != null && !PROXY_MANAGED_REQUEST_HEADERS.contains(name.toLowerCase(Locale.ROOT));
   }
 
   private boolean isDevServerRunning() {

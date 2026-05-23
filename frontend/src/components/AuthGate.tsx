@@ -10,7 +10,7 @@ export function AuthGate({ title }: { title: string }) {
         <section className="account-heading">
           <p className="eyebrow">Keycloak login</p>
           <h1>{title}</h1>
-          <p>Log in or create an account to manage linked iMessage senders.</p>
+          <p>Log in or create an account to manage linked BlueChat senders.</p>
           <div className="hero-actions">
             <button
               className="button button-primary"

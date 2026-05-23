@@ -10,6 +10,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import io.breland.bbagent.generated.model.AdminAccountBlockListResponse;
 import io.breland.bbagent.generated.model.AdminFeedbackItem;
 import io.breland.bbagent.generated.model.AdminFeedbackListResponse;
 import io.breland.bbagent.generated.model.AdminRateLimitUsageResponse;
@@ -18,6 +19,7 @@ import io.breland.bbagent.generated.model.AdminStatsPeriod;
 import io.breland.bbagent.generated.model.AdminStatsResponse;
 import io.breland.bbagent.generated.model.AdminSubscriptionListResponse;
 import io.breland.bbagent.generated.model.AdminSubscriptionStats;
+import io.breland.bbagent.server.admin.AccountModerationService;
 import io.breland.bbagent.server.admin.AdminStatsService;
 import io.breland.bbagent.server.config.BBChatGptAgentConfig;
 import io.breland.bbagent.server.config.SecurityConfig;
@@ -49,6 +51,7 @@ class AdminControllerTest {
   @MockBean private FeedbackService feedbackService;
   @MockBean private MessageResponseRateLimitService messageResponseRateLimitService;
   @MockBean private SubscriptionService subscriptionService;
+  @MockBean private AccountModerationService accountModerationService;
 
   @Test
   void adminStatsRequiresAuthentication() throws Exception {
@@ -157,6 +160,22 @@ class AdminControllerTest {
         .andExpect(jsonPath("$.stats.total_subscriptions").value(2))
         .andExpect(jsonPath("$.stats.active_subscriptions").value(1))
         .andExpect(jsonPath("$.stats.monthly_recurring_amount").value("10.00"));
+  }
+
+  @Test
+  void adminAccountBlocksReturnsItemsForAdminRole() throws Exception {
+    when(accountModerationService.listBlocked(100))
+        .thenReturn(new AdminAccountBlockListResponse().accounts(List.of()));
+
+    mockMvc
+        .perform(
+            get("/api/v1/admin/list.accountBlocks")
+                .with(
+                    jwt()
+                        .authorities(new SimpleGrantedAuthority("ROLE_bbagent-admin-role"))
+                        .jwt(token -> token.subject("sub-1"))))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.accounts").isArray());
   }
 
   @Test

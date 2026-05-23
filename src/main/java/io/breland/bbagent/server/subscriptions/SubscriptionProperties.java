@@ -89,5 +89,8 @@ public class SubscriptionProperties {
     private String apiKey = "";
     private String storeId = "";
     private String webhookSecret = "";
+    private String portalConfigurationId = "";
+    private boolean automaticTaxEnabled = false;
+    private boolean testModeOnly = false;
   }
 }

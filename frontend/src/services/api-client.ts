@@ -3,8 +3,12 @@ import axios from "axios";
 import {
   AdminApi,
   Configuration,
+  ContactApi,
   SubscriptionApi,
   WebsiteAccountApi,
+  type AdminAccountBlockRequest,
+  type AdminAccountBlockTargetType,
+  type ContactMessageRequest,
   type WebsiteAccountDeleteLinkedAccountTypeEnum,
 } from "../client";
 import type { WebsiteAccountRedeemLinkRequest } from "../client";
@@ -43,6 +47,11 @@ async function subscriptionClient(): Promise<SubscriptionApi> {
   return new SubscriptionApi(config, config.basePath, axiosInstance);
 }
 
+function contactClient(): ContactApi {
+  const config = publicConfiguration();
+  return new ContactApi(config, config.basePath, axiosInstance);
+}
+
 async function authenticatedConfiguration(): Promise<Configuration> {
   const token = await getAccessToken();
   return new Configuration({
@@ -52,6 +61,12 @@ async function authenticatedConfiguration(): Promise<Configuration> {
         Authorization: `Bearer ${token}`,
       },
     },
+  });
+}
+
+function publicConfiguration(): Configuration {
+  return new Configuration({
+    basePath: import.meta.env.VITE_API_URL || "",
   });
 }
 
@@ -78,6 +93,18 @@ export const websiteAccountApi = {
   ) => {
     const client = await websiteAccountClient();
     return (await client.websiteAccountDeleteLinkedAccount(type, accountKey)).data;
+  },
+};
+
+export const contactApi = {
+  getConfig: async () => {
+    const client = contactClient();
+    return (await client.contactGetConfig()).data;
+  },
+
+  createMessage: async (request: ContactMessageRequest) => {
+    const client = contactClient();
+    return (await client.contactCreateMessage(request)).data;
   },
 };
 
@@ -153,6 +180,30 @@ export const adminApi = {
   revokePremium: async (accountId: string) => {
     const client = await adminClient();
     return (await client.adminRevokePremium({ account_id: accountId })).data;
+  },
+
+  listAccountBlocks: async (limit = 100) => {
+    const client = await adminClient();
+    return (await client.adminListAccountBlocks(limit)).data;
+  },
+
+  blockAccount: async (
+    target: string,
+    targetType: AdminAccountBlockTargetType,
+    reason?: string,
+  ) => {
+    const client = await adminClient();
+    const request: AdminAccountBlockRequest = {
+      target,
+      target_type: targetType,
+      reason,
+    };
+    return (await client.adminBlockAccount(request)).data;
+  },
+
+  unblockAccount: async (target: string, targetType: AdminAccountBlockTargetType) => {
+    const client = await adminClient();
+    return (await client.adminUnblockAccount({ target, target_type: targetType })).data;
   },
 };
 

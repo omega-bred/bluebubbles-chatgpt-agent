@@ -28,7 +28,7 @@ public class BlueBubblesMessageTransport implements MessageTransport {
 
   @Override
   public String displayName() {
-    return "iMessage via BlueBubbles";
+    return "BlueChat";
   }
 
   @Override

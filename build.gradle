@@ -36,7 +36,14 @@ def opSecretMappings = [
     "op://Kubernetes/mem0-api-key/org-id": "MEM0_ORG_ID",
     "op://Kubernetes/giphy-api-key/password": "GIPHY_API_KEY",
     "op://Kubernetes/gcal-oauth-state-secret/password": "GCAL_OAUTH_STATE_SECRET",
-    "op://Kubernetes/gcal-mcp-server/client_secret_552753055766-0fnkjtl0ug4i39hhrr0q9jk49648akra.apps.googleusercontent.com.json": "GCAL_OAUTH_CLIENT_CREDENTIALS_JSON_TEXT"
+    "op://Kubernetes/gcal-mcp-server/client_secret_552753055766-0fnkjtl0ug4i39hhrr0q9jk49648akra.apps.googleusercontent.com.json": "GCAL_OAUTH_CLIENT_CREDENTIALS_JSON_TEXT",
+    "op://Kubernetes/stripe-bbagent-subscriptions-test/api-key": "STRIPE_API_KEY",
+    "op://Kubernetes/stripe-bbagent-subscriptions-test/webhook-secret": "STRIPE_WEBHOOK_SECRET",
+    "op://Kubernetes/stripe-bbagent-subscriptions-test/premium-product-id": "STRIPE_PRODUCT_ID",
+    "op://Kubernetes/stripe-bbagent-subscriptions-test/premium-price-id": "STRIPE_PRICE_ID",
+    "op://Kubernetes/stripe-bbagent-subscriptions-test/test-mode-only": "STRIPE_TEST_MODE_ONLY",
+    "op://Kubernetes/cap-bbagent-contact/site-key": "CAP_CONTACT_SITE_KEY",
+    "op://Kubernetes/cap-bbagent-contact/secret-key": "CAP_CONTACT_SECRET_KEY"
 ]
 
 def resolveSecret = { String propName, String opRef ->
@@ -222,6 +229,7 @@ dependencies {
     implementation 'com.google.apis:google-api-services-calendar:v3-rev20251207-2.0.0'
 
     implementation 'com.auth0:java-jwt:4.5.0'
+    implementation 'com.stripe:stripe-java:32.1.0'
 
     // MCP
     implementation 'io.modelcontextprotocol.sdk:mcp-core:1.1.1'

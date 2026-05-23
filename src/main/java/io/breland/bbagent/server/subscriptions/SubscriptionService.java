@@ -28,6 +28,7 @@ import java.math.RoundingMode;
 import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -228,6 +229,10 @@ public class SubscriptionService {
     try {
       webhookEvent = provider.verifyAndParseWebhook(headers, body);
     } catch (WebhookVerificationException e) {
+      log.warn(
+          "subscription_webhook_rejected provider={} reason={}",
+          normalizedProviderKey,
+          e.getMessage());
       trackSubscriptionEvent(
           "subscription_webhook_rejected",
           "/server/subscription/webhook",
@@ -237,12 +242,27 @@ public class SubscriptionService {
           .status("unauthorized")
           .message(e.getMessage());
     }
+    log.info(
+        "subscription_webhook_received provider={} event_id={} event_type={} account_id={} checkout_session_id={} provider_subscription_id={}",
+        normalizedProviderKey,
+        webhookEvent.providerEventId(),
+        webhookEvent.eventType(),
+        webhookEvent.accountId(),
+        webhookEvent.checkoutSessionId(),
+        webhookEvent.providerSubscriptionId());
 
     PaymentProviderEventEntity event =
         eventRepository
             .findByProviderAndProviderEventId(normalizedProviderKey, webhookEvent.providerEventId())
             .orElse(null);
     if (event != null && !SubscriptionStatuses.EVENT_FAILED.equals(event.getStatus())) {
+      log.info(
+          "subscription_webhook_duplicate provider={} event_id={} event_type={} account_id={} status={}",
+          normalizedProviderKey,
+          webhookEvent.providerEventId(),
+          webhookEvent.eventType(),
+          event.getAccountId(),
+          event.getStatus());
       trackSubscriptionEvent(
           "subscription_webhook_duplicate",
           "/server/subscription/webhook",
@@ -274,6 +294,11 @@ public class SubscriptionService {
     try {
       eventRepository.saveAndFlush(event);
     } catch (DataIntegrityViolationException duplicate) {
+      log.info(
+          "subscription_webhook_duplicate provider={} event_id={} event_type={} status=constraint_conflict",
+          normalizedProviderKey,
+          webhookEvent.providerEventId(),
+          webhookEvent.eventType());
       return new SubscriptionProviderWebhookResponse()
           .status(SubscriptionStatuses.EVENT_DUPLICATE)
           .message("Webhook event already processed");
@@ -291,6 +316,15 @@ public class SubscriptionService {
       event.setSubscriptionId(processed.subscriptionId());
       event.setProcessedAt(Instant.now());
       eventRepository.save(event);
+      log.info(
+          "subscription_webhook_processed provider={} event_id={} event_type={} account_id={} subscription_id={} status={} processed={}",
+          normalizedProviderKey,
+          webhookEvent.providerEventId(),
+          webhookEvent.eventType(),
+          event.getAccountId(),
+          event.getSubscriptionId(),
+          event.getStatus(),
+          processed.processed());
       trackSubscriptionEvent(
           "subscription_webhook_processed",
           "/server/subscription/webhook",
@@ -310,6 +344,15 @@ public class SubscriptionService {
       event.setErrorMessage(e.getMessage());
       event.setProcessedAt(Instant.now());
       eventRepository.save(event);
+      log.warn(
+          "subscription_webhook_failed provider={} event_id={} event_type={} account_id={} subscription_id={} status={}",
+          normalizedProviderKey,
+          webhookEvent.providerEventId(),
+          webhookEvent.eventType(),
+          event.getAccountId(),
+          event.getSubscriptionId(),
+          event.getStatus(),
+          e);
       trackSubscriptionEvent(
           "subscription_webhook_failed",
           "/server/subscription/webhook",
@@ -788,20 +831,34 @@ public class SubscriptionService {
   }
 
   private List<SubscriptionPlan> activePlans() {
-    Optional<String> providerKey = configuredDefaultProviderKey();
-    if (providerKey.isEmpty()) {
+    List<String> providerKeys = configuredProviderKeys();
+    if (providerKeys.isEmpty()) {
       return List.of();
     }
     return properties.getPlans().stream()
         .filter(SubscriptionProperties.Plan::isActive)
-        .filter(plan -> hasConfiguredProviderPlan(plan, providerKey.get()))
-        .map(plan -> toPlan(plan, providerKey.get()))
+        .flatMap(
+            plan ->
+                providerKeys.stream()
+                    .filter(providerKey -> hasConfiguredProviderPlan(plan, providerKey))
+                    .map(providerKey -> toPlan(plan, providerKey)))
         .toList();
   }
 
-  private Optional<String> configuredDefaultProviderKey() {
+  private List<String> configuredProviderKeys() {
+    List<String> providerKeys = new ArrayList<>();
+    configuredProviderKey(properties.getDefaultProvider()).ifPresent(providerKeys::add);
+    providerRegistry.providerKeys().stream()
+        .filter(providerKey -> !providerKeys.contains(providerKey))
+        .map(this::configuredProviderKey)
+        .flatMap(Optional::stream)
+        .forEach(providerKeys::add);
+    return providerKeys;
+  }
+
+  private Optional<String> configuredProviderKey(String requestedProviderKey) {
     try {
-      SubscriptionProvider provider = providerRegistry.require(properties.getDefaultProvider());
+      SubscriptionProvider provider = providerRegistry.require(requestedProviderKey);
       String providerKey = provider.providerKey();
       return properties.providerSettings(providerKey).isEnabled()
           ? Optional.of(providerKey)

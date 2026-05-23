@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
-  title: BlueBubbles ChatGPT Agent OpenAPI spec
-  description: Agent that bridges ChatGPT and iMessage
+  title: BlueChat OpenAPI spec
+  description: Agent that bridges AI models and BlueChat
   version: 0.0.1
 servers:
   - url: http://localhost:8080
@@ -20,6 +20,8 @@ tags:
     description: Agent workflow callback endpoints
   - name: websiteAccount
     description: Website account management endpoints
+  - name: contact
+    description: Public help and contact endpoints
   - name: subscription
     description: Payment subscription and billing endpoints
   - name: admin
@@ -250,7 +252,7 @@ paths:
       tags:
         - websiteAccount
       summary: Gets the current website account
-      description: Returns the authenticated website account profile and linked iMessage identities.
+      description: Returns the authenticated website account profile and linked BlueChat identities.
       security:
         - bearerAuth: []
       responses:
@@ -268,7 +270,7 @@ paths:
       tags:
         - websiteAccount
       summary: Lists linked website account integrations
-      description: Lists linked iMessage identities and integration status derived from those identities.
+      description: Lists linked BlueChat identities and integration status derived from those identities.
       security:
         - bearerAuth: []
       responses:
@@ -285,8 +287,8 @@ paths:
       operationId: websiteAccountRedeemLink
       tags:
         - websiteAccount
-      summary: Redeems an iMessage sender link token
-      description: Links the authenticated website account to an iMessage identity using a short-lived single-use token.
+      summary: Redeems a BlueChat sender link token
+      description: Links the authenticated website account to a BlueChat identity using a short-lived single-use token.
       security:
         - bearerAuth: []
       requestBody:
@@ -318,7 +320,7 @@ paths:
       tags:
         - websiteAccount
       summary: Deletes a linked integration account
-      description: Unlinks an integration account derived from a linked iMessage identity.
+      description: Unlinks an integration account derived from a linked BlueChat identity.
       security:
         - bearerAuth: []
       parameters:
@@ -348,6 +350,44 @@ paths:
           description: Authentication required
         '404':
           description: Linked integration account not found
+  /api/v1/contact/get.contactConfig:
+    get:
+      operationId: contactGetConfig
+      tags:
+        - contact
+      summary: Gets public contact form configuration
+      description: Returns the public contact form configuration, including the Cap widget endpoint when contact CAPTCHA is configured.
+      responses:
+        '200':
+          description: Contact form configuration
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ContactConfigResponse'
+  /api/v1/contact/create.contactMessages:
+    post:
+      operationId: contactCreateMessage
+      tags:
+        - contact
+      summary: Creates a public contact message
+      description: Verifies the Cap token and stores a help/contact message for admin review.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ContactMessageRequest'
+      responses:
+        '200':
+          description: Contact message accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ContactMessageResponse'
+        '400':
+          description: Missing fields or invalid Cap token
+        '503':
+          description: Contact form or Cap verification is not configured
   /api/v1/subscription/list.subscriptionPlans:
     get:
       operationId: subscriptionListPlans
@@ -436,7 +476,7 @@ paths:
       parameters:
         - name: provider
           in: query
-          description: Subscription provider key, such as btcpay.
+          description: Subscription provider key, such as btcpay or stripe.
           required: true
           schema:
             type: string
@@ -626,6 +666,95 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/AdminSubscriptionActionResponse'
+        '400':
+          description: Invalid request
+        '401':
+          description: Authentication required
+        '403':
+          description: Admin role required
+        '404':
+          description: Account not found
+  /api/v1/admin/list.accountBlocks:
+    get:
+      operationId: adminListAccountBlocks
+      tags:
+        - admin
+      summary: Lists blocked agent accounts
+      description: Returns recently blocked canonical accounts and their linked identities.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 500
+            default: 100
+      responses:
+        '200':
+          description: Blocked accounts
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminAccountBlockListResponse'
+        '401':
+          description: Authentication required
+        '403':
+          description: Admin role required
+  /api/v1/admin/block.account:
+    post:
+      operationId: adminBlockAccount
+      tags:
+        - admin
+      summary: Blocks an account from agent processing
+      description: Blocks a canonical account resolved by account id, website identity, or transport identity.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminAccountBlockRequest'
+      responses:
+        '200':
+          description: Account blocked
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminAccountBlockResponse'
+        '400':
+          description: Invalid request
+        '401':
+          description: Authentication required
+        '403':
+          description: Admin role required
+        '404':
+          description: Account not found
+  /api/v1/admin/unblock.account:
+    post:
+      operationId: adminUnblockAccount
+      tags:
+        - admin
+      summary: Unblocks an account for agent processing
+      description: Removes the processing block from a canonical account resolved by account id, website identity, or transport identity.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminAccountBlockRequest'
+      responses:
+        '200':
+          description: Account unblocked
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminAccountBlockResponse'
         '400':
           description: Invalid request
         '401':
@@ -954,6 +1083,7 @@ components:
           type: string
         provider:
           type: string
+          description: Model provider key, such as local, chatgpt, claude, or gemini.
         enabled:
           type: boolean
           description: Whether this option can currently be used by the model picker.
@@ -1050,6 +1180,62 @@ components:
       properties:
         deleted:
           type: boolean
+    ContactConfigResponse:
+      type: object
+      required:
+        - enabled
+        - captcha_required
+        - captcha_configured
+      properties:
+        enabled:
+          type: boolean
+        captcha_required:
+          type: boolean
+        captcha_configured:
+          type: boolean
+        cap_api_endpoint:
+          type: string
+          nullable: true
+          description: Public Cap widget endpoint, usually https://cap.bre.land/{site-key}/.
+    ContactMessageRequest:
+      type: object
+      required:
+        - name
+        - email
+        - subject
+        - message
+        - cap_token
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 200
+        email:
+          type: string
+          minLength: 3
+          maxLength: 320
+        subject:
+          type: string
+          minLength: 1
+          maxLength: 200
+        message:
+          type: string
+          minLength: 1
+          maxLength: 5000
+        cap_token:
+          type: string
+          minLength: 1
+          description: Token emitted by the Cap widget solve event.
+    ContactMessageResponse:
+      type: object
+      required:
+        - status
+        - message_id
+      properties:
+        status:
+          type: string
+        message_id:
+          type: string
     SubscriptionPlan:
       type: object
       required:
@@ -1077,6 +1263,7 @@ components:
           type: string
         provider:
           type: string
+          description: Subscription provider key, such as btcpay or stripe.
         active:
           type: boolean
     SubscriptionPlansResponse:
@@ -1099,6 +1286,7 @@ components:
           nullable: true
         provider:
           type: string
+          description: Subscription provider key, such as btcpay or stripe.
           nullable: true
     SubscriptionCheckoutResponse:
       type: object
@@ -1112,6 +1300,7 @@ components:
           type: string
         provider:
           type: string
+          description: Subscription provider key, such as btcpay or stripe.
         plan_key:
           type: string
         checkout_url:
@@ -1129,6 +1318,7 @@ components:
       properties:
         provider:
           type: string
+          description: Subscription provider key, such as btcpay or stripe.
         portal_url:
           type: string
           format: uri-reference
@@ -1224,6 +1414,7 @@ components:
           nullable: true
         provider:
           type: string
+          description: Subscription provider key, such as btcpay or stripe.
         plan_key:
           type: string
         status:
@@ -1288,6 +1479,83 @@ components:
       properties:
         account_id:
           type: string
+    AdminAccountBlockTargetType:
+      type: string
+      enum:
+        - account_id
+        - imessage_email
+        - imessage_phone
+        - lxmf_address
+        - website_subject
+        - website_email
+    AdminAccountBlockRequest:
+      type: object
+      required:
+        - target
+        - target_type
+      properties:
+        target:
+          type: string
+          description: Account id or identity value to block or unblock.
+        target_type:
+          $ref: '#/components/schemas/AdminAccountBlockTargetType'
+        reason:
+          type: string
+          nullable: true
+          maxLength: 1000
+    AdminBlockedAccountItem:
+      type: object
+      required:
+        - account_id
+        - account_bucket
+        - blocked
+        - identities
+      properties:
+        account_id:
+          type: string
+        account_bucket:
+          type: string
+        blocked:
+          type: boolean
+        reason:
+          type: string
+          nullable: true
+        blocked_at:
+          type: string
+          format: date-time
+          nullable: true
+        blocked_by:
+          type: string
+          nullable: true
+        website_email:
+          type: string
+          nullable: true
+        website_subject:
+          type: string
+          nullable: true
+        identities:
+          type: array
+          items:
+            $ref: '#/components/schemas/WebsiteAccountIdentity'
+    AdminAccountBlockListResponse:
+      type: object
+      required:
+        - accounts
+      properties:
+        accounts:
+          type: array
+          items:
+            $ref: '#/components/schemas/AdminBlockedAccountItem'
+    AdminAccountBlockResponse:
+      type: object
+      required:
+        - status
+        - account
+      properties:
+        status:
+          type: string
+        account:
+          $ref: '#/components/schemas/AdminBlockedAccountItem'
     AdminSubscriptionActionResponse:
       type: object
       required:

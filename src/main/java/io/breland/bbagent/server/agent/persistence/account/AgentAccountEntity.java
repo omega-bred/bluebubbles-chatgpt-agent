@@ -53,6 +53,18 @@ public class AgentAccountEntity {
   @Column(name = "terms_accepted_at")
   private Instant termsAcceptedAt;
 
+  @Column(name = "processing_blocked", nullable = false)
+  private boolean processingBlocked;
+
+  @Column(name = "processing_blocked_reason", columnDefinition = "TEXT")
+  private String processingBlockedReason;
+
+  @Column(name = "processing_blocked_at")
+  private Instant processingBlockedAt;
+
+  @Column(name = "processing_blocked_by", length = 255)
+  private String processingBlockedBy;
+
   @Column(name = "created_at", nullable = false)
   private Instant createdAt;
 

@@ -30,7 +30,7 @@ if ! kcadm get "realms/${REALM}" --server "${SERVER}" >/dev/null 2>&1; then
     -s rememberMe=true \
     -s loginWithEmailAllowed=true \
     -s duplicateEmailsAllowed=false \
-    -s displayName="Chat iMessage"
+    -s displayName="BlueChat"
 else
   kcadm update "realms/${REALM}" \
     --server "${SERVER}" \
@@ -40,7 +40,7 @@ else
     -s rememberMe=true \
     -s loginWithEmailAllowed=true \
     -s duplicateEmailsAllowed=false \
-    -s displayName="Chat iMessage"
+    -s displayName="BlueChat"
 fi
 
 client_id="$(

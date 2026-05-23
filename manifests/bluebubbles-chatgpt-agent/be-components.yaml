@@ -85,6 +85,22 @@ metadata:
 spec:
   itemPath: "vaults/Kubernetes/items/btcpay-bbagent-subscriptions"
 ---
+apiVersion: onepassword.com/v1
+kind: OnePasswordItem
+metadata:
+  name: stripe-bbagent-subscriptions-live #this name will also be used for naming the generated kubernetes secret
+  namespace: bluebubbles-chatgpt-agent
+spec:
+  itemPath: "vaults/Kubernetes/items/stripe-bbagent-subscriptions-live"
+---
+apiVersion: onepassword.com/v1
+kind: OnePasswordItem
+metadata:
+  name: cap-bbagent-contact #this name will also be used for naming the generated kubernetes secret
+  namespace: bluebubbles-chatgpt-agent
+spec:
+  itemPath: "vaults/Kubernetes/items/cap-bbagent-contact"
+---
 apiVersion: v1
 kind: ServiceAccount
 metadata:
@@ -248,10 +264,28 @@ spec:
               value: "944a19b7-0e55-4a9b-b67f-48503cbead0d"
             - name: UMAMI_HOSTNAME
               value: "chatagent.bre.land"
+            - name: CAP_BASE_URL
+              value: "https://cap.bre.land"
+            - name: CAP_CONTACT_REQUIRED
+              value: "true"
+            - name: CAP_CONTACT_SITE_KEY
+              valueFrom:
+                secretKeyRef:
+                  key: "site-key"
+                  name: cap-bbagent-contact
+                  optional: true
+            - name: CAP_CONTACT_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  key: "secret-key"
+                  name: cap-bbagent-contact
+                  optional: true
             - name: KEYCLOAK_ISSUER_URI
               value: "https://keycloak.bre.land/realms/bbagent"
             - name: KEYCLOAK_JWK_SET_URI
               value: "https://keycloak.bre.land/realms/bbagent/protocol/openid-connect/certs"
+            - name: SUBSCRIPTIONS_DEFAULT_PROVIDER
+              value: "stripe"
             - name: BTCPAY_BASE_URL
               value: "https://btcpay.bre.land"
             - name: BTCPAY_STORE_ID
@@ -279,6 +313,36 @@ spec:
                 secretKeyRef:
                   key: "premium-plan-id"
                   name: btcpay-bbagent-subscriptions
+            - name: STRIPE_TEST_MODE_ONLY
+              valueFrom:
+                secretKeyRef:
+                  key: "test-mode-only"
+                  name: stripe-bbagent-subscriptions-live
+                  optional: true
+            - name: STRIPE_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  key: "api-key"
+                  name: stripe-bbagent-subscriptions-live
+                  optional: true
+            - name: STRIPE_WEBHOOK_SECRET
+              valueFrom:
+                secretKeyRef:
+                  key: "webhook-secret"
+                  name: stripe-bbagent-subscriptions-live
+                  optional: true
+            - name: STRIPE_PRODUCT_ID
+              valueFrom:
+                secretKeyRef:
+                  key: "premium-product-id"
+                  name: stripe-bbagent-subscriptions-live
+                  optional: true
+            - name: STRIPE_PRICE_ID
+              valueFrom:
+                secretKeyRef:
+                  key: "premium-price-id"
+                  name: stripe-bbagent-subscriptions-live
+                  optional: true
           image: ghcr.io/omega-bred/bluebubbles-chatgpt-agent:latest
           imagePullPolicy: Always
           securityContext:
@@ -372,7 +436,7 @@ spec:
             - name: RNS_BACKBONE_PORT
               value: "4242"
             - name: LXMF_DISPLAY_NAME
-              value: "BlueBubbles ChatGPT Agent"
+              value: "BlueChat"
           image: ghcr.io/omega-bred/bluebubbles-chatgpt-agent-lxmf-bridge:latest
           imagePullPolicy: Always
           ports:

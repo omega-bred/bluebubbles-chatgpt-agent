@@ -44,7 +44,7 @@ export function OauthCallbackPage({ auth }: { auth: AuthState }) {
           <p>
             {status === "success"
               ? "The linking flow is complete."
-              : "Return to iMessage and start the linking flow again."}
+              : "Return to BlueChat and start the linking flow again."}
           </p>
           <div className="hero-actions">
             <a

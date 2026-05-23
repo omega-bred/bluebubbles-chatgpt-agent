@@ -30,6 +30,8 @@
           inherit (pkgs) lib stdenv;
 
           jdk = pkgs.jdk25;
+          postgresql = pkgs.postgresql;
+          stripeCli = pkgs.stripe-cli;
 
           python = pkgs.python313.withPackages (
             ps:
@@ -49,6 +51,78 @@
             exec ${pkgs.keycloak}/bin/kcadm.sh "$@"
           '';
 
+          bbagentPostgresStart = pkgs.writeShellApplication {
+            name = "bbagent-postgres-start";
+            runtimeInputs = [
+              pkgs.coreutils
+              postgresql
+            ];
+            text = ''
+              data_dir="''${BBAGENT_POSTGRES_DATA_DIR:-$PWD/.dev/postgres}"
+              port="''${BBAGENT_POSTGRES_PORT:-5432}"
+              user="''${BBAGENT_POSTGRES_USER:-postgres}"
+              password="''${BBAGENT_POSTGRES_PASSWORD:-postgres}"
+              log_file="''${BBAGENT_POSTGRES_LOG:-$data_dir/postgres.log}"
+
+              mkdir -p "$data_dir"
+
+              if [ ! -s "$data_dir/PG_VERSION" ]; then
+                password_file="$(mktemp)"
+                trap 'rm -f "$password_file"' EXIT
+                printf '%s\n' "$password" > "$password_file"
+
+                initdb \
+                  --pgdata="$data_dir" \
+                  --username="$user" \
+                  --pwfile="$password_file" \
+                  --auth-local=trust \
+                  --auth-host=scram-sha-256
+              fi
+
+              if pg_ctl --pgdata="$data_dir" status >/dev/null 2>&1; then
+                echo "Postgres is already running from $data_dir"
+                exit 0
+              fi
+
+              pg_ctl \
+                --pgdata="$data_dir" \
+                --log="$log_file" \
+                --options="-p $port" \
+                start
+
+              echo "Postgres started on localhost:$port"
+              echo "  POSTGRES_JDBC_URL=jdbc:postgresql://localhost:$port/postgres"
+              echo "  POSTGRES_USER=$user"
+              echo "  POSTGRES_PASSWORD=$password"
+              echo "  Log: $log_file"
+            '';
+          };
+
+          bbagentPostgresStop = pkgs.writeShellApplication {
+            name = "bbagent-postgres-stop";
+            runtimeInputs = [ postgresql ];
+            text = ''
+              data_dir="''${BBAGENT_POSTGRES_DATA_DIR:-$PWD/.dev/postgres}"
+
+              if [ ! -s "$data_dir/PG_VERSION" ]; then
+                echo "No Postgres data dir found at $data_dir"
+                exit 0
+              fi
+
+              pg_ctl --pgdata="$data_dir" stop --mode=fast
+            '';
+          };
+
+          bbagentStripeListen = pkgs.writeShellApplication {
+            name = "bbagent-stripe-listen";
+            runtimeInputs = [ stripeCli ];
+            text = ''
+              forward_to="''${1:-''${STRIPE_WEBHOOK_FORWARD_TO:-http://localhost:8080/api/v1/subscription/receiveWebhook.subscriptionProviderEvents?provider=stripe}}"
+
+              exec stripe listen --forward-to "$forward_to"
+            '';
+          };
+
           linuxNativeLibs = lib.optionals stdenv.isLinux [
             pkgs.gfortran.cc.lib
             pkgs.stdenv.cc.cc.lib
@@ -58,6 +132,9 @@
           inherit jdk linuxNativeLibs python;
 
           tools = [
+            bbagentPostgresStart
+            bbagentPostgresStop
+            bbagentStripeListen
             jdk
             python
             kcadm
@@ -81,7 +158,8 @@
             pkgs.nodejs_20
             pkgs.openapi-generator-cli
             pkgs.openssl
-            pkgs.postgresql
+            postgresql
+            stripeCli
             pkgs.which
             pkgs.zsh
           ]

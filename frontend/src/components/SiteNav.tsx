@@ -8,18 +8,15 @@ export function SiteNav({ auth }: { auth: AuthState }) {
   return (
     <header className="site-nav">
       <a className="brand" href="/" onClick={() => trackNav("home")}>
-        <span className="brand-mark">CI</span>
-        <span>Chat iMessage</span>
+        <span className="brand-mark">BC</span>
+        <span>BlueChat</span>
       </a>
       <nav>
         <a href="/account" onClick={() => trackNav("account")}>
           Account
         </a>
-        <a href="/terms" onClick={() => trackNav("terms")}>
-          Terms
-        </a>
-        <a href="/privacy" onClick={() => trackNav("privacy")}>
-          Privacy
+        <a href="/help" onClick={() => trackNav("help")}>
+          Help
         </a>
         {auth.ready && auth.admin ? (
           <a href="/admin" onClick={() => trackNav("admin")}>

@@ -202,7 +202,7 @@ public class StartCoderAsyncTaskAgentTool implements ToolProvider {
       replay.put("start_status", entity.getStatus());
       replay.put(
           "message",
-          "This Coder task was already started for the current iMessage. Do not call"
+          "This Coder task was already started for the current BlueChat message. Do not call"
               + " start_coder_async_task again; summarize the existing status to the user.");
       return mapper.writeValueAsString(replay);
     }
@@ -214,12 +214,12 @@ public class StartCoderAsyncTaskAgentTool implements ToolProvider {
           "error", StringUtils.defaultIfBlank(entity.getErrorMessage(), "previous start failed"));
       response.put(
           "message",
-          "This iMessage already attempted to start a Coder task and failed. Do not call"
+          "This BlueChat message already attempted to start a Coder task and failed. Do not call"
               + " start_coder_async_task again unless the user sends a new retry request.");
     } else {
       response.put(
           "message",
-          "This Coder task is already being started for the current iMessage. Do not call"
+          "This Coder task is already being started for the current BlueChat message. Do not call"
               + " start_coder_async_task again; tell the user startup is in progress.");
     }
     return mapper.writeValueAsString(response);

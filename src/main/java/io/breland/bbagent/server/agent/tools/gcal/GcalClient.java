@@ -62,7 +62,7 @@ public class GcalClient {
       @Value("${gcal.oauth.client_secret:}") String clientSecret,
       @Value("${gcal.oauth.redirect_uri:}") String redirectUri,
       @Value("${gcal.oauth.state_secret:}") String stateSecret,
-      @Value("${gcal.application_name:iMessage + ChatGPT}") String applicationName,
+      @Value("${gcal.application_name:BlueChat}") String applicationName,
       GcalCredentialRepository credentialRepository,
       ObjectMapper objectMapper) {
     this.clientSecretPath = clientSecretPath;

@@ -40,7 +40,7 @@ public class FeedbackAgentTool implements ToolProvider {
   public AgentTool getTool() {
     return new AgentTool(
         TOOL_NAME,
-        "Record user feedback for the agent owner. Call automatically when the incoming message is feedback about the model, assistant behavior, tools, BlueBubbles/iMessage chat agent, missing capabilities, bugs, complaints, praise, or a request like 'tell your creator', 'can you do this?', or 'why can't you do this?'. Record the user's exact feedback. Do not use for ordinary task requests unless the user is asking for or criticizing a capability.",
+        "Record user feedback for the agent owner. Call automatically when the incoming message is feedback about the model, assistant behavior, tools, BlueChat, missing capabilities, bugs, complaints, praise, or a request like 'tell your creator', 'can you do this?', or 'why can't you do this?'. Record the user's exact feedback. Do not use for ordinary task requests unless the user is asking for or criticizing a capability.",
         jsonSchema(FeedbackRequest.class),
         false,
         (context, args) -> {

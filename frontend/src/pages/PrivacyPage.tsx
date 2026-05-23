@@ -18,7 +18,7 @@ export function PrivacyPage({ auth }: { auth: AuthState }) {
           <section>
             <h2>Overview</h2>
             <p>
-              This Privacy Policy explains how the BlueBubbles ChatGPT Agent collects, uses, stores,
+              This Privacy Policy explains how BlueChat collects, uses, stores,
               shares, and protects information when you text +1 (415) 867-4956, use the website,
               link accounts, or connect integrations. The service is operated for users in the
               United States and is not directed to children or users under 18.
@@ -53,7 +53,7 @@ export function PrivacyPage({ auth }: { auth: AuthState }) {
               Message content, prompts, files, context, and tool results may be sent to configured
               AI model providers and infrastructure providers so the service can generate responses
               or perform requested actions. Connected services such as Google Calendar, Coder,
-              Keycloak, BlueBubbles, Giphy, memory services, hosting providers, databases, logging
+              Keycloak, message relay services, Giphy, memory services, hosting providers, databases, logging
               systems, and deployment infrastructure may process information according to their own
               terms and privacy practices.
             </p>

@@ -25,7 +25,7 @@ public class SendTextAgentTool implements ToolProvider {
                   "Use to reply directly to a message in a thread. Pass the message GUID to reply to.")
           String selectedMessageGuid,
       @Schema(
-              description = "Optional iMessage effect to use sparingly.",
+              description = "Optional BlueChat effect to use sparingly.",
               allowableValues = {
                 "slam",
                 "gentle",
@@ -80,7 +80,7 @@ public class SendTextAgentTool implements ToolProvider {
   public AgentTool getTool() {
     return new AgentTool(
         TOOL_NAME,
-        "Send a plain-text reply via the current chat transport (no markdown or formatting markers). You may optionally apply an iMessage effect when the current transport supports it.",
+        "Send a plain-text reply via the current chat transport (no markdown or formatting markers). You may optionally apply a BlueChat effect when the current transport supports it.",
         jsonSchema(SendTextRequest.class),
         false,
         (context, args) -> {

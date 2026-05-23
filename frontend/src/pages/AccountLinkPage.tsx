@@ -9,21 +9,21 @@ import { trackEvent } from "../services/analytics";
 
 export function AccountLinkPage({ auth }: { auth: AuthState }) {
   const token = new URLSearchParams(window.location.search).get("token") || "";
-  const [status, setStatus] = React.useState("Ready to connect this iMessage sender.");
+  const [status, setStatus] = React.useState("Ready to connect this BlueChat sender.");
   const [done, setDone] = React.useState(false);
 
   React.useEffect(() => {
     if (!auth.authenticated || !token || done) {
       return;
     }
-    setStatus("Connecting this iMessage sender to your account.");
+    setStatus("Connecting this BlueChat sender to your account.");
     websiteAccountApi
       .redeemLink(token)
       .then((response) => {
         setStatus(
           response.status === "already_linked"
-            ? "This iMessage sender is already linked to your account."
-            : "This iMessage sender is linked to your account.",
+            ? "This BlueChat sender is already linked to your account."
+            : "This BlueChat sender is linked to your account.",
         );
         trackEvent("web_account_link_redeemed", { status: response.status || "linked" });
         setDone(true);
@@ -40,7 +40,7 @@ export function AccountLinkPage({ auth }: { auth: AuthState }) {
   }
 
   if (!auth.authenticated) {
-    return <AuthGate title="Connect iMessage" />;
+    return <AuthGate title="Connect BlueChat" />;
   }
 
   return (
@@ -48,7 +48,7 @@ export function AccountLinkPage({ auth }: { auth: AuthState }) {
       <SiteNav auth={auth} />
       <main className="account-main narrow">
         <section className="account-heading">
-          <p className="eyebrow">Connect iMessage</p>
+          <p className="eyebrow">Connect BlueChat</p>
           <h1>{status}</h1>
           <p>Your website account can now show the services linked to this sender.</p>
           <a

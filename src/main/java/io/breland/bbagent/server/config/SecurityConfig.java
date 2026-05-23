@@ -37,6 +37,8 @@ public class SecurityConfig {
                 authorize
                     .requestMatchers("/api/v1/admin/**")
                     .hasAuthority(roleAuthority(ADMIN_ROLE))
+                    .requestMatchers("/api/v1/contact/**")
+                    .permitAll()
                     .requestMatchers("/api/v1/websiteAccount/**")
                     .authenticated()
                     .requestMatchers(

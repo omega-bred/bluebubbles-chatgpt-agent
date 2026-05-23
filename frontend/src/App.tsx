@@ -6,6 +6,8 @@ import { AdminPage } from "./pages/AdminPage";
 import { AdminFeedbackPage } from "./pages/AdminFeedbackPage";
 import { AccountLinkPage } from "./pages/AccountLinkPage";
 import { AccountPage } from "./pages/AccountPage";
+import { SiteFooter } from "./components/SiteFooter";
+import { HelpContactPage } from "./pages/HelpContactPage";
 import { LandingPage } from "./pages/LandingPage";
 import { OauthCallbackPage } from "./pages/OauthCallbackPage";
 import { PrivacyPage } from "./pages/PrivacyPage";
@@ -39,6 +41,15 @@ export default function App() {
     });
   }, [auth.admin, auth.authenticated, auth.ready]);
 
+  return (
+    <>
+      {pageForPath(path, auth)}
+      <SiteFooter />
+    </>
+  );
+}
+
+function pageForPath(path: string, auth: ReturnType<typeof useKeycloak>) {
   if (path.startsWith("/oauth/callback")) {
     return <OauthCallbackPage auth={auth} />;
   }
@@ -57,6 +68,10 @@ export default function App() {
 
   if (path.startsWith("/admin")) {
     return <AdminPage auth={auth} />;
+  }
+
+  if (path.startsWith("/help") || path.startsWith("/contact")) {
+    return <HelpContactPage auth={auth} />;
   }
 
   if (path.startsWith("/terms")) {

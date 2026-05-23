@@ -25,26 +25,43 @@ Testing:
 - Unit/integration tests run with an in-memory H2 database by default (see
   `src/test/resources/application.properties`).
 - Flyway is enabled for tests; add migrations in `src/main/resources/db/migration`.
+- The full `./gradlew test` task includes live-network integration coverage. If
+  `NominatimReverseLookupIntegTest.testReverseLookup()` fails with a timeout or changed external
+  address data, treat it as an ambient/live-service failure and still run focused tests for the
+  feature you touched.
 
 Google Calendar:
 - OAuth is handled via `/api/v1/gcal/completeOauth.gcal`.
 - OAuth state uses an HMAC secret; set `GCAL_OAUTH_STATE_SECRET`.
 - Tokens are stored in Postgres (no local token directory).
 
-BlueBubbles:
-- Outbound iMessage requires `BLUEBUBBLES_PASSWORD` and a reachable BlueBubbles server base URL.
+BlueChat / BlueBubbles:
+- Outbound BlueChat messaging requires `BLUEBUBBLES_PASSWORD` and a reachable BlueBubbles server base URL.
+
+Help/contact and Cap:
+- The public help/contact form lives at `/help` and `/contact`, uses generated OpenAPI client calls
+  to `/api/v1/contact/get.contactConfig` and `/api/v1/contact/create.contactMessages`, and stores
+  rows in `website_contact_messages`.
+- Contact abuse prevention is Cap-backed. Frontend uses `cap-widget`; backend verifies the emitted
+  token by POSTing to `${CAP_BASE_URL}/${CAP_CONTACT_SITE_KEY}/siteverify`.
+- Production Cap is hosted at `https://cap.bre.land`. The Kubernetes/1Password item is
+  `cap-bbagent-contact` with fields `site-key` and `secret-key`; keep those aligned with
+  `CAP_CONTACT_SITE_KEY` and `CAP_CONTACT_SECRET_KEY` in `build.gradle`,
+  `application.properties`, test properties, and the production manifest.
+- Do not put the Cap secret in frontend config. The frontend should only receive the public Cap API
+  endpoint returned by the backend contact config API.
 
 Canonical agent accounts:
 - User/account identity is centered on `agent_accounts.account_id`. Do not key new persistence off
-  raw iMessage sender strings, Keycloak subject, Google account id, or Coder user id when the data
+  raw BlueChat sender strings, Keycloak subject, Google account id, or Coder user id when the data
   belongs to the agent user.
 - Transport identities live in `agent_account_identities` and currently support exactly
   `imessage_email`, `imessage_phone`, and `lxmf_address`. Add new transport rows here as new
   transports arrive; do not create alias tables or parallel sender-link tables.
 - Use `AgentAccountResolver` for account lookup, creation, and merging. It normalizes email/phone
-  identifiers and can merge accounts when iMessage phone, iMessage email, LXMF address, or linked
+  identifiers and can merge accounts when BlueChat phone, BlueChat email, LXMF address, or linked
   Keycloak email prove they are the same user.
-- It is valid for iMessage to alternate between phone and email. All account-related features must
+- It is valid for BlueChat to alternate between phone and email. All account-related features must
   treat those as the same user after resolution, including OAuth lookup, model access, global contact
   name, linked-account status, and location/Find My lookups.
 - Website login is metadata on `agent_accounts` (`website_subject`, website email/name fields), not
@@ -57,6 +74,17 @@ Canonical agent accounts:
   `agent_model_account_settings` or `global_contact`.
 - This project intentionally reset the early test data model. There is no backwards-compatibility
   requirement for the dropped account/link/alias tables unless the user explicitly asks for one.
+
+Account blocking / abuse controls:
+- Admin abuse controls should block the canonical `agent_accounts` row via
+  `processing_blocked`, `processing_blocked_reason`, `processing_blocked_at`, and
+  `processing_blocked_by`. Do not add sender-specific or website-specific blocklist tables for
+  account-level abuse controls.
+- `AccountModerationService` can resolve block targets by canonical account id, website subject,
+  website email, BlueChat email, BlueChat phone, or LXMF address. Transport identity blocks should
+  use `AgentAccountResolver` so phone/email normalization and account merging remain canonical.
+- `BBMessageAgent` intentionally checks `processing_blocked` before terms gating, metrics, model
+  calls, or workflow launch. Keep that early drop behavior when changing inbound processing.
 
 Website accounts / Keycloak:
 - Browser login uses Keycloak, not Clerk. The app realm is `bbagent` and the public SPA client is
@@ -76,23 +104,24 @@ Website accounts / Keycloak:
   setting `loginTheme=bbagent`.
 
 Website account linking:
-- Use the `link_website_account` agent tool when an iMessage user asks to log in, sign up, manage
-  their web account, connect iMessage to the website, or view linked integrations.
+- Use the `link_website_account` agent tool when a BlueChat user asks to log in, sign up, manage
+  their web account, connect BlueChat to the website, or view linked integrations.
 - Use the `get_website_account_link_status` agent tool when the user asks whether the current
   sender, another sender, or the current chat identity is already linked to a website account. The
   current incoming message context may already include `websiteAccountLinked` and
   `websiteAccountExactChatLinked`; call the tool when the user asks directly, names a different
   sender, or the context is absent/ambiguous. The tool also returns read-only model access info
   such as `is_premium`, plan, current model, and whether website model selection is configurable.
-- The `link_website_account` tool infers the current iMessage sender/chat context, creates a
+- The `link_website_account` tool infers the current BlueChat sender/chat context, creates a
   short-lived pending link token, stores only a token hash, and returns a safe
   `/account/link?token=...` URL for the user. Link tokens default to 30 minutes and are single-use.
 - `/account/link` requires Keycloak login, then calls the protected redeem API with the Keycloak
   access token. Redeeming links the Keycloak subject to the canonical agent account for the current
-  iMessage sender/chat identity. Re-redeeming by the same account should be idempotent; redeeming an
+  BlueChat sender/chat identity. Re-redeeming by the same account should be idempotent; redeeming an
   already-used token from a different account should conflict.
 - Account identity is canonicalized through `agent_accounts` plus `agent_account_identities`.
-  Supported identity types are `imessage_email`, `imessage_phone`, and `lxmf_address`; phone and
+  Supported identity types are the legacy internal values `imessage_email`, `imessage_phone`, and
+  `lxmf_address`; show them as BlueChat email/phone and LXMF address in user-facing copy. Phone and
   email forms that refer to the same user should resolve to the same `agent_accounts.id`.
 - The account dashboard lists linked chat identities and OAuth integrations. Coder and Google
   Calendar OAuth credentials are keyed by canonical `agent_accounts.id`, and the dashboard may unlink
@@ -113,6 +142,17 @@ Model access:
   current local responses model configured in `ModelAccessService`. Premium rows set
   `is_premium=true`; premium users currently default to `chatgpt`, with future options exposed
   read-only in account/model summaries until model selection is implemented.
+
+Subscription billing:
+- Keep BTCPay and Stripe side by side. Do not replace one provider path with the other; new billing
+  work should go through `SubscriptionProvider`, `SubscriptionProviderRegistry`, and
+  `SubscriptionService`.
+- Stripe subscription checkout uses Checkout Sessions, Customer Portal for manage/cancel, and
+  signed webhooks. Preserve metadata keys `bbagent_account_id`, `bbagent_checkout_id`,
+  `bbagent_plan_key`, and `bbagent_provider` for reconciliation.
+- Production currently uses Stripe test mode by default. `build.gradle` pulls the test-mode
+  1Password item `stripe-bbagent-subscriptions-test` for local boot/test, while the Kubernetes
+  manifest leaves the live item wiring in place for future promotion.
 
 If you add new configs:
 - Prefer environment variables with sensible defaults in `application.properties`.

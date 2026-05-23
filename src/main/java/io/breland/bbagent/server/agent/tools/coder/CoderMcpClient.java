@@ -374,7 +374,7 @@ public class CoderMcpClient {
         McpClient.sync(transport)
             .requestTimeout(requestTimeout)
             .initializationTimeout(requestTimeout)
-            .clientInfo(new McpSchema.Implementation("BlueBubbles ChatGPT Agent", "0.0.1"))
+            .clientInfo(new McpSchema.Implementation("BlueChat", "0.0.1"))
             .build();
     try {
       client.initialize();

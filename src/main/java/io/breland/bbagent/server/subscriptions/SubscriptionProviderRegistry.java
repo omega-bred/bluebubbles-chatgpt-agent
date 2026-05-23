@@ -32,4 +32,8 @@ public class SubscriptionProviderRegistry {
     }
     return provider;
   }
+
+  public List<String> providerKeys() {
+    return providers.keySet().stream().sorted().toList();
+  }
 }

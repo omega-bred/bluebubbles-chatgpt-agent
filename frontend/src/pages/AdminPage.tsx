@@ -2,6 +2,9 @@ import React from "react";
 
 import type { AuthState } from "../auth/useKeycloak";
 import type {
+  AdminAccountBlockListResponse,
+  AdminAccountBlockTargetType,
+  AdminBlockedAccountItem,
   AdminRateLimitUsage,
   AdminRateLimitUsageResponse,
   AdminSenderStats,
@@ -32,6 +35,16 @@ const bucketDateFormat = new Intl.DateTimeFormat(undefined, {
 const epochSecondsCutoff = 10_000_000_000;
 
 type ApiDateValue = Date | number | string | null | undefined;
+type BlockAction = "block" | "unblock";
+
+const accountBlockTargetTypes: Array<{ value: AdminAccountBlockTargetType; label: string }> = [
+  { value: "account_id", label: "Account ID" },
+  { value: "imessage_email", label: "BlueChat email" },
+  { value: "imessage_phone", label: "BlueChat phone" },
+  { value: "lxmf_address", label: "LXMF address" },
+  { value: "website_subject", label: "Website subject" },
+  { value: "website_email", label: "Website email" },
+];
 
 export function AdminPage({ auth }: { auth: AuthState }) {
   const [fromInput, setFromInput] = React.useState(() =>
@@ -41,11 +54,18 @@ export function AdminPage({ auth }: { auth: AuthState }) {
   const [data, setData] = React.useState<AdminStatsResponse | null>(null);
   const [limitData, setLimitData] = React.useState<AdminRateLimitUsageResponse | null>(null);
   const [subscriptionData, setSubscriptionData] = React.useState<AdminSubscriptionListResponse | null>(null);
+  const [accountBlockData, setAccountBlockData] =
+    React.useState<AdminAccountBlockListResponse | null>(null);
   const [error, setError] = React.useState<string | null>(null);
   const [loading, setLoading] = React.useState(false);
   const [subscriptionAction, setSubscriptionAction] = React.useState<string | null>(null);
   const [manualPremiumAction, setManualPremiumAction] = React.useState<"grant" | "revoke" | null>(null);
   const [manualAccountId, setManualAccountId] = React.useState("");
+  const [blockTargetType, setBlockTargetType] =
+    React.useState<AdminAccountBlockTargetType>("account_id");
+  const [blockTarget, setBlockTarget] = React.useState("");
+  const [blockReason, setBlockReason] = React.useState("");
+  const [blockAction, setBlockAction] = React.useState<string | null>(null);
 
   const load = React.useCallback(async () => {
     if (!auth.authenticated || !auth.admin || !fromInput || !toInput) {
@@ -53,18 +73,21 @@ export function AdminPage({ auth }: { auth: AuthState }) {
     }
     setLoading(true);
     try {
-      const [stats, limits, subscriptions] = await Promise.all([
+      const [stats, limits, subscriptions, accountBlocks] = await Promise.all([
         adminApi.getStatistics(toIso(fromInput), toIso(toInput)),
         adminApi.getRateLimitUsage(),
         adminApi.listSubscriptions(),
+        adminApi.listAccountBlocks(),
       ]);
       setData(stats);
       setLimitData(limits);
       setSubscriptionData(subscriptions);
+      setAccountBlockData(accountBlocks);
       trackEvent("web_admin_stats_loaded", {
         message_count: stats.total_messages || 0,
         tool_call_count: stats.total_tool_calls || 0,
         subscription_count: subscriptions.subscriptions?.length || 0,
+        blocked_account_count: accountBlocks.accounts?.length || 0,
       });
       setError(null);
     } catch (err) {
@@ -136,6 +159,37 @@ export function AdminPage({ auth }: { auth: AuthState }) {
       }
     },
     [manualAccountId],
+  );
+
+  const runAccountBlockAction = React.useCallback(
+    async (action: BlockAction, target = blockTarget, targetType = blockTargetType) => {
+      const trimmedTarget = target.trim();
+      if (!trimmedTarget) {
+        setError("Enter an account or identity before changing processing access.");
+        return;
+      }
+      setBlockAction(`${action}:${trimmedTarget}`);
+      try {
+        if (action === "block") {
+          await adminApi.blockAccount(trimmedTarget, targetType, blockReason.trim() || undefined);
+        } else {
+          await adminApi.unblockAccount(trimmedTarget, targetType);
+        }
+        trackEvent("web_admin_account_block_action", { action, target_type: targetType, status: "success" });
+        setAccountBlockData(await adminApi.listAccountBlocks());
+        if (target === blockTarget) {
+          setBlockTarget("");
+          setBlockReason("");
+        }
+        setError(null);
+      } catch (err) {
+        trackEvent("web_admin_account_block_action", { action, target_type: targetType, status: "failed" });
+        setError(err instanceof Error ? err.message : "Unable to update account block.");
+      } finally {
+        setBlockAction(null);
+      }
+    },
+    [blockReason, blockTarget, blockTargetType],
   );
 
   if (!auth.ready) {
@@ -232,9 +286,28 @@ export function AdminPage({ auth }: { auth: AuthState }) {
             label="Highest quota use"
             value={formatPercent(topLimitUsage?.percentage)}
           />
+          <MetricTile label="Blocked accounts" value={formatCount(accountBlockData?.accounts?.length)} />
         </section>
 
         <section className="admin-content-grid">
+          <article className="admin-panel wide-panel">
+            <header>
+              <p className="eyebrow">Abuse controls</p>
+              <h2>Account processing blocks</h2>
+            </header>
+            <AccountBlockAdmin
+              action={blockAction}
+              blockedAccounts={accountBlockData?.accounts || []}
+              reason={blockReason}
+              target={blockTarget}
+              targetType={blockTargetType}
+              onAction={runAccountBlockAction}
+              onReasonChange={setBlockReason}
+              onTargetChange={setBlockTarget}
+              onTargetTypeChange={setBlockTargetType}
+            />
+          </article>
+
           <article className="admin-panel">
             <header>
               <p className="eyebrow">Models</p>
@@ -322,6 +395,106 @@ export function AdminPage({ auth }: { auth: AuthState }) {
           </article>
         </section>
       </main>
+    </div>
+  );
+}
+
+function AccountBlockAdmin({
+  action,
+  blockedAccounts,
+  reason,
+  target,
+  targetType,
+  onAction,
+  onReasonChange,
+  onTargetChange,
+  onTargetTypeChange,
+}: {
+  action: string | null;
+  blockedAccounts: AdminBlockedAccountItem[];
+  reason: string;
+  target: string;
+  targetType: AdminAccountBlockTargetType;
+  onAction: (action: BlockAction, target?: string, targetType?: AdminAccountBlockTargetType) => Promise<void>;
+  onReasonChange: (value: string) => void;
+  onTargetChange: (value: string) => void;
+  onTargetTypeChange: (value: AdminAccountBlockTargetType) => void;
+}) {
+  return (
+    <div className="account-block-stack">
+      <div className="account-block-controls">
+        <label>
+          <span>Identity type</span>
+          <select
+            value={targetType}
+            onChange={(event) => onTargetTypeChange(event.target.value as AdminAccountBlockTargetType)}
+          >
+            {accountBlockTargetTypes.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label>
+          <span>Account or identity</span>
+          <input
+            value={target}
+            onChange={(event) => onTargetChange(event.target.value)}
+            placeholder="account id, email, phone, or LXMF address"
+          />
+        </label>
+        <label>
+          <span>Reason</span>
+          <input
+            value={reason}
+            onChange={(event) => onReasonChange(event.target.value)}
+            placeholder="abuse, spam, chargeback, etc."
+          />
+        </label>
+        <button
+          className="button compact button-primary"
+          disabled={action !== null}
+          onClick={() => void onAction("block")}
+        >
+          {action?.startsWith("block:") ? "Blocking" : "Block"}
+        </button>
+        <button
+          className="button compact button-secondary"
+          disabled={action !== null}
+          onClick={() => void onAction("unblock")}
+        >
+          {action?.startsWith("unblock:") ? "Unblocking" : "Unblock"}
+        </button>
+      </div>
+
+      {blockedAccounts.length === 0 ? (
+        <p className="muted">No accounts are currently blocked from processing.</p>
+      ) : (
+        <div className="account-block-list">
+          {blockedAccounts.map((account) => {
+            const busy = action?.endsWith(account.account_id || "") || false;
+            return (
+              <div className="account-block-row" key={account.account_id}>
+                <div>
+                  <strong>#{account.account_bucket || "unknown"}</strong>
+                  <span>
+                    {account.reason || "No reason"} / {formatDateTime(account.blocked_at)}
+                  </span>
+                  <p>{identitySummary(account)}</p>
+                </div>
+                <button
+                  className="button compact button-secondary"
+                  disabled={busy}
+                  onClick={() => void onAction("unblock", account.account_id, "account_id")}
+                >
+                  Unblock
+                </button>
+              </div>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }
@@ -644,6 +817,17 @@ function formatToolLabel(value: string | undefined): string {
 
 function formatCategory(value: string | undefined): string {
   return formatToolLabel(value || "other");
+}
+
+function identitySummary(account: AdminBlockedAccountItem): string {
+  const identities = (account.identities || [])
+    .slice(0, 3)
+    .map((identity) => `${formatToolLabel(identity.type)}: ${identity.identifier}`)
+    .filter(Boolean);
+  if (account.website_email) {
+    identities.unshift(`Website: ${account.website_email}`);
+  }
+  return identities.length === 0 ? account.account_id || "No linked identities" : identities.join(" / ");
 }
 
 function formatDateTime(value: ApiDateValue): string {

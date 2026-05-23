@@ -17,6 +17,8 @@ public class RootController {
         "/account/link",
         "/admin",
         "/admin/feedback",
+        "/contact",
+        "/help",
         "/oauth/callback",
         "/terms",
         "/privacy"

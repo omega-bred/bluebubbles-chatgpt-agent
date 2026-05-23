@@ -186,6 +186,32 @@ class BBMessageAgentTest {
   }
 
   @Test
+  void dropsBlockedAccountBeforeTermsOrModelProcessing() {
+    OpenAIClient openAIClient = Mockito.mock(OpenAIClient.class);
+    var responseService = Mockito.mock(com.openai.services.blocking.ResponseService.class);
+    when(openAIClient.responses()).thenReturn(responseService);
+    AgentAccountResolver accountResolver = Mockito.mock(AgentAccountResolver.class);
+    AgentAccountEntity blockedAccount = account("account-blocked", Instant.now());
+    blockedAccount.setProcessingBlocked(true);
+    blockedAccount.setProcessingBlockedReason("abuse");
+    IncomingMessage incoming =
+        incomingMessage("iMessage;+;chat-blocked", "msg-blocked", "hello?", 1_000L);
+    when(accountResolver.resolve(incoming))
+        .thenReturn(
+            Optional.of(new AgentAccountResolver.ResolvedAccount(blockedAccount, List.of())));
+    StubBBHttpClientWrapper bbHttpClientWrapper = new StubBBHttpClientWrapper();
+    BBMessageAgent agent = newAgent(openAIClient, bbHttpClientWrapper, accountResolver);
+
+    agent.handleIncomingMessage(incoming);
+
+    verify(accountResolver).recordMessageIdentities(incoming);
+    verify(accountResolver).resolve(incoming);
+    verify(accountResolver, never()).resolveOrCreate(any(IncomingMessage.class));
+    verify(responseService, never()).create(any(ResponseCreateParams.class));
+    assertTrue(bbHttpClientWrapper.sentTexts.isEmpty());
+  }
+
+  @Test
   void reactionMessageMatcherCoversReactedEmojiTo() {
     assertTrue(BBMessageAgent.isReactionMessage("Reacted 😂 to"));
     assertTrue(BBMessageAgent.isReactionMessage("  Reacted 😂 to"));
@@ -326,7 +352,7 @@ class BBMessageAgentTest {
     ResponseInputItem locationContext = input.get(input.size() - 1);
     assertTrue(isDeveloperEasyInputMessage(locationContext));
     String contextText = extractText(locationContext);
-    assertTrue(contextText.contains("Current Find My location context"));
+    assertTrue(contextText.contains("Current location context for the current BlueChat sender"));
     assertTrue(contextText.contains("latitude=37.33182"));
     assertTrue(contextText.contains("longitude=-122.03118"));
     assertTrue(
@@ -347,7 +373,9 @@ class BBMessageAgentTest {
     verify(responseService).create(paramsCaptor.capture());
     List<ResponseInputItem> requestInput =
         paramsCaptor.getValue().input().orElseThrow().asResponse();
-    assertTrue(extractText(requestInput.get(0)).contains("Current Find My location context"));
+    assertTrue(
+        extractText(requestInput.get(0))
+            .contains("Current location context for the current BlueChat sender"));
     assertFalse(
         requestInput.subList(1, requestInput.size()).stream().anyMatch(this::isSystemInputMessage));
   }
@@ -365,9 +393,9 @@ class BBMessageAgentTest {
     ResponseInputItem locationContext = input.get(input.size() - 1);
     assertTrue(isDeveloperEasyInputMessage(locationContext));
     String contextText = extractText(locationContext);
-    assertTrue(contextText.contains("No current Find My location is available"));
+    assertTrue(contextText.contains("No current location is available"));
     assertTrue(contextText.contains("do not guess"));
-    assertTrue(contextText.contains("share their location via Find My"));
+    assertTrue(contextText.contains("share their location"));
     assertEquals(1, bbHttpClientWrapper.findMyLookupCalls);
     assertEquals("Alice", bbHttpClientWrapper.lastFindMyUserId);
   }
@@ -399,7 +427,9 @@ class BBMessageAgentTest {
     List<ResponseInputItem> input = agent.buildConversationInput(List.of(), incoming);
 
     ResponseInputItem locationContext = input.get(input.size() - 1);
-    assertTrue(extractText(locationContext).contains("Current Find My location context"));
+    assertTrue(
+        extractText(locationContext)
+            .contains("Current location context for the current BlueChat sender"));
     assertEquals(List.of("Alice", "alice@example.com"), bbHttpClientWrapper.lastFindMyUserIds);
   }
 
@@ -456,7 +486,7 @@ class BBMessageAgentTest {
     EasyInputMessage systemMessage = inputItems.get(0).asEasyInputMessage();
     assertEquals(EasyInputMessage.Role.SYSTEM, systemMessage.role());
     String systemText = systemMessage.content().asTextInput();
-    assertTrue(systemText.contains("You are a chat assistant for iMessage via BlueBubbles."));
+    assertTrue(systemText.contains("You are a chat assistant for BlueChat."));
     assertTrue(systemText.contains("The public phone number for this agent is +1 (415) 867-4956."));
     assertTrue(systemText.contains(DEVELOPER_PROMPT_MARKER));
   }
