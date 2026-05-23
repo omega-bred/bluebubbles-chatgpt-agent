@@ -24,12 +24,16 @@ public class ConversationState {
   private final Set<String> recordedIncomingMessageGuids = new HashSet<>();
   private final Deque<String> recordedIncomingMessageFingerprintOrder = new ArrayDeque<>();
   private final Set<String> recordedIncomingMessageFingerprints = new HashSet<>();
+  private final Deque<PendingIncomingTurn> pendingIncomingTurns = new ArrayDeque<>();
+  private final Set<String> pendingIncomingMessageGuids = new HashSet<>();
+  private final Set<String> pendingIncomingMessageFingerprints = new HashSet<>();
   private final Map<String, ThreadContext> threadContexts = new ConcurrentHashMap<>();
 
   @Getter @Setter private String lastProcessedMessageGuid;
   @Getter @Setter private String lastProcessedMessageFingerprint;
   @Getter @Setter private Instant latestProcessedMessageTimestamp;
   @Getter @Setter private String latestWorkflowRunId;
+  @Getter @Setter private String latestWorkflowMessageGuid;
 
   public synchronized List<ConversationTurn> history() {
     return new ArrayList<>(history);
@@ -103,6 +107,68 @@ public class ConversationState {
     return true;
   }
 
+  public synchronized boolean recordPendingIncomingTurn(IncomingMessage message) {
+    if (message == null || Boolean.TRUE.equals(message.fromMe())) {
+      return false;
+    }
+    markIncomingMessageSeen(message);
+    String guid = normalize(message.messageGuid());
+    String fingerprint = normalize(message.computeMessageFingerprint());
+    if ((guid != null && recordedIncomingMessageGuids.contains(guid))
+        || (fingerprint != null && recordedIncomingMessageFingerprints.contains(fingerprint))
+        || (guid != null && pendingIncomingMessageGuids.contains(guid))
+        || (fingerprint != null && pendingIncomingMessageFingerprints.contains(fingerprint))) {
+      return false;
+    }
+    Instant timestamp = message.timestamp() != null ? message.timestamp() : Instant.now();
+    pendingIncomingTurns.addLast(
+        new PendingIncomingTurn(
+            guid, fingerprint, ConversationTurn.user(message.summaryForHistory(), timestamp)));
+    if (guid != null) {
+      pendingIncomingMessageGuids.add(guid);
+    }
+    if (fingerprint != null) {
+      pendingIncomingMessageFingerprints.add(fingerprint);
+    }
+    while (pendingIncomingTurns.size() > BBMessageAgent.MAX_HISTORY) {
+      PendingIncomingTurn removed = pendingIncomingTurns.removeFirst();
+      if (removed.messageGuid() != null) {
+        pendingIncomingMessageGuids.remove(removed.messageGuid());
+      }
+      if (removed.fingerprint() != null) {
+        pendingIncomingMessageFingerprints.remove(removed.fingerprint());
+      }
+    }
+    return true;
+  }
+
+  public synchronized List<PendingIncomingTurn> pendingIncomingTurns() {
+    return new ArrayList<>(pendingIncomingTurns);
+  }
+
+  public synchronized int recordPendingIncomingTurnsToHistory() {
+    int recorded = 0;
+    while (!pendingIncomingTurns.isEmpty()) {
+      PendingIncomingTurn pending = pendingIncomingTurns.removeFirst();
+      String guid = pending.messageGuid();
+      String fingerprint = pending.fingerprint();
+      if ((guid != null && recordedIncomingMessageGuids.contains(guid))
+          || (fingerprint != null && recordedIncomingMessageFingerprints.contains(fingerprint))) {
+        continue;
+      }
+      addTurn(pending.turn());
+      remember(recordedIncomingMessageGuidOrder, recordedIncomingMessageGuids, guid);
+      remember(
+          recordedIncomingMessageFingerprintOrder,
+          recordedIncomingMessageFingerprints,
+          fingerprint);
+      recorded++;
+    }
+    pendingIncomingMessageGuids.clear();
+    pendingIncomingMessageFingerprints.clear();
+    return recorded;
+  }
+
   public void recordThreadMessage(String threadRootGuid, ThreadContext context) {
     if (threadRootGuid == null || threadRootGuid.isBlank() || context == null) {
       return;
@@ -143,4 +209,18 @@ public class ConversationState {
       String lastMessageSender,
       String lastMessageTimestamp,
       List<String> lastImageUrls) {}
+
+  public record PendingIncomingTurn(String messageGuid, String fingerprint, ConversationTurn turn) {
+    boolean matches(IncomingMessage message) {
+      if (message == null) {
+        return false;
+      }
+      String currentGuid = normalize(message.messageGuid());
+      if (messageGuid != null && messageGuid.equals(currentGuid)) {
+        return true;
+      }
+      String currentFingerprint = normalize(message.computeMessageFingerprint());
+      return fingerprint != null && fingerprint.equals(currentFingerprint);
+    }
+  }
 }

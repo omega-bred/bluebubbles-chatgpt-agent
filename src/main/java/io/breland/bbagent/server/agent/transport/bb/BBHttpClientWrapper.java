@@ -458,6 +458,23 @@ public class BBHttpClientWrapper {
     return requirePresent(chat.getData(), "get conversation info");
   }
 
+  public JsonNode getConversationInfoJson(String chatGuid) {
+    if (StringUtils.isBlank(chatGuid)) {
+      return null;
+    }
+    JsonNode response =
+        chatApi
+            .apiV1ChatChatGuidGetWithResponseSpec(chatGuid, password, "participants")
+            .bodyToMono(JsonNode.class)
+            .block(apiTimeout);
+    response = requirePresent(response, "get conversation info");
+    requireSuccessfulResponse(
+        response.path("status").isInt() ? response.path("status").asInt() : null,
+        response.path("message").asText(null),
+        "get conversation info");
+    return requirePresent(response.get("data"), "get conversation info");
+  }
+
   public boolean renameConversation(String chatGuid, String displayName) {
     if (StringUtils.isBlank(chatGuid)) {
       return false;
@@ -548,12 +565,13 @@ public class BBHttpClientWrapper {
     } catch (Exception e) {
       if (isTimeout(e)) {
         log.warn(
-            "Timed out waiting for BlueBubbles direct text send response chatGuid={} tempGuid={} timeout={} elapsedMs={}. BlueBubbles may still deliver the message; check outgoing webhook logs before retrying.",
+            "Timed out waiting for BlueBubbles direct text send response chatGuid={} tempGuid={} timeout={} elapsedMs={}. Treating the send as submitted to avoid unsafe duplicate retries; delivery may still arrive via the outgoing webhook.",
             request.getChatGuid(),
             request.getTempGuid(),
             apiTimeout,
             elapsedMillis(startedNanos),
             e);
+        return true;
       } else {
         log.warn(
             "Failed to send direct message chatGuid={} tempGuid={} elapsedMs={}",

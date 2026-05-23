@@ -38,7 +38,9 @@ public class CadenceAgentActivitiesImpl implements CadenceAgentActivities {
   public String buildConversationInputJson(
       List<ConversationTurn> history, IncomingMessage message) {
     try {
-      return toJson(messageAgent.buildConversationInput(history, message));
+      List<ConversationState.PendingIncomingTurn> pendingIncomingTurns =
+          pendingIncomingTurns(message);
+      return toJson(messageAgent.buildConversationInput(history, pendingIncomingTurns, message));
     } catch (Exception e) {
       throw new RuntimeException("Failed to serialize conversation input", e);
     }
@@ -70,13 +72,16 @@ public class CadenceAgentActivitiesImpl implements CadenceAgentActivities {
 
   @Override
   public CadenceResponseBundle createResponseBundle(
-      String inputItemsJson, IncomingMessage message) {
+      String inputItemsJson, IncomingMessage message, AgentWorkflowContext workflowContext) {
+    if (!messageAgent.canSendResponses(workflowContext)) {
+      return null;
+    }
     try {
       JsonNode inputNode = messageAgent.getObjectMapper().readTree(inputItemsJson);
       List<ResponseInputItem> inputItems =
           JsonValue.fromJsonNode(inputNode)
               .convert(new TypeReference<List<ResponseInputItem>>() {});
-      var response = messageAgent.createResponse(inputItems, message, null);
+      var response = messageAgent.createResponse(inputItems, message, workflowContext);
       if (response == null) {
         return null;
       }
@@ -255,10 +260,24 @@ public class CadenceAgentActivitiesImpl implements CadenceAgentActivities {
     }
     synchronized (state) {
       if (responded) {
-        state.recordIncomingTurnIfAbsent(message);
+        messageAgent.recordIncomingTurnsForResponse(state, message);
       }
       state.markIncomingMessageSeen(message);
       messageAgent.updateThreadContext(state, message);
+    }
+  }
+
+  private List<ConversationState.PendingIncomingTurn> pendingIncomingTurns(
+      IncomingMessage message) {
+    if (message == null || message.chatGuid() == null || message.chatGuid().isBlank()) {
+      return List.of();
+    }
+    ConversationState state = messageAgent.getConversations().get(message.chatGuid());
+    if (state == null) {
+      return List.of();
+    }
+    synchronized (state) {
+      return state.pendingIncomingTurns();
     }
   }
 

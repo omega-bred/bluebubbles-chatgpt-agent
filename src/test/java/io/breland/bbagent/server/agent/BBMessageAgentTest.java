@@ -26,6 +26,7 @@ import com.openai.models.responses.ResponseFunctionToolCall;
 import com.openai.models.responses.ResponseInputItem;
 import com.openai.models.responses.ResponseOutputItem;
 import com.openai.models.responses.ToolChoiceOptions;
+import com.uber.cadence.WorkflowExecution;
 import io.breland.bbagent.generated.bluebubblesclient.api.V1ContactApi;
 import io.breland.bbagent.generated.bluebubblesclient.api.V1MessageApi;
 import io.breland.bbagent.generated.bluebubblesclient.model.ApiV1ChatChatGuidMessageGet200ResponseDataInner;
@@ -34,6 +35,8 @@ import io.breland.bbagent.generated.bluebubblesclient.model.ApiV1ChatChatGuidMes
 import io.breland.bbagent.generated.bluebubblesclient.model.ApiV1MessageReactPostRequest;
 import io.breland.bbagent.generated.bluebubblesclient.model.ApiV1MessageTextPostRequest;
 import io.breland.bbagent.generated.bluebubblesclient.model.FindMyFriendLocation;
+import io.breland.bbagent.server.agent.cadence.CadenceWorkflowLauncher;
+import io.breland.bbagent.server.agent.cadence.models.CadenceMessageWorkflowRequest;
 import io.breland.bbagent.server.agent.location.ReverseLocationLookup;
 import io.breland.bbagent.server.agent.location.ReverseLocationLookupResult;
 import io.breland.bbagent.server.agent.model_picker.ModelAccessService;
@@ -598,6 +601,122 @@ class BBMessageAgentTest {
         new AgentWorkflowContext(chatGuid, chatGuid, "message", Instant.now());
 
     assertFalse(agent.canSendResponsesForWorkflowRun(liveContext, "older-live-run"));
+  }
+
+  @Test
+  void olderLiveActivityCannotSendWhenAnotherMessageIsLatest() {
+    BBMessageAgent agent =
+        newAgent(Mockito.mock(OpenAIClient.class), new StubBBHttpClientWrapper());
+    String chatGuid = "iMessage;+;chat-live-activity";
+    ConversationState state = new ConversationState();
+    state.setLatestWorkflowMessageGuid("newer-message");
+    agent.getConversations().put(chatGuid, state);
+    AgentWorkflowContext oldActivityContext =
+        new AgentWorkflowContext(chatGuid + ":old-message", chatGuid, "old-message", Instant.now());
+    AgentWorkflowContext latestActivityContext =
+        new AgentWorkflowContext(
+            chatGuid + ":newer-message", chatGuid, "newer-message", Instant.now());
+
+    assertFalse(agent.canSendResponsesForWorkflowRun(oldActivityContext, null));
+    assertFalse(agent.canSendResponsesForWorkflowRun(oldActivityContext, "old-run"));
+    assertTrue(agent.canSendResponsesForWorkflowRun(latestActivityContext, null));
+    assertTrue(agent.canSendResponsesForWorkflowRun(latestActivityContext, "new-run"));
+  }
+
+  @Test
+  void cadenceWorkflowIdStaysChatScopedSoNewMessagesCancelOlderRuns() {
+    CadenceWorkflowLauncher cadenceWorkflowLauncher = Mockito.mock(CadenceWorkflowLauncher.class);
+    AgentWorkflowProperties workflowProperties = new AgentWorkflowProperties();
+    workflowProperties.setMode(AgentWorkflowProperties.Mode.CADENCE);
+    WorkflowExecution execution = new WorkflowExecution();
+    execution.setRunId("run-1");
+    when(cadenceWorkflowLauncher.startWorkflow(any(CadenceMessageWorkflowRequest.class)))
+        .thenReturn(execution);
+    BBMessageAgent agent =
+        new BBMessageAgent(
+            null,
+            new StubBBHttpClientWrapper(),
+            Mockito.mock(Mem0Client.class),
+            Mockito.mock(GcalClient.class),
+            null,
+            null,
+            null,
+            null,
+            Mockito.mock(GiphyClient.class),
+            ReverseLocationLookup.noop(),
+            new InMemoryAgentSettingsStore(),
+            workflowProperties,
+            null,
+            null,
+            cadenceWorkflowLauncher,
+            null,
+            null,
+            null,
+            null,
+            new ModelPicker());
+    String chatGuid = "iMessage;+;chat-cadence-coalesce";
+
+    agent.handleIncomingMessage(incomingMessage(chatGuid, "msg-cadence-1", "first", 1_000L));
+
+    ArgumentCaptor<CadenceMessageWorkflowRequest> requestCaptor =
+        ArgumentCaptor.forClass(CadenceMessageWorkflowRequest.class);
+    verify(cadenceWorkflowLauncher).startWorkflow(requestCaptor.capture());
+    assertEquals(chatGuid, requestCaptor.getValue().workflowContext().workflowId());
+    assertEquals("msg-cadence-1", requestCaptor.getValue().workflowContext().messageGuid());
+  }
+
+  @Test
+  void latestWorkflowInputIncludesPendingMessagesSinceLastAssistantTurn() {
+    BBMessageAgent agent =
+        newAgent(Mockito.mock(OpenAIClient.class), new StubBBHttpClientWrapper());
+    ConversationState state = new ConversationState();
+    IncomingMessage first =
+        incomingMessage("iMessage;+;chat-pending", "msg-pending-1", "first request", 1_000L);
+    IncomingMessage second =
+        incomingMessage("iMessage;+;chat-pending", "msg-pending-2", "second request", 2_000L);
+    state.recordPendingIncomingTurn(first);
+    state.recordPendingIncomingTurn(second);
+
+    List<ResponseInputItem> input =
+        agent.buildConversationInput(state.history(), state.pendingIncomingTurns(), second);
+    List<String> texts = input.stream().map(this::extractText).toList();
+
+    assertTrue(texts.stream().anyMatch(text -> text.contains("Alice: first request")));
+    assertEquals(1L, texts.stream().filter(text -> text.contains("second request")).count());
+  }
+
+  @Test
+  void assistantTurnDrainsPendingMessagesInOrder() {
+    BBMessageAgent agent =
+        newAgent(Mockito.mock(OpenAIClient.class), new StubBBHttpClientWrapper());
+    String chatGuid = "iMessage;+;chat-pending-record";
+    ConversationState state = new ConversationState();
+    agent.getConversations().put(chatGuid, state);
+    IncomingMessage first = incomingMessage(chatGuid, "msg-pending-a", "first request", 1_000L);
+    IncomingMessage second = incomingMessage(chatGuid, "msg-pending-b", "second request", 2_000L);
+    state.recordPendingIncomingTurn(first);
+    state.recordPendingIncomingTurn(second);
+
+    agent.recordAssistantTurnForCurrentMessage(second, "Handled both.", null);
+
+    List<ConversationTurn> history = state.history();
+    assertEquals(3, history.size());
+    assertEquals("Alice: first request", history.get(0).content());
+    assertEquals("Alice: second request", history.get(1).content());
+    assertEquals("Handled both.", history.get(2).content());
+    assertTrue(state.pendingIncomingTurns().isEmpty());
+  }
+
+  @Test
+  void truncatesLargeToolOutputBeforeReturningItToModel() {
+    String output = "a".repeat(30_000);
+
+    String truncated = BBMessageAgent.truncateToolOutputForModel(output, "kubernetes_get_pod_logs");
+
+    assertTrue(truncated.length() < output.length());
+    assertTrue(truncated.contains("kubernetes_get_pod_logs output truncated for model context"));
+    assertTrue(truncated.startsWith("a".repeat(100)));
+    assertTrue(truncated.endsWith("a".repeat(100)));
   }
 
   @Test

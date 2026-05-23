@@ -57,7 +57,8 @@ public class CadenceMessageWorkflowImpl implements CadenceMessageWorkflow {
     }
     String inputItemsJson =
         activities.buildConversationInputJson(activities.getConversationHistory(message), message);
-    CadenceResponseBundle bundle = activities.createResponseBundle(inputItemsJson, message);
+    CadenceResponseBundle bundle =
+        activities.createResponseBundle(inputItemsJson, message, request.workflowContext());
     if (bundle == null) {
       activities.finalizeWorkflow(message, request.workflowContext(), false);
       return;
@@ -93,7 +94,7 @@ public class CadenceMessageWorkflowImpl implements CadenceMessageWorkflow {
       inputItemsJson =
           mergeJsonArrays(
               inputItemsJson, bundle.toolContextItemsJson(), toolOutputsJson, blockedOutputsJson);
-      bundle = activities.createResponseBundle(inputItemsJson, message);
+      bundle = activities.createResponseBundle(inputItemsJson, message, request.workflowContext());
       if (bundle == null) {
         activities.finalizeWorkflow(message, request.workflowContext(), false);
         return;

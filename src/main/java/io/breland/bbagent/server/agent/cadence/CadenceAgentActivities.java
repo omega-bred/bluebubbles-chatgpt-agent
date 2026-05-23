@@ -16,7 +16,8 @@ public interface CadenceAgentActivities {
   boolean notifyIfMessageResponseLimitExceeded(
       IncomingMessage message, AgentWorkflowContext workflowContext);
 
-  CadenceResponseBundle createResponseBundle(String inputItemsJson, IncomingMessage message);
+  CadenceResponseBundle createResponseBundle(
+      String inputItemsJson, IncomingMessage message, AgentWorkflowContext workflowContext);
 
   String executeToolCallsJson(
       List<CadenceToolCall> toolCalls,

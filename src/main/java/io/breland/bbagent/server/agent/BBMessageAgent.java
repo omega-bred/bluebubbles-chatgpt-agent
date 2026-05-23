@@ -94,6 +94,8 @@ public class BBMessageAgent {
   private static final int MAX_IMAGE_ATTACHMENTS = 4;
   private static final int MAX_FILE_ATTACHMENTS = 4;
   private static final int MAX_GENERATED_IMAGES = 1;
+  private static final int MAX_TOOL_OUTPUT_CHARS = 24_000;
+  private static final int TOOL_OUTPUT_EDGE_CHARS = 12_000;
   public static final String IMESSAGE_SERVICE = "iMessage";
   private static final String IMESSAGE_FORMATTING_INSTRUCTION =
       "BlueChat supports basic text formatting, specifically bold, italic, underline, and"
@@ -324,6 +326,11 @@ public class BBMessageAgent {
     if (handleTermsGate(state, message)) {
       return;
     }
+    synchronized (state) {
+      state.recordPendingIncomingTurn(message);
+      state.setLatestWorkflowMessageGuid(message.messageGuid());
+      state.setLatestWorkflowRunId(null);
+    }
     recordAcceptedMessageMetric(message);
     if (workflowProperties.useCadenceWorkflow()) {
       if (cadenceWorkflowLauncher == null) {
@@ -342,7 +349,13 @@ public class BBMessageAgent {
       CadenceMessageWorkflowRequest request =
           new CadenceMessageWorkflowRequest(workflowContext, message, null);
       WorkflowExecution execution = cadenceWorkflowLauncher.startWorkflow(request);
-      state.setLatestWorkflowRunId(execution.getRunId());
+      if (execution != null) {
+        synchronized (state) {
+          if (Objects.equals(state.getLatestWorkflowMessageGuid(), message.messageGuid())) {
+            state.setLatestWorkflowRunId(execution.getRunId());
+          }
+        }
+      }
       return;
     }
     log.info("Responding via inline workflow");
@@ -485,12 +498,8 @@ public class BBMessageAgent {
     if (message == null) {
       return null;
     }
-    // in cadecne - we will terminate an existing workflow with the same id
-    // in both groups, and regular texts - we use the group chat as the main workflow id
-    // such that new messages will cancel current ones.
-    // this is useful if we have an active chat- and we want the response to kind of happen "all at
-    // once"
-    // instead of serially processing
+    // Cadence is intentionally chat-scoped here: a newer incoming message terminates older live
+    // workflows, and the latest workflow reads the pending user turns for the chat.
     if (message.chatGuid() != null && !message.chatGuid().isBlank()) {
       return message.chatGuid();
     }
@@ -508,7 +517,7 @@ public class BBMessageAgent {
     } finally {
       synchronized (state) {
         if (response != null) {
-          state.recordIncomingTurnIfAbsent(message);
+          recordIncomingTurnsForResponse(state, message);
         }
         state.markIncomingMessageSeen(message);
         updateThreadContext(state, message);
@@ -550,14 +559,23 @@ public class BBMessageAgent {
     if (workflowContext.chatGuid() == null || workflowContext.chatGuid().isBlank()) {
       return true;
     }
-    if (currentRunId == null || currentRunId.isBlank()) {
-      return true;
-    }
     ConversationState state = conversations.get(workflowContext.chatGuid());
     if (state == null) {
       return true;
     }
     synchronized (state) {
+      String latestWorkflowMessageGuid = state.getLatestWorkflowMessageGuid();
+      if (StringUtils.isNotBlank(latestWorkflowMessageGuid)
+          && StringUtils.isNotBlank(workflowContext.messageGuid())
+          && !latestWorkflowMessageGuid.equals(workflowContext.messageGuid())) {
+        return false;
+      }
+      if (currentRunId == null || currentRunId.isBlank()) {
+        return latestWorkflowMessageGuid == null
+            || latestWorkflowMessageGuid.isBlank()
+            || workflowContext.messageGuid() == null
+            || latestWorkflowMessageGuid.equals(workflowContext.messageGuid());
+      }
       String latestWorkflowRunId = state.getLatestWorkflowRunId();
 
       // can be null until we persist state in a real db.
@@ -593,19 +611,22 @@ public class BBMessageAgent {
   Response runAssistant(
       ConversationState state, IncomingMessage message, AgentWorkflowContext workflowContext) {
     List<ConversationTurn> historySnapshot;
+    List<ConversationState.PendingIncomingTurn> pendingIncomingSnapshot;
     Instant latestSeenTimestamp;
     String lastSeenGuid;
     synchronized (state) {
       historySnapshot = state.history();
+      pendingIncomingSnapshot = state.pendingIncomingTurns();
       latestSeenTimestamp = state.getLatestProcessedMessageTimestamp();
       lastSeenGuid = state.getLastProcessedMessageGuid();
     }
     log.info(
-        "Building LLM input chat={} messageGuid={} messageTs={} historyTurns={} oldestHistoryTs={} newestHistoryTs={} latestSeenTs={} lastSeenGuid={}",
+        "Building LLM input chat={} messageGuid={} messageTs={} historyTurns={} pendingIncomingTurns={} oldestHistoryTs={} newestHistoryTs={} latestSeenTs={} lastSeenGuid={}",
         message.chatGuid(),
         message.messageGuid(),
         message.timestamp(),
         historySnapshot.size(),
+        pendingIncomingSnapshot.size(),
         oldestTurnTimestamp(historySnapshot),
         newestTurnTimestamp(historySnapshot),
         latestSeenTimestamp,
@@ -613,7 +634,8 @@ public class BBMessageAgent {
     if (notifyIfMessageResponseLimitExceeded(message, workflowContext)) {
       return null;
     }
-    List<ResponseInputItem> inputItems = buildConversationInput(historySnapshot, message);
+    List<ResponseInputItem> inputItems =
+        buildConversationInput(historySnapshot, pendingIncomingSnapshot, message);
     log.trace("Getting response for {}", inputItems.toString());
     Response response = createResponse(inputItems, message, workflowContext);
     if (response == null) {
@@ -769,9 +791,17 @@ public class BBMessageAgent {
       return;
     }
     synchronized (state) {
-      state.recordIncomingTurnIfAbsent(message);
+      recordIncomingTurnsForResponse(state, message);
       state.addTurn(ConversationTurn.assistant(content, Instant.now()));
     }
+  }
+
+  public void recordIncomingTurnsForResponse(ConversationState state, IncomingMessage message) {
+    if (state == null) {
+      return;
+    }
+    state.recordPendingIncomingTurnsToHistory();
+    state.recordIncomingTurnIfAbsent(message);
   }
 
   private Instant oldestTurnTimestamp(List<ConversationTurn> history) {
@@ -1084,7 +1114,8 @@ public class BBMessageAgent {
         output = "Unknown tool: " + toolCall.name();
         failureType = "unknown_tool";
       } else {
-        output = tool.handler().apply(toolContext, args);
+        output =
+            truncateToolOutputForModel(tool.handler().apply(toolContext, args), toolCall.name());
         failureType = classifyToolFailure(output);
         success = failureType == null;
       }
@@ -1103,6 +1134,21 @@ public class BBMessageAgent {
             .output(output)
             .build();
     return ResponseInputItem.ofFunctionCallOutput(toolOutput);
+  }
+
+  static String truncateToolOutputForModel(String output, String toolName) {
+    if (output == null || output.length() <= MAX_TOOL_OUTPUT_CHARS) {
+      return output;
+    }
+    String safeToolName = StringUtils.defaultIfBlank(toolName, "tool");
+    int omitted = output.length() - (TOOL_OUTPUT_EDGE_CHARS * 2);
+    return output.substring(0, TOOL_OUTPUT_EDGE_CHARS)
+        + "\n\n["
+        + safeToolName
+        + " output truncated for model context; omitted "
+        + omitted
+        + " characters. Re-run the tool with narrower filters, lower limits, or fewer log lines if more detail is needed.]\n\n"
+        + output.substring(output.length() - TOOL_OUTPUT_EDGE_CHARS);
   }
 
   private void recordToolCallMetric(
@@ -1371,6 +1417,13 @@ public class BBMessageAgent {
 
   public List<ResponseInputItem> buildConversationInput(
       List<ConversationTurn> history, IncomingMessage message) {
+    return buildConversationInput(history, List.of(), message);
+  }
+
+  public List<ResponseInputItem> buildConversationInput(
+      List<ConversationTurn> history,
+      List<ConversationState.PendingIncomingTurn> pendingIncomingTurns,
+      IncomingMessage message) {
     List<ResponseInputItem> items = new ArrayList<>();
     boolean isGroupMessage = message.isGroup();
     items.add(ResponseInputItem.ofEasyInputMessage(systemMessage(isGroupMessage, message)));
@@ -1378,6 +1431,14 @@ public class BBMessageAgent {
     if (history != null) {
       for (ConversationTurn turn : history) {
         items.add(ResponseInputItem.ofEasyInputMessage(turn.toEasyInputMessage()));
+      }
+    }
+    if (pendingIncomingTurns != null) {
+      for (ConversationState.PendingIncomingTurn pending : pendingIncomingTurns) {
+        if (pending == null || pending.turn() == null || pending.matches(message)) {
+          continue;
+        }
+        items.add(ResponseInputItem.ofEasyInputMessage(pending.turn().toEasyInputMessage()));
       }
     }
     items.add(ResponseInputItem.ofEasyInputMessage(userMessage(message)));

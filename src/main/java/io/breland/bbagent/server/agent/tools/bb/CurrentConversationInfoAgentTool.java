@@ -2,7 +2,7 @@ package io.breland.bbagent.server.agent.tools.bb;
 
 import static io.breland.bbagent.server.agent.tools.JsonSchemaUtilities.jsonSchema;
 
-import io.breland.bbagent.generated.bluebubblesclient.model.Chat;
+import com.fasterxml.jackson.databind.JsonNode;
 import io.breland.bbagent.server.agent.IncomingMessage;
 import io.breland.bbagent.server.agent.tools.AgentTool;
 import io.breland.bbagent.server.agent.tools.ToolJson;
@@ -36,27 +36,43 @@ public class CurrentConversationInfoAgentTool implements ToolProvider {
           if (message == null || message.chatGuid() == null || message.chatGuid().isBlank()) {
             return "no chat";
           }
-          Chat response = bbHttpClientWrapper.getConversationInfo(message.chatGuid());
+          JsonNode response = bbHttpClientWrapper.getConversationInfoJson(message.chatGuid());
           if (response == null) {
             return "not found";
           }
           Map<String, Object> result = new LinkedHashMap<>();
 
-          result.put("display_name", response.getDisplayName());
+          putText(result, "guid", response.get("guid"));
+          putText(result, "display_name", response.get("displayName"));
+          putText(result, "chat_identifier", response.get("chatIdentifier"));
+          putText(result, "last_addressed_handle", response.get("lastAddressedHandle"));
           List<Map<String, String>> participants = new ArrayList<>();
-          response
-              .getParticipants()
-              .forEach(
-                  participant -> {
-                    Map<String, String> entry = new LinkedHashMap<>();
-                    entry.put("handle", participant.getAddress());
-                    entry.put("country", participant.getCountry());
-                    participants.add(entry);
-                  });
+          JsonNode participantNodes = response.get("participants");
+          if (participantNodes != null && participantNodes.isArray()) {
+            participantNodes.forEach(
+                participant -> {
+                  Map<String, String> entry = new LinkedHashMap<>();
+                  putParticipantText(entry, "handle", participant.get("address"));
+                  putParticipantText(entry, "country", participant.get("country"));
+                  participants.add(entry);
+                });
+          }
           result.put("participants", participants);
 
           return ToolJson.stringify(
               bbHttpClientWrapper.getObjectMapper(), result, response.toString());
         });
+  }
+
+  private static void putParticipantText(Map<String, String> result, String key, JsonNode value) {
+    if (value != null && !value.isNull()) {
+      result.put(key, value.asText());
+    }
+  }
+
+  private static void putText(Map<String, Object> result, String key, JsonNode value) {
+    if (value != null && !value.isNull()) {
+      result.put(key, value.asText());
+    }
   }
 }

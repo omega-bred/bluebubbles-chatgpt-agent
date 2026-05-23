@@ -15,6 +15,7 @@ import io.breland.bbagent.server.agent.IncomingMessage;
 import io.breland.bbagent.server.agent.transport.OutgoingTextMessage;
 import java.time.Instant;
 import java.util.List;
+import java.util.concurrent.TimeoutException;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mockito;
@@ -100,6 +101,24 @@ class BlueBubblesMessageTransportTest {
             .build();
 
     assertFalse(wrapper.sendTextDirect(request));
+  }
+
+  @Test
+  void wrapperTreatsDirectSendTimeoutAsSubmitted() {
+    V1MessageApi messageApi = Mockito.mock(V1MessageApi.class);
+    BBHttpClientWrapper wrapper =
+        new BBHttpClientWrapper("pw", messageApi, Mockito.mock(V1ContactApi.class));
+    when(messageApi.apiV1MessageTextPost(eq("pw"), any()))
+        .thenReturn(Mono.error(new RuntimeException(new TimeoutException("slow ack"))));
+
+    ApiV1MessageTextPostRequest request =
+        ApiV1MessageTextPostRequest.builder()
+            .chatGuid("iMessage;-;mindstorms6+apple@gmail.com")
+            .tempGuid("tmp")
+            .message("hello")
+            .build();
+
+    assertTrue(wrapper.sendTextDirect(request));
   }
 
   private static IncomingMessage incomingMessage(String chatGuid, String service, boolean isGroup) {
