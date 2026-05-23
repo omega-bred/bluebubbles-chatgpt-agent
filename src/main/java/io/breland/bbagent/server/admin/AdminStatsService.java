@@ -20,9 +20,6 @@ import io.breland.bbagent.server.metrics.AgentToolMetric;
 import io.breland.bbagent.server.metrics.AgentToolMetricEvent;
 import io.breland.bbagent.server.metrics.MessageMetricTotals;
 import io.breland.bbagent.server.metrics.ToolMetricTotals;
-import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.OffsetDateTime;
@@ -30,12 +27,12 @@ import java.time.ZoneOffset;
 import java.time.temporal.ChronoUnit;
 import java.util.Comparator;
 import java.util.HashMap;
-import java.util.HexFormat;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.TreeMap;
 import java.util.UUID;
+import org.apache.commons.codec.digest.DigestUtils;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.lang.Nullable;
 import org.springframework.stereotype.Service;
@@ -43,7 +40,6 @@ import org.springframework.transaction.annotation.Transactional;
 
 @Service
 public class AdminStatsService implements AgentMetricsService {
-  private static final String HASH_ALGORITHM = "SHA-256";
   private static final int TOP_SENDER_LIMIT = 10;
   private static final int ACCOUNT_BUCKET_PREFIX_LENGTH = 12;
 
@@ -318,12 +314,7 @@ public class AdminStatsService implements AgentMetricsService {
   }
 
   private String hash(String value) {
-    try {
-      MessageDigest digest = MessageDigest.getInstance(HASH_ALGORITHM);
-      return HexFormat.of().formatHex(digest.digest(value.getBytes(StandardCharsets.UTF_8)));
-    } catch (NoSuchAlgorithmException e) {
-      throw new IllegalStateException("Missing hash algorithm " + HASH_ALGORITHM, e);
-    }
+    return DigestUtils.sha256Hex(value);
   }
 
   private String firstNonBlank(String... values) {

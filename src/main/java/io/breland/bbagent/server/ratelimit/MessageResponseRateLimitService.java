@@ -5,16 +5,13 @@ import io.breland.bbagent.generated.model.AdminRateLimitUsageResponse;
 import io.breland.bbagent.server.agent.IncomingMessage;
 import io.breland.bbagent.server.agent.model_picker.ModelAccessService;
 import io.breland.bbagent.server.agent.persistence.ratelimit.AppRateLimitUsageEntity;
-import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
-import java.util.HexFormat;
 import java.util.List;
+import org.apache.commons.codec.digest.DigestUtils;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.lang.Nullable;
@@ -155,14 +152,7 @@ public class MessageResponseRateLimitService {
   }
 
   private String hash(String value) {
-    try {
-      MessageDigest digest = MessageDigest.getInstance("SHA-256");
-      return HexFormat.of()
-          .formatHex(
-              digest.digest(StringUtils.defaultString(value).getBytes(StandardCharsets.UTF_8)));
-    } catch (NoSuchAlgorithmException e) {
-      throw new IllegalStateException("Missing SHA-256", e);
-    }
+    return DigestUtils.sha256Hex(StringUtils.defaultString(value));
   }
 
   public record MessageResponseLimitStatus(

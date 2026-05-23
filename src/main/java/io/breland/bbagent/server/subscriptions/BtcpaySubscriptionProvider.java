@@ -12,6 +12,7 @@ import java.util.Map;
 import java.util.Map.Entry;
 import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
+import org.apache.commons.codec.digest.DigestUtils;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.http.HttpHeaders;
 import org.springframework.stereotype.Component;
@@ -442,12 +443,7 @@ public class BtcpaySubscriptionProvider implements SubscriptionProvider {
   }
 
   private String sha256(String value) {
-    try {
-      MessageDigest digest = MessageDigest.getInstance("SHA-256");
-      return HexFormat.of().formatHex(digest.digest(value.getBytes(StandardCharsets.UTF_8)));
-    } catch (Exception e) {
-      throw new IllegalStateException("Missing SHA-256", e);
-    }
+    return DigestUtils.sha256Hex(value);
   }
 
   private void ensureConfigured() {

@@ -25,17 +25,15 @@ import io.breland.bbagent.server.agent.persistence.subscription.PaymentSubscript
 import io.breland.bbagent.server.analytics.UmamiAnalyticsService;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
-import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
 import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
-import java.util.HexFormat;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
+import org.apache.commons.codec.digest.DigestUtils;
 import org.apache.commons.lang3.StringUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -883,14 +881,7 @@ public class SubscriptionService {
     if (StringUtils.isBlank(accountId)) {
       return null;
     }
-    try {
-      MessageDigest digest = MessageDigest.getInstance("SHA-256");
-      return HexFormat.of()
-          .formatHex(digest.digest(accountId.getBytes(StandardCharsets.UTF_8)))
-          .substring(0, 12);
-    } catch (Exception e) {
-      return accountId.substring(0, Math.min(12, accountId.length()));
-    }
+    return DigestUtils.sha256Hex(accountId).substring(0, 12);
   }
 
   private Instant firstInstant(Instant... values) {
