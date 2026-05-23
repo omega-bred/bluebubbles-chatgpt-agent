@@ -12,10 +12,10 @@ import io.breland.bbagent.server.agent.IncomingMessage;
 import io.breland.bbagent.server.agent.cadence.models.IncomingAttachment;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotNull;
-import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.function.Function;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
@@ -30,7 +30,6 @@ import org.springframework.web.context.request.NativeWebRequest;
 public class BluebubblesWebhookController extends BluebubblesApiController {
 
   private static final String GROUP_PREFIX = "iMessage;+;chat";
-  private static final String GROUP_PREFIX_2 = "any;+;chat";
 
   @Autowired private BBMessageAgent messageAgent;
 
@@ -66,7 +65,6 @@ public class BluebubblesWebhookController extends BluebubblesApiController {
     Boolean fromMe = data.getIsFromMe();
     String service = data.getHandle().getService();
     String sender = data.getHandle().getAddress();
-    Instant timestamp = parseTimestamp(data.getDateCreated());
     List<IncomingAttachment> attachments = parseAttachments(data.getAttachments());
     String chatGuid = data.getChats().getFirst().getGuid();
     boolean isGroup = resolveIsGroup(data);
@@ -82,23 +80,14 @@ public class BluebubblesWebhookController extends BluebubblesApiController {
         service,
         sender,
         isGroup,
-        timestamp,
+        IncomingMessage.parseTimestamp(data.getDateCreated()),
         attachments,
         isSystem);
   }
 
   private boolean isMessageEvent(BlueBubblesMessageReceivedRequest request) {
-    if (BlueBubblesMessageReceivedRequest.TypeEnum.NEW_MESSAGE.equals(request.getType())) {
-      return true;
-    }
-    if (BlueBubblesMessageReceivedRequest.TypeEnum.UPDATED_MESSAGE.equals(request.getType())) {
-      return true;
-    }
-    return false;
-  }
-
-  private static boolean isGroupGuid(String chatGuid) {
-    return chatGuid.startsWith(GROUP_PREFIX) || chatGuid.startsWith(GROUP_PREFIX_2);
+    return BlueBubblesMessageReceivedRequest.TypeEnum.NEW_MESSAGE.equals(request.getType())
+        || BlueBubblesMessageReceivedRequest.TypeEnum.UPDATED_MESSAGE.equals(request.getType());
   }
 
   public static boolean resolveIsGroup(ApiV1ChatChatGuidMessageGet200ResponseDataInner request) {
@@ -106,49 +95,33 @@ public class BluebubblesWebhookController extends BluebubblesApiController {
       return false;
     }
     List<ApiV1ChatChatGuidMessageGet200ResponseDataInnerChatsInner> chats = request.getChats();
-    if (chats != null && chats.size() > 1) {
-      return true;
-    }
-    if (request.getGroupTitle() != null && !request.getGroupTitle().isEmpty()) {
-      return true;
-    }
-    if (chats != null
-        && !chats.isEmpty()
-        && chats.getFirst().getGuid() != null
-        && chats.getFirst().getGuid().startsWith(GROUP_PREFIX)) {
-      return true;
-    }
-    return false;
+    return resolveIsGroup(
+        request.getGroupTitle(),
+        chats,
+        ApiV1ChatChatGuidMessageGet200ResponseDataInnerChatsInner::getGuid);
   }
 
   public static boolean resolveIsGroup(BlueBubblesMessageReceivedRequestData data) {
     @NotNull
     @Valid
     List<@Valid BlueBubblesMessageReceivedRequestDataChatsInner> chats = data.getChats();
+    return resolveIsGroup(
+        data.getGroupTitle(), chats, BlueBubblesMessageReceivedRequestDataChatsInner::getGuid);
+  }
+
+  private static <T> boolean resolveIsGroup(
+      String groupTitle, List<T> chats, Function<T, String> chatGuid) {
     if (chats != null && chats.size() > 1) {
       return true;
     }
-    if (data.getGroupTitle() != null && !data.getGroupTitle().isEmpty()) {
+    if (groupTitle != null && !groupTitle.isEmpty()) {
       return true;
     }
-    if (chats != null
-        && !chats.isEmpty()
-        && chats.getFirst().getGuid() != null
-        && chats.getFirst().getGuid().startsWith(GROUP_PREFIX)) {
-      return true;
+    if (chats != null && !chats.isEmpty()) {
+      String firstChatGuid = chatGuid.apply(chats.getFirst());
+      return firstChatGuid != null && firstChatGuid.startsWith(GROUP_PREFIX);
     }
     return false;
-  }
-
-  private Instant parseTimestamp(Long value) {
-    if (value == null) {
-      return Instant.now();
-    }
-    long epoch = value;
-    if (epoch > 1_000_000_000_000L) {
-      return Instant.ofEpochMilli(epoch);
-    }
-    return Instant.ofEpochSecond(epoch);
   }
 
   private List<IncomingAttachment> parseAttachments(

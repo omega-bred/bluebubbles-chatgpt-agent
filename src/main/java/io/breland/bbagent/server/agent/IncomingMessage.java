@@ -112,7 +112,7 @@ public record IncomingMessage(
     return TRANSPORT_LXMF.equalsIgnoreCase(transportOrDefault());
   }
 
-  private static Instant parseTimestamp(Long value) {
+  public static Instant parseTimestamp(Long value) {
     if (value == null) {
       return Instant.now();
     }
