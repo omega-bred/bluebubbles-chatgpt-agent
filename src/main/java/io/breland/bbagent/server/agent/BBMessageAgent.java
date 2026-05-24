@@ -768,8 +768,14 @@ public class BBMessageAgent {
         if (canSendResponses(workflowContext)) {
           recordAssistantTurnForCurrentMessage(message, "[image]", workflowContext);
         }
+      } else if (sentTextByTool || sentReactionByTool) {
+        log.info("No final assistant reply generated after a response tool already ran");
       } else {
-        log.info("No assistant reply generated");
+        log.warn(
+            "Model produced no user-visible assistant response for chat={} messageGuid={}",
+            message.chatGuid(),
+            message.messageGuid());
+        return null;
       }
     }
     return response;

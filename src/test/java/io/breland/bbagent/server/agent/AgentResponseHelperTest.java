@@ -101,6 +101,17 @@ call:create_workflow_callback{purpose:Clone repos, cherry-pick commit, and push 
     assertTrue(outputJson.contains("create or start the Coder task now"));
   }
 
+  @Test
+  void emptyAssistantResponseRetryInstructionAsksForVisibleAnswer() throws Exception {
+    String itemJson =
+        new ObjectMapper()
+            .writeValueAsString(AgentResponseHelper.emptyAssistantResponseRetryInstruction());
+
+    assertTrue(itemJson.contains("developer"));
+    assertTrue(itemJson.contains("user-visible assistant message"));
+    assertTrue(itemJson.contains("Do not put the answer only in reasoning"));
+  }
+
   private static Response responseWithText(String text) {
     try {
       String responseJson =

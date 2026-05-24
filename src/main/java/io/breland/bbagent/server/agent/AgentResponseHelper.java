@@ -2,6 +2,7 @@ package io.breland.bbagent.server.agent;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.openai.models.responses.EasyInputMessage;
 import com.openai.models.responses.Response;
 import com.openai.models.responses.ResponseFunctionToolCall;
 import com.openai.models.responses.ResponseInputItem;
@@ -32,6 +33,10 @@ public final class AgentResponseHelper {
           + " turn. Use the earlier callback_id and callback_instructions from the previous tool"
           + " result, then continue with the next tool call. For Coder async tasks, create or start"
           + " the Coder task now; do not call create_workflow_callback again.";
+  public static final String EMPTY_ASSISTANT_RESPONSE_RETRY_INSTRUCTION =
+      "Your previous response did not contain a user-visible assistant message or a tool call. "
+          + "Continue now with either a concise user-visible answer or the next tool call needed to "
+          + "answer. Do not put the answer only in reasoning.";
 
   private AgentResponseHelper() {}
 
@@ -173,6 +178,14 @@ public final class AgentResponseHelper {
     ResponseInputItem.FunctionCallOutput toolOutput =
         ResponseInputItem.FunctionCallOutput.builder().callId(callId).output(output).build();
     return ResponseInputItem.ofFunctionCallOutput(toolOutput);
+  }
+
+  public static ResponseInputItem emptyAssistantResponseRetryInstruction() {
+    return ResponseInputItem.ofEasyInputMessage(
+        EasyInputMessage.builder()
+            .role(EasyInputMessage.Role.DEVELOPER)
+            .content(EMPTY_ASSISTANT_RESPONSE_RETRY_INSTRUCTION)
+            .build());
   }
 
   static List<ResponseFunctionToolCall> parseTextFunctionCalls(String text) {
