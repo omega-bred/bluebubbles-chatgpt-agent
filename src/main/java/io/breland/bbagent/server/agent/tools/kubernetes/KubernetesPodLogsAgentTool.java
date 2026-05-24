@@ -64,7 +64,8 @@ public class KubernetesPodLogsAgentTool implements ToolProvider {
                     kubernetesApi.queryParam("previous", request.previous()),
                     kubernetesApi.queryParam(
                         "tailLines", kubernetesApi.clamp(request.tailLines(), 1, 5000)));
-            HttpResponse<String> response = kubernetesApi.get(uri, "text/plain");
+            HttpResponse<String> response =
+                kubernetesApi.get(uri, KubernetesApiClient.POD_LOGS_ACCEPT_HEADER);
 
             Map<String, Object> payload = new LinkedHashMap<>();
             payload.put("status", response.statusCode());
