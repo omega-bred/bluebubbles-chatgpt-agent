@@ -43,6 +43,11 @@ import io.breland.bbagent.server.agent.tools.memory.MemoryDeleteAgentTool;
 import io.breland.bbagent.server.agent.tools.memory.MemoryGetAgentTool;
 import io.breland.bbagent.server.agent.tools.memory.MemorySaveAgentTool;
 import io.breland.bbagent.server.agent.tools.memory.MemoryUpdateAgentTool;
+import io.breland.bbagent.server.agent.tools.reservations.CheckRestaurantAvailabilityAgentTool;
+import io.breland.bbagent.server.agent.tools.reservations.MakeRestaurantReservationAgentTool;
+import io.breland.bbagent.server.agent.tools.reservations.RestaurantReservationGateway;
+import io.breland.bbagent.server.agent.tools.reservations.RestaurantReservationStatusAgentTool;
+import io.breland.bbagent.server.agent.tools.reservations.SearchRestaurantsAgentTool;
 import io.breland.bbagent.server.agent.tools.scheduled.ScheduledEventDeleteTool;
 import io.breland.bbagent.server.agent.tools.scheduled.ScheduledEventListTool;
 import io.breland.bbagent.server.agent.tools.scheduled.ScheduledEventTool;
@@ -120,6 +125,12 @@ public final class AgentToolRegistry {
           ScheduledEventDeleteTool.TOOL_NAME);
   private static final Set<String> KUBERNETES_TOOL_NAMES =
       Set.of(KubernetesReadOnlyAgentTool.TOOL_NAME, KubernetesPodLogsAgentTool.TOOL_NAME);
+  private static final Set<String> RESTAURANT_RESERVATION_TOOL_NAMES =
+      Set.of(
+          RestaurantReservationStatusAgentTool.TOOL_NAME,
+          SearchRestaurantsAgentTool.TOOL_NAME,
+          CheckRestaurantAvailabilityAgentTool.TOOL_NAME,
+          MakeRestaurantReservationAgentTool.TOOL_NAME);
   private static final String KUBERNETES_TOOL_ALLOWED_ACCOUNT_ID =
       "9f80c2a0-de6f-4c56-8027-29b1673bb0d5";
 
@@ -218,6 +229,9 @@ public final class AgentToolRegistry {
     }
     if (KUBERNETES_TOOL_NAMES.contains(toolName)) {
       return "kubernetes";
+    }
+    if (RESTAURANT_RESERVATION_TOOL_NAMES.contains(toolName)) {
+      return "restaurant_reservations";
     }
     if (toolName.startsWith("memory_")) {
       return "memory";
@@ -333,6 +347,17 @@ public final class AgentToolRegistry {
     registerTool(new ScheduledEventTool(cadenceWorkflowLauncher).getTool());
     registerTool(new ScheduledEventListTool(cadenceWorkflowLauncher).getTool());
     registerTool(new ScheduledEventDeleteTool(cadenceWorkflowLauncher).getTool());
+  }
+
+  public void registerRestaurantReservationGateway(
+      @Nullable RestaurantReservationGateway reservationGateway) {
+    if (reservationGateway == null) {
+      return;
+    }
+    registerTool(new RestaurantReservationStatusAgentTool(reservationGateway).getTool());
+    registerTool(new SearchRestaurantsAgentTool(reservationGateway).getTool());
+    registerTool(new CheckRestaurantAvailabilityAgentTool(reservationGateway).getTool());
+    registerTool(new MakeRestaurantReservationAgentTool(reservationGateway).getTool());
   }
 
   private void registerTool(AgentTool tool) {

@@ -40,6 +40,11 @@ import io.breland.bbagent.server.agent.tools.memory.MemoryDeleteAgentTool;
 import io.breland.bbagent.server.agent.tools.memory.MemoryGetAgentTool;
 import io.breland.bbagent.server.agent.tools.memory.MemorySaveAgentTool;
 import io.breland.bbagent.server.agent.tools.memory.MemoryUpdateAgentTool;
+import io.breland.bbagent.server.agent.tools.reservations.CheckRestaurantAvailabilityAgentTool;
+import io.breland.bbagent.server.agent.tools.reservations.MakeRestaurantReservationAgentTool;
+import io.breland.bbagent.server.agent.tools.reservations.RestaurantReservationGateway;
+import io.breland.bbagent.server.agent.tools.reservations.RestaurantReservationStatusAgentTool;
+import io.breland.bbagent.server.agent.tools.reservations.SearchRestaurantsAgentTool;
 import io.breland.bbagent.server.agent.tools.scheduled.ScheduledEventDeleteTool;
 import io.breland.bbagent.server.agent.tools.scheduled.ScheduledEventListTool;
 import io.breland.bbagent.server.agent.tools.scheduled.ScheduledEventTool;
@@ -56,6 +61,7 @@ import java.util.List;
 import java.util.Optional;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.lang.Nullable;
 import org.springframework.stereotype.Component;
 
@@ -74,6 +80,7 @@ public final class AgentPromptBuilder {
   private final AgentAttachmentInputBuilder attachmentInputBuilder;
   private final @Nullable WebsiteAccountService websiteAccountService;
   private final @Nullable FeedbackService feedbackService;
+  private final @Nullable RestaurantReservationGateway restaurantReservationGateway;
 
   public AgentPromptBuilder(
       BBHttpClientWrapper bbHttpClientWrapper,
@@ -82,6 +89,25 @@ public final class AgentPromptBuilder {
       AgentAttachmentInputBuilder attachmentInputBuilder,
       @Nullable WebsiteAccountService websiteAccountService,
       @Nullable FeedbackService feedbackService) {
+    this(
+        bbHttpClientWrapper,
+        reverseLocationLookup,
+        profileService,
+        attachmentInputBuilder,
+        websiteAccountService,
+        feedbackService,
+        null);
+  }
+
+  @Autowired
+  public AgentPromptBuilder(
+      BBHttpClientWrapper bbHttpClientWrapper,
+      ReverseLocationLookup reverseLocationLookup,
+      AgentProfileService profileService,
+      AgentAttachmentInputBuilder attachmentInputBuilder,
+      @Nullable WebsiteAccountService websiteAccountService,
+      @Nullable FeedbackService feedbackService,
+      @Nullable RestaurantReservationGateway restaurantReservationGateway) {
     this.bbHttpClientWrapper = bbHttpClientWrapper;
     this.reverseLocationLookup =
         reverseLocationLookup == null ? ReverseLocationLookup.noop() : reverseLocationLookup;
@@ -89,6 +115,7 @@ public final class AgentPromptBuilder {
     this.attachmentInputBuilder = attachmentInputBuilder;
     this.websiteAccountService = websiteAccountService;
     this.feedbackService = feedbackService;
+    this.restaurantReservationGateway = restaurantReservationGateway;
   }
 
   public List<ResponseInputItem> buildConversationInput(
@@ -299,7 +326,8 @@ public final class AgentPromptBuilder {
                   + "Only call "
                   + SendTextAgentTool.TOOL_NAME
                   + " when you specifically need to send an extra message; plain text is fine otherwise. "
-                  + "Use available tools for tasks like calendars, memory, Coder, scheduled follow-ups, or lookups when asked. "
+                  + "Use available tools for tasks like calendars, memory, Coder, scheduled follow-ups, restaurants/reservations, or lookups when asked. "
+                  + restaurantReservationInstruction()
                   + "When the user asks about quota, usage limits, daily messages, or remaining messages, call "
                   + GetUsageLimitsAgentTool.TOOL_NAME
                   + " before answering. "
@@ -340,7 +368,8 @@ public final class AgentPromptBuilder {
                 + ReadPollAgentTool.TOOL_NAME
                 + " when asked to read poll results, count votes, summarize choices, or inspect a poll by message GUID. "
                 + "When sending a text, you may optionally apply a BlueChat effect via the effect parameter, but use effects sparingly (e.g. happy_birthday for birthday wishes). "
-                + "Use available tools for tasks like calendars or lookups when asked. "
+                + "Use available tools for tasks like calendars, restaurant reservations, or lookups when asked. "
+                + restaurantReservationInstruction()
                 + "Use web_search for current info or external lookups when relevant. "
                 + "When the user asks about quota, usage limits, daily messages, or remaining messages, call "
                 + GetUsageLimitsAgentTool.TOOL_NAME
@@ -475,6 +504,21 @@ public final class AgentPromptBuilder {
                 + BBMessageAgent.NO_RESPONSE_TEXT
                 + ".")
         .build();
+  }
+
+  private String restaurantReservationInstruction() {
+    if (restaurantReservationGateway == null) {
+      return "";
+    }
+    return "For restaurant reservation requests, call "
+        + SearchRestaurantsAgentTool.TOOL_NAME
+        + " to find provider links or API-backed OpenTable restaurant results, call "
+        + CheckRestaurantAvailabilityAgentTool.TOOL_NAME
+        + " to check specific availability, and call "
+        + MakeRestaurantReservationAgentTool.TOOL_NAME
+        + " only after the user explicitly confirms the exact restaurant, date/time, party size, guest contact details, and provider terms acceptance. Never ask for or include raw payment-card data. Use "
+        + RestaurantReservationStatusAgentTool.TOOL_NAME
+        + " when asked about reservation login, provider support, or whether booking is configured. Resy booking/login should be completed through the Resy handoff link unless a direct API is later configured. ";
   }
 
   private String feedbackInstruction() {
