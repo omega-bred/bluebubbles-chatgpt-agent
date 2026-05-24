@@ -29,6 +29,7 @@ import org.springframework.core.io.FileSystemResource;
 import org.springframework.core.io.buffer.DataBuffer;
 import org.springframework.core.io.buffer.DataBufferUtils;
 import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpMethod;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
 import org.springframework.util.LinkedMultiValueMap;
@@ -107,6 +108,8 @@ public class BBHttpClientWrapper {
 
   public record AttachmentData(String filename, byte[] bytes) {}
 
+  public record PollSendOption(String text, String optionIdentifier) {}
+
   private static Duration normalizedTimeout(long timeoutSeconds) {
     return Duration.ofSeconds(Math.max(1, timeoutSeconds));
   }
@@ -128,6 +131,14 @@ public class BBHttpClientWrapper {
 
   private static void requireSuccessfulResponse(Integer status, String message, String operation) {
     if (status != null && status == 200 && StringUtils.containsIgnoreCase(message, "success")) {
+      return;
+    }
+    throw new IllegalStateException(
+        "BlueBubbles " + operation + " failed with status=" + status + " message=" + message);
+  }
+
+  private static void requireOkStatus(Integer status, String message, String operation) {
+    if (status != null && status == 200) {
       return;
     }
     throw new IllegalStateException(
@@ -445,6 +456,90 @@ public class BBHttpClientWrapper {
     requireSuccessfulResponse(
         response.getStatus(), response.getMessage(), "search conversation history");
     return requirePresent(response.getData(), "search conversation history");
+  }
+
+  public JsonNode sendPollJson(String chatGuid, String title, List<PollSendOption> options) {
+    if (StringUtils.isBlank(chatGuid)) {
+      throw new IllegalArgumentException("Cannot send poll without chatGuid");
+    }
+    List<Map<String, Object>> optionPayloads =
+        options == null
+            ? List.of()
+            : options.stream()
+                .filter(Objects::nonNull)
+                .filter(option -> StringUtils.isNotBlank(option.text()))
+                .map(
+                    option -> {
+                      Map<String, Object> payload = new LinkedHashMap<>();
+                      payload.put("text", option.text().trim());
+                      if (StringUtils.isNotBlank(option.optionIdentifier())) {
+                        payload.put("optionIdentifier", option.optionIdentifier().trim());
+                      }
+                      return payload;
+                    })
+                .toList();
+    if (optionPayloads.size() < 2) {
+      throw new IllegalArgumentException("Polls require at least two non-empty options");
+    }
+    Map<String, Object> body = new LinkedHashMap<>();
+    body.put("chatGuid", normalizeDirectAnyChatGuid(chatGuid));
+    body.put("title", StringUtils.defaultIfBlank(title, "Poll"));
+    body.put("options", optionPayloads);
+    JsonNode response =
+        invokeBlueBubblesJson("/api/v1/message/poll", HttpMethod.POST, Map.of(), body, "send poll");
+    return requirePresent(response.get("data"), "send poll");
+  }
+
+  public JsonNode readPollJson(String messageGuid) {
+    if (StringUtils.isBlank(messageGuid)) {
+      throw new IllegalArgumentException("Cannot read poll without messageGuid");
+    }
+    Map<String, Object> pathParams = new LinkedHashMap<>();
+    pathParams.put("messageGuid", messageGuid);
+    JsonNode response =
+        invokeBlueBubblesJson(
+            "/api/v1/message/{messageGuid}/poll", HttpMethod.GET, pathParams, null, "read poll");
+    return requirePresent(response.get("data"), "read poll");
+  }
+
+  private JsonNode invokeBlueBubblesJson(
+      String path,
+      HttpMethod method,
+      Map<String, Object> pathParams,
+      Object body,
+      String operation) {
+    MultiValueMap<String, String> queryParams = new LinkedMultiValueMap<>();
+    queryParams.putAll(apiClient.parameterToMultiValueMap(null, "password", password));
+    HttpHeaders headerParams = new HttpHeaders();
+    MultiValueMap<String, String> cookieParams = new LinkedMultiValueMap<>();
+    MultiValueMap<String, Object> formParams = new LinkedMultiValueMap<>();
+    List<MediaType> accept = apiClient.selectHeaderAccept(new String[] {"application/json"});
+    MediaType contentType =
+        apiClient.selectHeaderContentType(
+            body == null ? new String[] {} : new String[] {"application/json"});
+    JsonNode response =
+        apiClient
+            .invokeAPI(
+                path,
+                method,
+                pathParams == null ? Map.of() : pathParams,
+                queryParams,
+                body,
+                headerParams,
+                cookieParams,
+                formParams,
+                accept,
+                contentType,
+                new String[] {},
+                new ParameterizedTypeReference<JsonNode>() {})
+            .bodyToMono(JsonNode.class)
+            .block(apiTimeout);
+    response = requirePresent(response, operation);
+    requireOkStatus(
+        response.path("status").isInt() ? response.path("status").asInt() : null,
+        response.path("message").asText(null),
+        operation);
+    return response;
   }
 
   public Chat getConversationInfo(String chatGuid) {

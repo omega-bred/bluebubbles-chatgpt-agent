@@ -2154,6 +2154,37 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ApiResponse_Message"
+  /api/v1/message/{messageGuid}/poll:
+    get:
+      tags:
+        - v1 > Message
+      summary: Read Poll
+      description: >-
+        Reads an iMessage poll from a message GUID and returns the poll options
+        and current responses.
+
+
+        **Requires**: Private API
+      parameters:
+        - name: messageGuid
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Poll message GUID.
+        - name: password
+          in: query
+          schema:
+            type: string
+          description: Your BlueBubbles Server password
+          example: '{{password}}'
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiResponse_Poll"
   /api/v1/message/{messageGuid}/embedded-media:
     get:
       tags:
@@ -2326,6 +2357,44 @@ paths:
                     items:
                       $ref: "#/components/schemas/Message"
                   
+  /api/v1/message/poll:
+    post:
+      tags:
+        - v1 > Message
+      summary: Send Poll
+      description: >-
+        Send an iMessage poll with a title/question and two or more options.
+
+
+        **Requires**: Private API
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ApiV1MessagePollPostRequest'
+            example:
+              chatGuid: iMessage;+;xxxxxxxxxxxx
+              title: Where should we eat?
+              options:
+                - text: Sushi
+                - text: Pizza
+                - text: Tacos
+      parameters:
+        - name: password
+          in: query
+          schema:
+            type: string
+          description: Your BlueBubbles Server password
+          example: '{{password}}'
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiResponse_SendPoll"
+
   /api/v1/message/text:
     post:
       tags:
@@ -3482,6 +3551,157 @@ components:
           example: Success
         data:
           $ref: '#/components/schemas/Message'
+
+    ApiResponse_SendPoll:
+      type: object
+      additionalProperties: false
+      required: [ status, message, data ]
+      properties:
+        status:
+          type: integer
+          format: int32
+          example: 200
+        message:
+          type: string
+          example: Poll sent!
+        data:
+          $ref: '#/components/schemas/PollSendResult'
+
+    ApiResponse_Poll:
+      type: object
+      additionalProperties: false
+      required: [ status, message, data ]
+      properties:
+        status:
+          type: integer
+          format: int32
+          example: 200
+        message:
+          type: string
+          example: Poll read!
+        data:
+          $ref: '#/components/schemas/PollData'
+
+    PollSendResult:
+      type: object
+      additionalProperties: false
+      required: [ message, poll ]
+      properties:
+        message:
+          $ref: '#/components/schemas/Message'
+        poll:
+          $ref: '#/components/schemas/PollData'
+
+    ApiV1MessagePollPostRequest:
+      type: object
+      additionalProperties: false
+      required: [ chatGuid, options ]
+      properties:
+        chatGuid:
+          type: string
+          description: GUID for the chat where the poll should be sent.
+          example: iMessage;+;xxxxxxxxxxxx
+        title:
+          type: string
+          description: Poll title. At least one of title, question, or message is required.
+          example: Where should we eat?
+        question:
+          type: string
+          description: Alternate poll title/question field.
+        message:
+          type: string
+          description: Alternate poll title/message field.
+        options:
+          type: array
+          minItems: 2
+          items:
+            $ref: '#/components/schemas/PollSendOption'
+
+    PollSendOption:
+      type: object
+      additionalProperties: false
+      required: [ text ]
+      properties:
+        text:
+          type: string
+          description: Option text.
+          example: Sushi
+        optionIdentifier:
+          type: string
+          description: Optional stable option identifier.
+          example: 12A285CA-4A33-48F4-B886-99BBEA04694C
+
+    PollData:
+      type: object
+      additionalProperties: false
+      properties:
+        messageGuid:
+          oneOf:
+            - type: string
+            - type: "null"
+          description: Poll message GUID.
+        title:
+          oneOf:
+            - type: string
+            - type: "null"
+          description: Poll title.
+        options:
+          type: array
+          items:
+            $ref: '#/components/schemas/PollOption'
+        responses:
+          type: array
+          items:
+            $ref: '#/components/schemas/PollResponse'
+        optionCount:
+          type: integer
+          format: int32
+        bundleIdentifier:
+          oneOf:
+            - type: string
+            - type: "null"
+        pluginSessionGuid:
+          oneOf:
+            - type: string
+            - type: "null"
+
+    PollOption:
+      type: object
+      additionalProperties: false
+      properties:
+        optionIdentifier:
+          oneOf:
+            - type: string
+            - type: "null"
+        creatorHandle:
+          oneOf:
+            - type: string
+            - type: "null"
+        text:
+          oneOf:
+            - type: string
+            - type: "null"
+        attributedText:
+          oneOf:
+            - type: object
+              additionalProperties: true
+            - type: "null"
+        canBeEdited:
+          type: boolean
+
+    PollResponse:
+      type: object
+      additionalProperties: false
+      required: [ handle, optionIdentifiers ]
+      properties:
+        handle:
+          oneOf:
+            - type: string
+            - type: "null"
+        optionIdentifiers:
+          type: array
+          items:
+            type: string
 
     ApiResponse_IcloudAccount:
       type: object

@@ -66,16 +66,20 @@ public class BluebubblesWebhookController extends BluebubblesApiController {
     String threadOriginatorGuid = data.getThreadOriginatorGuid();
     String text = data.getText();
     Boolean fromMe = data.getIsFromMe();
-    String service = data.getHandle().getService();
-    String sender = data.getHandle().getAddress();
+    String service = data.getHandle() == null ? null : data.getHandle().getService();
+    String sender = data.getHandle() == null ? null : data.getHandle().getAddress();
     Instant timestamp = parseTimestamp(data.getDateCreated());
     List<IncomingAttachment> attachments = parseAttachments(data.getAttachments());
-    String chatGuid = data.getChats().getFirst().getGuid();
+    String chatGuid =
+        data.getChats() == null || data.getChats().isEmpty()
+            ? null
+            : data.getChats().getFirst().getGuid();
     boolean isGroup = resolveIsGroup(data);
     // BlueBubbles does not currently provide a reliable system-message signal here.
     boolean isSystem = false;
 
     return new IncomingMessage(
+        IncomingMessage.TRANSPORT_BLUEBUBBLES,
         chatGuid,
         messageGuid,
         threadOriginatorGuid,
@@ -86,6 +90,9 @@ public class BluebubblesWebhookController extends BluebubblesApiController {
         isGroup,
         timestamp,
         attachments,
+        data.getBalloonBundleId(),
+        data.getAssociatedMessageGuid(),
+        data.getReplyToGuid(),
         isSystem);
   }
 

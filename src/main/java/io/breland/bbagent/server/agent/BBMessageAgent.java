@@ -24,8 +24,10 @@ import io.breland.bbagent.server.agent.tools.assistant.AssistantNameAgentTool;
 import io.breland.bbagent.server.agent.tools.assistant.AssistantResponsivenessAgentTool;
 import io.breland.bbagent.server.agent.tools.bb.CurrentConversationInfoAgentTool;
 import io.breland.bbagent.server.agent.tools.bb.GetThreadContextAgentTool;
+import io.breland.bbagent.server.agent.tools.bb.ReadPollAgentTool;
 import io.breland.bbagent.server.agent.tools.bb.RenameConversationAgentTool;
 import io.breland.bbagent.server.agent.tools.bb.SearchConvoHistoryAgentTool;
+import io.breland.bbagent.server.agent.tools.bb.SendPollAgentTool;
 import io.breland.bbagent.server.agent.tools.bb.SendReactionAgentTool;
 import io.breland.bbagent.server.agent.tools.bb.SendTextAgentTool;
 import io.breland.bbagent.server.agent.tools.bb.SetGroupIconAgentTool;
@@ -50,6 +52,7 @@ import io.breland.bbagent.server.agent.transport.MessageTransport;
 import io.breland.bbagent.server.agent.transport.MessageTransportRegistry;
 import io.breland.bbagent.server.agent.transport.OutgoingTextMessage;
 import io.breland.bbagent.server.agent.transport.bb.BBHttpClientWrapper;
+import io.breland.bbagent.server.agent.transport.bb.BlueBubblesPollSupport;
 import io.breland.bbagent.server.agent.workflowcallback.WorkflowCallbackService;
 import io.breland.bbagent.server.feedback.FeedbackService;
 import io.breland.bbagent.server.metrics.AgentMetricsService;
@@ -119,7 +122,9 @@ public class BBMessageAgent {
           RenameConversationAgentTool.TOOL_NAME,
           SetGroupIconAgentTool.TOOL_NAME,
           SendGiphyAgentTool.TOOL_NAME,
-          GetThreadContextAgentTool.TOOL_NAME);
+          GetThreadContextAgentTool.TOOL_NAME,
+          SendPollAgentTool.TOOL_NAME,
+          ReadPollAgentTool.TOOL_NAME);
   private static final Set<String> HIDDEN_CODER_MCP_TOOL_NAMES =
       Set.of(StartCoderAsyncTaskAgentTool.CREATE_TASK_MCP_TOOL);
   private static final Set<String> BLUEBUBBLES_TOOL_NAMES =
@@ -131,7 +136,9 @@ public class BBMessageAgent {
           RenameConversationAgentTool.TOOL_NAME,
           SetGroupIconAgentTool.TOOL_NAME,
           SendGiphyAgentTool.TOOL_NAME,
-          GetThreadContextAgentTool.TOOL_NAME);
+          GetThreadContextAgentTool.TOOL_NAME,
+          SendPollAgentTool.TOOL_NAME,
+          ReadPollAgentTool.TOOL_NAME);
   private static final Set<String> GCAL_TOOL_NAMES =
       Set.of(
           ListCalendarsAgentTool.TOOL_NAME,
@@ -295,9 +302,11 @@ public class BBMessageAgent {
     if (isAccountProcessingBlocked(message)) {
       return;
     }
+    IncomingMessage enrichedMessage = enrichPollNotification(message);
     ConversationState state =
         conversations.computeIfAbsent(
-            message.chatGuid(), key -> this.computeConversationState(key, message));
+            enrichedMessage.chatGuid(), key -> this.computeConversationState(key, enrichedMessage));
+    message = enrichedMessage;
 
     synchronized (state) {
       if (state.hasSeenIncomingMessage(message)) {
@@ -419,6 +428,10 @@ public class BBMessageAgent {
     }
     if ((message.text() == null || message.text().isBlank())
         && (message.attachments() == null || message.attachments().isEmpty())) {
+      if (message.isBlueBubblesTransport()
+          && BlueBubblesPollSupport.isPollBundle(message.balloonBundleId())) {
+        return true;
+      }
       // assume it's a group name or photo edited
       // there's no text to process and no attachments so must be that?
       return false;
@@ -428,6 +441,31 @@ public class BBMessageAgent {
       return isSilentInvocation(message.text());
     }
     return true;
+  }
+
+  private IncomingMessage enrichPollNotification(IncomingMessage message) {
+    if (message == null
+        || !message.isBlueBubblesTransport()
+        || !BlueBubblesPollSupport.isPollBundle(message.balloonBundleId())) {
+      return message;
+    }
+    String pollMessageGuid = BlueBubblesPollSupport.pollMessageGuid(message);
+    if (pollMessageGuid == null || pollMessageGuid.isBlank()) {
+      return message.withText(BlueBubblesPollSupport.fallbackPollNotification(message, null));
+    }
+    try {
+      JsonNode poll = bbHttpClientWrapper.readPollJson(pollMessageGuid);
+      return message.withText(
+          BlueBubblesPollSupport.formatPollNotification(message, pollMessageGuid, poll));
+    } catch (RuntimeException e) {
+      log.warn(
+          "Failed to read poll update for triggerGuid={} pollGuid={}",
+          message.messageGuid(),
+          pollMessageGuid,
+          e);
+      return message.withText(
+          BlueBubblesPollSupport.fallbackPollNotification(message, pollMessageGuid));
+    }
   }
 
   private boolean handleTermsGate(ConversationState state, IncomingMessage message) {
@@ -1679,6 +1717,11 @@ public class BBMessageAgent {
                 + " or "
                 + SendReactionAgentTool.TOOL_NAME
                 + " when you specifically need those actions; plain text is fine otherwise. "
+                + "Use "
+                + SendPollAgentTool.TOOL_NAME
+                + " when a user asks to make, create, start, or send a poll. Use "
+                + ReadPollAgentTool.TOOL_NAME
+                + " when asked to read poll results, count votes, summarize choices, or inspect a poll by message GUID. "
                 + "When sending a text, you may optionally apply a BlueChat effect via the effect parameter, but use effects sparingly (e.g. happy_birthday for birthday wishes). "
                 + "Use available tools for tasks like calendars or lookups when asked. "
                 + "Use web_search for current info or external lookups when relevant. "
@@ -1702,6 +1745,7 @@ public class BBMessageAgent {
                 + "Use "
                 + GetThreadContextAgentTool.TOOL_NAME
                 + " when asked about the last message or previously sent images in this thread. "
+                + "Incoming poll vote or option updates may arrive as poll update notifications with current options and votes; treat them as context and reply only if useful or requested. "
                 + feedbackInstruction()
                 + "For group chats, you can rename the conversation or set a group icon when requested. "
                 + "When the user asks to log in, sign up, manage their web account, connect the current chat identity to the website, or see linked integrations on the website, call "
@@ -1848,6 +1892,15 @@ public class BBMessageAgent {
     }
     if (message.threadOriginatorGuid() != null && !message.threadOriginatorGuid().isBlank()) {
       text.append(" [threadOriginatorGuid=").append(message.threadOriginatorGuid()).append("]");
+    }
+    if (message.associatedMessageGuid() != null && !message.associatedMessageGuid().isBlank()) {
+      text.append(" [associatedMessageGuid=").append(message.associatedMessageGuid()).append("]");
+    }
+    if (message.replyToGuid() != null && !message.replyToGuid().isBlank()) {
+      text.append(" [replyToGuid=").append(message.replyToGuid()).append("]");
+    }
+    if (message.balloonBundleId() != null && !message.balloonBundleId().isBlank()) {
+      text.append(" [balloonBundleId=").append(message.balloonBundleId()).append("]");
     }
     if (resolveThreadRootGuid(message) != null) {
       text.append(" [threadReply=true]");
@@ -2038,6 +2091,8 @@ public class BBMessageAgent {
   private void registerBuiltInTools() {
     registerTool(new SendTextAgentTool().getTool());
     registerTool(new SendReactionAgentTool().getTool());
+    registerTool(new SendPollAgentTool(bbHttpClientWrapper).getTool());
+    registerTool(new ReadPollAgentTool(bbHttpClientWrapper).getTool());
     registerTool(new SearchConvoHistoryAgentTool(bbHttpClientWrapper).getTool());
     registerTool(new CurrentConversationInfoAgentTool(bbHttpClientWrapper).getTool());
     registerTool(new RenameConversationAgentTool(bbHttpClientWrapper).getTool());
