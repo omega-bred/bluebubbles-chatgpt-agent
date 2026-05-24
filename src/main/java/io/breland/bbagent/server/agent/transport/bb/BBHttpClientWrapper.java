@@ -550,11 +550,10 @@ public class BBHttpClientWrapper {
       request.setChatGuid(normalizeDirectAnyChatGuid(request.getChatGuid()));
       applyTextFormatting(request);
       log.info(
-          "Attempting to send direct text message chatGuid={} tempGuid={} timeout={} request={}",
+          "Attempting to send direct text message chatGuid={} tempGuid={} timeout={}",
           request.getChatGuid(),
           request.getTempGuid(),
-          apiTimeout,
-          request);
+          apiTimeout);
       messageApi.apiV1MessageTextPost(password, request).block(apiTimeout);
       log.info(
           "Sent direct message chatGuid={} tempGuid={} elapsedMs={}",
