@@ -847,13 +847,6 @@ public class BBHttpClientWrapper {
     return this.sendTextDirect(request);
   }
 
-  public boolean sendTextDirect(IncomingMessage message, String text) {
-    if (message == null) {
-      return false;
-    }
-    return sendTextDirect(normalizeDirectAnyChatGuid(message.chatGuid(), message.service()), text);
-  }
-
   public boolean sendReactionDirect(IncomingMessage message, String reaction) {
     if (StringUtils.isBlank(message.chatGuid())) {
       log.warn("Cannot send reaction without chatGuid");
