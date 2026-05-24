@@ -132,11 +132,7 @@ public class UmamiAnalyticsService {
   }
 
   private String normalizedHostUrl(String hostUrl) {
-    String cleanHostUrl = firstNonBlank(hostUrl, "https://unami.bre.land");
-    while (cleanHostUrl.endsWith("/")) {
-      cleanHostUrl = cleanHostUrl.substring(0, cleanHostUrl.length() - 1);
-    }
-    return cleanHostUrl;
+    return StringUtils.stripEnd(firstNonBlank(hostUrl, "https://unami.bre.land"), "/");
   }
 
   @Nullable

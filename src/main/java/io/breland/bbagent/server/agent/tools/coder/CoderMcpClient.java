@@ -30,6 +30,7 @@ import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Function;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.lang3.StringUtils;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
@@ -687,7 +688,7 @@ public class CoderMcpClient {
               + " name, display name, or template ID.";
     }
     String full = "Coder MCP tool `" + definition.mcpName() + "`: " + description;
-    return full.length() > 900 ? full.substring(0, 897) + "..." : full;
+    return StringUtils.abbreviate(full, 900);
   }
 
   private FunctionTool.Parameters parameters(McpSchema.JsonSchema schema) {

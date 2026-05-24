@@ -388,12 +388,9 @@ public class WebsiteAccountService {
   }
 
   private String stripTrailingSlash(String value) {
-    String base = value == null || value.isBlank() ? DEFAULT_WEBSITE_BASE_URL : value.trim();
+    String base = StringUtils.defaultIfBlank(value, DEFAULT_WEBSITE_BASE_URL).trim();
     URI.create(base);
-    while (base.endsWith("/")) {
-      base = base.substring(0, base.length() - 1);
-    }
-    return base;
+    return StringUtils.stripEnd(base, "/");
   }
 
   public record CreatedLinkToken(String url, Instant expiresAt, String accountId) {}

@@ -160,7 +160,7 @@ public class BtcpaySubscriptionProvider implements SubscriptionProvider {
                 + ":"
                 + firstText(payload, "invoiceId", "subscriptionId")
                 + ":"
-                + sha256(rawPayload));
+                + DigestUtils.sha256Hex(rawPayload));
     return new ProviderWebhookEvent(
         providerEventId,
         firstNonBlank(eventType, "unknown"),
@@ -434,10 +434,6 @@ public class BtcpaySubscriptionProvider implements SubscriptionProvider {
     }
   }
 
-  private String sha256(String value) {
-    return DigestUtils.sha256Hex(value);
-  }
-
   private void ensureConfigured() {
     if (!settings().isEnabled()
         || StringUtils.isAnyBlank(
@@ -470,11 +466,8 @@ public class BtcpaySubscriptionProvider implements SubscriptionProvider {
   }
 
   private String stripTrailingSlash(String value) {
-    String result = StringUtils.defaultIfBlank(value, "https://btcpay.bre.land").trim();
-    while (result.endsWith("/")) {
-      result = result.substring(0, result.length() - 1);
-    }
-    return result;
+    return StringUtils.stripEnd(
+        StringUtils.defaultIfBlank(value, "https://btcpay.bre.land").trim(), "/");
   }
 
   private String firstNonBlank(String... values) {

@@ -153,6 +153,6 @@ public class AccountModerationService {
     if (StringUtils.isBlank(accountId)) {
       return "unknown";
     }
-    return accountId.substring(0, Math.min(8, accountId.length()));
+    return StringUtils.truncate(accountId, 8);
   }
 }

@@ -323,14 +323,14 @@ public class LinearIssueService {
   private String sanitizeTitle(String title) {
     String sanitized =
         StringUtils.defaultIfBlank(title, "BlueChat issue").replaceAll("\\s+", " ").trim();
-    return sanitized.length() > 255 ? sanitized.substring(0, 255) : sanitized;
+    return StringUtils.truncate(sanitized, 255);
   }
 
   private String firstLine(String text) {
     String trimmed = StringUtils.defaultIfBlank(text, "User feedback").trim();
     int lineBreak = trimmed.indexOf('\n');
     String first = lineBreak >= 0 ? trimmed.substring(0, lineBreak) : trimmed;
-    return first.length() > 120 ? first.substring(0, 120) : first;
+    return StringUtils.truncate(first, 120);
   }
 
   private String nullText(String value) {

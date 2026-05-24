@@ -179,7 +179,9 @@ public class StripeSubscriptionProvider implements SubscriptionProvider {
     String eventType = firstNonBlank(event.getType(), firstText(payloadNode, "type"), "unknown");
     String providerEventId =
         firstNonBlank(
-            event.getId(), firstText(payloadNode, "id"), eventType + ":" + sha256(rawPayload));
+            event.getId(),
+            firstText(payloadNode, "id"),
+            eventType + ":" + DigestUtils.sha256Hex(rawPayload));
     String providerCheckoutId = null;
     String checkoutSessionId = metadataValue(object, "bbagent_checkout_id");
     String providerSubscriptionId = null;
@@ -428,9 +430,5 @@ public class StripeSubscriptionProvider implements SubscriptionProvider {
     } catch (Exception e) {
       return "{}";
     }
-  }
-
-  private String sha256(String value) {
-    return DigestUtils.sha256Hex(value);
   }
 }
