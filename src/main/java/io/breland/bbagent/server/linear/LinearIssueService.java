@@ -264,6 +264,7 @@ public class LinearIssueService {
         | Field | Value |
         | --- | --- |
         | Submitted at | %s |
+        | Account ID | %s |
         | Name | %s |
         | Email | %s |
         | Remote address | %s |
@@ -280,6 +281,7 @@ public class LinearIssueService {
         """
         .formatted(
             input.submittedAt(),
+            nullText(input.accountId()),
             nullText(input.name()),
             nullText(input.email()),
             nullText(input.remoteAddress()),
@@ -367,6 +369,7 @@ public class LinearIssueService {
   }
 
   public record ContactIssueInput(
+      String accountId,
       String name,
       String email,
       String subject,
