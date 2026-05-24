@@ -1,5 +1,6 @@
 package io.breland.bbagent.server.agent.transport.bb;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
@@ -22,6 +23,7 @@ import java.util.concurrent.TimeoutException;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
+import org.openapitools.jackson.nullable.JsonNullableModule;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.ParameterizedTypeReference;
@@ -40,6 +42,11 @@ import org.springframework.util.MultiValueMap;
 public class BBHttpClientWrapper {
 
   private static final Duration DEFAULT_API_TIMEOUT = Duration.ofSeconds(30);
+  private static final Duration DIRECT_SEND_CONFIRMATION_DELAY = Duration.ofSeconds(5);
+  private static final Duration DIRECT_SEND_PING_TIMEOUT = Duration.ofSeconds(5);
+  private static final int DIRECT_SEND_MAX_ATTEMPTS = 3;
+  private static final int DIRECT_SEND_PING_ATTEMPTS = 2;
+  private static final Duration DIRECT_SEND_MATCH_WINDOW_SKEW = Duration.ofSeconds(10);
   private static final String ANY_DIRECT_CHAT_PREFIX = "any;-;";
 
   private final V1ContactApi contactApi;
@@ -85,7 +92,9 @@ public class BBHttpClientWrapper {
         messageApi,
         contactApi,
         icloudApi,
-        new ObjectMapper().registerModule(new JavaTimeModule()));
+        new ObjectMapper()
+            .registerModule(new JavaTimeModule())
+            .registerModule(new JsonNullableModule()));
   }
 
   private BBHttpClientWrapper(
@@ -109,6 +118,25 @@ public class BBHttpClientWrapper {
   public record AttachmentData(String filename, byte[] bytes) {}
 
   public record PollSendOption(String text, String optionIdentifier) {}
+
+  @JsonInclude(JsonInclude.Include.NON_NULL)
+  private record MultipartMessageRequest(String chatGuid, List<MultipartMessagePart> parts) {}
+
+  @JsonInclude(JsonInclude.Include.NON_NULL)
+  private record MultipartMessagePart(
+      Integer partIndex, String text, String attachment, String name) {
+    static MultipartMessagePart text(int partIndex, String text) {
+      return new MultipartMessagePart(partIndex, text, null, null);
+    }
+
+    static MultipartMessagePart attachment(int partIndex, String attachment, String name) {
+      return new MultipartMessagePart(partIndex, null, attachment, name);
+    }
+  }
+
+  protected Duration directSendConfirmationDelay() {
+    return DIRECT_SEND_CONFIRMATION_DELAY;
+  }
 
   private static Duration normalizedTimeout(long timeoutSeconds) {
     return Duration.ofSeconds(Math.max(1, timeoutSeconds));
@@ -381,38 +409,29 @@ public class BBHttpClientWrapper {
     }
     chatGuid = normalizeDirectAnyChatGuid(chatGuid);
     log.info("Sending multipart message with chatGuid {} - message {}", chatGuid, message);
-    List<Map<String, Object>> parts = new ArrayList<>();
+    List<MultipartMessagePart> parts = new ArrayList<>();
     int partIndex = 0;
     if (StringUtils.isNotBlank(message)) {
-      Map<String, Object> textPart = new LinkedHashMap<>();
-      textPart.put("partIndex", partIndex++);
-      textPart.put("text", message);
-      parts.add(textPart);
+      parts.add(MultipartMessagePart.text(partIndex++, message));
     }
     if (attachments != null) {
       for (AttachmentData attachment : attachments) {
         if (attachment == null || attachment.bytes() == null || attachment.bytes().length == 0) {
           continue;
         }
-        String filename = attachment.filename() != null ? attachment.filename() : "attachment";
+        String filename = StringUtils.defaultIfBlank(attachment.filename(), "attachment");
         String serverPath = uploadAttachment(filename, attachment.bytes());
         if (StringUtils.isBlank(serverPath)) {
           continue;
         }
-        Map<String, Object> attachmentPart = new LinkedHashMap<>();
-        attachmentPart.put("partIndex", partIndex++);
-        attachmentPart.put("attachment", serverPath);
-        attachmentPart.put("name", filename);
-        parts.add(attachmentPart);
+        parts.add(MultipartMessagePart.attachment(partIndex++, serverPath, filename));
       }
     }
     if (parts.isEmpty()) {
       log.warn("No parts to send for multipart message");
       return false;
     }
-    Map<String, Object> body = new LinkedHashMap<>();
-    body.put("chatGuid", chatGuid);
-    body.put("parts", parts);
+    MultipartMessageRequest body = new MultipartMessageRequest(chatGuid, parts);
     try {
       messageApi.apiV1MessageMultipartPost(password, body).block(apiTimeout);
       log.info("Sent multipart message to {}", chatGuid);
@@ -462,84 +481,47 @@ public class BBHttpClientWrapper {
     if (StringUtils.isBlank(chatGuid)) {
       throw new IllegalArgumentException("Cannot send poll without chatGuid");
     }
-    List<Map<String, Object>> optionPayloads =
+    List<io.breland.bbagent.generated.bluebubblesclient.model.PollSendOption> optionPayloads =
         options == null
             ? List.of()
             : options.stream()
                 .filter(Objects::nonNull)
                 .filter(option -> StringUtils.isNotBlank(option.text()))
-                .map(
-                    option -> {
-                      Map<String, Object> payload = new LinkedHashMap<>();
-                      payload.put("text", option.text().trim());
-                      if (StringUtils.isNotBlank(option.optionIdentifier())) {
-                        payload.put("optionIdentifier", option.optionIdentifier().trim());
-                      }
-                      return payload;
-                    })
+                .map(BBHttpClientWrapper::toGeneratedPollSendOption)
                 .toList();
     if (optionPayloads.size() < 2) {
       throw new IllegalArgumentException("Polls require at least two non-empty options");
     }
-    Map<String, Object> body = new LinkedHashMap<>();
-    body.put("chatGuid", normalizeDirectAnyChatGuid(chatGuid));
-    body.put("title", StringUtils.defaultIfBlank(title, "Poll"));
-    body.put("options", optionPayloads);
-    JsonNode response =
-        invokeBlueBubblesJson("/api/v1/message/poll", HttpMethod.POST, Map.of(), body, "send poll");
-    return requirePresent(response.get("data"), "send poll");
+    ApiV1MessagePollPostRequest request =
+        ApiV1MessagePollPostRequest.builder()
+            .chatGuid(normalizeDirectAnyChatGuid(chatGuid))
+            .title(StringUtils.defaultIfBlank(StringUtils.trim(title), "Poll"))
+            .options(optionPayloads)
+            .build();
+    ApiResponseSendPoll response =
+        messageApi.apiV1MessagePollPost(request, password).block(apiTimeout);
+    response = requirePresent(response, "send poll");
+    requireOkStatus(response.getStatus(), response.getMessage(), "send poll");
+    return objectMapper.valueToTree(requirePresent(response.getData(), "send poll"));
   }
 
   public JsonNode readPollJson(String messageGuid) {
     if (StringUtils.isBlank(messageGuid)) {
       throw new IllegalArgumentException("Cannot read poll without messageGuid");
     }
-    Map<String, Object> pathParams = new LinkedHashMap<>();
-    pathParams.put("messageGuid", messageGuid);
-    JsonNode response =
-        invokeBlueBubblesJson(
-            "/api/v1/message/{messageGuid}/poll", HttpMethod.GET, pathParams, null, "read poll");
-    return requirePresent(response.get("data"), "read poll");
+    ApiResponsePoll response =
+        messageApi.apiV1MessageMessageGuidPollGet(messageGuid, password).block(apiTimeout);
+    response = requirePresent(response, "read poll");
+    requireOkStatus(response.getStatus(), response.getMessage(), "read poll");
+    return objectMapper.valueToTree(requirePresent(response.getData(), "read poll"));
   }
 
-  private JsonNode invokeBlueBubblesJson(
-      String path,
-      HttpMethod method,
-      Map<String, Object> pathParams,
-      Object body,
-      String operation) {
-    MultiValueMap<String, String> queryParams = new LinkedMultiValueMap<>();
-    queryParams.putAll(apiClient.parameterToMultiValueMap(null, "password", password));
-    HttpHeaders headerParams = new HttpHeaders();
-    MultiValueMap<String, String> cookieParams = new LinkedMultiValueMap<>();
-    MultiValueMap<String, Object> formParams = new LinkedMultiValueMap<>();
-    List<MediaType> accept = apiClient.selectHeaderAccept(new String[] {"application/json"});
-    MediaType contentType =
-        apiClient.selectHeaderContentType(
-            body == null ? new String[] {} : new String[] {"application/json"});
-    JsonNode response =
-        apiClient
-            .invokeAPI(
-                path,
-                method,
-                pathParams == null ? Map.of() : pathParams,
-                queryParams,
-                body,
-                headerParams,
-                cookieParams,
-                formParams,
-                accept,
-                contentType,
-                new String[] {},
-                new ParameterizedTypeReference<JsonNode>() {})
-            .bodyToMono(JsonNode.class)
-            .block(apiTimeout);
-    response = requirePresent(response, operation);
-    requireOkStatus(
-        response.path("status").isInt() ? response.path("status").asInt() : null,
-        response.path("message").asText(null),
-        operation);
-    return response;
+  private static io.breland.bbagent.generated.bluebubblesclient.model.PollSendOption
+      toGeneratedPollSendOption(PollSendOption option) {
+    return io.breland.bbagent.generated.bluebubblesclient.model.PollSendOption.builder()
+        .text(option.text().trim())
+        .optionIdentifier(StringUtils.trimToNull(option.optionIdentifier()))
+        .build();
   }
 
   public Chat getConversationInfo(String chatGuid) {
@@ -591,8 +573,6 @@ public class BBHttpClientWrapper {
       return false;
     }
     try {
-      Map<String, Object> pathParams = new LinkedHashMap<>();
-      pathParams.put("guid", chatGuid);
       MultiValueMap<String, String> queryParams = new LinkedMultiValueMap<>();
       queryParams.putAll(apiClient.parameterToMultiValueMap(null, "password", password));
       HttpHeaders headerParams = new HttpHeaders();
@@ -606,8 +586,8 @@ public class BBHttpClientWrapper {
           apiClient
               .invokeAPI(
                   "/api/v1/chat/{guid}/icon",
-                  org.springframework.http.HttpMethod.POST,
-                  pathParams,
+                  HttpMethod.POST,
+                  Map.of("guid", chatGuid),
                   queryParams,
                   null,
                   headerParams,
@@ -631,43 +611,209 @@ public class BBHttpClientWrapper {
     if (request == null) {
       return false;
     }
-    long startedNanos = System.nanoTime();
-    try {
-      request.setChatGuid(normalizeDirectAnyChatGuid(request.getChatGuid()));
-      applyTextFormatting(request);
+    request.setChatGuid(normalizeDirectAnyChatGuid(request.getChatGuid()));
+    if (StringUtils.isBlank(request.getTempGuid())) {
+      request.setTempGuid(UUID.randomUUID().toString());
+    }
+    applyTextFormatting(request);
+    if (StringUtils.isBlank(request.getChatGuid()) || StringUtils.isBlank(request.getMessage())) {
+      log.warn(
+          "Cannot send direct text message without chatGuid and message chatGuid={} tempGuid={}",
+          request.getChatGuid(),
+          request.getTempGuid());
+      return false;
+    }
+
+    Instant firstAttemptStartedAt = Instant.now();
+    long overallStartedNanos = System.nanoTime();
+    for (int attempt = 1; attempt <= DIRECT_SEND_MAX_ATTEMPTS; attempt++) {
+      if (!warmUpDirectSendPath(request, attempt)) {
+        return false;
+      }
+
       log.info(
-          "Attempting to send direct text message chatGuid={} tempGuid={} timeout={} request={}",
+          "Attempting to send direct text message chatGuid={} tempGuid={} attempt={}/{} timeout={} request={}",
           request.getChatGuid(),
           request.getTempGuid(),
+          attempt,
+          DIRECT_SEND_MAX_ATTEMPTS,
           apiTimeout,
           request);
+      submitDirectTextMessage(request, attempt, overallStartedNanos);
+      if (confirmDirectTextSend(request, firstAttemptStartedAt, attempt, overallStartedNanos)) {
+        return true;
+      }
+    }
+    log.warn(
+        "Failed to confirm BlueBubbles direct text send after {} attempts chatGuid={} tempGuid={} elapsedMs={}",
+        DIRECT_SEND_MAX_ATTEMPTS,
+        request.getChatGuid(),
+        request.getTempGuid(),
+        elapsedMillis(overallStartedNanos));
+    return false;
+  }
+
+  private boolean warmUpDirectSendPath(ApiV1MessageTextPostRequest request, int attempt) {
+    Duration pingTimeout = minDuration(apiTimeout, DIRECT_SEND_PING_TIMEOUT);
+    for (int pingAttempt = 1; pingAttempt <= DIRECT_SEND_PING_ATTEMPTS; pingAttempt++) {
+      try {
+        pingBlueBubbles(pingTimeout);
+        if (pingAttempt > 1) {
+          log.info(
+              "BlueBubbles ping warmup recovered chatGuid={} tempGuid={} attempt={} pingAttempt={}",
+              request.getChatGuid(),
+              request.getTempGuid(),
+              attempt,
+              pingAttempt);
+        }
+        return true;
+      } catch (Exception e) {
+        log.warn(
+            "BlueBubbles ping warmup failed chatGuid={} tempGuid={} attempt={} pingAttempt={}/{} timeout={} message={}",
+            request.getChatGuid(),
+            request.getTempGuid(),
+            attempt,
+            pingAttempt,
+            DIRECT_SEND_PING_ATTEMPTS,
+            pingTimeout,
+            e.getMessage());
+        log.debug("BlueBubbles ping warmup failure", e);
+      }
+    }
+    log.warn(
+        "BlueBubbles ping warmup failed twice; not attempting direct text send chatGuid={} tempGuid={} attempt={}",
+        request.getChatGuid(),
+        request.getTempGuid(),
+        attempt);
+    return false;
+  }
+
+  private void submitDirectTextMessage(
+      ApiV1MessageTextPostRequest request, int attempt, long overallStartedNanos) {
+    long attemptStartedNanos = System.nanoTime();
+    try {
       messageApi.apiV1MessageTextPost(password, request).block(apiTimeout);
       log.info(
-          "Sent direct message chatGuid={} tempGuid={} elapsedMs={}",
+          "BlueBubbles direct text send request completed chatGuid={} tempGuid={} attempt={} attemptElapsedMs={} totalElapsedMs={}",
           request.getChatGuid(),
           request.getTempGuid(),
-          elapsedMillis(startedNanos));
-      return true;
+          attempt,
+          elapsedMillis(attemptStartedNanos),
+          elapsedMillis(overallStartedNanos));
     } catch (Exception e) {
       if (isTimeout(e)) {
         log.warn(
-            "Timed out waiting for BlueBubbles direct text send response chatGuid={} tempGuid={} timeout={} elapsedMs={}. Treating the send as submitted to avoid unsafe duplicate retries; delivery may still arrive via the outgoing webhook.",
+            "Timed out waiting for BlueBubbles direct text send response chatGuid={} tempGuid={} attempt={} timeout={} attemptElapsedMs={} totalElapsedMs={}. Checking chat history before retrying.",
             request.getChatGuid(),
             request.getTempGuid(),
+            attempt,
             apiTimeout,
-            elapsedMillis(startedNanos),
-            e);
-        return true;
-      } else {
-        log.warn(
-            "Failed to send direct message chatGuid={} tempGuid={} elapsedMs={}",
-            request.getChatGuid(),
-            request.getTempGuid(),
-            elapsedMillis(startedNanos),
-            e);
+            elapsedMillis(attemptStartedNanos),
+            elapsedMillis(overallStartedNanos));
+        log.debug("BlueBubbles direct text send timeout", e);
+        return;
       }
+      log.warn(
+          "Failed to send direct message chatGuid={} tempGuid={} attempt={} attemptElapsedMs={} totalElapsedMs={}. Checking chat history before retrying.",
+          request.getChatGuid(),
+          request.getTempGuid(),
+          attempt,
+          elapsedMillis(attemptStartedNanos),
+          elapsedMillis(overallStartedNanos),
+          e);
+    }
+  }
+
+  private boolean confirmDirectTextSend(
+      ApiV1MessageTextPostRequest request,
+      Instant firstAttemptStartedAt,
+      int attempt,
+      long overallStartedNanos) {
+    if (!waitBeforeDirectSendConfirmation(request, attempt)) {
       return false;
     }
+    try {
+      List<ApiV1ChatChatGuidMessageGet200ResponseDataInner> messages =
+          getMessagesInChat(request.getChatGuid());
+      boolean confirmed =
+          messages != null
+              && messages.stream()
+                  .anyMatch(message -> isMatchingSentText(message, request, firstAttemptStartedAt));
+      if (confirmed) {
+        log.info(
+            "Confirmed BlueBubbles direct text send in chat history chatGuid={} tempGuid={} attempt={} elapsedMs={}",
+            request.getChatGuid(),
+            request.getTempGuid(),
+            attempt,
+            elapsedMillis(overallStartedNanos));
+        return true;
+      }
+      log.warn(
+          "BlueBubbles direct text send not found in chat history chatGuid={} tempGuid={} attempt={} elapsedMs={}",
+          request.getChatGuid(),
+          request.getTempGuid(),
+          attempt,
+          elapsedMillis(overallStartedNanos));
+      return false;
+    } catch (Exception e) {
+      log.warn(
+          "Failed to confirm BlueBubbles direct text send from chat history chatGuid={} tempGuid={} attempt={} elapsedMs={}",
+          request.getChatGuid(),
+          request.getTempGuid(),
+          attempt,
+          elapsedMillis(overallStartedNanos),
+          e);
+      return false;
+    }
+  }
+
+  private boolean waitBeforeDirectSendConfirmation(
+      ApiV1MessageTextPostRequest request, int attempt) {
+    Duration delay = directSendConfirmationDelay();
+    if (delay == null || delay.isZero() || delay.isNegative()) {
+      return true;
+    }
+    try {
+      Thread.sleep(delay.toMillis());
+      return true;
+    } catch (InterruptedException e) {
+      Thread.currentThread().interrupt();
+      log.warn(
+          "Interrupted while waiting to confirm BlueBubbles direct text send chatGuid={} tempGuid={} attempt={}",
+          request.getChatGuid(),
+          request.getTempGuid(),
+          attempt);
+      return false;
+    }
+  }
+
+  private boolean isMatchingSentText(
+      ApiV1ChatChatGuidMessageGet200ResponseDataInner message,
+      ApiV1MessageTextPostRequest request,
+      Instant firstAttemptStartedAt) {
+    if (message == null || !Boolean.TRUE.equals(message.getIsFromMe())) {
+      return false;
+    }
+    if (!Objects.equals(message.getText(), request.getMessage())) {
+      return false;
+    }
+    Instant lowerBound = firstAttemptStartedAt.minus(DIRECT_SEND_MATCH_WINDOW_SKEW);
+    Instant messageCreatedAt = parseBlueBubblesTimestamp(message.getDateCreated());
+    return messageCreatedAt == null || !messageCreatedAt.isBefore(lowerBound);
+  }
+
+  private static Instant parseBlueBubblesTimestamp(Long value) {
+    if (value == null) {
+      return null;
+    }
+    if (value > 1_000_000_000_000L) {
+      return Instant.ofEpochMilli(value);
+    }
+    return Instant.ofEpochSecond(value);
+  }
+
+  private static Duration minDuration(Duration first, Duration second) {
+    return first.compareTo(second) <= 0 ? first : second;
   }
 
   private void applyTextFormatting(ApiV1MessageTextPostRequest request) {
@@ -699,6 +845,13 @@ public class BBHttpClientWrapper {
     request.tempGuid(UUID.randomUUID().toString());
     request.message(text);
     return this.sendTextDirect(request);
+  }
+
+  public boolean sendTextDirect(IncomingMessage message, String text) {
+    if (message == null) {
+      return false;
+    }
+    return sendTextDirect(normalizeDirectAnyChatGuid(message.chatGuid(), message.service()), text);
   }
 
   public boolean sendReactionDirect(IncomingMessage message, String reaction) {
@@ -761,12 +914,16 @@ public class BBHttpClientWrapper {
 
   public boolean ping() {
     try {
-      this.otherApi.apiV1PingGet(password).block(apiTimeout);
+      pingBlueBubbles(apiTimeout);
       return true;
     } catch (Exception e) {
       log.warn("Failed to ping", e);
       return false;
     }
+  }
+
+  protected void pingBlueBubbles(Duration timeout) {
+    this.otherApi.apiV1PingGet(password).block(timeout);
   }
 
   public IcloudAccountInfo getAccount() {
