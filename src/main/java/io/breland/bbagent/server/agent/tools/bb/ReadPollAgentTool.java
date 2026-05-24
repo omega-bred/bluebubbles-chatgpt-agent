@@ -10,6 +10,7 @@ import io.breland.bbagent.server.agent.tools.AgentTool;
 import io.breland.bbagent.server.agent.tools.ToolContext;
 import io.breland.bbagent.server.agent.tools.ToolProvider;
 import io.breland.bbagent.server.agent.transport.bb.BBHttpClientWrapper;
+import io.breland.bbagent.server.agent.transport.bb.BlueBubblesPollSupport;
 import io.swagger.v3.oas.annotations.media.Schema;
 import org.apache.commons.lang3.StringUtils;
 
@@ -44,12 +45,20 @@ public class ReadPollAgentTool implements ToolProvider {
             return "polls are only supported on BlueChat/iMessage conversations";
           }
           ReadPollRequest request = context.getMapper().convertValue(args, ReadPollRequest.class);
-          String messageGuid = StringUtils.defaultIfBlank(request.messageGuid(), pollGuid(context));
+          String messageGuid =
+              BlueBubblesPollSupport.normalizeMessageGuid(
+                  StringUtils.defaultIfBlank(request.messageGuid(), pollGuid(context)));
           if (StringUtils.isBlank(messageGuid)) {
             return "missing message_guid";
           }
-          JsonNode data = bbHttpClientWrapper.readPollJson(messageGuid);
-          return data.toString();
+          try {
+            JsonNode data = bbHttpClientWrapper.readPollJson(messageGuid);
+            return data.toString();
+          } catch (RuntimeException e) {
+            return "could not read poll "
+                + messageGuid
+                + ": BlueBubbles returned an error for the poll state request";
+          }
         });
   }
 
@@ -59,14 +68,14 @@ public class ReadPollAgentTool implements ToolProvider {
       return null;
     }
     if (StringUtils.isNotBlank(message.associatedMessageGuid())) {
-      return message.associatedMessageGuid();
+      return BlueBubblesPollSupport.normalizeMessageGuid(message.associatedMessageGuid());
     }
     if (StringUtils.isNotBlank(message.replyToGuid())) {
-      return message.replyToGuid();
+      return BlueBubblesPollSupport.normalizeMessageGuid(message.replyToGuid());
     }
     if (StringUtils.isNotBlank(message.threadOriginatorGuid())) {
-      return message.threadOriginatorGuid();
+      return BlueBubblesPollSupport.normalizeMessageGuid(message.threadOriginatorGuid());
     }
-    return message.messageGuid();
+    return BlueBubblesPollSupport.normalizeMessageGuid(message.messageGuid());
   }
 }

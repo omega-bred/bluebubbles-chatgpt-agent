@@ -193,6 +193,8 @@ spec:
                 secretKeyRef:
                   key: "password"
                   name: bluebubbles
+            - name: BLUEBUBBLES_REQUEST_TIMEOUT_SECONDS
+              value: "60"
             - name: LXMF_BRIDGE_WEBHOOK_SECRET
               valueFrom:
                 secretKeyRef:

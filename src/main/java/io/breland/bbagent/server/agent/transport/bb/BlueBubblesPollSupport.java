@@ -23,11 +23,24 @@ public final class BlueBubblesPollSupport {
     if (message == null) {
       return null;
     }
-    return firstNonBlank(
-        message.associatedMessageGuid(),
-        message.replyToGuid(),
-        message.threadOriginatorGuid(),
-        message.messageGuid());
+    return normalizeMessageGuid(
+        firstNonBlank(
+            message.associatedMessageGuid(),
+            message.replyToGuid(),
+            message.threadOriginatorGuid(),
+            message.messageGuid()));
+  }
+
+  public static String normalizeMessageGuid(String messageGuid) {
+    if (messageGuid == null) {
+      return null;
+    }
+    String normalized = messageGuid.trim();
+    int slashIndex = normalized.indexOf('/');
+    if (normalized.startsWith("p:") && slashIndex >= 0 && slashIndex < normalized.length() - 1) {
+      normalized = normalized.substring(slashIndex + 1).trim();
+    }
+    return normalized.isBlank() ? null : normalized;
   }
 
   public static String fallbackPollNotification(IncomingMessage trigger, String pollMessageGuid) {
