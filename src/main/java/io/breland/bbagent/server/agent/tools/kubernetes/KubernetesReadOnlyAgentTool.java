@@ -67,7 +67,8 @@ public class KubernetesReadOnlyAgentTool implements ToolProvider {
                     kubernetesApi.queryParam(
                         "limit", kubernetesApi.clamp(request.limit(), 1, 500)));
 
-            HttpResponse<String> response = kubernetesApi.get(uri, "application/json");
+            HttpResponse<String> response =
+                kubernetesApi.get(uri, KubernetesApiClient.JSON_ACCEPT_HEADER);
 
             Map<String, Object> payload = new LinkedHashMap<>();
             payload.put("status", response.statusCode());

@@ -19,6 +19,9 @@ import javax.net.ssl.SSLContext;
 import javax.net.ssl.TrustManagerFactory;
 
 final class KubernetesApiClient {
+  static final String JSON_ACCEPT_HEADER = "application/json";
+  static final String POD_LOGS_ACCEPT_HEADER = "text/plain, application/json, */*";
+
   private static final String DEFAULT_API_SERVER = "https://kubernetes.default.svc";
   private static final Path SERVICE_ACCOUNT_TOKEN_PATH =
       Path.of("/var/run/secrets/kubernetes.io/serviceaccount/token");
