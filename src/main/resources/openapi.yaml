@@ -2160,6 +2160,9 @@ components:
             associatedMessageType:
               type: string
               nullable: true
+            replyToGuid:
+              type: string
+              nullable: true
             expressiveSendStyleId:
               type: string
               nullable: true

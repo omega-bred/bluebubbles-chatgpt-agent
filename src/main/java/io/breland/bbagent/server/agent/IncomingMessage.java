@@ -18,10 +18,44 @@ public record IncomingMessage(
     boolean isGroup,
     Instant timestamp,
     List<IncomingAttachment> attachments,
+    String balloonBundleId,
+    String associatedMessageGuid,
+    String replyToGuid,
     boolean isSystemMessage) {
 
   public static final String TRANSPORT_BLUEBUBBLES = "bluebubbles";
   public static final String TRANSPORT_LXMF = "lxmf";
+
+  public IncomingMessage(
+      String transport,
+      String chatGuid,
+      String messageGuid,
+      String threadOriginatorGuid,
+      String text,
+      Boolean fromMe,
+      String service,
+      String sender,
+      boolean isGroup,
+      Instant timestamp,
+      List<IncomingAttachment> attachments,
+      boolean isSystemMessage) {
+    this(
+        transport,
+        chatGuid,
+        messageGuid,
+        threadOriginatorGuid,
+        text,
+        fromMe,
+        service,
+        sender,
+        isGroup,
+        timestamp,
+        attachments,
+        null,
+        null,
+        null,
+        isSystemMessage);
+  }
 
   public IncomingMessage(
       String chatGuid,
@@ -47,6 +81,9 @@ public record IncomingMessage(
         isGroup,
         timestamp,
         attachments,
+        null,
+        null,
+        null,
         isSystemMessage);
   }
 
@@ -71,6 +108,9 @@ public record IncomingMessage(
         BluebubblesWebhookController.resolveIsGroup(message),
         parseTimestamp(message.getDateCreated()),
         List.of(),
+        message.getBalloonBundleId(),
+        message.getAssociatedMessageGuid(),
+        null,
         (message.getIsSystemMessage() != null && message.getIsSystemMessage())
             || (message.getIsServiceMessage() != null && message.getIsServiceMessage()));
   }
