@@ -4,13 +4,13 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.openai.core.JsonValue;
 import com.openai.models.responses.FunctionTool;
 import io.breland.bbagent.server.agent.persistence.coder.CoderOauthCredentialEntity;
 import io.breland.bbagent.server.agent.persistence.coder.CoderOauthCredentialRepository;
 import io.breland.bbagent.server.agent.persistence.coder.CoderOauthPendingAuthorizationEntity;
 import io.breland.bbagent.server.agent.persistence.coder.CoderOauthPendingAuthorizationRepository;
 import io.breland.bbagent.server.agent.tools.AgentTool;
+import io.breland.bbagent.server.agent.tools.JsonSchemaUtilities;
 import io.modelcontextprotocol.client.McpClient;
 import io.modelcontextprotocol.client.McpSyncClient;
 import io.modelcontextprotocol.client.transport.HttpClientStreamableHttpTransport;
@@ -715,11 +715,7 @@ public class CoderMcpClient {
     }
     normalized.putIfAbsent("type", "object");
     normalized.putIfAbsent("properties", new LinkedHashMap<>());
-    FunctionTool.Parameters.Builder builder = FunctionTool.Parameters.builder();
-    for (Map.Entry<String, Object> entry : normalized.entrySet()) {
-      builder.putAdditionalProperty(entry.getKey(), JsonValue.from(entry.getValue()));
-    }
-    return builder.build();
+    return JsonSchemaUtilities.functionParameters(normalized);
   }
 
   public record OauthCompletion(String accountId, String chatGuid, String messageGuid) {}
