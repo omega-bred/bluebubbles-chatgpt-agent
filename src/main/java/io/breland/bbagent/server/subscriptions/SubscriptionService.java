@@ -938,7 +938,7 @@ public class SubscriptionService {
     if (StringUtils.isBlank(accountId)) {
       return null;
     }
-    return DigestUtils.sha256Hex(accountId).substring(0, 12);
+    return StringUtils.truncate(DigestUtils.sha256Hex(accountId), 12);
   }
 
   private Instant firstInstant(Instant... values) {

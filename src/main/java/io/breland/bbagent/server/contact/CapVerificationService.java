@@ -58,11 +58,7 @@ public class CapVerificationService {
   }
 
   private String stripTrailingSlash(String value) {
-    String trimmed = StringUtils.trimToEmpty(value);
-    while (trimmed.endsWith("/")) {
-      trimmed = trimmed.substring(0, trimmed.length() - 1);
-    }
-    return trimmed;
+    return StringUtils.stripEnd(StringUtils.trimToEmpty(value), "/");
   }
 
   private record CapVerifyRequest(String secret, String response) {}

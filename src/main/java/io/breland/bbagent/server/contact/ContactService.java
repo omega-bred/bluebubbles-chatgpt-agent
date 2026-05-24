@@ -75,7 +75,7 @@ public class ContactService {
                   subject,
                   message,
                   remoteAddress(servletRequest),
-                  truncate(
+                  trimAndTruncate(
                       servletRequest == null ? null : servletRequest.getHeader("User-Agent"), 512),
                   capVerified,
                   now));
@@ -107,15 +107,11 @@ public class ContactService {
     if (trimmed == null) {
       throw new ResponseStatusException(HttpStatus.BAD_REQUEST, fieldName + " is required");
     }
-    return truncate(trimmed, maxLength);
+    return StringUtils.truncate(trimmed, maxLength);
   }
 
-  private String truncate(String value, int maxLength) {
-    if (value == null) {
-      return null;
-    }
-    String trimmed = value.trim();
-    return trimmed.length() > maxLength ? trimmed.substring(0, maxLength) : trimmed;
+  private String trimAndTruncate(String value, int maxLength) {
+    return StringUtils.truncate(StringUtils.trim(value), maxLength);
   }
 
   private String remoteAddress(HttpServletRequest request) {
@@ -124,9 +120,9 @@ public class ContactService {
     }
     String forwardedFor = StringUtils.trimToNull(request.getHeader("X-Forwarded-For"));
     if (forwardedFor != null) {
-      return truncate(forwardedFor.split(",", 2)[0], 255);
+      return trimAndTruncate(forwardedFor.split(",", 2)[0], 255);
     }
-    return truncate(request.getRemoteAddr(), 255);
+    return trimAndTruncate(request.getRemoteAddr(), 255);
   }
 
   private String resolveAccountId(@Nullable Jwt jwt) {

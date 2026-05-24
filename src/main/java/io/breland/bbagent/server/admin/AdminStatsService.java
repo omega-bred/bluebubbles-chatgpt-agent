@@ -404,8 +404,7 @@ public class AdminStatsService implements AgentMetricsService {
       if (accountKeyHash == null || accountKeyHash.isBlank()) {
         return "unknown";
       }
-      return accountKeyHash.substring(
-          0, Math.min(accountKeyHash.length(), ACCOUNT_BUCKET_PREFIX_LENGTH));
+      return StringUtils.truncate(accountKeyHash, ACCOUNT_BUCKET_PREFIX_LENGTH);
     }
   }
 
