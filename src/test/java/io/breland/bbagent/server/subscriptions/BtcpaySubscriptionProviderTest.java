@@ -5,10 +5,8 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.nio.charset.StandardCharsets;
-import java.util.HexFormat;
 import java.util.Map;
-import javax.crypto.Mac;
-import javax.crypto.spec.SecretKeySpec;
+import org.apache.commons.codec.digest.HmacUtils;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpHeaders;
 
@@ -140,12 +138,6 @@ class BtcpaySubscriptionProviderTest {
   }
 
   private static String hmac(byte[] payload) {
-    try {
-      Mac mac = Mac.getInstance("HmacSHA256");
-      mac.init(new SecretKeySpec(WEBHOOK_SECRET.getBytes(StandardCharsets.UTF_8), "HmacSHA256"));
-      return HexFormat.of().formatHex(mac.doFinal(payload));
-    } catch (Exception e) {
-      throw new IllegalStateException(e);
-    }
+    return HmacUtils.hmacSha256Hex(WEBHOOK_SECRET.getBytes(StandardCharsets.UTF_8), payload);
   }
 }

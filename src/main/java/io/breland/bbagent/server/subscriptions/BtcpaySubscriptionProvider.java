@@ -5,14 +5,12 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.time.Instant;
-import java.util.HexFormat;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Map.Entry;
-import javax.crypto.Mac;
-import javax.crypto.spec.SecretKeySpec;
 import org.apache.commons.codec.digest.DigestUtils;
+import org.apache.commons.codec.digest.HmacUtils;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.http.HttpHeaders;
 import org.springframework.stereotype.Component;
@@ -320,15 +318,9 @@ public class BtcpaySubscriptionProvider implements SubscriptionProvider {
   }
 
   private String hmacSha256(byte[] payload) {
-    try {
-      Mac mac = Mac.getInstance("HmacSHA256");
-      mac.init(
-          new SecretKeySpec(
-              settings().getWebhookSecret().getBytes(StandardCharsets.UTF_8), "HmacSHA256"));
-      return HexFormat.of().formatHex(mac.doFinal(payload == null ? new byte[0] : payload));
-    } catch (Exception e) {
-      throw new IllegalStateException("Unable to verify BTCPay webhook signature", e);
-    }
+    return HmacUtils.hmacSha256Hex(
+        settings().getWebhookSecret().getBytes(StandardCharsets.UTF_8),
+        payload == null ? new byte[0] : payload);
   }
 
   private Instant epoch(String value) {
