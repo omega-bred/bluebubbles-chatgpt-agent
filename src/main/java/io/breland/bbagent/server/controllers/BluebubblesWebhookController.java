@@ -134,7 +134,7 @@ public class BluebubblesWebhookController extends BluebubblesApiController {
     if (chats != null
         && !chats.isEmpty()
         && chats.getFirst().getGuid() != null
-        && chats.getFirst().getGuid().startsWith(GROUP_PREFIX)) {
+        && isGroupGuid(chats.getFirst().getGuid())) {
       return true;
     }
     return false;
