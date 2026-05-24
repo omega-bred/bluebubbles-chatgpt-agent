@@ -627,15 +627,6 @@ public class BBHttpClientWrapper {
     }
   }
 
-  public boolean sendTextDirect(IncomingMessage message, String text) {
-    if (StringUtils.isBlank(message.chatGuid())) {
-      log.warn("Cannot send message without chatGuid");
-      return false;
-    }
-    return this.sendTextDirect(
-        normalizeDirectAnyChatGuid(message.chatGuid(), message.service()), text);
-  }
-
   public boolean sendTextDirect(ApiV1MessageTextPostRequest request) {
     if (request == null) {
       return false;
