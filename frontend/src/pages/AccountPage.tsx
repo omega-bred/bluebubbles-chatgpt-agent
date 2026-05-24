@@ -163,7 +163,8 @@ function BillingPanel({
   const plans = subscription?.plans || [];
   const plan = plans[0];
   const isPremium = Boolean(subscription?.is_premium);
-  const showCheckoutOptions = !activeSubscription;
+  const showCheckoutOptions = !isPremium && !activeSubscription;
+  const planCheckoutCopy = checkoutOptionCopy(plan?.provider);
   return (
     <article className="billing-panel">
       <div>
@@ -185,28 +186,34 @@ function BillingPanel({
         ) : null}
         {showCheckoutOptions && plans.length <= 1 ? (
           <button className="button button-primary" disabled={busy || !plan} onClick={() => void onUpgrade(plan)}>
-            Subscribe
+            {busy ? "Opening checkout" : planCheckoutCopy.action}
           </button>
         ) : null}
       </div>
       {showCheckoutOptions && plans.length > 1 ? (
         <div className="provider-plan-list">
-          {plans.map((availablePlan, index) => (
-            <button
-              className={`provider-plan-row ${index === 0 ? "primary" : ""}`}
-              disabled={busy}
-              key={`${availablePlan.provider}:${availablePlan.key}`}
-              onClick={() => void onUpgrade(availablePlan)}
-            >
-              <span>
-                <strong>{formatProviderLabel(availablePlan.provider)}</strong>
-                <small>
-                  {availablePlan.price_amount} {availablePlan.currency} {availablePlan.billing_interval}
-                </small>
-              </span>
-              <span>{busy ? "Opening" : "Subscribe"}</span>
-            </button>
-          ))}
+          {plans.map((availablePlan, index) => {
+            const checkoutCopy = checkoutOptionCopy(availablePlan.provider);
+            return (
+              <button
+                className={`provider-plan-row ${index === 0 ? "primary" : ""}`}
+                disabled={busy}
+                key={`${availablePlan.provider}:${availablePlan.key}`}
+                onClick={() => void onUpgrade(availablePlan)}
+              >
+                <span className="provider-plan-copy">
+                  <span className="provider-plan-title">{checkoutCopy.title}</span>
+                  <span className="provider-plan-note">{checkoutCopy.description}</span>
+                  <span className="provider-plan-price">
+                    {formatProviderLabel(availablePlan.provider)} / {formatPlanPrice(availablePlan)}
+                  </span>
+                </span>
+                <span className="provider-plan-action">
+                  {busy ? "Opening checkout" : checkoutCopy.action}
+                </span>
+              </button>
+            );
+          })}
         </div>
       ) : null}
       {activeSubscription ? (
@@ -276,12 +283,56 @@ function formatProviderLabel(value: string | undefined) {
   }
 }
 
+function checkoutOptionCopy(provider: string | undefined) {
+  switch ((provider || "").toLowerCase()) {
+    case "btcpay":
+      return {
+        title: "Bitcoin checkout",
+        description: "Pay directly with Bitcoin through BTCPay.",
+        action: "Pay with Bitcoin",
+      };
+    case "stripe":
+      return {
+        title: "Card checkout",
+        description: "Fast checkout with cards, Apple Pay, and wallets.",
+        action: "Pay with Card",
+      };
+    default:
+      return {
+        title: "Premium checkout",
+        description: "Start premium access with the selected provider.",
+        action: "Subscribe to Premium",
+      };
+  }
+}
+
 function formatPlanLabel(value: string | undefined, plans: SubscriptionPlan[]) {
   const configuredName = plans.find((plan) => plan.key === value)?.display_name;
   if (configuredName) {
     return configuredName;
   }
   return formatSubscriptionStatus(value);
+}
+
+function formatPlanPrice(plan: SubscriptionPlan) {
+  const price = [plan.price_amount, plan.currency].filter(Boolean).join(" ");
+  const interval = formatBillingInterval(plan.billing_interval);
+  return [price, interval].filter(Boolean).join(" ");
+}
+
+function formatBillingInterval(value: string | undefined) {
+  switch ((value || "").toLowerCase()) {
+    case "month":
+    case "monthly":
+      return "/ month";
+    case "year":
+    case "yearly":
+    case "annual":
+    case "annually":
+      return "/ year";
+    default:
+      return value ? `/${value}` : "";
+  }
 }
 
 function formatAccountDate(value: Date | number | string | null | undefined) {

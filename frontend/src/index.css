@@ -1116,29 +1116,45 @@ a {
 
 .provider-plan-list {
   display: grid;
-  gap: 10px;
+  gap: 12px;
   border-top: 1px solid #eeeeee;
   padding-top: 14px;
 }
 
 .provider-plan-row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 16px;
+  grid-template-columns: minmax(0, 1fr) minmax(148px, auto);
+  gap: 18px;
   align-items: center;
   width: 100%;
+  min-height: 108px;
   border: 1px solid #d8d8d4;
   border-radius: 8px;
-  padding: 14px 16px;
-  background: #ffffff;
+  padding: 18px 20px;
+  background: linear-gradient(135deg, #ffffff 0%, #fbfdfb 100%);
   color: #111111;
   cursor: pointer;
   font: inherit;
   text-align: left;
+  transition:
+    border-color 0.18s ease,
+    box-shadow 0.18s ease,
+    transform 0.18s ease;
 }
 
 .provider-plan-row.primary {
-  border-color: #111111;
+  border-color: #2ca85f;
+  box-shadow: inset 4px 0 0 #33d17a;
+}
+
+.provider-plan-row:hover:not(:disabled),
+.provider-plan-row:focus-visible {
+  border-color: #2ca85f;
+  box-shadow:
+    inset 4px 0 0 #33d17a,
+    0 14px 30px rgba(17, 17, 17, 0.08);
+  outline: none;
+  transform: translateY(-1px);
 }
 
 .provider-plan-row:disabled {
@@ -1146,18 +1162,51 @@ a {
   opacity: 0.7;
 }
 
-.provider-plan-row span:first-child {
+.provider-plan-copy {
   display: grid;
-  gap: 3px;
+  min-width: 0;
+  gap: 5px;
 }
 
-.provider-plan-row strong {
+.provider-plan-title {
   color: #111111;
+  font-size: 1.08rem;
+  font-weight: 900;
+  line-height: 1.2;
 }
 
-.provider-plan-row small,
-.provider-plan-row span:last-child {
+.provider-plan-note {
+  color: #383838;
+  font-size: 0.96rem;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+.provider-plan-price {
   color: #62625d;
+  font-size: 0.9rem;
+  font-weight: 800;
+  line-height: 1.35;
+}
+
+.provider-plan-action {
+  display: inline-flex;
+  min-height: 42px;
+  align-items: center;
+  justify-content: center;
+  justify-self: end;
+  border-radius: 8px;
+  padding: 10px 16px;
+  color: #111111;
+  background: #33d17a;
+  font-weight: 900;
+  line-height: 1.1;
+  white-space: nowrap;
+}
+
+.provider-plan-row:not(.primary) .provider-plan-action {
+  color: #ffffff;
+  background: #111111;
 }
 
 .subscription-row-list,
@@ -1208,12 +1257,18 @@ a {
 }
 
 @media (max-width: 860px) {
+  .provider-plan-row,
   .subscription-row,
   .subscription-admin-row,
   .account-block-row,
   .wide-panel {
     grid-column: auto;
     grid-template-columns: 1fr;
+  }
+
+  .provider-plan-action {
+    justify-self: stretch;
+    width: 100%;
   }
 }
 
