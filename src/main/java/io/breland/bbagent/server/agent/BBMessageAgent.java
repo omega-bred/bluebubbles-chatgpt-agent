@@ -490,8 +490,7 @@ public class BBMessageAgent {
     if (baseUrl.isBlank()) {
       return "/terms";
     }
-    return (baseUrl.endsWith("/") ? baseUrl.substring(0, baseUrl.length() - 1) : baseUrl)
-        + "/terms";
+    return StringUtils.removeEnd(baseUrl, "/") + "/terms";
   }
 
   private String resolveWorkflowId(IncomingMessage message) {
