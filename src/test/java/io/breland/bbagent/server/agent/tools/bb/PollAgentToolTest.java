@@ -50,6 +50,27 @@ class PollAgentToolTest {
   }
 
   @Test
+  void sendPollAcceptsStringOptions() throws Exception {
+    CapturingBBHttpClientWrapper wrapper = new CapturingBBHttpClientWrapper(mapper);
+    IncomingMessage message = incomingMessage("iMessage;-;+15555550123", null, null);
+    ToolContext context = toolContext(message, null);
+    JsonNode args =
+        mapper.readTree(
+            """
+            {
+              "title": "Dinner?",
+              "options": [ "Grilled chicken bowls", "Salmon salads" ]
+            }
+            """);
+
+    String output = new SendPollAgentTool(wrapper).getTool().handler().apply(context, args);
+
+    assertEquals("Dinner?", wrapper.lastPollTitle);
+    assertEquals(List.of("Grilled chicken bowls", "Salmon salads"), wrapper.lastPollOptionTexts);
+    assertTrue(output.contains("\"title\":\"Dinner?\""));
+  }
+
+  @Test
   void readPollDefaultsToAssociatedPollGuid() throws Exception {
     CapturingBBHttpClientWrapper wrapper = new CapturingBBHttpClientWrapper(mapper);
     IncomingMessage message = incomingMessage("iMessage;-;+15555550123", "poll-guid", null);
@@ -63,6 +84,39 @@ class PollAgentToolTest {
 
     assertEquals("poll-guid", wrapper.lastReadPollGuid);
     assertTrue(output.contains("\"messageGuid\":\"poll-guid\""));
+  }
+
+  @Test
+  void readPollNormalizesTapbackStyleMessageGuid() throws Exception {
+    CapturingBBHttpClientWrapper wrapper = new CapturingBBHttpClientWrapper(mapper);
+    IncomingMessage message = incomingMessage("iMessage;-;+15555550123", "p:0/poll-guid", null);
+    ToolContext context = toolContext(message, null);
+
+    String output =
+        new ReadPollAgentTool(wrapper)
+            .getTool()
+            .handler()
+            .apply(context, mapper.createObjectNode());
+
+    assertEquals("poll-guid", wrapper.lastReadPollGuid);
+    assertTrue(output.contains("\"messageGuid\":\"poll-guid\""));
+  }
+
+  @Test
+  void readPollReturnsToolMessageWhenBlueBubblesFails() throws Exception {
+    CapturingBBHttpClientWrapper wrapper = new CapturingBBHttpClientWrapper(mapper);
+    wrapper.failReadPoll = true;
+    IncomingMessage message = incomingMessage("iMessage;-;+15555550123", "poll-guid", null);
+    ToolContext context = toolContext(message, null);
+
+    String output =
+        new ReadPollAgentTool(wrapper)
+            .getTool()
+            .handler()
+            .apply(context, mapper.createObjectNode());
+
+    assertEquals("poll-guid", wrapper.lastReadPollGuid);
+    assertTrue(output.contains("could not read poll poll-guid"));
   }
 
   private ToolContext toolContext(IncomingMessage message, AgentWorkflowContext workflowContext) {
@@ -98,6 +152,7 @@ class PollAgentToolTest {
     private String lastPollTitle;
     private List<String> lastPollOptionTexts;
     private String lastReadPollGuid;
+    private boolean failReadPoll;
 
     CapturingBBHttpClientWrapper(ObjectMapper mapper) {
       super("pw", Mockito.mock(V1MessageApi.class), Mockito.mock(V1ContactApi.class));
@@ -119,6 +174,9 @@ class PollAgentToolTest {
     @Override
     public JsonNode readPollJson(String messageGuid) {
       this.lastReadPollGuid = messageGuid;
+      if (failReadPoll) {
+        throw new IllegalStateException("BlueBubbles failed");
+      }
       return mapper.createObjectNode().put("messageGuid", messageGuid).put("title", "Lunch?");
     }
   }
