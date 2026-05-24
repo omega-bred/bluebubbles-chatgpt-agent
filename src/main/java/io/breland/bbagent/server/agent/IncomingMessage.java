@@ -152,6 +152,25 @@ public record IncomingMessage(
     return TRANSPORT_LXMF.equalsIgnoreCase(transportOrDefault());
   }
 
+  public IncomingMessage withText(String newText) {
+    return new IncomingMessage(
+        transport,
+        chatGuid,
+        messageGuid,
+        threadOriginatorGuid,
+        newText,
+        fromMe,
+        service,
+        sender,
+        isGroup,
+        timestamp,
+        attachments,
+        balloonBundleId,
+        associatedMessageGuid,
+        replyToGuid,
+        isSystemMessage);
+  }
+
   private static Instant parseTimestamp(Long value) {
     if (value == null) {
       return Instant.now();

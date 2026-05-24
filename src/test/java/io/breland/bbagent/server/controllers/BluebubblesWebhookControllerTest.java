@@ -9,6 +9,10 @@ import io.breland.bbagent.generated.bluebubblesclient.model.ApiV1ChatChatGuidMes
 import io.breland.bbagent.generated.bluebubblesclient.model.ApiV1ChatChatGuidMessageGet200ResponseDataInnerChatsInner;
 import io.breland.bbagent.generated.model.BlueBubblesMessageReceivedRequestData;
 import io.breland.bbagent.generated.model.BlueBubblesMessageReceivedRequestDataChatsInner;
+import io.breland.bbagent.server.agent.BBMessageAgent;
+import io.breland.bbagent.server.agent.IncomingMessage;
+import io.breland.bbagent.server.agent.transport.bb.BlueBubblesPollSupport;
+import java.time.Instant;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 
@@ -55,18 +59,16 @@ class BluebubblesWebhookControllerTest {
 
   @Test
   void recognizesPollBundleIdentifiers() {
-    assertTrue(BluebubblesWebhookController.isPollBundle("com.apple.messages.Polls"));
+    assertTrue(BlueBubblesPollSupport.isPollBundle("com.apple.messages.Polls"));
     assertTrue(
-        BluebubblesWebhookController.isPollBundle(
+        BlueBubblesPollSupport.isPollBundle(
             "com.apple.messages.MSMessageExtensionBalloonPlugin:0000000000:com.apple.messages.Polls"));
-    assertFalse(BluebubblesWebhookController.isPollBundle("com.apple.messages.Handwriting"));
+    assertFalse(BlueBubblesPollSupport.isPollBundle("com.apple.messages.Handwriting"));
   }
 
   @Test
   void formatsPollVoteNotificationsWithCurrentVoteState() throws Exception {
-    BlueBubblesMessageReceivedRequestData trigger = new BlueBubblesMessageReceivedRequestData();
-    trigger.setGuid("vote-message-guid");
-    trigger.setAssociatedMessageGuid("poll-message-guid");
+    IncomingMessage trigger = pollMessage("vote-message-guid", "poll-message-guid");
     JsonNode poll =
         MAPPER.readTree(
             """
@@ -83,13 +85,31 @@ class BluebubblesWebhookControllerTest {
             }
             """);
 
-    String text =
-        BluebubblesWebhookController.formatPollNotification(trigger, "poll-message-guid", poll);
+    String text = BlueBubblesPollSupport.formatPollNotification(trigger, "poll-message-guid", poll);
 
     assertTrue(text.contains("Poll vote or option update notification"));
     assertTrue(text.contains("Lunch?"));
     assertTrue(text.contains("Sushi"));
     assertTrue(text.contains("+15555550123 voted for Sushi"));
+  }
+
+  private static IncomingMessage pollMessage(String messageGuid, String associatedMessageGuid) {
+    return new IncomingMessage(
+        IncomingMessage.TRANSPORT_BLUEBUBBLES,
+        "iMessage;+;chat",
+        messageGuid,
+        null,
+        null,
+        false,
+        BBMessageAgent.IMESSAGE_SERVICE,
+        "+15555550123",
+        true,
+        Instant.now(),
+        List.of(),
+        "com.apple.messages.MSMessageExtensionBalloonPlugin:0000000000:com.apple.messages.Polls",
+        associatedMessageGuid,
+        null,
+        false);
   }
 
   private static BlueBubblesMessageReceivedRequestData webhookData(String chatGuid) {

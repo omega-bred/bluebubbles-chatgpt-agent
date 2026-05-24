@@ -52,6 +52,7 @@ import io.breland.bbagent.server.agent.transport.MessageTransport;
 import io.breland.bbagent.server.agent.transport.MessageTransportRegistry;
 import io.breland.bbagent.server.agent.transport.OutgoingTextMessage;
 import io.breland.bbagent.server.agent.transport.bb.BBHttpClientWrapper;
+import io.breland.bbagent.server.agent.transport.bb.BlueBubblesPollSupport;
 import io.breland.bbagent.server.agent.workflowcallback.WorkflowCallbackService;
 import io.breland.bbagent.server.feedback.FeedbackService;
 import io.breland.bbagent.server.metrics.AgentMetricsService;
@@ -301,9 +302,11 @@ public class BBMessageAgent {
     if (isAccountProcessingBlocked(message)) {
       return;
     }
+    IncomingMessage enrichedMessage = enrichPollNotification(message);
     ConversationState state =
         conversations.computeIfAbsent(
-            message.chatGuid(), key -> this.computeConversationState(key, message));
+            enrichedMessage.chatGuid(), key -> this.computeConversationState(key, enrichedMessage));
+    message = enrichedMessage;
 
     synchronized (state) {
       if (state.hasSeenIncomingMessage(message)) {
@@ -425,6 +428,10 @@ public class BBMessageAgent {
     }
     if ((message.text() == null || message.text().isBlank())
         && (message.attachments() == null || message.attachments().isEmpty())) {
+      if (message.isBlueBubblesTransport()
+          && BlueBubblesPollSupport.isPollBundle(message.balloonBundleId())) {
+        return true;
+      }
       // assume it's a group name or photo edited
       // there's no text to process and no attachments so must be that?
       return false;
@@ -434,6 +441,31 @@ public class BBMessageAgent {
       return isSilentInvocation(message.text());
     }
     return true;
+  }
+
+  private IncomingMessage enrichPollNotification(IncomingMessage message) {
+    if (message == null
+        || !message.isBlueBubblesTransport()
+        || !BlueBubblesPollSupport.isPollBundle(message.balloonBundleId())) {
+      return message;
+    }
+    String pollMessageGuid = BlueBubblesPollSupport.pollMessageGuid(message);
+    if (pollMessageGuid == null || pollMessageGuid.isBlank()) {
+      return message.withText(BlueBubblesPollSupport.fallbackPollNotification(message, null));
+    }
+    try {
+      JsonNode poll = bbHttpClientWrapper.readPollJson(pollMessageGuid);
+      return message.withText(
+          BlueBubblesPollSupport.formatPollNotification(message, pollMessageGuid, poll));
+    } catch (RuntimeException e) {
+      log.warn(
+          "Failed to read poll update for triggerGuid={} pollGuid={}",
+          message.messageGuid(),
+          pollMessageGuid,
+          e);
+      return message.withText(
+          BlueBubblesPollSupport.fallbackPollNotification(message, pollMessageGuid));
+    }
   }
 
   private boolean handleTermsGate(ConversationState state, IncomingMessage message) {

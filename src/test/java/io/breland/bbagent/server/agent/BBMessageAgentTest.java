@@ -215,6 +215,31 @@ class BBMessageAgentTest {
   }
 
   @Test
+  void dropsBlockedPollUpdateBeforeReadingPollState() {
+    OpenAIClient openAIClient = Mockito.mock(OpenAIClient.class);
+    var responseService = Mockito.mock(com.openai.services.blocking.ResponseService.class);
+    when(openAIClient.responses()).thenReturn(responseService);
+    AgentAccountResolver accountResolver = Mockito.mock(AgentAccountResolver.class);
+    AgentAccountEntity blockedAccount = account("account-blocked", Instant.now());
+    blockedAccount.setProcessingBlocked(true);
+    blockedAccount.setProcessingBlockedReason("abuse");
+    IncomingMessage incoming =
+        pollIncomingMessage("iMessage;+;chat-blocked", "poll-vote-guid", "poll-root-guid");
+    when(accountResolver.resolve(incoming))
+        .thenReturn(
+            Optional.of(new AgentAccountResolver.ResolvedAccount(blockedAccount, List.of())));
+    StubBBHttpClientWrapper bbHttpClientWrapper = new StubBBHttpClientWrapper();
+    BBMessageAgent agent = newAgent(openAIClient, bbHttpClientWrapper, accountResolver);
+
+    agent.handleIncomingMessage(incoming);
+
+    verify(accountResolver).recordMessageIdentities(incoming);
+    verify(accountResolver).resolve(incoming);
+    verify(responseService, never()).create(any(ResponseCreateParams.class));
+    assertEquals(0, bbHttpClientWrapper.readPollCalls);
+  }
+
+  @Test
   void reactionMessageMatcherCoversReactedEmojiTo() {
     assertTrue(BBMessageAgent.isReactionMessage("Reacted 😂 to"));
     assertTrue(BBMessageAgent.isReactionMessage("  Reacted 😂 to"));
@@ -1235,6 +1260,7 @@ class BBMessageAgentTest {
     private int findMyLookupCalls;
     private String lastFindMyUserId;
     private List<String> lastFindMyUserIds = List.of();
+    private int readPollCalls;
     private final List<String> sentTexts = new ArrayList<>();
 
     StubBBHttpClientWrapper() {
@@ -1271,6 +1297,15 @@ class BBMessageAgentTest {
           .filter(Objects::nonNull)
           .findFirst()
           .orElse(null);
+    }
+
+    @Override
+    public JsonNode readPollJson(String messageGuid) {
+      readPollCalls++;
+      return getObjectMapper()
+          .createObjectNode()
+          .put("messageGuid", messageGuid)
+          .put("title", "Lunch?");
     }
 
     @Override
@@ -1317,6 +1352,26 @@ class BBMessageAgentTest {
         false,
         Instant.ofEpochSecond(epochSecond),
         List.of(),
+        false);
+  }
+
+  private static IncomingMessage pollIncomingMessage(
+      String chatGuid, String messageGuid, String associatedMessageGuid) {
+    return new IncomingMessage(
+        IncomingMessage.TRANSPORT_BLUEBUBBLES,
+        chatGuid,
+        messageGuid,
+        null,
+        null,
+        false,
+        "iMessage",
+        "Alice",
+        false,
+        Instant.ofEpochSecond(1_000L),
+        List.of(),
+        "com.apple.messages.MSMessageExtensionBalloonPlugin:0000000000:com.apple.messages.Polls",
+        associatedMessageGuid,
+        null,
         false);
   }
 
