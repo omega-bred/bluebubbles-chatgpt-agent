@@ -57,7 +57,7 @@ public class LxmfWebhookController extends LxmfApiController {
   }
 
   private IncomingMessage parseWebhookMessage(LxmfMessageReceivedRequest requestBody) {
-    String sourceHash = normalizeHash(requestBody.getSourceHash());
+    String sourceHash = StringUtils.lowerCase(StringUtils.trim(requestBody.getSourceHash()));
     String chatGuid = IncomingMessage.transportPrefix(IncomingMessage.TRANSPORT_LXMF, sourceHash);
     Instant timestamp =
         requestBody.getTimestamp() != null ? requestBody.getTimestamp().toInstant() : Instant.now();
@@ -87,9 +87,5 @@ public class LxmfWebhookController extends LxmfApiController {
     byte[] expected = webhookSecret.getBytes(StandardCharsets.UTF_8);
     byte[] actual = providedSecret.getBytes(StandardCharsets.UTF_8);
     return MessageDigest.isEqual(expected, actual);
-  }
-
-  private static String normalizeHash(String value) {
-    return value == null ? null : value.trim().toLowerCase();
   }
 }

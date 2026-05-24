@@ -20,6 +20,7 @@ import java.util.Optional;
 import java.util.UUID;
 import javax.annotation.Nullable;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.lang3.StringUtils;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.core.task.SimpleAsyncTaskExecutor;
@@ -257,11 +258,10 @@ public class WorkflowCallbackService {
 
   private String buildCallbackUrl(String callbackId) {
     String baseUrl = workflowProperties.getCallbackBaseUrl();
-    if (baseUrl == null || baseUrl.isBlank()) {
+    if (StringUtils.isBlank(baseUrl)) {
       baseUrl = "http://localhost:8080";
     }
-    URI base =
-        URI.create(baseUrl.endsWith("/") ? baseUrl.substring(0, baseUrl.length() - 1) : baseUrl);
+    URI base = URI.create(StringUtils.removeEnd(baseUrl, "/"));
     return UriComponentsBuilder.fromUri(base)
         .path("/api/v1/workflowCallback/receive.workflowCallbacks")
         .queryParam("callback_id", callbackId)

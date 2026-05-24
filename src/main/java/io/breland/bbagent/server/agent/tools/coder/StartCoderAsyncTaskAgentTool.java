@@ -132,7 +132,7 @@ public class StartCoderAsyncTaskAgentTool implements ToolProvider {
                   ? ""
                   : StringUtils.defaultIfBlank(context.message().chatGuid(), ""),
               context.message() == null ? null : context.message().messageGuid(),
-              sha256(normalizeTask(request.task())),
+              DigestUtils.sha256Hex(normalizeTask(request.task())),
               request.task().trim());
       if (!reservation.shouldStart()) {
         return replayExistingStart(reservation.entity(), mapper);
@@ -450,15 +450,11 @@ public class StartCoderAsyncTaskAgentTool implements ToolProvider {
                 + StringUtils.defaultIfBlank(chatGuid, "")
                 + "|"
                 + normalizeTask(request.task());
-    return "coder-task-" + sha256(naturalKey);
+    return "coder-task-" + DigestUtils.sha256Hex(naturalKey);
   }
 
   private static String normalizeTask(String task) {
     return StringUtils.defaultString(StringUtils.normalizeSpace(task)).toLowerCase(Locale.ROOT);
-  }
-
-  private static String sha256(String value) {
-    return DigestUtils.sha256Hex(value);
   }
 
   private record TemplateSelection(String templateVersionId, String displayName) {}
