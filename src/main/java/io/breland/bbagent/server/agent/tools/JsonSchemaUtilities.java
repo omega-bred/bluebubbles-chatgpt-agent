@@ -25,11 +25,7 @@ public class JsonSchemaUtilities {
         normalized.put("required", required);
       }
     }
-    FunctionTool.Parameters.Builder builder = FunctionTool.Parameters.builder();
-    for (Map.Entry<String, Object> entry : normalized.entrySet()) {
-      builder.putAdditionalProperty(entry.getKey(), JsonValue.from(entry.getValue()));
-    }
-    return builder.build();
+    return functionParameters(normalized);
   }
 
   public static FunctionTool.Parameters jsonSchema(Class<?> schemaClass) {
@@ -40,8 +36,12 @@ public class JsonSchemaUtilities {
     normalized.putIfAbsent("type", "object");
     normalized.putIfAbsent("properties", new LinkedHashMap<>());
     normalized.putIfAbsent("additionalProperties", false);
+    return functionParameters(normalized);
+  }
+
+  public static FunctionTool.Parameters functionParameters(Map<String, Object> schema) {
     FunctionTool.Parameters.Builder builder = FunctionTool.Parameters.builder();
-    for (Map.Entry<String, Object> entry : normalized.entrySet()) {
+    for (Map.Entry<String, Object> entry : schema.entrySet()) {
       builder.putAdditionalProperty(entry.getKey(), JsonValue.from(entry.getValue()));
     }
     return builder.build();
