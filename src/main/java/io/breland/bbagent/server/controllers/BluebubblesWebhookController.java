@@ -16,6 +16,7 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.regex.Pattern;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
@@ -29,8 +30,9 @@ import org.springframework.web.context.request.NativeWebRequest;
 @Slf4j
 public class BluebubblesWebhookController extends BluebubblesApiController {
 
-  private static final String GROUP_PREFIX = "iMessage;+;chat";
-  private static final String GROUP_PREFIX_2 = "any;+;chat";
+  private static final String IMESSAGE_GROUP_PREFIX = "iMessage;+;chat";
+  private static final String ANY_GROUP_PREFIX = "any;+;chat";
+  private static final Pattern ANY_OPAQUE_GROUP_GUID = Pattern.compile("^any;\\+;[0-9a-fA-F]{32}$");
 
   @Autowired private BBMessageAgent messageAgent;
 
@@ -98,7 +100,9 @@ public class BluebubblesWebhookController extends BluebubblesApiController {
   }
 
   private static boolean isGroupGuid(String chatGuid) {
-    return chatGuid.startsWith(GROUP_PREFIX) || chatGuid.startsWith(GROUP_PREFIX_2);
+    return chatGuid.startsWith(IMESSAGE_GROUP_PREFIX)
+        || chatGuid.startsWith(ANY_GROUP_PREFIX)
+        || ANY_OPAQUE_GROUP_GUID.matcher(chatGuid).matches();
   }
 
   public static boolean resolveIsGroup(ApiV1ChatChatGuidMessageGet200ResponseDataInner request) {
