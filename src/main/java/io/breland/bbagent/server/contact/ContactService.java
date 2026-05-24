@@ -3,6 +3,7 @@ package io.breland.bbagent.server.contact;
 import io.breland.bbagent.generated.model.ContactConfigResponse;
 import io.breland.bbagent.generated.model.ContactMessageRequest;
 import io.breland.bbagent.generated.model.ContactMessageResponse;
+import io.breland.bbagent.server.agent.AgentAccountResolver;
 import io.breland.bbagent.server.linear.LinearIssueService;
 import io.breland.bbagent.server.linear.LinearIssueService.ContactIssueInput;
 import io.breland.bbagent.server.linear.LinearIssueService.LinearIssue;
@@ -12,6 +13,8 @@ import java.time.Instant;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.http.HttpStatus;
+import org.springframework.lang.Nullable;
+import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
 
@@ -26,14 +29,17 @@ public class ContactService {
   private final ContactProperties properties;
   private final CapVerificationService capVerificationService;
   private final LinearIssueService linearIssueService;
+  private final AgentAccountResolver accountResolver;
 
   public ContactService(
       ContactProperties properties,
       CapVerificationService capVerificationService,
-      LinearIssueService linearIssueService) {
+      LinearIssueService linearIssueService,
+      AgentAccountResolver accountResolver) {
     this.properties = properties;
     this.capVerificationService = capVerificationService;
     this.linearIssueService = linearIssueService;
+    this.accountResolver = accountResolver;
   }
 
   public ContactConfigResponse config() {
@@ -45,7 +51,7 @@ public class ContactService {
   }
 
   public ContactMessageResponse createMessage(
-      ContactMessageRequest request, HttpServletRequest servletRequest) {
+      ContactMessageRequest request, HttpServletRequest servletRequest, @Nullable Jwt jwt) {
     if (!properties.isEnabled()) {
       throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "Contact form is disabled");
     }
@@ -54,15 +60,20 @@ public class ContactService {
     }
     boolean capVerified = verifyCap(request.getCapToken());
     Instant now = Instant.now();
+    String name = requireText(request.getName(), "name", MAX_NAME_LENGTH);
     String email = requireText(request.getEmail(), "email", MAX_EMAIL_LENGTH);
+    String subject = requireText(request.getSubject(), "subject", MAX_SUBJECT_LENGTH);
+    String message = requireText(request.getMessage(), "message", MAX_MESSAGE_LENGTH);
+    String accountId = resolveAccountId(jwt);
     try {
       LinearIssue issue =
           linearIssueService.createContactIssue(
               new ContactIssueInput(
-                  requireText(request.getName(), "name", MAX_NAME_LENGTH),
+                  accountId,
+                  name,
                   email,
-                  requireText(request.getSubject(), "subject", MAX_SUBJECT_LENGTH),
-                  requireText(request.getMessage(), "message", MAX_MESSAGE_LENGTH),
+                  subject,
+                  message,
                   remoteAddress(servletRequest),
                   truncate(
                       servletRequest == null ? null : servletRequest.getHeader("User-Agent"), 512),
@@ -116,5 +127,17 @@ public class ContactService {
       return truncate(forwardedFor.split(",", 2)[0], 255);
     }
     return truncate(request.getRemoteAddr(), 255);
+  }
+
+  private String resolveAccountId(@Nullable Jwt jwt) {
+    if (jwt == null) {
+      return null;
+    }
+    try {
+      return accountResolver.upsertWebsiteAccount(jwt).getAccountId();
+    } catch (RuntimeException e) {
+      log.warn("Could not resolve website account for contact request: {}", e.getMessage());
+      return null;
+    }
   }
 }

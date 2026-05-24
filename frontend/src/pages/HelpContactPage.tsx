@@ -103,10 +103,13 @@ export function HelpContactPage({ auth }: { auth: AuthState }) {
     setError(null);
     setStatus("submitting");
     try {
-      const response = await contactApi.createMessage({
-        ...form,
-        cap_token: captchaRequired ? capToken : capToken || "not-required",
-      });
+      const response = await contactApi.createMessage(
+        {
+          ...form,
+          cap_token: captchaRequired ? capToken : capToken || "not-required",
+        },
+        auth.authenticated,
+      );
       setStatus("sent");
       setForm({ name: "", email: "", subject: "", message: "" });
       setCapToken("");

@@ -370,7 +370,10 @@ paths:
       tags:
         - contact
       summary: Creates a public contact message
-      description: Verifies the Cap token and creates a Linear help/contact issue for admin review.
+      description: Verifies the Cap token and creates a Linear help/contact issue for admin review. If a valid bearer token is provided, the created issue includes the authenticated website account id.
+      security:
+        - bearerAuth: []
+        - {}
       requestBody:
         required: true
         content:

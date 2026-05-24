@@ -7,6 +7,8 @@ import io.breland.bbagent.server.contact.ContactService;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -34,7 +36,9 @@ public class ContactController {
       consumes = MediaType.APPLICATION_JSON_VALUE,
       produces = MediaType.APPLICATION_JSON_VALUE)
   public ResponseEntity<ContactMessageResponse> contactCreateMessage(
-      @RequestBody ContactMessageRequest request, HttpServletRequest servletRequest) {
-    return ResponseEntity.ok(contactService.createMessage(request, servletRequest));
+      @RequestBody ContactMessageRequest request,
+      HttpServletRequest servletRequest,
+      @AuthenticationPrincipal Jwt jwt) {
+    return ResponseEntity.ok(contactService.createMessage(request, servletRequest, jwt));
   }
 }

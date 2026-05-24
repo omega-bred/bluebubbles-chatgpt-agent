@@ -52,6 +52,11 @@ function contactClient(): ContactApi {
   return new ContactApi(config, config.basePath, axiosInstance);
 }
 
+async function authenticatedContactClient(): Promise<ContactApi> {
+  const config = await authenticatedConfiguration();
+  return new ContactApi(config, config.basePath, axiosInstance);
+}
+
 async function authenticatedConfiguration(): Promise<Configuration> {
   const token = await getAccessToken();
   return new Configuration({
@@ -102,8 +107,8 @@ export const contactApi = {
     return (await client.contactGetConfig()).data;
   },
 
-  createMessage: async (request: ContactMessageRequest) => {
-    const client = contactClient();
+  createMessage: async (request: ContactMessageRequest, authenticated = false) => {
+    const client = authenticated ? await authenticatedContactClient() : contactClient();
     return (await client.contactCreateMessage(request)).data;
   },
 };
