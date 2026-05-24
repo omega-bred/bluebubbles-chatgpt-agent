@@ -133,6 +133,11 @@ public class ContactService {
     if (jwt == null) {
       return null;
     }
-    return accountResolver.upsertWebsiteAccount(jwt).getAccountId();
+    try {
+      return accountResolver.upsertWebsiteAccount(jwt).getAccountId();
+    } catch (RuntimeException e) {
+      log.warn("Could not resolve website account for contact request: {}", e.getMessage());
+      return null;
+    }
   }
 }

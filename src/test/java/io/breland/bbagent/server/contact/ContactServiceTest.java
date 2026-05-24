@@ -110,6 +110,50 @@ class ContactServiceTest {
   }
 
   @Test
+  void stillCreatesContactIssueWhenAuthenticatedAccountResolutionFails() {
+    ContactProperties properties = new ContactProperties();
+    CapVerificationService capVerificationService = mock(CapVerificationService.class);
+    LinearIssueService linearIssueService = mock(LinearIssueService.class);
+    AgentAccountResolver accountResolver = mock(AgentAccountResolver.class);
+    Jwt jwt =
+        Jwt.withTokenValue("token")
+            .header("alg", "none")
+            .subject("sub-1")
+            .claim("email", "ada@example.com")
+            .build();
+    when(capVerificationService.isConfigured()).thenReturn(true);
+    when(capVerificationService.verify("cap-token")).thenReturn(true);
+    when(accountResolver.upsertWebsiteAccount(jwt)).thenThrow(new IllegalStateException("offline"));
+    when(linearIssueService.createContactIssue(any(ContactIssueInput.class)))
+        .thenReturn(
+            new LinearIssue(
+                "issue-id",
+                "BLU-125",
+                "[Contact] Help",
+                "https://linear.app/bluechat/issue/BLU-125/help",
+                Instant.parse("2026-05-01T00:00:00Z")));
+    ContactService service =
+        new ContactService(properties, capVerificationService, linearIssueService, accountResolver);
+
+    var response =
+        service.createMessage(
+            new ContactMessageRequest()
+                .name("Ada")
+                .email("ada@example.com")
+                .subject("Help")
+                .message("I need a hand.")
+                .capToken("cap-token"),
+            null,
+            jwt);
+
+    ArgumentCaptor<ContactIssueInput> issueCaptor =
+        ArgumentCaptor.forClass(ContactIssueInput.class);
+    verify(linearIssueService).createContactIssue(issueCaptor.capture());
+    assertThat(response.getMessageId()).isEqualTo("BLU-125");
+    assertThat(issueCaptor.getValue().accountId()).isNull();
+  }
+
+  @Test
   void rejectsContactMessageWhenCapIsRequiredAndMissing() {
     ContactProperties properties = new ContactProperties();
     CapVerificationService capVerificationService = mock(CapVerificationService.class);
