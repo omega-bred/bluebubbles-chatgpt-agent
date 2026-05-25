@@ -18,6 +18,8 @@ import io.breland.bbagent.generated.bluebubblesclient.model.ApiV1ContactGet200Re
 import io.breland.bbagent.generated.bluebubblesclient.model.Contact;
 import io.breland.bbagent.generated.bluebubblesclient.model.FindMyFriendLocation;
 import io.breland.bbagent.server.agent.transport.bb.BBHttpClientWrapper;
+import io.breland.bbagent.server.metrics.OperationalMetricsService;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
@@ -84,6 +86,43 @@ class BBHttpClientWrapperTest {
                     .build()));
 
     assertThrows(IllegalStateException.class, () -> wrapper.getFindMyLocation("alice@example.com"));
+  }
+
+  @Test
+  void getFindMyLocationRecordsBlueBubblesOperationMetrics() {
+    V1ICloudApi icloudApi = Mockito.mock(V1ICloudApi.class);
+    SimpleMeterRegistry registry = new SimpleMeterRegistry();
+    BBHttpClientWrapper wrapper =
+        new BBHttpClientWrapper(
+            "pw",
+            Mockito.mock(V1MessageApi.class),
+            Mockito.mock(V1ContactApi.class),
+            icloudApi,
+            new OperationalMetricsService(registry));
+
+    when(icloudApi.apiV1IcloudFindmyFriendsRefreshPost("pw"))
+        .thenReturn(Mono.just(success(List.of(location("alice@example.com")))));
+
+    wrapper.getFindMyLocation("alice@example.com");
+
+    assertEquals(
+        1.0,
+        registry
+            .get("bbagent.bluebubbles.operation.count")
+            .tag("operation", "refresh_find_my_locations")
+            .tag("outcome", "success")
+            .tag("failure_type", "none")
+            .counter()
+            .count());
+    assertEquals(
+        1L,
+        registry
+            .get("bbagent.bluebubbles.operation.duration")
+            .tag("operation", "refresh_find_my_locations")
+            .tag("outcome", "success")
+            .tag("failure_type", "none")
+            .timer()
+            .count());
   }
 
   @Test

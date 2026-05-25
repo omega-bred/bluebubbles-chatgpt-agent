@@ -18,6 +18,7 @@ import io.breland.bbagent.server.metrics.AgentMetricsStore;
 import io.breland.bbagent.server.metrics.AgentToolMetric;
 import io.breland.bbagent.server.metrics.AgentToolMetricEvent;
 import io.breland.bbagent.server.metrics.MessageMetricTotals;
+import io.breland.bbagent.server.metrics.OperationalMetricsService;
 import io.breland.bbagent.server.metrics.ToolMetricTotals;
 import java.time.Duration;
 import java.time.Instant;
@@ -47,16 +48,19 @@ public class AdminStatsService implements AgentMetricsService {
   private final ModelAccessService modelAccessService;
   private final AgentAccountResolver accountResolver;
   private final UmamiAnalyticsService umamiAnalyticsService;
+  private final OperationalMetricsService operationalMetricsService;
 
   public AdminStatsService(
       AgentMetricsStore metricsStore,
       ModelAccessService modelAccessService,
       @Nullable AgentAccountResolver accountResolver,
-      @Nullable UmamiAnalyticsService umamiAnalyticsService) {
+      @Nullable UmamiAnalyticsService umamiAnalyticsService,
+      @Nullable OperationalMetricsService operationalMetricsService) {
     this.metricsStore = metricsStore;
     this.modelAccessService = modelAccessService;
     this.accountResolver = accountResolver;
     this.umamiAnalyticsService = umamiAnalyticsService;
+    this.operationalMetricsService = operationalMetricsService;
   }
 
   @Transactional
@@ -84,6 +88,13 @@ public class AdminStatsService implements AgentMetricsService {
             context.modelAccess().premium(),
             WORKFLOW_MODE,
             now));
+    if (operationalMetricsService != null) {
+      operationalMetricsService.recordAcceptedMessage(
+          firstNonBlank(message.transportOrDefault(), "unknown"),
+          firstNonBlank(context.modelAccess().currentModelKey(), "unknown"),
+          context.modelAccess().premium(),
+          WORKFLOW_MODE);
+    }
     recordAcceptedMessageAnalytics(message, context);
   }
 
@@ -119,6 +130,14 @@ public class AdminStatsService implements AgentMetricsService {
             premium,
             WORKFLOW_MODE,
             now));
+    if (operationalMetricsService != null) {
+      operationalMetricsService.recordAgentToolInvocation(
+          firstNonBlank(event.toolName(), "unknown"),
+          firstNonBlank(event.toolCategory(), "other"),
+          event.success(),
+          StringUtils.trimToNull(event.failureType()),
+          Duration.ofMillis(Math.max(0L, event.durationMillis())));
+    }
     recordToolCallAnalytics(event, context);
   }
 

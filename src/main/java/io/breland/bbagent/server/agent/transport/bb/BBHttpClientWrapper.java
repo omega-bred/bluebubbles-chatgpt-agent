@@ -11,6 +11,7 @@ import io.breland.bbagent.server.agent.BBMessageAgent;
 import io.breland.bbagent.server.agent.IncomingMessage;
 import io.breland.bbagent.server.agent.account.AgentAccountIdentifiers;
 import io.breland.bbagent.server.agent.reactions.MessageReactionSupport;
+import io.breland.bbagent.server.metrics.OperationalMetricsService;
 import java.io.IOException;
 import java.nio.channels.AsynchronousFileChannel;
 import java.nio.file.Files;
@@ -33,6 +34,7 @@ import org.springframework.core.io.buffer.DataBufferUtils;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.MediaType;
+import org.springframework.lang.Nullable;
 import org.springframework.stereotype.Component;
 import org.springframework.util.LinkedMultiValueMap;
 import org.springframework.util.MultiValueMap;
@@ -59,6 +61,7 @@ public class BBHttpClientWrapper {
 
   private final String password;
   private final Duration apiTimeout;
+  private final @Nullable OperationalMetricsService operationalMetricsService;
 
   @Getter private final ObjectMapper objectMapper;
 
@@ -67,7 +70,8 @@ public class BBHttpClientWrapper {
       @Value("${bluebubbles.basePath}") String basePath,
       @Value("${bluebubbles.password}") String password,
       @Value("${bluebubbles.request-timeout-seconds:30}") long requestTimeoutSeconds,
-      ObjectMapper objectMapper) {
+      ObjectMapper objectMapper,
+      @Nullable OperationalMetricsService operationalMetricsService) {
     this.password = password;
     this.apiTimeout = normalizedTimeout(requestTimeoutSeconds);
     this.apiClient = new ApiClient();
@@ -79,6 +83,7 @@ public class BBHttpClientWrapper {
     this.otherApi = new V1OtherApi(apiClient);
     this.icloudApi = new V1ICloudApi(apiClient);
     this.objectMapper = objectMapper;
+    this.operationalMetricsService = operationalMetricsService;
   }
 
   public BBHttpClientWrapper(String password, V1MessageApi messageApi, V1ContactApi contactApi) {
@@ -92,7 +97,23 @@ public class BBHttpClientWrapper {
         messageApi,
         contactApi,
         icloudApi,
-        new ObjectMapper().registerModule(new JavaTimeModule()));
+        new ObjectMapper().registerModule(new JavaTimeModule()),
+        null);
+  }
+
+  public BBHttpClientWrapper(
+      String password,
+      V1MessageApi messageApi,
+      V1ContactApi contactApi,
+      V1ICloudApi icloudApi,
+      OperationalMetricsService operationalMetricsService) {
+    this(
+        password,
+        messageApi,
+        contactApi,
+        icloudApi,
+        new ObjectMapper().registerModule(new JavaTimeModule()),
+        operationalMetricsService);
   }
 
   private BBHttpClientWrapper(
@@ -100,7 +121,8 @@ public class BBHttpClientWrapper {
       V1MessageApi messageApi,
       V1ContactApi contactApi,
       V1ICloudApi icloudApi,
-      ObjectMapper objectMapper) {
+      ObjectMapper objectMapper,
+      @Nullable OperationalMetricsService operationalMetricsService) {
     this.password = password;
     this.apiTimeout = DEFAULT_API_TIMEOUT;
     this.apiClient = new ApiClient();
@@ -111,6 +133,7 @@ public class BBHttpClientWrapper {
     this.otherApi = new V1OtherApi(apiClient);
     this.icloudApi = icloudApi;
     this.objectMapper = objectMapper;
+    this.operationalMetricsService = operationalMetricsService;
   }
 
   public record AttachmentData(String filename, byte[] bytes) {}
@@ -178,6 +201,54 @@ public class BBHttpClientWrapper {
     return value;
   }
 
+  private <T> T measuredOperation(String operation, OperationSupplier<T> supplier) {
+    long startedNanos = System.nanoTime();
+    try {
+      T result = supplier.get();
+      recordOperationMetric(operation, true, null, startedNanos);
+      return result;
+    } catch (RuntimeException e) {
+      recordOperationMetric(
+          operation, false, OperationalMetricsService.failureType(e), startedNanos);
+      throw e;
+    }
+  }
+
+  private boolean measuredBooleanOperation(String operation, OperationBooleanSupplier supplier) {
+    long startedNanos = System.nanoTime();
+    boolean success = false;
+    String failureType = null;
+    try {
+      success = supplier.getAsBoolean();
+      failureType = success ? null : "false_result";
+      return success;
+    } catch (RuntimeException e) {
+      failureType = OperationalMetricsService.failureType(e);
+      throw e;
+    } finally {
+      recordOperationMetric(operation, success, failureType, startedNanos);
+    }
+  }
+
+  private void recordOperationMetric(
+      String operation, boolean success, @Nullable String failureType, long startedNanos) {
+    if (operationalMetricsService == null) {
+      return;
+    }
+    operationalMetricsService.recordBlueBubblesOperation(
+        operation, success, failureType, Duration.ofNanos(System.nanoTime() - startedNanos));
+  }
+
+  @FunctionalInterface
+  private interface OperationSupplier<T> {
+    T get();
+  }
+
+  @FunctionalInterface
+  private interface OperationBooleanSupplier {
+    boolean getAsBoolean();
+  }
+
   public FindMyFriendLocation getFindMyLocation(String userId) {
     if (StringUtils.isBlank(userId)) {
       return null;
@@ -191,12 +262,16 @@ public class BBHttpClientWrapper {
     if (candidates.isEmpty()) {
       return null;
     }
-    ApiResponseFindMyFriendsLocations response =
-        this.icloudApi.apiV1IcloudFindmyFriendsRefreshPost(password).block(apiTimeout);
-    response = requirePresent(response, "refresh Find My friends locations");
-    requireSuccessfulResponse(
-        response.getStatus(), response.getMessage(), "refresh Find My friends locations");
-    return findFindMyLocation(response.getData(), candidates).orElse(null);
+    return measuredOperation(
+        "refresh_find_my_locations",
+        () -> {
+          ApiResponseFindMyFriendsLocations response =
+              this.icloudApi.apiV1IcloudFindmyFriendsRefreshPost(password).block(apiTimeout);
+          response = requirePresent(response, "refresh Find My friends locations");
+          requireSuccessfulResponse(
+              response.getStatus(), response.getMessage(), "refresh Find My friends locations");
+          return findFindMyLocation(response.getData(), candidates).orElse(null);
+        });
   }
 
   private static Optional<FindMyFriendLocation> findFindMyLocation(
@@ -266,23 +341,28 @@ public class BBHttpClientWrapper {
     if (StringUtils.isBlank(address)) {
       return List.of();
     }
-    ApiV1ContactGet200Response response = contactApi.apiV1ContactGet(password).block(apiTimeout);
-    response = requirePresent(response, "get contacts");
-    requireSuccessfulResponse(response.getStatus(), response.getMessage(), "get contacts");
-    if (response.getData() == null || response.getData().isEmpty()) {
-      return List.of();
-    }
-    LinkedHashSet<String> matches = new LinkedHashSet<>();
-    for (Contact contact : response.getData()) {
-      List<String> contactAddresses = contactAddresses(contact);
-      boolean containsAddress =
-          contactAddresses.stream()
-              .anyMatch(candidate -> AgentAccountIdentifiers.equivalent(candidate, address));
-      if (containsAddress) {
-        matches.addAll(contactAddresses);
-      }
-    }
-    return List.copyOf(matches);
+    return measuredOperation(
+        "get_contacts",
+        () -> {
+          ApiV1ContactGet200Response response =
+              contactApi.apiV1ContactGet(password).block(apiTimeout);
+          response = requirePresent(response, "get contacts");
+          requireSuccessfulResponse(response.getStatus(), response.getMessage(), "get contacts");
+          if (response.getData() == null || response.getData().isEmpty()) {
+            return List.of();
+          }
+          LinkedHashSet<String> matches = new LinkedHashSet<>();
+          for (Contact contact : response.getData()) {
+            List<String> contactAddresses = contactAddresses(contact);
+            boolean containsAddress =
+                contactAddresses.stream()
+                    .anyMatch(candidate -> AgentAccountIdentifiers.equivalent(candidate, address));
+            if (containsAddress) {
+              matches.addAll(contactAddresses);
+            }
+          }
+          return List.copyOf(matches);
+        });
   }
 
   private static List<String> contactAddresses(Contact contact) {
@@ -309,6 +389,7 @@ public class BBHttpClientWrapper {
   }
 
   public Path getAttachment(String attachmentGuid) {
+    long startedNanos = System.nanoTime();
     try {
       Path tempPath = Files.createTempFile("bb-attachment-", ".bin");
       AsynchronousFileChannel channel =
@@ -330,20 +411,27 @@ public class BBHttpClientWrapper {
                             }
                           }))
           .blockLast(Duration.of(30, ChronoUnit.SECONDS));
+      recordOperationMetric("download_attachment", true, null, startedNanos);
       return tempPath;
     } catch (Exception e) {
+      recordOperationMetric(
+          "download_attachment", false, OperationalMetricsService.failureType(e), startedNanos);
       throw new RuntimeException("Failed to download attachment with guid " + attachmentGuid, e);
     }
   }
 
   public Message getMessage(String messageGuid) {
-    ApiResponseMessage response =
-        this.messageApi
-            .apiV1MessageMessageGuidGet(messageGuid, password, "chats,participants")
-            .block(apiTimeout);
-    response = requirePresent(response, "get message");
-    requireSuccessfulResponse(response.getStatus(), response.getMessage(), "get message");
-    return requirePresent(response.getData(), "get message");
+    return measuredOperation(
+        "get_message",
+        () -> {
+          ApiResponseMessage response =
+              this.messageApi
+                  .apiV1MessageMessageGuidGet(messageGuid, password, "chats,participants")
+                  .block(apiTimeout);
+          response = requirePresent(response, "get message");
+          requireSuccessfulResponse(response.getStatus(), response.getMessage(), "get message");
+          return requirePresent(response.getData(), "get message");
+        });
   }
 
   public String uploadAttachment(Path path) {
@@ -354,18 +442,28 @@ public class BBHttpClientWrapper {
       log.warn("Attachment API not configured");
       return null;
     }
+    long startedNanos = System.nanoTime();
     try {
       ApiV1AttachmentUploadPost200Response response =
           attachmentApi
               .apiV1AttachmentUploadPost(path.toFile(), password)
               .block(Duration.of(30, ChronoUnit.SECONDS));
-      return Optional.ofNullable(response)
-          .filter(r1 -> r1.getStatus() != null && r1.getStatus() == 200)
-          .map(ApiV1AttachmentUploadPost200Response::getData)
-          .map(ApiV1AttachmentUploadPost200ResponseData::getPath)
-          .orElse(null);
+      String uploadedPath =
+          Optional.ofNullable(response)
+              .filter(r1 -> r1.getStatus() != null && r1.getStatus() == 200)
+              .map(ApiV1AttachmentUploadPost200Response::getData)
+              .map(ApiV1AttachmentUploadPost200ResponseData::getPath)
+              .orElse(null);
+      recordOperationMetric(
+          "upload_attachment",
+          StringUtils.isNotBlank(uploadedPath),
+          "empty_response",
+          startedNanos);
+      return uploadedPath;
     } catch (Exception e) {
       log.warn("Failed to upload attachment {}", path, e);
+      recordOperationMetric(
+          "upload_attachment", false, OperationalMetricsService.failureType(e), startedNanos);
       return null;
     }
   }
@@ -405,8 +503,9 @@ public class BBHttpClientWrapper {
       log.warn("Cannot send multipart message without chatGuid");
       return false;
     }
-    chatGuid = normalizeDirectAnyChatGuid(chatGuid);
-    log.info("Sending multipart message with chatGuid {} - message {}", chatGuid, message);
+    String normalizedChatGuid = normalizeDirectAnyChatGuid(chatGuid);
+    log.info(
+        "Sending multipart message with chatGuid {} - message {}", normalizedChatGuid, message);
     List<MultipartMessagePart> parts = new ArrayList<>();
     int partIndex = 0;
     if (StringUtils.isNotBlank(message)) {
@@ -429,13 +528,17 @@ public class BBHttpClientWrapper {
       log.warn("No parts to send for multipart message");
       return false;
     }
-    MultipartMessageRequest body = new MultipartMessageRequest(chatGuid, parts);
+    MultipartMessageRequest body = new MultipartMessageRequest(normalizedChatGuid, parts);
+    long startedNanos = System.nanoTime();
     try {
       messageApi.apiV1MessageMultipartPost(password, body).block(apiTimeout);
-      log.info("Sent multipart message to {}", chatGuid);
+      log.info("Sent multipart message to {}", normalizedChatGuid);
+      recordOperationMetric("send_multipart_message", true, null, startedNanos);
       return true;
     } catch (Exception e) {
       log.warn("Failed to send multipart message", e);
+      recordOperationMetric(
+          "send_multipart_message", false, OperationalMetricsService.failureType(e), startedNanos);
       return false;
     }
   }
@@ -465,14 +568,18 @@ public class BBHttpClientWrapper {
     }
     requestBuilder.where(whereClauses);
 
-    ApiV1MessageQueryPost200Response response =
-        this.messageApi
-            .apiV1MessageQueryPost(password, requestBuilder.build())
-            .block(Duration.of(120, ChronoUnit.SECONDS));
-    response = requirePresent(response, "search conversation history");
-    requireSuccessfulResponse(
-        response.getStatus(), response.getMessage(), "search conversation history");
-    return requirePresent(response.getData(), "search conversation history");
+    return measuredOperation(
+        "search_conversation_history",
+        () -> {
+          ApiV1MessageQueryPost200Response response =
+              this.messageApi
+                  .apiV1MessageQueryPost(password, requestBuilder.build())
+                  .block(Duration.of(120, ChronoUnit.SECONDS));
+          response = requirePresent(response, "search conversation history");
+          requireSuccessfulResponse(
+              response.getStatus(), response.getMessage(), "search conversation history");
+          return requirePresent(response.getData(), "search conversation history");
+        });
   }
 
   public JsonNode sendPollJson(String chatGuid, String title, List<PollSendOption> options) {
@@ -496,11 +603,15 @@ public class BBHttpClientWrapper {
             .title(StringUtils.defaultIfBlank(StringUtils.trim(title), "Poll"))
             .options(optionPayloads)
             .build();
-    ApiResponseSendPoll response =
-        messageApi.apiV1MessagePollPost(request, password).block(apiTimeout);
-    response = requirePresent(response, "send poll");
-    requireOkStatus(response.getStatus(), response.getMessage(), "send poll");
-    return objectMapper.valueToTree(requirePresent(response.getData(), "send poll"));
+    return measuredOperation(
+        "send_poll",
+        () -> {
+          ApiResponseSendPoll response =
+              messageApi.apiV1MessagePollPost(request, password).block(apiTimeout);
+          response = requirePresent(response, "send poll");
+          requireOkStatus(response.getStatus(), response.getMessage(), "send poll");
+          return objectMapper.valueToTree(requirePresent(response.getData(), "send poll"));
+        });
   }
 
   public JsonNode readPollJson(String messageGuid) {
@@ -511,11 +622,15 @@ public class BBHttpClientWrapper {
     if (StringUtils.isBlank(messageGuid)) {
       throw new IllegalArgumentException("Cannot read poll without messageGuid");
     }
-    ApiResponsePoll response =
-        messageApi.apiV1MessageMessageGuidPollGet(messageGuid, password).block(apiTimeout);
-    response = requirePresent(response, "read poll");
-    requireOkStatus(response.getStatus(), response.getMessage(), "read poll");
-    return requirePresent(response.getData(), "read poll");
+    return measuredOperation(
+        "read_poll",
+        () -> {
+          ApiResponsePoll response =
+              messageApi.apiV1MessageMessageGuidPollGet(messageGuid, password).block(apiTimeout);
+          response = requirePresent(response, "read poll");
+          requireOkStatus(response.getStatus(), response.getMessage(), "read poll");
+          return requirePresent(response.getData(), "read poll");
+        });
   }
 
   private static io.breland.bbagent.generated.bluebubblesclient.model.PollSendOption
@@ -530,50 +645,63 @@ public class BBHttpClientWrapper {
     if (StringUtils.isBlank(chatGuid)) {
       return null;
     }
-    ApiResponseGetChat chat =
-        chatApi.apiV1ChatChatGuidGet(chatGuid, password, "participants").block(apiTimeout);
-    chat = requirePresent(chat, "get conversation info");
-    requireSuccessfulResponse(chat.getStatus(), chat.getMessage(), "get conversation info");
-    return requirePresent(chat.getData(), "get conversation info");
+    return measuredOperation(
+        "get_conversation_info",
+        () -> {
+          ApiResponseGetChat chat =
+              chatApi.apiV1ChatChatGuidGet(chatGuid, password, "participants").block(apiTimeout);
+          chat = requirePresent(chat, "get conversation info");
+          requireSuccessfulResponse(chat.getStatus(), chat.getMessage(), "get conversation info");
+          return requirePresent(chat.getData(), "get conversation info");
+        });
   }
 
   public JsonNode getConversationInfoJson(String chatGuid) {
     if (StringUtils.isBlank(chatGuid)) {
       return null;
     }
-    JsonNode response =
-        chatApi
-            .apiV1ChatChatGuidGetWithResponseSpec(chatGuid, password, "participants")
-            .bodyToMono(JsonNode.class)
-            .block(apiTimeout);
-    response = requirePresent(response, "get conversation info");
-    requireSuccessfulResponse(
-        response.path("status").isInt() ? response.path("status").asInt() : null,
-        response.path("message").asText(null),
-        "get conversation info");
-    return requirePresent(response.get("data"), "get conversation info");
+    return measuredOperation(
+        "get_conversation_info_json",
+        () -> {
+          JsonNode response =
+              chatApi
+                  .apiV1ChatChatGuidGetWithResponseSpec(chatGuid, password, "participants")
+                  .bodyToMono(JsonNode.class)
+                  .block(apiTimeout);
+          response = requirePresent(response, "get conversation info");
+          requireSuccessfulResponse(
+              response.path("status").isInt() ? response.path("status").asInt() : null,
+              response.path("message").asText(null),
+              "get conversation info");
+          return requirePresent(response.get("data"), "get conversation info");
+        });
   }
 
   public boolean renameConversation(String chatGuid, String displayName) {
     if (StringUtils.isBlank(chatGuid)) {
       return false;
     }
-    ApiResponseUpdateChat result =
-        chatApi
-            .apiV1ChatChatGuidPut(
-                chatGuid,
-                password,
-                ApiV1ChatChatGuidPutRequest.builder().displayName(displayName).build())
-            .block(apiTimeout);
-    result = requirePresent(result, "rename conversation");
-    requireSuccessfulResponse(result.getStatus(), result.getMessage(), "rename conversation");
-    return true;
+    return measuredBooleanOperation(
+        "rename_conversation",
+        () -> {
+          ApiResponseUpdateChat result =
+              chatApi
+                  .apiV1ChatChatGuidPut(
+                      chatGuid,
+                      password,
+                      ApiV1ChatChatGuidPutRequest.builder().displayName(displayName).build())
+                  .block(apiTimeout);
+          result = requirePresent(result, "rename conversation");
+          requireSuccessfulResponse(result.getStatus(), result.getMessage(), "rename conversation");
+          return true;
+        });
   }
 
   public boolean setConversationIcon(String chatGuid, Path iconPath) {
     if (StringUtils.isBlank(chatGuid) || iconPath == null) {
       return false;
     }
+    long startedNanos = System.nanoTime();
     try {
       MultiValueMap<String, String> queryParams = new LinkedMultiValueMap<>();
       queryParams.putAll(apiClient.parameterToMultiValueMap(null, "password", password));
@@ -602,9 +730,12 @@ public class BBHttpClientWrapper {
               .bodyToMono(JsonNode.class)
               .block(apiTimeout);
       log.debug("Set conversation icon response: {}", response);
+      recordOperationMetric("set_conversation_icon", true, null, startedNanos);
       return true;
     } catch (Exception e) {
       log.warn("Failed to set conversation icon {}", chatGuid, e);
+      recordOperationMetric(
+          "set_conversation_icon", false, OperationalMetricsService.failureType(e), startedNanos);
       return false;
     }
   }
@@ -630,41 +761,55 @@ public class BBHttpClientWrapper {
 
     Instant firstAttemptStartedAt = Instant.now();
     long overallStartedNanos = System.nanoTime();
-    for (int attempt = 1; attempt <= DIRECT_SEND_MAX_ATTEMPTS; attempt++) {
-      if (!warmUpDirectSendPath(request, attempt)) {
-        return false;
-      }
+    boolean success = false;
+    String failureType = "not_confirmed";
+    try {
+      for (int attempt = 1; attempt <= DIRECT_SEND_MAX_ATTEMPTS; attempt++) {
+        if (!warmUpDirectSendPath(request, attempt)) {
+          failureType = "warmup_failed";
+          return false;
+        }
 
-      log.info(
-          "Attempting to send direct text message chatGuid={} confirmationChatGuid={} tempGuid={} attempt={}/{} timeout={} request={}",
-          request.getChatGuid(),
-          confirmationChatGuid,
-          request.getTempGuid(),
-          attempt,
-          DIRECT_SEND_MAX_ATTEMPTS,
-          apiTimeout,
-          request);
-      submitDirectTextMessage(request, attempt, overallStartedNanos);
-      if (confirmDirectTextSend(
-          request, confirmationChatGuid, firstAttemptStartedAt, attempt, overallStartedNanos)) {
-        return true;
+        log.info(
+            "Attempting to send direct text message chatGuid={} confirmationChatGuid={} tempGuid={} attempt={}/{} timeout={} request={}",
+            request.getChatGuid(),
+            confirmationChatGuid,
+            request.getTempGuid(),
+            attempt,
+            DIRECT_SEND_MAX_ATTEMPTS,
+            apiTimeout,
+            request);
+        submitDirectTextMessage(request, attempt, overallStartedNanos);
+        if (confirmDirectTextSend(
+            request, confirmationChatGuid, firstAttemptStartedAt, attempt, overallStartedNanos)) {
+          success = true;
+          return true;
+        }
       }
+      log.warn(
+          "Failed to confirm BlueBubbles direct text send after {} attempts chatGuid={} tempGuid={} elapsedMs={}",
+          DIRECT_SEND_MAX_ATTEMPTS,
+          request.getChatGuid(),
+          request.getTempGuid(),
+          elapsedMillis(overallStartedNanos));
+      return false;
+    } catch (RuntimeException e) {
+      failureType = OperationalMetricsService.failureType(e);
+      throw e;
+    } finally {
+      recordOperationMetric(
+          "send_text_direct", success, success ? null : failureType, overallStartedNanos);
     }
-    log.warn(
-        "Failed to confirm BlueBubbles direct text send after {} attempts chatGuid={} tempGuid={} elapsedMs={}",
-        DIRECT_SEND_MAX_ATTEMPTS,
-        request.getChatGuid(),
-        request.getTempGuid(),
-        elapsedMillis(overallStartedNanos));
-    return false;
   }
 
   private boolean warmUpDirectSendPath(ApiV1MessageTextPostRequest request, int attempt) {
     Duration pingTimeout =
         apiTimeout.compareTo(DIRECT_SEND_PING_TIMEOUT) <= 0 ? apiTimeout : DIRECT_SEND_PING_TIMEOUT;
     for (int pingAttempt = 1; pingAttempt <= DIRECT_SEND_PING_ATTEMPTS; pingAttempt++) {
+      long startedNanos = System.nanoTime();
       try {
         pingBlueBubbles(pingTimeout);
+        recordOperationMetric("direct_send_ping_warmup", true, null, startedNanos);
         if (pingAttempt > 1) {
           log.info(
               "BlueBubbles ping warmup recovered chatGuid={} tempGuid={} attempt={} pingAttempt={}",
@@ -675,6 +820,11 @@ public class BBHttpClientWrapper {
         }
         return true;
       } catch (Exception e) {
+        recordOperationMetric(
+            "direct_send_ping_warmup",
+            false,
+            OperationalMetricsService.failureType(e),
+            startedNanos);
         log.warn(
             "BlueBubbles ping warmup failed chatGuid={} tempGuid={} attempt={} pingAttempt={}/{} timeout={} message={}",
             request.getChatGuid(),
@@ -698,8 +848,11 @@ public class BBHttpClientWrapper {
   private void submitDirectTextMessage(
       ApiV1MessageTextPostRequest request, int attempt, long overallStartedNanos) {
     long attemptStartedNanos = System.nanoTime();
+    boolean success = false;
+    String failureType = null;
     try {
       messageApi.apiV1MessageTextPost(password, request).block(apiTimeout);
+      success = true;
       log.info(
           "BlueBubbles direct text send request completed chatGuid={} tempGuid={} attempt={} attemptElapsedMs={} totalElapsedMs={}",
           request.getChatGuid(),
@@ -709,6 +862,7 @@ public class BBHttpClientWrapper {
           elapsedMillis(overallStartedNanos));
     } catch (Exception e) {
       if (isTimeout(e)) {
+        failureType = "timeout";
         log.warn(
             "Timed out waiting for BlueBubbles direct text send response chatGuid={} tempGuid={} attempt={} timeout={} attemptElapsedMs={} totalElapsedMs={}. Checking chat history before retrying.",
             request.getChatGuid(),
@@ -720,6 +874,7 @@ public class BBHttpClientWrapper {
         log.debug("BlueBubbles direct text send timeout", e);
         return;
       }
+      failureType = OperationalMetricsService.failureType(e);
       log.warn(
           "Failed to send direct message chatGuid={} tempGuid={} attempt={} attemptElapsedMs={} totalElapsedMs={}. Checking chat history before retrying.",
           request.getChatGuid(),
@@ -728,6 +883,12 @@ public class BBHttpClientWrapper {
           elapsedMillis(attemptStartedNanos),
           elapsedMillis(overallStartedNanos),
           e);
+    } finally {
+      recordOperationMetric(
+          "send_text_direct_submit",
+          success,
+          success ? null : StringUtils.defaultIfBlank(failureType, "exception"),
+          attemptStartedNanos);
     }
   }
 
@@ -737,7 +898,11 @@ public class BBHttpClientWrapper {
       Instant firstAttemptStartedAt,
       int attempt,
       long overallStartedNanos) {
+    long startedNanos = System.nanoTime();
+    boolean success = false;
+    String failureType = "not_found";
     if (!waitBeforeDirectSendConfirmation(request, attempt)) {
+      recordOperationMetric("send_text_direct_confirm", false, "interrupted", startedNanos);
       return false;
     }
     try {
@@ -750,6 +915,7 @@ public class BBHttpClientWrapper {
               && messages.stream()
                   .anyMatch(message -> isMatchingSentText(message, request, firstAttemptStartedAt));
       if (confirmed) {
+        success = true;
         log.info(
             "Confirmed BlueBubbles direct text send in chat history chatGuid={} historyChatGuid={} tempGuid={} attempt={} elapsedMs={}",
             request.getChatGuid(),
@@ -759,6 +925,7 @@ public class BBHttpClientWrapper {
             elapsedMillis(overallStartedNanos));
         return true;
       }
+      failureType = "not_found";
       log.warn(
           "BlueBubbles direct text send not found in chat history chatGuid={} historyChatGuid={} tempGuid={} attempt={} elapsedMs={}",
           request.getChatGuid(),
@@ -768,6 +935,7 @@ public class BBHttpClientWrapper {
           elapsedMillis(overallStartedNanos));
       return false;
     } catch (Exception e) {
+      failureType = OperationalMetricsService.failureType(e);
       log.warn(
           "Failed to confirm BlueBubbles direct text send from chat history chatGuid={} confirmationChatGuid={} tempGuid={} attempt={} elapsedMs={}",
           request.getChatGuid(),
@@ -777,6 +945,9 @@ public class BBHttpClientWrapper {
           elapsedMillis(overallStartedNanos),
           e);
       return false;
+    } finally {
+      recordOperationMetric(
+          "send_text_direct_confirm", success, success ? null : failureType, startedNanos);
     }
   }
 
@@ -871,12 +1042,16 @@ public class BBHttpClientWrapper {
       log.warn("Unsupported reaction {}", request.getReaction());
       return false;
     }
+    long startedNanos = System.nanoTime();
     try {
       messageApi.apiV1MessageReactPost(password, request).block(apiTimeout);
       log.info("Sent reaction {} to {}", request.getReaction(), request.getChatGuid());
+      recordOperationMetric("send_reaction", true, null, startedNanos);
       return true;
     } catch (Exception e) {
       log.warn("Failed to send reaction", e);
+      recordOperationMetric(
+          "send_reaction", false, OperationalMetricsService.failureType(e), startedNanos);
       return false;
     }
   }
@@ -897,21 +1072,28 @@ public class BBHttpClientWrapper {
   }
 
   public List<ApiV1ChatChatGuidMessageGet200ResponseDataInner> getMessagesInChat(String chatGuid) {
-    ApiV1ChatChatGuidMessageGet200Response response =
-        this.chatApi
-            .apiV1ChatChatGuidMessageGet(
-                chatGuid, password, "handle", null, null, null, 100, "DESC")
-            .block(apiTimeout);
-    response = requirePresent(response, "get messages in chat");
-    return requirePresent(response.getData(), "get messages in chat");
+    return measuredOperation(
+        "get_messages_in_chat",
+        () -> {
+          ApiV1ChatChatGuidMessageGet200Response response =
+              this.chatApi
+                  .apiV1ChatChatGuidMessageGet(
+                      chatGuid, password, "handle", null, null, null, 100, "DESC")
+                  .block(apiTimeout);
+          response = requirePresent(response, "get messages in chat");
+          return requirePresent(response.getData(), "get messages in chat");
+        });
   }
 
   public boolean ping() {
+    long startedNanos = System.nanoTime();
     try {
       pingBlueBubbles(apiTimeout);
+      recordOperationMetric("ping", true, null, startedNanos);
       return true;
     } catch (Exception e) {
       log.warn("Failed to ping", e);
+      recordOperationMetric("ping", false, OperationalMetricsService.failureType(e), startedNanos);
       return false;
     }
   }
@@ -921,10 +1103,15 @@ public class BBHttpClientWrapper {
   }
 
   public IcloudAccountInfo getAccount() {
-    ApiResponseIcloudAccount account =
-        this.icloudApi.apiV1IcloudAccountGet(password).block(apiTimeout);
-    account = requirePresent(account, "get iCloud account");
-    requireSuccessfulResponse(account.getStatus(), account.getMessage(), "get iCloud account");
-    return requirePresent(account.getData(), "get iCloud account");
+    return measuredOperation(
+        "get_icloud_account",
+        () -> {
+          ApiResponseIcloudAccount account =
+              this.icloudApi.apiV1IcloudAccountGet(password).block(apiTimeout);
+          account = requirePresent(account, "get iCloud account");
+          requireSuccessfulResponse(
+              account.getStatus(), account.getMessage(), "get iCloud account");
+          return requirePresent(account.getData(), "get iCloud account");
+        });
   }
 }
