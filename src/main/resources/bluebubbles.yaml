@@ -3636,14 +3636,12 @@ components:
       additionalProperties: false
       properties:
         messageGuid:
-          oneOf:
-            - type: string
-            - type: "null"
+          type: string
+          nullable: true
           description: Poll message GUID.
         title:
-          oneOf:
-            - type: string
-            - type: "null"
+          type: string
+          nullable: true
           description: Poll title.
         options:
           type: array
@@ -3657,35 +3655,29 @@ components:
           type: integer
           format: int32
         bundleIdentifier:
-          oneOf:
-            - type: string
-            - type: "null"
+          type: string
+          nullable: true
         pluginSessionGuid:
-          oneOf:
-            - type: string
-            - type: "null"
+          type: string
+          nullable: true
 
     PollOption:
       type: object
       additionalProperties: false
       properties:
         optionIdentifier:
-          oneOf:
-            - type: string
-            - type: "null"
+          type: string
+          nullable: true
         creatorHandle:
-          oneOf:
-            - type: string
-            - type: "null"
+          type: string
+          nullable: true
         text:
-          oneOf:
-            - type: string
-            - type: "null"
+          type: string
+          nullable: true
         attributedText:
-          oneOf:
-            - type: object
-              additionalProperties: true
-            - type: "null"
+          type: object
+          nullable: true
+          additionalProperties: true
         canBeEdited:
           type: boolean
 
@@ -3695,9 +3687,8 @@ components:
       required: [ handle, optionIdentifiers ]
       properties:
         handle:
-          oneOf:
-            - type: string
-            - type: "null"
+          type: string
+          nullable: true
         optionIdentifiers:
           type: array
           items:

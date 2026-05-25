@@ -19,6 +19,8 @@ import io.breland.bbagent.generated.bluebubblesclient.model.ApiV1ChatChatGuidMes
 import io.breland.bbagent.generated.bluebubblesclient.model.ApiV1MessagePollPostRequest;
 import io.breland.bbagent.generated.bluebubblesclient.model.ApiV1MessageTextPostRequest;
 import io.breland.bbagent.generated.bluebubblesclient.model.PollData;
+import io.breland.bbagent.generated.bluebubblesclient.model.PollOption;
+import io.breland.bbagent.generated.bluebubblesclient.model.PollResponse;
 import io.breland.bbagent.generated.bluebubblesclient.model.PollSendResult;
 import io.breland.bbagent.server.agent.IncomingMessage;
 import io.breland.bbagent.server.agent.transport.OutgoingTextMessage;
@@ -278,13 +280,38 @@ class BlueBubblesMessageTransportTest {
                 ApiResponsePoll.builder()
                     .status(200)
                     .message("Poll read!")
-                    .data(PollData.builder().messageGuid("poll-guid").title("Lunch?").build())
+                    .data(
+                        PollData.builder()
+                            .messageGuid("poll-guid")
+                            .title("Lunch?")
+                            .options(
+                                List.of(
+                                    PollOption.builder()
+                                        .optionIdentifier("opt-1")
+                                        .text("Pizza")
+                                        .build(),
+                                    PollOption.builder()
+                                        .optionIdentifier("opt-2")
+                                        .text("Sushi")
+                                        .build()))
+                            .responses(
+                                List.of(
+                                    PollResponse.builder()
+                                        .handle("+18033861737")
+                                        .optionIdentifiers(List.of("opt-2"))
+                                        .build()))
+                            .build())
                     .build()));
 
     JsonNode data = wrapper.readPollJson("poll-guid");
+    PollData poll = wrapper.readPoll("poll-guid");
 
-    verify(messageApi).apiV1MessageMessageGuidPollGet("poll-guid", "pw");
+    verify(messageApi, times(2)).apiV1MessageMessageGuidPollGet("poll-guid", "pw");
+    assertEquals("Sushi", poll.getOptions().get(1).getText());
     assertEquals("Lunch?", data.path("title").asText());
+    assertEquals("Pizza", data.path("options").get(0).path("text").asText());
+    assertEquals("Sushi", data.path("options").get(1).path("text").asText());
+    assertEquals("opt-2", data.path("responses").get(0).path("optionIdentifiers").get(0).asText());
   }
 
   private static IncomingMessage incomingMessage(String chatGuid, String service, boolean isGroup) {

@@ -303,6 +303,7 @@ tasks.register('openApiGenerateJavaClientBlueBubbles', GenerateTask) {
             serializationLibrary: 'jackson',
             enumPropertyNaming: 'MACRO_CASE',
             generateBuilders: 'true',
+            openApiNullable: 'false',
 
     ]
 
