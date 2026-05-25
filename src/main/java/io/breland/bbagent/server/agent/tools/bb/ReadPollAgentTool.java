@@ -12,7 +12,10 @@ import io.breland.bbagent.server.agent.tools.ToolProvider;
 import io.breland.bbagent.server.agent.transport.bb.BBHttpClientWrapper;
 import io.breland.bbagent.server.agent.transport.bb.BlueBubblesPollSupport;
 import io.swagger.v3.oas.annotations.media.Schema;
+import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Set;
 import org.apache.commons.lang3.StringUtils;
 
 public class ReadPollAgentTool implements ToolProvider {
@@ -46,74 +49,104 @@ public class ReadPollAgentTool implements ToolProvider {
             return "polls are only supported on BlueChat/iMessage conversations";
           }
           ReadPollRequest request = context.getMapper().convertValue(args, ReadPollRequest.class);
-          String messageGuid =
-              BlueBubblesPollSupport.normalizeMessageGuid(
-                  StringUtils.defaultIfBlank(request.messageGuid(), pollGuid(context.message())));
-          if (StringUtils.isBlank(messageGuid)) {
-            messageGuid = latestPollGuid(context.message());
-          }
-          if (StringUtils.isBlank(messageGuid)) {
+          List<String> messageGuids = pollGuidCandidates(context.message(), request.messageGuid());
+          if (messageGuids.isEmpty()) {
             return "missing message_guid and no recent poll was found in this conversation";
           }
-          try {
-            JsonNode data = bbHttpClientWrapper.readPollJson(messageGuid);
-            return data.toString();
-          } catch (RuntimeException e) {
-            return "could not read poll "
-                + messageGuid
-                + ": BlueBubbles returned an error for the poll state request";
+          List<String> attemptedGuids = new ArrayList<>();
+          for (String messageGuid : messageGuids) {
+            try {
+              attemptedGuids.add(messageGuid);
+              JsonNode data = bbHttpClientWrapper.readPollJson(messageGuid);
+              return data.toString();
+            } catch (RuntimeException e) {
+              // Keep trying; reply targets and poll update items can point at non-root messages.
+            }
           }
+          return "could not read poll; BlueBubbles returned an error for the poll state request. Tried message_guid values: "
+              + String.join(", ", attemptedGuids);
         });
   }
 
-  private static String pollGuid(IncomingMessage message) {
-    if (message == null) {
-      return null;
-    }
-    if (StringUtils.isNotBlank(message.associatedMessageGuid())) {
-      return BlueBubblesPollSupport.normalizeMessageGuid(message.associatedMessageGuid());
-    }
-    if (StringUtils.isNotBlank(message.replyToGuid())) {
-      return BlueBubblesPollSupport.normalizeMessageGuid(message.replyToGuid());
-    }
-    if (StringUtils.isNotBlank(message.threadOriginatorGuid())) {
-      return BlueBubblesPollSupport.normalizeMessageGuid(message.threadOriginatorGuid());
-    }
-    if (BlueBubblesPollSupport.isPollBundle(message.balloonBundleId())) {
-      return BlueBubblesPollSupport.normalizeMessageGuid(message.messageGuid());
-    }
-    return null;
+  private List<String> pollGuidCandidates(IncomingMessage message, String requestedMessageGuid) {
+    Set<String> candidates = new LinkedHashSet<>();
+    String requestedGuid = BlueBubblesPollSupport.normalizeMessageGuid(requestedMessageGuid);
+    List<ApiV1ChatChatGuidMessageGet200ResponseDataInner> recentMessages = recentMessages(message);
+    addCandidate(candidates, requestedGuid);
+    addMatchingHistoryPollCandidates(candidates, recentMessages, requestedGuid);
+    addContextCandidates(candidates, message);
+    recentMessages.forEach(historyMessage -> addPollGuidCandidates(candidates, historyMessage));
+    return List.copyOf(candidates);
   }
 
-  private String latestPollGuid(IncomingMessage message) {
+  private static void addContextCandidates(Set<String> candidates, IncomingMessage message) {
+    if (message == null) {
+      return;
+    }
+    if (BlueBubblesPollSupport.isPollBundle(message.balloonBundleId())) {
+      addCandidate(candidates, message.associatedMessageGuid());
+      addCandidate(candidates, message.messageGuid());
+    }
+    if (StringUtils.isNotBlank(message.replyToGuid())) {
+      addCandidate(candidates, message.replyToGuid());
+    }
+    if (StringUtils.isNotBlank(message.threadOriginatorGuid())) {
+      addCandidate(candidates, message.threadOriginatorGuid());
+    }
+  }
+
+  private static void addCandidate(Set<String> candidates, String messageGuid) {
+    String normalized = BlueBubblesPollSupport.normalizeMessageGuid(messageGuid);
+    if (StringUtils.isNotBlank(normalized)) {
+      candidates.add(normalized);
+    }
+  }
+
+  private List<ApiV1ChatChatGuidMessageGet200ResponseDataInner> recentMessages(
+      IncomingMessage message) {
     if (message == null || StringUtils.isBlank(message.chatGuid())) {
-      return null;
+      return List.of();
     }
     try {
       List<ApiV1ChatChatGuidMessageGet200ResponseDataInner> messages =
           bbHttpClientWrapper.getMessagesInChat(message.chatGuid());
       if (messages == null) {
-        return null;
+        return List.of();
       }
-      return messages.stream()
-          .map(ReadPollAgentTool::pollGuid)
-          .filter(StringUtils::isNotBlank)
-          .findFirst()
-          .orElse(null);
+      return messages;
     } catch (RuntimeException e) {
-      return null;
+      return List.of();
     }
   }
 
-  private static String pollGuid(ApiV1ChatChatGuidMessageGet200ResponseDataInner message) {
+  private static void addMatchingHistoryPollCandidates(
+      Set<String> candidates,
+      List<ApiV1ChatChatGuidMessageGet200ResponseDataInner> messages,
+      String requestedGuid) {
+    if (StringUtils.isBlank(requestedGuid) || messages == null) {
+      return;
+    }
+    messages.stream()
+        .filter(message -> historyMessageMatchesGuid(message, requestedGuid))
+        .forEach(message -> addPollGuidCandidates(candidates, message));
+  }
+
+  private static boolean historyMessageMatchesGuid(
+      ApiV1ChatChatGuidMessageGet200ResponseDataInner message, String requestedGuid) {
+    if (message == null || StringUtils.isBlank(requestedGuid)) {
+      return false;
+    }
+    return requestedGuid.equals(BlueBubblesPollSupport.normalizeMessageGuid(message.getGuid()))
+        || requestedGuid.equals(
+            BlueBubblesPollSupport.normalizeMessageGuid(message.getAssociatedMessageGuid()));
+  }
+
+  private static void addPollGuidCandidates(
+      Set<String> candidates, ApiV1ChatChatGuidMessageGet200ResponseDataInner message) {
     if (message == null || !BlueBubblesPollSupport.isPollBundle(message.getBalloonBundleId())) {
-      return null;
+      return;
     }
-    String associatedGuid =
-        BlueBubblesPollSupport.normalizeMessageGuid(message.getAssociatedMessageGuid());
-    if (StringUtils.isNotBlank(associatedGuid)) {
-      return associatedGuid;
-    }
-    return BlueBubblesPollSupport.normalizeMessageGuid(message.getGuid());
+    addCandidate(candidates, message.getAssociatedMessageGuid());
+    addCandidate(candidates, message.getGuid());
   }
 }
