@@ -502,9 +502,7 @@ public class RestaurantReservationService implements RestaurantReservationGatewa
   }
 
   private JsonNode authorizedOpenTableGet(String uri) {
-    return openTableWebClient
-        .get()
-        .uri(toUri(uri))
+    return openTableGet(uri)
         .headers(this::addOpenTableAuthorization)
         .accept(MediaType.APPLICATION_JSON)
         .retrieve()
@@ -513,9 +511,7 @@ public class RestaurantReservationService implements RestaurantReservationGatewa
   }
 
   private JsonNode authorizedOpenTablePost(String uri, Map<String, Object> body) {
-    return openTableWebClient
-        .post()
-        .uri(toUri(uri))
+    return openTablePost(uri)
         .headers(this::addOpenTableAuthorization)
         .contentType(MediaType.APPLICATION_JSON)
         .accept(MediaType.APPLICATION_JSON)
@@ -525,12 +521,29 @@ public class RestaurantReservationService implements RestaurantReservationGatewa
         .block(openTableTimeout());
   }
 
-  private URI toUri(String uri) {
-    if (StringUtils.startsWithIgnoreCase(uri, "http://")
-        || StringUtils.startsWithIgnoreCase(uri, "https://")) {
-      return URI.create(uri);
+  private WebClient.RequestHeadersSpec<?> openTableGet(String uri) {
+    WebClient.RequestHeadersUriSpec<?> request = openTableWebClient.get();
+    if (absoluteUri(uri)) {
+      return request.uri(URI.create(uri));
     }
-    return URI.create(uri.startsWith("/") ? uri : "/" + uri);
+    return request.uri(relativeOpenTableUri(uri));
+  }
+
+  private WebClient.RequestBodySpec openTablePost(String uri) {
+    WebClient.RequestBodyUriSpec request = openTableWebClient.post();
+    if (absoluteUri(uri)) {
+      return request.uri(URI.create(uri));
+    }
+    return request.uri(relativeOpenTableUri(uri));
+  }
+
+  private boolean absoluteUri(String uri) {
+    return StringUtils.startsWithIgnoreCase(uri, "http://")
+        || StringUtils.startsWithIgnoreCase(uri, "https://");
+  }
+
+  private String relativeOpenTableUri(String uri) {
+    return uri.startsWith("/") ? uri : "/" + uri;
   }
 
   private void addOpenTableAuthorization(HttpHeaders headers) {
