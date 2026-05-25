@@ -4270,8 +4270,8 @@ components:
           example: 9C45CD9B-1763-4554-A865-06EFCF6DD3ED
         groupPhotoGuid:
           type: string
-          format: uuid
-          example: 1CFB7180-2BBD-439C-8EA3-E67BACD9F075
+          description: BlueBubbles may return either a UUID or an attachment-style identifier.
+          example: at_0_7E65761D-1B84-4FAF-BC17-7F485E7FDEC5
         hasBeenAutoSpamReported:
           type: boolean
           example: true

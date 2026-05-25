@@ -14,6 +14,7 @@ import io.breland.bbagent.generated.bluebubblesclient.api.V1ICloudApi;
 import io.breland.bbagent.generated.bluebubblesclient.api.V1MessageApi;
 import io.breland.bbagent.generated.bluebubblesclient.model.AddressEntry;
 import io.breland.bbagent.generated.bluebubblesclient.model.ApiResponseFindMyFriendsLocations;
+import io.breland.bbagent.generated.bluebubblesclient.model.ApiResponseGetChat;
 import io.breland.bbagent.generated.bluebubblesclient.model.ApiV1ContactGet200Response;
 import io.breland.bbagent.generated.bluebubblesclient.model.Contact;
 import io.breland.bbagent.generated.bluebubblesclient.model.FindMyFriendLocation;
@@ -178,6 +179,33 @@ class BBHttpClientWrapperTest {
             .readValue(json, ApiResponseFindMyFriendsLocations.class);
 
     assertEquals(false, response.getData().getFirst().getIsLocatingInProgress());
+  }
+
+  @Test
+  void getChatResponseDeserializesAttachmentStyleGroupPhotoGuid() throws Exception {
+    String groupPhotoGuid = "at_0_7E65761D-1B84-4FAF-BC17-7F485E7FDEC5";
+    String json =
+        """
+        {
+          "status": 200,
+          "message": "Successfully fetched chat",
+          "data": {
+            "guid": "any;+;chat193898160757775814",
+            "participants": [],
+            "properties": [
+              {
+                "groupPhotoGuid": "%s"
+              }
+            ]
+          }
+        }
+        """
+            .formatted(groupPhotoGuid);
+
+    ApiResponseGetChat response =
+        new com.fasterxml.jackson.databind.ObjectMapper().readValue(json, ApiResponseGetChat.class);
+
+    assertEquals(groupPhotoGuid, response.getData().getProperties().getFirst().getGroupPhotoGuid());
   }
 
   private static BBHttpClientWrapper wrapper(V1ICloudApi icloudApi) {

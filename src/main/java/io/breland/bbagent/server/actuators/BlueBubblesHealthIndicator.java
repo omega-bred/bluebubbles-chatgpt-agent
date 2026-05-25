@@ -63,6 +63,7 @@ public class BlueBubblesHealthIndicator implements HealthIndicator {
               .withDetail("icloudLoginStatus", loginStatusMessage)
               .withDetail("error", e.getMessage())
               .build());
+      log.warn("Health ping failed - check bb server", e);
     }
   }
 
