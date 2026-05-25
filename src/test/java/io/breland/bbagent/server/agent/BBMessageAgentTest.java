@@ -1309,11 +1309,6 @@ class BBMessageAgentTest {
     }
 
     @Override
-    public boolean sendTextDirect(IncomingMessage message, String text) {
-      return true;
-    }
-
-    @Override
     public boolean sendTextDirect(ApiV1MessageTextPostRequest request) {
       sentTexts.add(request.getMessage());
       return true;
