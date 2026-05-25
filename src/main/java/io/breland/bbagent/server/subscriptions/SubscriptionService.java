@@ -158,9 +158,9 @@ public class SubscriptionService {
         analyticsData(
             "provider", providerKey,
             "plan_key", plan.getKey(),
-            "currency", plan.getCurrency(),
-            "price_amount", plan.getPriceAmount(),
-            "billing_interval", plan.getBillingInterval()));
+            "currency", effectiveCurrency(plan, providerPlan),
+            "price_amount", effectivePriceAmount(plan, providerPlan),
+            "billing_interval", effectiveBillingInterval(plan, providerPlan)));
 
     return new SubscriptionCheckoutResponse()
         .checkoutSessionId(checkout.getCheckoutSessionId())
@@ -705,16 +705,15 @@ public class SubscriptionService {
   }
 
   private SubscriptionPlan toPlan(SubscriptionProperties.Plan plan, String providerKey) {
+    SubscriptionProperties.ProviderPlan providerPlan = requireProviderPlan(plan, providerKey);
+    BigDecimal priceAmount = effectivePriceAmount(plan, providerPlan);
     return new SubscriptionPlan()
         .key(plan.getKey())
         .displayName(plan.getDisplayName())
         .description(plan.getDescription())
-        .priceAmount(
-            plan.getPriceAmount() == null
-                ? ""
-                : plan.getPriceAmount().stripTrailingZeros().toPlainString())
-        .currency(plan.getCurrency())
-        .billingInterval(plan.getBillingInterval())
+        .priceAmount(priceAmount == null ? "" : priceAmount.stripTrailingZeros().toPlainString())
+        .currency(effectiveCurrency(plan, providerPlan))
+        .billingInterval(effectiveBillingInterval(plan, providerPlan))
         .provider(providerKey)
         .active(plan.isActive());
   }
@@ -912,8 +911,43 @@ public class SubscriptionService {
     return properties.getPlans().stream()
         .filter(plan -> subscription.getPlanKey().equals(plan.getKey()))
         .findFirst()
-        .map(plan -> monthlyEquivalent(plan.getPriceAmount(), plan.getBillingInterval()))
+        .map(
+            plan -> {
+              SubscriptionProperties.ProviderPlan providerPlan =
+                  providerPlanOrNull(plan, subscription.getProvider());
+              return monthlyEquivalent(
+                  effectivePriceAmount(plan, providerPlan),
+                  effectiveBillingInterval(plan, providerPlan));
+            })
         .orElse(BigDecimal.ZERO);
+  }
+
+  private SubscriptionProperties.ProviderPlan providerPlanOrNull(
+      SubscriptionProperties.Plan plan, String providerKey) {
+    try {
+      return properties.requireProviderPlan(plan, providerKey);
+    } catch (IllegalStateException e) {
+      return null;
+    }
+  }
+
+  private BigDecimal effectivePriceAmount(
+      SubscriptionProperties.Plan plan, SubscriptionProperties.ProviderPlan providerPlan) {
+    return providerPlan != null && providerPlan.getPriceAmount() != null
+        ? providerPlan.getPriceAmount()
+        : plan.getPriceAmount();
+  }
+
+  private String effectiveCurrency(
+      SubscriptionProperties.Plan plan, SubscriptionProperties.ProviderPlan providerPlan) {
+    return firstNonBlank(
+        providerPlan == null ? null : providerPlan.getCurrency(), plan.getCurrency());
+  }
+
+  private String effectiveBillingInterval(
+      SubscriptionProperties.Plan plan, SubscriptionProperties.ProviderPlan providerPlan) {
+    return firstNonBlank(
+        providerPlan == null ? null : providerPlan.getBillingInterval(), plan.getBillingInterval());
   }
 
   private BigDecimal monthlyEquivalent(BigDecimal amount, String interval) {

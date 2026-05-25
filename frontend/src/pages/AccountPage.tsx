@@ -173,9 +173,7 @@ function BillingPanel({
         <p className="muted">
           {isPremium
             ? premiumAccessText(subscription, activeSubscription)
-            : plan
-              ? `${plan.display_name} is ${plan.price_amount} ${plan.currency} ${plan.billing_interval}.`
-              : "Premium billing is not configured yet."}
+            : premiumPlanSummary(plans)}
         </p>
       </div>
       <div className="billing-actions">
@@ -304,6 +302,25 @@ function checkoutOptionCopy(provider: string | undefined) {
         action: "Subscribe to Premium",
       };
   }
+}
+
+function premiumPlanSummary(plans: SubscriptionPlan[]) {
+  if (plans.length === 0) {
+    return "Premium billing is not configured yet.";
+  }
+  const bitcoinPlan = plans.find(
+    (availablePlan) => availablePlan.provider?.toLowerCase() === "btcpay",
+  );
+  const cardPlan = plans.find(
+    (availablePlan) => availablePlan.provider?.toLowerCase() === "stripe",
+  );
+  if (bitcoinPlan && cardPlan) {
+    return `Premium is ${formatPlanPrice(bitcoinPlan)} with Bitcoin or ${formatPlanPrice(
+      cardPlan,
+    )} with card.`;
+  }
+  const plan = plans[0];
+  return `${plan.display_name} is ${formatPlanPrice(plan)}.`;
 }
 
 function formatPlanLabel(value: string | undefined, plans: SubscriptionPlan[]) {
