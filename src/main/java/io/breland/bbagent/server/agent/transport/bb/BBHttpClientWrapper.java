@@ -60,6 +60,7 @@ public class BBHttpClientWrapper {
 
   private final String password;
   private final Duration apiTimeout;
+  private final boolean rawPollReads;
 
   @Getter private final ObjectMapper objectMapper;
 
@@ -80,6 +81,7 @@ public class BBHttpClientWrapper {
     this.otherApi = new V1OtherApi(apiClient);
     this.icloudApi = new V1ICloudApi(apiClient);
     this.objectMapper = objectMapper;
+    this.rawPollReads = true;
   }
 
   public BBHttpClientWrapper(String password, V1MessageApi messageApi, V1ContactApi contactApi) {
@@ -114,6 +116,7 @@ public class BBHttpClientWrapper {
     this.otherApi = new V1OtherApi(apiClient);
     this.icloudApi = icloudApi;
     this.objectMapper = objectMapper;
+    this.rawPollReads = false;
   }
 
   public record AttachmentData(String filename, byte[] bytes) {}
@@ -510,6 +513,44 @@ public class BBHttpClientWrapper {
     if (StringUtils.isBlank(messageGuid)) {
       throw new IllegalArgumentException("Cannot read poll without messageGuid");
     }
+    if (rawPollReads) {
+      try {
+        return readPollJsonRaw(messageGuid);
+      } catch (RuntimeException e) {
+        log.warn("Raw BlueBubbles poll read failed; falling back to generated client", e);
+      }
+    }
+    return readPollJsonGenerated(messageGuid);
+  }
+
+  private JsonNode readPollJsonRaw(String messageGuid) {
+    MultiValueMap<String, String> queryParams = new LinkedMultiValueMap<>();
+    queryParams.add("password", password);
+    JsonNode response =
+        apiClient
+            .invokeAPI(
+                "/api/v1/message/{messageGuid}/poll",
+                HttpMethod.GET,
+                Map.of("messageGuid", messageGuid),
+                queryParams,
+                null,
+                new HttpHeaders(),
+                new LinkedMultiValueMap<>(),
+                new LinkedMultiValueMap<>(),
+                List.of(MediaType.APPLICATION_JSON),
+                null,
+                new String[] {},
+                new ParameterizedTypeReference<JsonNode>() {})
+            .bodyToMono(JsonNode.class)
+            .block(apiTimeout);
+    response = requirePresent(response, "read poll");
+    Integer status = response.hasNonNull("status") ? response.path("status").asInt() : null;
+    String message = response.path("message").asText(null);
+    requireOkStatus(status, message, "read poll");
+    return requirePresent(response.get("data"), "read poll");
+  }
+
+  private JsonNode readPollJsonGenerated(String messageGuid) {
     ApiResponsePoll response =
         messageApi.apiV1MessageMessageGuidPollGet(messageGuid, password).block(apiTimeout);
     response = requirePresent(response, "read poll");

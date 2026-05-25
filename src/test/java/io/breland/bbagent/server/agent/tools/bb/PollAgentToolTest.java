@@ -124,6 +124,42 @@ class PollAgentToolTest {
   }
 
   @Test
+  void readPollFormatsMultiSelectVotesWithOptionLabels() throws Exception {
+    CapturingBBHttpClientWrapper wrapper = new CapturingBBHttpClientWrapper(mapper);
+    wrapper.pollReadResponse =
+        mapper.readTree(
+            """
+            {
+              "messageGuid": "poll-guid",
+              "title": "",
+              "optionCount": 3,
+              "options": [
+                { "optionIdentifier": "choice-1", "text": "O1" },
+                { "optionIdentifier": "choice-2", "text": "O2" },
+                { "optionIdentifier": "choice-3", "text": "O3" }
+              ],
+              "responses": [
+                { "handle": "+18033861737", "optionIdentifiers": [ "choice-2", "choice-3" ] }
+              ]
+            }
+            """);
+    IncomingMessage message = incomingMessage("iMessage;-;+18033861737", "poll-guid", null);
+    ToolContext context = toolContext(message, null);
+
+    String output =
+        new ReadPollAgentTool(wrapper)
+            .getTool()
+            .handler()
+            .apply(context, mapper.createObjectNode());
+
+    assertTrue(output.contains("Title: (untitled)"));
+    assertTrue(output.contains("O1 - 0 votes"));
+    assertTrue(output.contains("O2 - 1 vote (+18033861737)"));
+    assertTrue(output.contains("O3 - 1 vote (+18033861737)"));
+    assertTrue(output.contains("+18033861737 voted for O2, O3"));
+  }
+
+  @Test
   void readPollFindsLatestPollInRecentConversationWhenCurrentMessageIsPlainText() throws Exception {
     CapturingBBHttpClientWrapper wrapper = new CapturingBBHttpClientWrapper(mapper);
     wrapper.historyMessages =
