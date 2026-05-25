@@ -3,6 +3,8 @@ package io.breland.bbagent.server.controllers;
 import io.breland.bbagent.generated.api.BluebubblesApiController;
 import io.breland.bbagent.generated.bluebubblesclient.model.ApiV1ChatChatGuidMessageGet200ResponseDataInner;
 import io.breland.bbagent.generated.bluebubblesclient.model.ApiV1ChatChatGuidMessageGet200ResponseDataInnerChatsInner;
+import io.breland.bbagent.generated.bluebubblesclient.model.Chat;
+import io.breland.bbagent.generated.bluebubblesclient.model.ChatParticipant;
 import io.breland.bbagent.generated.model.BlueBubblesMessageReceivedRequest;
 import io.breland.bbagent.generated.model.BlueBubblesMessageReceivedRequestData;
 import io.breland.bbagent.generated.model.BlueBubblesMessageReceivedRequestDataAttachmentsInner;
@@ -10,15 +12,15 @@ import io.breland.bbagent.generated.model.BlueBubblesMessageReceivedRequestDataC
 import io.breland.bbagent.server.agent.BBMessageAgent;
 import io.breland.bbagent.server.agent.IncomingMessage;
 import io.breland.bbagent.server.agent.cadence.models.IncomingAttachment;
+import io.breland.bbagent.server.agent.transport.bb.BBHttpClientWrapper;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotNull;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
-import java.util.regex.Pattern;
+import java.util.Optional;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -30,14 +32,16 @@ import org.springframework.web.context.request.NativeWebRequest;
 @Slf4j
 public class BluebubblesWebhookController extends BluebubblesApiController {
 
-  private static final String IMESSAGE_GROUP_PREFIX = "iMessage;+;chat";
-  private static final String ANY_GROUP_PREFIX = "any;+;chat";
-  private static final Pattern ANY_OPAQUE_GROUP_GUID = Pattern.compile("^any;\\+;[0-9a-fA-F]{32}$");
+  private final BBMessageAgent messageAgent;
+  private final BBHttpClientWrapper bbHttpClientWrapper;
 
-  @Autowired private BBMessageAgent messageAgent;
-
-  public BluebubblesWebhookController(NativeWebRequest request) {
+  public BluebubblesWebhookController(
+      NativeWebRequest request,
+      BBMessageAgent messageAgent,
+      BBHttpClientWrapper bbHttpClientWrapper) {
     super(request);
+    this.messageAgent = messageAgent;
+    this.bbHttpClientWrapper = bbHttpClientWrapper;
   }
 
   @Override
@@ -74,7 +78,7 @@ public class BluebubblesWebhookController extends BluebubblesApiController {
         data.getChats() == null || data.getChats().isEmpty()
             ? null
             : data.getChats().getFirst().getGuid();
-    boolean isGroup = resolveIsGroup(data);
+    boolean isGroup = resolveIsGroup(data, chatGuid);
     // BlueBubbles does not currently provide a reliable system-message signal here.
     boolean isSystem = false;
 
@@ -106,10 +110,36 @@ public class BluebubblesWebhookController extends BluebubblesApiController {
     return false;
   }
 
-  private static boolean isGroupGuid(String chatGuid) {
-    return chatGuid.startsWith(IMESSAGE_GROUP_PREFIX)
-        || chatGuid.startsWith(ANY_GROUP_PREFIX)
-        || ANY_OPAQUE_GROUP_GUID.matcher(chatGuid).matches();
+  private boolean resolveIsGroup(BlueBubblesMessageReceivedRequestData data, String chatGuid) {
+    Optional<Boolean> participantResult = resolveIsGroupFromConversationInfo(chatGuid);
+    return participantResult.orElseGet(() -> resolveIsGroup(data));
+  }
+
+  private Optional<Boolean> resolveIsGroupFromConversationInfo(String chatGuid) {
+    if (chatGuid == null || chatGuid.isBlank()) {
+      return Optional.empty();
+    }
+    try {
+      return resolveIsGroup(bbHttpClientWrapper.getConversationInfo(chatGuid));
+    } catch (Exception e) {
+      log.warn("Failed to resolve BlueBubbles chat participants for {}", chatGuid, e);
+      return Optional.empty();
+    }
+  }
+
+  public static Optional<Boolean> resolveIsGroup(Chat chat) {
+    if (chat == null) {
+      return Optional.empty();
+    }
+    List<ChatParticipant> participants = chat.getParticipants();
+    return resolveIsGroupFromParticipantCount(participants == null ? null : participants.size());
+  }
+
+  private static Optional<Boolean> resolveIsGroupFromParticipantCount(Integer participantCount) {
+    if (participantCount == null || participantCount < 1) {
+      return Optional.empty();
+    }
+    return Optional.of(participantCount > 1);
   }
 
   public static boolean resolveIsGroup(ApiV1ChatChatGuidMessageGet200ResponseDataInner request) {
@@ -117,38 +147,39 @@ public class BluebubblesWebhookController extends BluebubblesApiController {
       return false;
     }
     List<ApiV1ChatChatGuidMessageGet200ResponseDataInnerChatsInner> chats = request.getChats();
-    if (chats != null && chats.size() > 1) {
-      return true;
+    Optional<Boolean> participantResult = resolveIsGroupFromHistoryChatParticipants(chats);
+    if (participantResult.isPresent()) {
+      return participantResult.get();
     }
-    if (request.getGroupTitle() != null && !request.getGroupTitle().isEmpty()) {
-      return true;
+    return hasGroupMetadata(chats, request.getGroupTitle());
+  }
+
+  private static Optional<Boolean> resolveIsGroupFromHistoryChatParticipants(
+      List<ApiV1ChatChatGuidMessageGet200ResponseDataInnerChatsInner> chats) {
+    if (chats == null || chats.isEmpty()) {
+      return Optional.empty();
     }
-    if (chats != null
-        && !chats.isEmpty()
-        && chats.getFirst().getGuid() != null
-        && isGroupGuid(chats.getFirst().getGuid())) {
-      return true;
-    }
-    return false;
+    return chats.stream()
+        .map(
+            chat ->
+                resolveIsGroupFromParticipantCount(
+                    chat.getParticipants() == null ? null : chat.getParticipants().size()))
+        .flatMap(Optional::stream)
+        .findFirst();
   }
 
   public static boolean resolveIsGroup(BlueBubblesMessageReceivedRequestData data) {
+    if (data == null) {
+      return false;
+    }
     @NotNull
     @Valid
     List<@Valid BlueBubblesMessageReceivedRequestDataChatsInner> chats = data.getChats();
-    if (chats != null && chats.size() > 1) {
-      return true;
-    }
-    if (data.getGroupTitle() != null && !data.getGroupTitle().isEmpty()) {
-      return true;
-    }
-    if (chats != null
-        && !chats.isEmpty()
-        && chats.getFirst().getGuid() != null
-        && isGroupGuid(chats.getFirst().getGuid())) {
-      return true;
-    }
-    return false;
+    return hasGroupMetadata(chats, data.getGroupTitle());
+  }
+
+  private static boolean hasGroupMetadata(List<?> chats, String groupTitle) {
+    return (chats != null && chats.size() > 1) || (groupTitle != null && !groupTitle.isBlank());
   }
 
   private Instant parseTimestamp(Long value) {
