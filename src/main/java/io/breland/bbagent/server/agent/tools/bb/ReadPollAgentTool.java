@@ -5,13 +5,14 @@ import static io.breland.bbagent.server.agent.tools.JsonSchemaUtilities.jsonSche
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.databind.JsonNode;
+import io.breland.bbagent.generated.bluebubblesclient.model.ApiV1ChatChatGuidMessageGet200ResponseDataInner;
 import io.breland.bbagent.server.agent.IncomingMessage;
 import io.breland.bbagent.server.agent.tools.AgentTool;
-import io.breland.bbagent.server.agent.tools.ToolContext;
 import io.breland.bbagent.server.agent.tools.ToolProvider;
 import io.breland.bbagent.server.agent.transport.bb.BBHttpClientWrapper;
 import io.breland.bbagent.server.agent.transport.bb.BlueBubblesPollSupport;
 import io.swagger.v3.oas.annotations.media.Schema;
+import java.util.List;
 import org.apache.commons.lang3.StringUtils;
 
 public class ReadPollAgentTool implements ToolProvider {
@@ -47,9 +48,12 @@ public class ReadPollAgentTool implements ToolProvider {
           ReadPollRequest request = context.getMapper().convertValue(args, ReadPollRequest.class);
           String messageGuid =
               BlueBubblesPollSupport.normalizeMessageGuid(
-                  StringUtils.defaultIfBlank(request.messageGuid(), pollGuid(context)));
+                  StringUtils.defaultIfBlank(request.messageGuid(), pollGuid(context.message())));
           if (StringUtils.isBlank(messageGuid)) {
-            return "missing message_guid";
+            messageGuid = latestPollGuid(context.message());
+          }
+          if (StringUtils.isBlank(messageGuid)) {
+            return "missing message_guid and no recent poll was found in this conversation";
           }
           try {
             JsonNode data = bbHttpClientWrapper.readPollJson(messageGuid);
@@ -62,8 +66,7 @@ public class ReadPollAgentTool implements ToolProvider {
         });
   }
 
-  private static String pollGuid(ToolContext context) {
-    IncomingMessage message = context.message();
+  private static String pollGuid(IncomingMessage message) {
     if (message == null) {
       return null;
     }
@@ -76,6 +79,41 @@ public class ReadPollAgentTool implements ToolProvider {
     if (StringUtils.isNotBlank(message.threadOriginatorGuid())) {
       return BlueBubblesPollSupport.normalizeMessageGuid(message.threadOriginatorGuid());
     }
-    return BlueBubblesPollSupport.normalizeMessageGuid(message.messageGuid());
+    if (BlueBubblesPollSupport.isPollBundle(message.balloonBundleId())) {
+      return BlueBubblesPollSupport.normalizeMessageGuid(message.messageGuid());
+    }
+    return null;
+  }
+
+  private String latestPollGuid(IncomingMessage message) {
+    if (message == null || StringUtils.isBlank(message.chatGuid())) {
+      return null;
+    }
+    try {
+      List<ApiV1ChatChatGuidMessageGet200ResponseDataInner> messages =
+          bbHttpClientWrapper.getMessagesInChat(message.chatGuid());
+      if (messages == null) {
+        return null;
+      }
+      return messages.stream()
+          .map(ReadPollAgentTool::pollGuid)
+          .filter(StringUtils::isNotBlank)
+          .findFirst()
+          .orElse(null);
+    } catch (RuntimeException e) {
+      return null;
+    }
+  }
+
+  private static String pollGuid(ApiV1ChatChatGuidMessageGet200ResponseDataInner message) {
+    if (message == null || !BlueBubblesPollSupport.isPollBundle(message.getBalloonBundleId())) {
+      return null;
+    }
+    String associatedGuid =
+        BlueBubblesPollSupport.normalizeMessageGuid(message.getAssociatedMessageGuid());
+    if (StringUtils.isNotBlank(associatedGuid)) {
+      return associatedGuid;
+    }
+    return BlueBubblesPollSupport.normalizeMessageGuid(message.getGuid());
   }
 }
