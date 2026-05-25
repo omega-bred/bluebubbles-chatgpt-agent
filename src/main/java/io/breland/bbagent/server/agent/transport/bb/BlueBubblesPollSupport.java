@@ -48,11 +48,12 @@ public final class BlueBubblesPollSupport {
   public static String fallbackPollNotification(IncomingMessage trigger, String pollMessageGuid) {
     String guid = pollMessageGuid == null ? "unknown" : pollMessageGuid;
     String triggerGuid = trigger == null ? "unknown" : trigger.messageGuid();
-    return "Poll update notification for poll "
+    return "Poll update: A poll was updated, but I couldn't load the current poll state.\n"
+        + "Poll update notification for poll "
         + guid
         + ". The detailed poll state could not be loaded. Trigger message GUID: "
         + triggerGuid
-        + ". Reply only if this update needs attention.";
+        + ". Reply with a concise poll update for the chat.";
   }
 
   public static String formatPollNotification(
@@ -63,6 +64,7 @@ public final class BlueBubblesPollSupport {
             && pollMessageGuid != null
             && !pollMessageGuid.equals(trigger.messageGuid())
             && firstNonBlank(trigger.associatedMessageGuid(), trigger.replyToGuid()) != null;
+    text.append("Poll update: ").append(userVisiblePollNotification(poll)).append('\n');
     text.append(
         associatedUpdate
             ? "Poll vote or option update notification"
@@ -86,8 +88,22 @@ public final class BlueBubblesPollSupport {
     text.append("Trigger message GUID: ")
         .append(trigger == null ? "unknown" : trigger.messageGuid())
         .append(". ");
-    text.append("Reply only if this poll update needs attention.");
+    text.append(
+        "Reply with a concise poll update for the chat using the Poll update summary above.");
     return text.toString();
+  }
+
+  public static String fallbackUserVisiblePollNotification(IncomingMessage message) {
+    if (message == null || !isPollBundle(message.balloonBundleId())) {
+      return null;
+    }
+    String text = message.text();
+    if (text == null || text.isBlank() || !text.startsWith("Poll update: ")) {
+      return null;
+    }
+    int newline = text.indexOf('\n');
+    String firstLine = newline >= 0 ? text.substring(0, newline) : text;
+    return firstLine.trim();
   }
 
   public static String formatPollReadResult(
@@ -189,6 +205,82 @@ public final class BlueBubblesPollSupport {
       String voteText = votes.toString();
       if (!voteText.isBlank()) {
         joiner.add(handle + " voted for " + voteText);
+      }
+    }
+    String value = joiner.toString();
+    return value.isBlank() ? null : value;
+  }
+
+  private static String userVisiblePollNotification(JsonNode poll) {
+    String title = textValue(poll, "title");
+    String subject = title == null ? "Poll update" : "Poll \"" + title + "\" update";
+    String responses = pollResponsesSummary(poll);
+    StringBuilder summary = new StringBuilder(subject);
+    if (responses != null) {
+      summary.append(": ").append(responses);
+    } else {
+      summary.append(": no votes recorded");
+    }
+    String tally = pollTallySummary(poll);
+    if (tally != null) {
+      summary.append(". Tally: ").append(tally);
+    }
+    String options = pollOptionLabelsSummary(poll);
+    if (responses == null && options != null) {
+      summary.append(". Options: ").append(options);
+    }
+    summary.append('.');
+    return summary.toString();
+  }
+
+  private static String pollTallySummary(JsonNode poll) {
+    JsonNode options = poll == null ? null : poll.get("options");
+    if (options == null || !options.isArray() || options.isEmpty()) {
+      return null;
+    }
+    Map<String, Integer> countsByOptionId = new LinkedHashMap<>();
+    JsonNode responses = poll.get("responses");
+    if (responses != null && responses.isArray()) {
+      for (JsonNode response : responses) {
+        JsonNode optionIdentifiers = response.get("optionIdentifiers");
+        if (optionIdentifiers == null || !optionIdentifiers.isArray()) {
+          continue;
+        }
+        for (JsonNode optionIdentifier : optionIdentifiers) {
+          String id = optionIdentifier.asText(null);
+          if (id != null) {
+            countsByOptionId.merge(id, 1, Integer::sum);
+          }
+        }
+      }
+    }
+    StringJoiner joiner = new StringJoiner(", ");
+    for (JsonNode option : options) {
+      String id = textValue(option, "optionIdentifier");
+      String label = textValue(option, "text");
+      if (label == null) {
+        label = id;
+      }
+      if (label == null) {
+        continue;
+      }
+      int count = id == null ? 0 : countsByOptionId.getOrDefault(id, 0);
+      joiner.add(label + " " + count + (count == 1 ? " vote" : " votes"));
+    }
+    String value = joiner.toString();
+    return value.isBlank() ? null : value;
+  }
+
+  private static String pollOptionLabelsSummary(JsonNode poll) {
+    JsonNode options = poll == null ? null : poll.get("options");
+    if (options == null || !options.isArray() || options.isEmpty()) {
+      return null;
+    }
+    StringJoiner joiner = new StringJoiner(", ");
+    for (JsonNode option : options) {
+      String label = textValue(option, "text");
+      if (label != null) {
+        joiner.add(label);
       }
     }
     String value = joiner.toString();

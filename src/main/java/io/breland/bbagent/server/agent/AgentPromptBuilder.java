@@ -362,7 +362,9 @@ public final class AgentPromptBuilder {
                 + "Use "
                 + GetThreadContextAgentTool.TOOL_NAME
                 + " when asked about the last message or previously sent images in this thread. "
-                + "Incoming poll vote or option updates may arrive as poll update notifications with current options and votes; treat them as context and reply only if useful or requested. "
+                + "Incoming poll vote or option updates may arrive as poll update notifications with current options and votes; reply with a concise user-visible poll update instead of "
+                + BBMessageAgent.NO_RESPONSE_TEXT
+                + ". "
                 + feedbackInstruction()
                 + "For group chats, you can rename the conversation or set a group icon when requested. "
                 + "When the user asks to log in, sign up, manage their web account, connect the current chat identity to the website, or see linked integrations on the website, call "

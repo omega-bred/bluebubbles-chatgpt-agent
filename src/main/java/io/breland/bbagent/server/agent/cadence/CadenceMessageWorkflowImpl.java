@@ -16,6 +16,7 @@ import io.breland.bbagent.server.agent.cadence.models.ImageSendResult;
 import io.breland.bbagent.server.agent.tools.AgentToolLoopGuard;
 import io.breland.bbagent.server.agent.tools.bb.SendReactionAgentTool;
 import io.breland.bbagent.server.agent.tools.bb.SendTextAgentTool;
+import io.breland.bbagent.server.agent.transport.bb.BlueBubblesPollSupport;
 import java.io.IOException;
 import java.time.Duration;
 import java.util.ArrayList;
@@ -171,6 +172,16 @@ public class CadenceMessageWorkflowImpl implements CadenceMessageWorkflow {
       }
 
       if (emptyResponseRetries >= MAX_EMPTY_ASSISTANT_RESPONSE_RETRIES) {
+        String pollUpdateFallback =
+            BlueBubblesPollSupport.fallbackUserVisiblePollNotification(message);
+        if (pollUpdateFallback != null && !pollUpdateFallback.isBlank()) {
+          log.info("Sending deterministic poll update fallback for {}", request.workflowContext());
+          boolean sent =
+              activities.sendThreadAwareText(
+                  message, pollUpdateFallback, request.workflowContext());
+          activities.finalizeWorkflow(message, request.workflowContext(), sent);
+          return;
+        }
         log.warn(
             "Model produced no user-visible assistant response for {}; leaving workflow unresponded",
             request.workflowContext());

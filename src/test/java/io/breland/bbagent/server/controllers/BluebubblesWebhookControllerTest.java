@@ -151,10 +151,16 @@ class BluebubblesWebhookControllerTest {
 
     String text = BlueBubblesPollSupport.formatPollNotification(trigger, "poll-message-guid", poll);
 
+    assertTrue(text.startsWith("Poll update: Poll \"Lunch?\" update"));
     assertTrue(text.contains("Poll vote or option update notification"));
     assertTrue(text.contains("Lunch?"));
     assertTrue(text.contains("Sushi"));
     assertTrue(text.contains("+15555550123 voted for Sushi"));
+    assertTrue(text.contains("Tally: Sushi 1 vote, Pizza 0 votes"));
+    assertTrue(text.contains("Reply with a concise poll update"));
+    assertEquals(
+        "Poll update: Poll \"Lunch?\" update: +15555550123 voted for Sushi. Tally: Sushi 1 vote, Pizza 0 votes.",
+        BlueBubblesPollSupport.fallbackUserVisiblePollNotification(trigger.withText(text)));
   }
 
   private static IncomingMessage pollMessage(String messageGuid, String associatedMessageGuid) {
