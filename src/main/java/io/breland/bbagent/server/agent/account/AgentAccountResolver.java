@@ -1,5 +1,6 @@
-package io.breland.bbagent.server.agent;
+package io.breland.bbagent.server.agent.account;
 
+import io.breland.bbagent.server.agent.IncomingMessage;
 import io.breland.bbagent.server.agent.persistence.account.AgentAccountEntity;
 import io.breland.bbagent.server.agent.persistence.account.AgentAccountIdentityEntity;
 import io.breland.bbagent.server.agent.persistence.account.AgentAccountIdentityRepository;

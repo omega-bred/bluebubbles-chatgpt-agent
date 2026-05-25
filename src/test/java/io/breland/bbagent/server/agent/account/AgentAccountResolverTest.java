@@ -1,9 +1,10 @@
-package io.breland.bbagent.server.agent;
+package io.breland.bbagent.server.agent.account;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.breland.bbagent.server.agent.IncomingMessage;
 import io.breland.bbagent.server.agent.persistence.account.AgentAccountRepository;
 import java.time.Instant;
 import java.util.Map;

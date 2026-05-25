@@ -8,9 +8,8 @@ import io.breland.bbagent.generated.model.AdminStatsPeriod;
 import io.breland.bbagent.generated.model.AdminStatsResponse;
 import io.breland.bbagent.generated.model.AdminToolAccountTypeStats;
 import io.breland.bbagent.generated.model.AdminToolStats;
-import io.breland.bbagent.server.agent.AgentAccountResolver;
-import io.breland.bbagent.server.agent.AgentWorkflowProperties;
 import io.breland.bbagent.server.agent.IncomingMessage;
+import io.breland.bbagent.server.agent.account.AgentAccountResolver;
 import io.breland.bbagent.server.agent.model_picker.ModelAccessService;
 import io.breland.bbagent.server.analytics.UmamiAnalyticsService;
 import io.breland.bbagent.server.metrics.AgentMessageMetric;
@@ -40,6 +39,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 @Service
 public class AdminStatsService implements AgentMetricsService {
+  private static final String WORKFLOW_MODE = "CADENCE";
   private static final int TOP_SENDER_LIMIT = 10;
   private static final int ACCOUNT_BUCKET_PREFIX_LENGTH = 12;
 
@@ -61,8 +61,7 @@ public class AdminStatsService implements AgentMetricsService {
 
   @Transactional
   @Override
-  public void recordAcceptedMessage(
-      IncomingMessage message, AgentWorkflowProperties.Mode workflowMode) {
+  public void recordAcceptedMessage(IncomingMessage message) {
     if (message == null) {
       return;
     }
@@ -83,9 +82,9 @@ public class AdminStatsService implements AgentMetricsService {
                 "Unknown"),
             firstNonBlank(context.modelAccess().responsesModel(), "unknown"),
             context.modelAccess().premium(),
-            workflowMode == null ? "INLINE" : workflowMode.name(),
+            WORKFLOW_MODE,
             now));
-    recordAcceptedMessageAnalytics(message, workflowMode, context);
+    recordAcceptedMessageAnalytics(message, context);
   }
 
   @Transactional
@@ -118,7 +117,7 @@ public class AdminStatsService implements AgentMetricsService {
                 "Unknown"),
             firstNonBlank(context.modelAccess().responsesModel(), "unknown"),
             premium,
-            event.workflowMode() == null ? "INLINE" : event.workflowMode().name(),
+            WORKFLOW_MODE,
             now));
     recordToolCallAnalytics(event, context);
   }
@@ -154,15 +153,14 @@ public class AdminStatsService implements AgentMetricsService {
         .toolAccountTypes(toolAccountTypeStats(from, to, toolCallCount));
   }
 
-  private void recordAcceptedMessageAnalytics(
-      IncomingMessage message, AgentWorkflowProperties.Mode workflowMode, MetricContext context) {
+  private void recordAcceptedMessageAnalytics(IncomingMessage message, MetricContext context) {
     if (umamiAnalyticsService == null) {
       return;
     }
     Map<String, Object> data = new HashMap<>();
     data.put("transport", firstNonBlank(message.transportOrDefault(), "unknown"));
     data.put("is_group", message.isGroup());
-    data.put("workflow_mode", workflowMode == null ? "INLINE" : workflowMode.name());
+    data.put("workflow_mode", WORKFLOW_MODE);
     data.put("model_key", firstNonBlank(context.modelAccess().currentModelKey(), "unknown"));
     data.put(
         "model_label",
@@ -183,8 +181,7 @@ public class AdminStatsService implements AgentMetricsService {
     IncomingMessage message = event.message();
     Map<String, Object> data = new HashMap<>();
     data.put("transport", firstNonBlank(message.transportOrDefault(), "unknown"));
-    data.put(
-        "workflow_mode", event.workflowMode() == null ? "INLINE" : event.workflowMode().name());
+    data.put("workflow_mode", WORKFLOW_MODE);
     data.put("tool_name", firstNonBlank(event.toolName(), "unknown"));
     data.put("tool_category", firstNonBlank(event.toolCategory(), "other"));
     data.put("success", event.success());

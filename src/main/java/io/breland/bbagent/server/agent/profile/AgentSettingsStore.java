@@ -1,11 +1,11 @@
-package io.breland.bbagent.server.agent;
+package io.breland.bbagent.server.agent.profile;
 
 import java.util.Optional;
 
 public interface AgentSettingsStore {
-  Optional<BBMessageAgent.AssistantResponsiveness> findAssistantResponsiveness(String chatGuid);
+  Optional<AssistantResponsiveness> findAssistantResponsiveness(String chatGuid);
 
-  void saveAssistantResponsiveness(String chatGuid, BBMessageAgent.AssistantResponsiveness value);
+  void saveAssistantResponsiveness(String chatGuid, AssistantResponsiveness value);
 
   void deleteAssistantResponsiveness(String chatGuid);
 

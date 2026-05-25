@@ -7,12 +7,6 @@ import org.springframework.stereotype.Component;
 @ConfigurationProperties(prefix = "agent.workflow")
 public class AgentWorkflowProperties {
 
-  public enum Mode {
-    INLINE,
-    CADENCE
-  }
-
-  private Mode mode = Mode.INLINE;
   private String cadenceDomain = "default";
   private String cadenceTaskList = "bbagent";
   private String cadenceHost = "localhost";
@@ -20,22 +14,6 @@ public class AgentWorkflowProperties {
   private String callbackBaseUrl = "http://localhost:8080";
   private int callbackDefaultTtlHours = 24;
   private long callbackTimestampToleranceSeconds = 300;
-
-  public Mode getMode() {
-    return mode;
-  }
-
-  public void setMode(Mode mode) {
-    if (mode == null) {
-      this.mode = Mode.INLINE;
-      return;
-    }
-    this.mode = mode;
-  }
-
-  public boolean useCadenceWorkflow() {
-    return mode == Mode.CADENCE;
-  }
 
   public String getCadenceDomain() {
     return cadenceDomain;

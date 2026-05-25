@@ -3,7 +3,7 @@ package io.breland.bbagent.server.contact;
 import io.breland.bbagent.generated.model.ContactConfigResponse;
 import io.breland.bbagent.generated.model.ContactMessageRequest;
 import io.breland.bbagent.generated.model.ContactMessageResponse;
-import io.breland.bbagent.server.agent.AgentAccountResolver;
+import io.breland.bbagent.server.agent.account.AgentAccountResolver;
 import io.breland.bbagent.server.linear.LinearIssueService;
 import io.breland.bbagent.server.linear.LinearIssueService.ContactIssueInput;
 import io.breland.bbagent.server.linear.LinearIssueService.LinearIssue;

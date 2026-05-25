@@ -4,10 +4,14 @@ import io.breland.bbagent.server.agent.AgentWorkflowContext;
 import io.breland.bbagent.server.agent.BBMessageAgent;
 import io.breland.bbagent.server.agent.ConversationState;
 import io.breland.bbagent.server.agent.IncomingMessage;
+import io.breland.bbagent.server.agent.profile.AgentProfile;
+import io.breland.bbagent.server.agent.profile.AssistantResponsiveness;
 import io.breland.bbagent.server.agent.transport.OutgoingTextMessage;
+import org.springframework.lang.Nullable;
 
 public class ToolContext {
   private final BBMessageAgent bbMessageAgent;
+  private final @Nullable AgentProfile profile;
   private final IncomingMessage message;
   private final AgentWorkflowContext workflowContext;
 
@@ -15,7 +19,16 @@ public class ToolContext {
       BBMessageAgent bbMessageAgent,
       IncomingMessage message,
       AgentWorkflowContext workflowContext) {
+    this(bbMessageAgent, null, message, workflowContext);
+  }
+
+  public ToolContext(
+      BBMessageAgent bbMessageAgent,
+      @Nullable AgentProfile profile,
+      IncomingMessage message,
+      AgentWorkflowContext workflowContext) {
     this.bbMessageAgent = bbMessageAgent;
+    this.profile = profile;
     this.message = message;
     this.workflowContext = workflowContext;
   }
@@ -33,23 +46,29 @@ public class ToolContext {
   }
 
   public String accountId() {
-    java.util.Optional<String> accountId = bbMessageAgent.resolveOrCreateAccountId(message);
-    if (accountId == null) {
+    if (profile == null) {
       return message == null ? null : message.sender();
     }
+    java.util.Optional<String> accountId = profile.resolveOrCreateAccountId(message);
     return accountId.orElse(message == null ? null : message.sender());
   }
 
-  public void setAssistantResponsiveness(BBMessageAgent.AssistantResponsiveness responsiveness) {
-    bbMessageAgent.setAssistantResponsiveness(message.chatGuid(), responsiveness);
+  public void setAssistantResponsiveness(AssistantResponsiveness responsiveness) {
+    if (profile != null) {
+      profile.setAssistantResponsiveness(message.chatGuid(), responsiveness);
+    }
   }
 
   public void setGlobalNameForSender(String sender, String name) {
-    bbMessageAgent.setGlobalNameForSender(sender, name);
+    if (profile != null) {
+      profile.setGlobalNameForSender(sender, name);
+    }
   }
 
   public void removeGlobalNameForSender(String sender) {
-    bbMessageAgent.removeGlobalNameForSender(sender);
+    if (profile != null) {
+      profile.removeGlobalNameForSender(sender);
+    }
   }
 
   public void recordAssistantTurn(String content) {
@@ -58,10 +77,6 @@ public class ToolContext {
 
   public boolean sendText(OutgoingTextMessage outgoingMessage) {
     return bbMessageAgent.sendTextFromTool(message, outgoingMessage, workflowContext);
-  }
-
-  public boolean sendReaction(String reaction) {
-    return bbMessageAgent.sendReactionFromTool(message, reaction, workflowContext);
   }
 
   public boolean sendReaction(

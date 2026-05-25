@@ -4,8 +4,8 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import io.breland.bbagent.server.agent.AgentAccountResolver;
 import io.breland.bbagent.server.agent.IncomingMessage;
+import io.breland.bbagent.server.agent.account.AgentAccountResolver;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;

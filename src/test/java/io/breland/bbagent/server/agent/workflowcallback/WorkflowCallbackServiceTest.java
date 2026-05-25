@@ -1,16 +1,15 @@
 package io.breland.bbagent.server.agent.workflowcallback;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.timeout;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.uber.cadence.WorkflowExecution;
 import io.breland.bbagent.server.agent.AgentWorkflowProperties;
-import io.breland.bbagent.server.agent.BBMessageAgent;
 import io.breland.bbagent.server.agent.IncomingMessage;
 import io.breland.bbagent.server.agent.cadence.CadenceWorkflowLauncher;
 import io.breland.bbagent.server.agent.cadence.models.CadenceMessageWorkflowRequest;
@@ -24,7 +23,6 @@ import java.util.Optional;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mockito;
-import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.http.HttpHeaders;
 
 class WorkflowCallbackServiceTest {
@@ -34,11 +32,6 @@ class WorkflowCallbackServiceTest {
   private final AgentWorkflowProperties properties = new AgentWorkflowProperties();
   private final CadenceWorkflowLauncher launcher = Mockito.mock(CadenceWorkflowLauncher.class);
 
-  @SuppressWarnings("unchecked")
-  private final ObjectProvider<BBMessageAgent> messageAgentProvider =
-      Mockito.mock(ObjectProvider.class);
-
-  private final BBMessageAgent messageAgent = Mockito.mock(BBMessageAgent.class);
   private final WorkflowCallbackService service =
       new WorkflowCallbackService(repository, verifier, properties, new ObjectMapper(), launcher);
 
@@ -118,23 +111,18 @@ class WorkflowCallbackServiceTest {
   }
 
   @Test
-  void receiveCallbackFallsBackInlineWhenCadenceStartFails() {
+  void receiveCallbackFailsWhenCadenceStartFails() {
     byte[] payload = payload();
     AgentWorkflowCallbackEntity entity = callbackEntity(Instant.now().plusSeconds(60));
     when(repository.findLockedByCallbackId("callback-1")).thenReturn(Optional.of(entity));
     when(repository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
     when(launcher.startWorkflow(any(CadenceMessageWorkflowRequest.class)))
         .thenThrow(new RuntimeException("cadence unavailable"));
-    when(messageAgentProvider.getIfAvailable()).thenReturn(messageAgent);
-    service.setMessageAgentProvider(messageAgentProvider);
 
-    WorkflowCallbackService.ReceiveResult result =
-        service.receiveCallback("callback-1", signedHeaders(entity, payload), payload);
-
-    assertEquals(WorkflowCallbackService.ReceiveStatus.PROCESSED, result.status());
-    assertEquals("callback:callback-1", result.workflowId());
-    assertEquals("inline", result.runId());
-    verify(messageAgent, timeout(1000)).handleIncomingMessage(any(IncomingMessage.class));
+    assertThrows(
+        RuntimeException.class,
+        () -> service.receiveCallback("callback-1", signedHeaders(entity, payload), payload));
+    verify(launcher).startWorkflow(any(CadenceMessageWorkflowRequest.class));
   }
 
   private IncomingMessage incomingMessage() {

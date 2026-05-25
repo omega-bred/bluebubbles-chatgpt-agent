@@ -45,7 +45,8 @@ public class ScheduledEventTool implements ToolProvider {
           String repeatInterval) {}
 
   public ScheduledEventTool(CadenceWorkflowLauncher cadenceWorkflowLauncher) {
-    this.cadenceWorkflowLauncher = cadenceWorkflowLauncher;
+    this.cadenceWorkflowLauncher =
+        Objects.requireNonNull(cadenceWorkflowLauncher, "cadenceWorkflowLauncher");
   }
 
   public AgentTool getTool() {
@@ -61,9 +62,6 @@ public class ScheduledEventTool implements ToolProvider {
         jsonSchema(ScheduledEventRequest.class),
         false,
         (context, args) -> {
-          if (cadenceWorkflowLauncher == null) {
-            return "not configured";
-          }
           ScheduledEventRequest request =
               context.getMapper().convertValue(args, ScheduledEventRequest.class);
           if (request.task() == null || request.task().isBlank()) {

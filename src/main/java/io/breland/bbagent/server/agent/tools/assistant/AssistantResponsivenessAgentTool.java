@@ -3,7 +3,7 @@ package io.breland.bbagent.server.agent.tools.assistant;
 import static io.breland.bbagent.server.agent.tools.JsonSchemaUtilities.jsonSchema;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
-import io.breland.bbagent.server.agent.BBMessageAgent;
+import io.breland.bbagent.server.agent.profile.AssistantResponsiveness;
 import io.breland.bbagent.server.agent.tools.AgentTool;
 import io.breland.bbagent.server.agent.tools.ToolProvider;
 import io.swagger.v3.oas.annotations.media.Schema;
@@ -44,8 +44,7 @@ public class AssistantResponsivenessAgentTool implements ToolProvider {
           if (request.responsiveness() == null) {
             return "missing responsiveness";
           }
-          BBMessageAgent.AssistantResponsiveness resolved =
-              resolveVerbosity(request.responsiveness());
+          AssistantResponsiveness resolved = resolveVerbosity(request.responsiveness());
           if (resolved == null) {
             return "invalid responsiveness";
           }
@@ -54,15 +53,15 @@ public class AssistantResponsivenessAgentTool implements ToolProvider {
         });
   }
 
-  private BBMessageAgent.AssistantResponsiveness resolveVerbosity(Responsiveness responsiveness) {
+  private AssistantResponsiveness resolveVerbosity(Responsiveness responsiveness) {
     if (responsiveness == null) {
       return null;
     }
     return switch (responsiveness) {
-      case LESS_RESPONSIVE -> BBMessageAgent.AssistantResponsiveness.LESS_RESPONSIVE;
-      case MORE_RESPONSIVE -> BBMessageAgent.AssistantResponsiveness.MORE_RESPONSIVE;
-      case DEFAULT -> BBMessageAgent.AssistantResponsiveness.DEFAULT;
-      case SILENT -> BBMessageAgent.AssistantResponsiveness.SILENT;
+      case LESS_RESPONSIVE -> AssistantResponsiveness.LESS_RESPONSIVE;
+      case MORE_RESPONSIVE -> AssistantResponsiveness.MORE_RESPONSIVE;
+      case DEFAULT -> AssistantResponsiveness.DEFAULT;
+      case SILENT -> AssistantResponsiveness.SILENT;
     };
   }
 }

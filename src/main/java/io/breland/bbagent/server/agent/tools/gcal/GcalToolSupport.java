@@ -1,6 +1,5 @@
 package io.breland.bbagent.server.agent.tools.gcal;
 
-import com.fasterxml.jackson.databind.JsonNode;
 import com.google.api.client.util.DateTime;
 import com.google.api.services.calendar.Calendar;
 import com.google.api.services.calendar.model.Event;
@@ -13,28 +12,12 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 
 public class GcalToolSupport {
   protected final GcalClient gcalClient;
 
   public GcalToolSupport(GcalClient gcalClient) {
     this.gcalClient = gcalClient;
-  }
-
-  public static String getOptionalText(JsonNode args, String field) {
-    JsonNode value = args.get(field);
-    if (value == null || value.isNull()) {
-      return null;
-    }
-    return value.asText();
-  }
-
-  protected String resolveAccountKey(
-      ToolContext context, com.fasterxml.jackson.databind.JsonNode args) {
-    String requestedAccountKey = getOptionalText(args, "account_key");
-    String accountId = resolveAccountId(context);
-    return gcalClient.scopeAccountKey(accountId, requestedAccountKey);
   }
 
   protected String resolveAccountKey(ToolContext context, String accountId) {
@@ -89,10 +72,6 @@ public class GcalToolSupport {
     return "primary";
   }
 
-  protected ZoneId resolveZone(com.fasterxml.jackson.databind.JsonNode args) {
-    return resolveZone(getOptionalText(args, "timezone"));
-  }
-
   protected ZoneId resolveZone(String timezone) {
     if (isBlank(timezone)) {
       return ZoneId.systemDefault();
@@ -102,30 +81,6 @@ public class GcalToolSupport {
     } catch (Exception e) {
       return ZoneId.systemDefault();
     }
-  }
-
-  protected Optional<Integer> getOptionalInt(
-      com.fasterxml.jackson.databind.JsonNode args, String field) {
-    com.fasterxml.jackson.databind.JsonNode node = args.get(field);
-    if (node == null || node.isNull() || !node.isNumber()) {
-      return Optional.empty();
-    }
-    return Optional.of(node.asInt());
-  }
-
-  protected Optional<Boolean> getOptionalBoolean(
-      com.fasterxml.jackson.databind.JsonNode args, String field) {
-    com.fasterxml.jackson.databind.JsonNode node = args.get(field);
-    if (node == null || node.isNull()) {
-      return Optional.empty();
-    }
-    if (node.isBoolean()) {
-      return Optional.of(node.asBoolean());
-    }
-    if (node.isTextual()) {
-      return Optional.of(Boolean.parseBoolean(node.asText()));
-    }
-    return Optional.empty();
   }
 
   protected boolean isBlank(String value) {

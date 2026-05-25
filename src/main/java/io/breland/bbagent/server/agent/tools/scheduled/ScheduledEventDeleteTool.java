@@ -6,6 +6,7 @@ import io.breland.bbagent.server.agent.cadence.CadenceWorkflowLauncher;
 import io.breland.bbagent.server.agent.tools.AgentTool;
 import io.breland.bbagent.server.agent.tools.ToolProvider;
 import io.swagger.v3.oas.annotations.media.Schema;
+import java.util.Objects;
 
 public class ScheduledEventDeleteTool implements ToolProvider {
   public static final String TOOL_NAME = "scheduled_event_delete";
@@ -20,7 +21,8 @@ public class ScheduledEventDeleteTool implements ToolProvider {
       @Schema(description = "Optional run ID for the scheduled task.") String runId) {}
 
   public ScheduledEventDeleteTool(CadenceWorkflowLauncher cadenceWorkflowLauncher) {
-    this.cadenceWorkflowLauncher = cadenceWorkflowLauncher;
+    this.cadenceWorkflowLauncher =
+        Objects.requireNonNull(cadenceWorkflowLauncher, "cadenceWorkflowLauncher");
   }
 
   public AgentTool getTool() {
@@ -30,9 +32,6 @@ public class ScheduledEventDeleteTool implements ToolProvider {
         jsonSchema(ScheduledEventDeleteRequest.class),
         false,
         (context, args) -> {
-          if (cadenceWorkflowLauncher == null) {
-            return "not configured";
-          }
           ScheduledEventDeleteRequest request =
               context.getMapper().convertValue(args, ScheduledEventDeleteRequest.class);
           String workflowId = request.workflowId();

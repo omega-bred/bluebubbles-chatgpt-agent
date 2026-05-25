@@ -8,6 +8,7 @@ import io.breland.bbagent.server.agent.tools.ToolJson;
 import io.breland.bbagent.server.agent.tools.ToolProvider;
 import io.swagger.v3.oas.annotations.media.Schema;
 import java.util.List;
+import java.util.Objects;
 
 public class ScheduledEventListTool implements ToolProvider {
   public static final String TOOL_NAME = "scheduled_event_list";
@@ -21,7 +22,8 @@ public class ScheduledEventListTool implements ToolProvider {
           String chatGuid) {}
 
   public ScheduledEventListTool(CadenceWorkflowLauncher cadenceWorkflowLauncher) {
-    this.cadenceWorkflowLauncher = cadenceWorkflowLauncher;
+    this.cadenceWorkflowLauncher =
+        Objects.requireNonNull(cadenceWorkflowLauncher, "cadenceWorkflowLauncher");
   }
 
   public AgentTool getTool() {
@@ -31,9 +33,6 @@ public class ScheduledEventListTool implements ToolProvider {
         jsonSchema(ScheduledEventListRequest.class),
         false,
         (context, args) -> {
-          if (cadenceWorkflowLauncher == null) {
-            return "not configured";
-          }
           ScheduledEventListRequest request =
               context.getMapper().convertValue(args, ScheduledEventListRequest.class);
           String chatGuid = request.chatGuid();

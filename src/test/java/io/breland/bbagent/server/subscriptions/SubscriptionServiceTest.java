@@ -7,7 +7,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import io.breland.bbagent.generated.model.SubscriptionProviderWebhookResponse;
-import io.breland.bbagent.server.agent.AgentAccountResolver;
+import io.breland.bbagent.server.agent.account.AgentAccountResolver;
 import io.breland.bbagent.server.agent.persistence.account.AgentAccountRepository;
 import io.breland.bbagent.server.agent.persistence.subscription.PaymentCheckoutSessionRepository;
 import io.breland.bbagent.server.agent.persistence.subscription.PaymentProviderEventEntity;

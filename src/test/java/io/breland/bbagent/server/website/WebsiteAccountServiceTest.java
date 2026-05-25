@@ -13,9 +13,9 @@ import static org.mockito.Mockito.when;
 
 import io.breland.bbagent.generated.model.WebsiteLinkedIntegrationAccount;
 import io.breland.bbagent.generated.model.WebsiteModelAccessSummary;
-import io.breland.bbagent.server.agent.AgentAccountIdentifiers;
-import io.breland.bbagent.server.agent.AgentAccountResolver;
 import io.breland.bbagent.server.agent.IncomingMessage;
+import io.breland.bbagent.server.agent.account.AgentAccountIdentifiers;
+import io.breland.bbagent.server.agent.account.AgentAccountResolver;
 import io.breland.bbagent.server.agent.model_picker.ModelAccessService;
 import io.breland.bbagent.server.agent.persistence.account.AgentAccountEntity;
 import io.breland.bbagent.server.agent.persistence.account.AgentAccountIdentityEntity;

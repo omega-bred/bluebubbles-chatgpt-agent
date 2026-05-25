@@ -5,9 +5,8 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.breland.bbagent.generated.model.AdminStatsResponse;
-import io.breland.bbagent.server.agent.AgentAccountResolver;
-import io.breland.bbagent.server.agent.AgentWorkflowProperties;
 import io.breland.bbagent.server.agent.IncomingMessage;
+import io.breland.bbagent.server.agent.account.AgentAccountResolver;
 import io.breland.bbagent.server.agent.model_picker.ModelAccessService;
 import io.breland.bbagent.server.agent.persistence.account.AgentAccountRepository;
 import io.breland.bbagent.server.agent.persistence.metrics.AgentMessageMetricRepository;
@@ -42,12 +41,9 @@ class AdminStatsServiceTest {
     alice.setPremium(true);
     accountRepository.save(alice);
 
-    adminStatsService.recordAcceptedMessage(
-        incomingMessage("chat-1", "msg-1", "Alice"), AgentWorkflowProperties.Mode.INLINE);
-    adminStatsService.recordAcceptedMessage(
-        incomingMessage("chat-1", "msg-2", "Alice"), AgentWorkflowProperties.Mode.INLINE);
-    adminStatsService.recordAcceptedMessage(
-        incomingMessage("chat-2", "msg-3", "Bob"), AgentWorkflowProperties.Mode.CADENCE);
+    adminStatsService.recordAcceptedMessage(incomingMessage("chat-1", "msg-1", "Alice"));
+    adminStatsService.recordAcceptedMessage(incomingMessage("chat-1", "msg-2", "Alice"));
+    adminStatsService.recordAcceptedMessage(incomingMessage("chat-2", "msg-3", "Bob"));
 
     AdminStatsResponse stats =
         adminStatsService.getStatistics(now.minusSeconds(60), now.plusSeconds(60));
@@ -84,8 +80,7 @@ class AdminStatsServiceTest {
             incomingMessage(
                 "chat-" + senderIndex,
                 "msg-" + senderIndex + "-" + messageIndex,
-                "Sender " + senderIndex),
-            AgentWorkflowProperties.Mode.INLINE);
+                "Sender " + senderIndex));
       }
     }
 
@@ -112,7 +107,6 @@ class AdminStatsServiceTest {
     adminStatsService.recordToolCall(
         new AgentToolMetricEvent(
             incomingMessage("chat-1", "msg-1", "Alice"),
-            AgentWorkflowProperties.Mode.INLINE,
             "send_text",
             "bluebubbles",
             true,
@@ -121,7 +115,6 @@ class AdminStatsServiceTest {
     adminStatsService.recordToolCall(
         new AgentToolMetricEvent(
             incomingMessage("chat-1", "msg-2", "Alice"),
-            AgentWorkflowProperties.Mode.INLINE,
             "coder_auth",
             "coder",
             false,
@@ -130,7 +123,6 @@ class AdminStatsServiceTest {
     adminStatsService.recordToolCall(
         new AgentToolMetricEvent(
             incomingMessage("chat-2", "msg-3", "Bob"),
-            AgentWorkflowProperties.Mode.CADENCE,
             "send_text",
             "bluebubbles",
             true,

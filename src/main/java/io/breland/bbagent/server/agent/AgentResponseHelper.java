@@ -8,6 +8,7 @@ import com.openai.models.responses.ResponseFunctionToolCall;
 import com.openai.models.responses.ResponseInputItem;
 import com.openai.models.responses.ResponseOutputItem;
 import com.openai.models.responses.ResponseOutputMessage;
+import io.breland.bbagent.server.agent.reactions.MessageReactionSupport;
 import io.breland.bbagent.server.agent.workflowcallback.WorkflowCallbackService;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -160,14 +161,10 @@ public final class AgentResponseHelper {
       return Optional.empty();
     }
     String reaction = inner.toLowerCase(Locale.ROOT);
-    if (!BBMessageAgent.SUPPORTED_REACTIONS.contains(reaction)) {
+    if (!MessageReactionSupport.SUPPORTED_REACTIONS.contains(reaction)) {
       return Optional.empty();
     }
     return Optional.of(reaction);
-  }
-
-  public static ResponseInputItem blockedToolCallOutput(String callId) {
-    return blockedToolCallOutput(callId, null);
   }
 
   public static ResponseInputItem blockedToolCallOutput(String callId, String toolName) {

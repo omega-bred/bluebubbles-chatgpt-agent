@@ -1,4 +1,4 @@
-package io.breland.bbagent.server.agent;
+package io.breland.bbagent.server.agent.tools;
 
 import io.breland.bbagent.server.agent.tools.bb.RenameConversationAgentTool;
 import io.breland.bbagent.server.agent.tools.bb.SendReactionAgentTool;

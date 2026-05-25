@@ -13,7 +13,7 @@ import io.breland.bbagent.generated.model.SubscriptionPlansResponse;
 import io.breland.bbagent.generated.model.SubscriptionPortalResponse;
 import io.breland.bbagent.generated.model.SubscriptionProviderWebhookResponse;
 import io.breland.bbagent.generated.model.SubscriptionSummaryResponse;
-import io.breland.bbagent.server.agent.AgentAccountResolver;
+import io.breland.bbagent.server.agent.account.AgentAccountResolver;
 import io.breland.bbagent.server.agent.persistence.account.AgentAccountEntity;
 import io.breland.bbagent.server.agent.persistence.account.AgentAccountRepository;
 import io.breland.bbagent.server.agent.persistence.subscription.PaymentCheckoutSessionEntity;

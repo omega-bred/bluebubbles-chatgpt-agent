@@ -20,6 +20,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Objects;
 import javax.annotation.Nullable;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.codec.digest.DigestUtils;
@@ -38,7 +39,7 @@ public class StartCoderAsyncTaskAgentTool implements ToolProvider {
   private final CoderMcpClient coderMcpClient;
   private final WorkflowCallbackService callbackService;
   private final CoderAsyncTaskStartStore taskStartStore;
-  private final @Nullable CadenceWorkflowLauncher cadenceWorkflowLauncher;
+  private final CadenceWorkflowLauncher cadenceWorkflowLauncher;
 
   @Schema(description = "Start a long-running Coder AI task with callback and fallback watching.")
   public record StartCoderAsyncTaskRequest(
@@ -69,11 +70,12 @@ public class StartCoderAsyncTaskAgentTool implements ToolProvider {
       CoderMcpClient coderMcpClient,
       WorkflowCallbackService callbackService,
       CoderAsyncTaskStartStore taskStartStore,
-      @Nullable CadenceWorkflowLauncher cadenceWorkflowLauncher) {
+      CadenceWorkflowLauncher cadenceWorkflowLauncher) {
     this.coderMcpClient = coderMcpClient;
     this.callbackService = callbackService;
     this.taskStartStore = taskStartStore;
-    this.cadenceWorkflowLauncher = cadenceWorkflowLauncher;
+    this.cadenceWorkflowLauncher =
+        Objects.requireNonNull(cadenceWorkflowLauncher, "cadenceWorkflowLauncher");
   }
 
   @Override
@@ -356,9 +358,6 @@ public class StartCoderAsyncTaskAgentTool implements ToolProvider {
       WorkflowCallbackService.CreatedCallback callback,
       String coderResult,
       ObjectMapper mapper) {
-    if (cadenceWorkflowLauncher == null) {
-      return "not configured";
-    }
     try {
       ObjectNode args = mapper.createObjectNode();
       args.put(

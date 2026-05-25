@@ -6,8 +6,10 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.uber.cadence.client.WorkflowOptions;
+import io.breland.bbagent.server.agent.cadence.CadenceWorkflowLauncher;
 import java.time.Duration;
 import org.junit.jupiter.api.Test;
+import org.mockito.Mockito;
 
 class ScheduledEventToolTest {
 
@@ -29,7 +31,8 @@ class ScheduledEventToolTest {
 
   @Test
   void toolDescriptionTellsLongRunningChecksToRescheduleThemselves() {
-    String description = new ScheduledEventTool(null).getTool().description();
+    String description =
+        new ScheduledEventTool(Mockito.mock(CadenceWorkflowLauncher.class)).getTool().description();
 
     assertTrue(description.contains("pending or running"));
     assertTrue(description.contains("schedule_event again"));

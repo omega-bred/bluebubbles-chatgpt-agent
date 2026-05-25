@@ -6,8 +6,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.breland.bbagent.generated.model.AdminRateLimitUsage;
 import io.breland.bbagent.generated.model.AdminRateLimitUsageResponse;
-import io.breland.bbagent.server.agent.AgentAccountResolver;
 import io.breland.bbagent.server.agent.IncomingMessage;
+import io.breland.bbagent.server.agent.account.AgentAccountResolver;
 import io.breland.bbagent.server.agent.persistence.account.AgentAccountRepository;
 import io.breland.bbagent.server.agent.persistence.ratelimit.AppRateLimitUsageRepository;
 import java.time.Instant;

@@ -7,9 +7,10 @@ import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import io.breland.bbagent.generated.bluebubblesclient.ApiClient;
 import io.breland.bbagent.generated.bluebubblesclient.api.*;
 import io.breland.bbagent.generated.bluebubblesclient.model.*;
-import io.breland.bbagent.server.agent.AgentAccountIdentifiers;
 import io.breland.bbagent.server.agent.BBMessageAgent;
 import io.breland.bbagent.server.agent.IncomingMessage;
+import io.breland.bbagent.server.agent.account.AgentAccountIdentifiers;
+import io.breland.bbagent.server.agent.reactions.MessageReactionSupport;
 import java.io.IOException;
 import java.nio.channels.AsynchronousFileChannel;
 import java.nio.file.Files;
@@ -658,7 +659,8 @@ public class BBHttpClientWrapper {
   }
 
   private boolean warmUpDirectSendPath(ApiV1MessageTextPostRequest request, int attempt) {
-    Duration pingTimeout = minDuration(apiTimeout, DIRECT_SEND_PING_TIMEOUT);
+    Duration pingTimeout =
+        apiTimeout.compareTo(DIRECT_SEND_PING_TIMEOUT) <= 0 ? apiTimeout : DIRECT_SEND_PING_TIMEOUT;
     for (int pingAttempt = 1; pingAttempt <= DIRECT_SEND_PING_ATTEMPTS; pingAttempt++) {
       try {
         pingBlueBubbles(pingTimeout);
@@ -822,10 +824,6 @@ public class BBHttpClientWrapper {
     return Instant.ofEpochSecond(value);
   }
 
-  private static Duration minDuration(Duration first, Duration second) {
-    return first.compareTo(second) <= 0 ? first : second;
-  }
-
   private void applyTextFormatting(ApiV1MessageTextPostRequest request) {
     if (request == null) {
       return;
@@ -849,14 +847,6 @@ public class BBHttpClientWrapper {
     }
   }
 
-  public boolean sendTextDirect(String chatGuid, String text) {
-    ApiV1MessageTextPostRequest request = new ApiV1MessageTextPostRequest();
-    request.chatGuid(chatGuid);
-    request.tempGuid(UUID.randomUUID().toString());
-    request.message(text);
-    return this.sendTextDirect(request);
-  }
-
   public boolean sendReactionDirect(IncomingMessage message, String reaction) {
     if (StringUtils.isBlank(message.chatGuid())) {
       log.warn("Cannot send reaction without chatGuid");
@@ -876,7 +866,7 @@ public class BBHttpClientWrapper {
 
   public boolean sendReactionDirect(ApiV1MessageReactPostRequest request) {
     request.setChatGuid(normalizeDirectAnyChatGuid(request.getChatGuid()));
-    if (!BBMessageAgent.SUPPORTED_REACTIONS.contains(request.getReaction())) {
+    if (!MessageReactionSupport.SUPPORTED_REACTIONS.contains(request.getReaction())) {
       log.warn("Unsupported reaction {}", request.getReaction());
       return false;
     }

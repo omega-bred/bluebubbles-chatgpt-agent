@@ -1,9 +1,9 @@
 package io.breland.bbagent.server.agent.persistence;
 
-import io.breland.bbagent.server.agent.AgentSettingsStore;
-import io.breland.bbagent.server.agent.BBMessageAgent;
 import io.breland.bbagent.server.agent.persistence.account.AgentAccountEntity;
 import io.breland.bbagent.server.agent.persistence.account.AgentAccountRepository;
+import io.breland.bbagent.server.agent.profile.AgentSettingsStore;
+import io.breland.bbagent.server.agent.profile.AssistantResponsiveness;
 import java.util.Optional;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -25,15 +25,13 @@ public class PostgresAgentSettingsStore implements AgentSettingsStore {
 
   @Override
   @Transactional(readOnly = true)
-  public Optional<BBMessageAgent.AssistantResponsiveness> findAssistantResponsiveness(
-      String chatGuid) {
+  public Optional<AssistantResponsiveness> findAssistantResponsiveness(String chatGuid) {
     return responsivenessRepository
         .findById(chatGuid)
         .flatMap(
             entity -> {
               try {
-                return Optional.of(
-                    BBMessageAgent.AssistantResponsiveness.valueOf(entity.getResponsiveness()));
+                return Optional.of(AssistantResponsiveness.valueOf(entity.getResponsiveness()));
               } catch (IllegalArgumentException ex) {
                 log.warn(
                     "Unknown responsiveness value {} for chat {}",
@@ -45,8 +43,7 @@ public class PostgresAgentSettingsStore implements AgentSettingsStore {
   }
 
   @Override
-  public void saveAssistantResponsiveness(
-      String chatGuid, BBMessageAgent.AssistantResponsiveness value) {
+  public void saveAssistantResponsiveness(String chatGuid, AssistantResponsiveness value) {
     if (chatGuid == null || chatGuid.isBlank() || value == null) {
       return;
     }

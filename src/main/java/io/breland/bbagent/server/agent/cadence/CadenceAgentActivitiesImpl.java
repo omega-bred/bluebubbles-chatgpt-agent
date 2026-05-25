@@ -13,6 +13,7 @@ import io.breland.bbagent.server.agent.cadence.models.CadenceToolCall;
 import io.breland.bbagent.server.agent.cadence.models.GeneratedImage;
 import io.breland.bbagent.server.agent.cadence.models.ImageSendResult;
 import io.breland.bbagent.server.agent.transport.MessageTransport;
+import io.breland.bbagent.server.agent.transport.MessageTransportRegistry;
 import io.breland.bbagent.server.agent.transport.bb.BBHttpClientWrapper;
 import io.breland.bbagent.server.blobstore.BlobStore;
 import java.util.ArrayList;
@@ -27,10 +28,19 @@ import org.springframework.stereotype.Component;
 public class CadenceAgentActivitiesImpl implements CadenceAgentActivities {
 
   private final BBMessageAgent messageAgent;
+  private final AgentPromptBuilder promptBuilder;
+  private final MessageTransportRegistry transportRegistry;
   private final BlobStore blobStore;
+  private final GeneratedImageExtractor generatedImageExtractor = new GeneratedImageExtractor();
 
-  public CadenceAgentActivitiesImpl(BBMessageAgent messageAgent, BlobStore blobStore) {
+  public CadenceAgentActivitiesImpl(
+      BBMessageAgent messageAgent,
+      AgentPromptBuilder promptBuilder,
+      MessageTransportRegistry transportRegistry,
+      BlobStore blobStore) {
     this.messageAgent = messageAgent;
+    this.promptBuilder = promptBuilder;
+    this.transportRegistry = transportRegistry;
     this.blobStore = blobStore;
   }
 
@@ -40,7 +50,7 @@ public class CadenceAgentActivitiesImpl implements CadenceAgentActivities {
     try {
       List<ConversationState.PendingIncomingTurn> pendingIncomingTurns =
           pendingIncomingTurns(message);
-      return toJson(messageAgent.buildConversationInput(history, pendingIncomingTurns, message));
+      return toJson(promptBuilder.buildConversationInput(history, pendingIncomingTurns, message));
     } catch (Exception e) {
       throw new RuntimeException("Failed to serialize conversation input", e);
     }
@@ -79,8 +89,7 @@ public class CadenceAgentActivitiesImpl implements CadenceAgentActivities {
     try {
       JsonNode inputNode = messageAgent.getObjectMapper().readTree(inputItemsJson);
       List<ResponseInputItem> inputItems =
-          JsonValue.fromJsonNode(inputNode)
-              .convert(new TypeReference<List<ResponseInputItem>>() {});
+          JsonValue.fromJsonNode(inputNode).convert(new TypeReference<>() {});
       var response = messageAgent.createResponse(inputItems, message, workflowContext);
       if (response == null) {
         return null;
@@ -94,15 +103,15 @@ public class CadenceAgentActivitiesImpl implements CadenceAgentActivities {
                 String id = imageGenerationCall.id();
                 Optional<String> value = imageGenerationCall.result();
                 if (value.isEmpty()) {
-                  if (id != null && !id.isBlank()) {
+                  if (!id.isBlank()) {
                     imageCallIds.add(id);
                   }
                   return;
                 }
                 String result = value.get();
-                if (id != null && !id.isBlank()) {
+                if (!id.isBlank()) {
                   imageCallIds.add(id);
-                  if (result != null && !result.isBlank()) {
+                  if (!result.isBlank()) {
                     this.blobStore.storeBlob(message.chatGuid(), id, result);
                   }
                 }
@@ -180,11 +189,11 @@ public class CadenceAgentActivitiesImpl implements CadenceAgentActivities {
     } catch (Exception e) {
       throw new RuntimeException("Failed to parse response json", e);
     }
-    List<GeneratedImage> generatedImages = messageAgent.extractGeneratedImages(response);
+    List<GeneratedImage> generatedImages = generatedImageExtractor.extract(response);
     if (generatedImages.isEmpty()) {
       return new ImageSendResult(false, false);
     }
-    MessageTransport transport = messageAgent.transportFor(message);
+    MessageTransport transport = transportRegistry.resolve(message);
     if (!transport.supportsGeneratedImages()) {
       return new ImageSendResult(false, false);
     }
@@ -218,7 +227,7 @@ public class CadenceAgentActivitiesImpl implements CadenceAgentActivities {
     if (!messageAgent.canSendResponses(workflowContext)) {
       return false;
     }
-    MessageTransport transport = messageAgent.transportFor(message);
+    MessageTransport transport = transportRegistry.resolve(message);
     if (!transport.supportsReactions()) {
       return false;
     }

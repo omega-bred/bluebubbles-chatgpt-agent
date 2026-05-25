@@ -207,10 +207,6 @@ public class CoderMcpClient {
     return existing.isPresent();
   }
 
-  public List<AgentTool> getAgentTools(String accountId) {
-    return getAgentTools(accountId, java.util.Set.of());
-  }
-
   public List<AgentTool> getAgentTools(String accountId, java.util.Set<String> excludedMcpNames) {
     if (!isConfigured()) {
       return List.of();
@@ -234,10 +230,6 @@ public class CoderMcpClient {
       log.warn("Failed to load Coder MCP tools", e);
       return List.of();
     }
-  }
-
-  public Optional<AgentTool> getAgentTool(String accountId, String agentToolName) {
-    return getAgentTool(accountId, agentToolName, java.util.Set.of());
   }
 
   public Optional<AgentTool> getAgentTool(
@@ -410,7 +402,7 @@ public class CoderMcpClient {
         credentialRepository
             .findById(accountId)
             .orElseThrow(() -> new IOException("Coder account is not linked"));
-    if (!isExpired(credential)) {
+    if (hasUsableAccessToken(credential)) {
       return credential.getAccessToken();
     }
     return refreshCredential(accountId, false)
@@ -426,10 +418,6 @@ public class CoderMcpClient {
       return Optional.of(accountId);
     }
     return Optional.empty();
-  }
-
-  public Optional<String> findLinkedAccountId(String accountId) {
-    return resolveLinkedAccountId(accountId);
   }
 
   public Optional<CoderLinkedAccount> findLinkedAccount(String accountId) {
@@ -489,7 +477,7 @@ public class CoderMcpClient {
       return Optional.empty();
     }
     CoderOauthCredentialEntity credential = existing.get();
-    if (!forceRefresh && !isExpired(credential)) {
+    if (!forceRefresh && hasUsableAccessToken(credential)) {
       return Optional.of(credential);
     }
     if (credential.getRefreshToken() == null || credential.getRefreshToken().isBlank()) {
@@ -506,12 +494,12 @@ public class CoderMcpClient {
     }
   }
 
-  private boolean isExpired(CoderOauthCredentialEntity credential) {
+  private boolean hasUsableAccessToken(CoderOauthCredentialEntity credential) {
     if (credential.getAccessToken() == null || credential.getAccessToken().isBlank()) {
-      return true;
+      return false;
     }
     Instant expiresAt = credential.getExpiresAt();
-    return expiresAt != null && expiresAt.minus(TOKEN_REFRESH_LEEWAY).isBefore(Instant.now());
+    return expiresAt == null || expiresAt.minus(TOKEN_REFRESH_LEEWAY).isAfter(Instant.now());
   }
 
   private TokenResponse requestAuthorizationCodeToken(String code, String codeVerifier) {
@@ -646,7 +634,7 @@ public class CoderMcpClient {
         resourceMetadata.authorizationServers() == null
                 || resourceMetadata.authorizationServers().isEmpty()
             ? serverOrigin(URI.create(serverUrl))
-            : resourceMetadata.authorizationServers().get(0);
+            : resourceMetadata.authorizationServers().getFirst();
     String metadataUri = issuer + "/.well-known/oauth-authorization-server";
     AuthorizationServerMetadata metadata =
         restClient.get().uri(metadataUri).retrieve().body(AuthorizationServerMetadata.class);

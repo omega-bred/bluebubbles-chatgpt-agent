@@ -9,7 +9,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import io.breland.bbagent.generated.model.ContactMessageRequest;
-import io.breland.bbagent.server.agent.AgentAccountResolver;
+import io.breland.bbagent.server.agent.account.AgentAccountResolver;
 import io.breland.bbagent.server.agent.persistence.account.AgentAccountEntity;
 import io.breland.bbagent.server.linear.LinearIssueService;
 import io.breland.bbagent.server.linear.LinearIssueService.ContactIssueInput;

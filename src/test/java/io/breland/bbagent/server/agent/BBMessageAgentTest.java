@@ -35,6 +35,7 @@ import io.breland.bbagent.generated.bluebubblesclient.model.ApiV1ChatChatGuidMes
 import io.breland.bbagent.generated.bluebubblesclient.model.ApiV1MessageReactPostRequest;
 import io.breland.bbagent.generated.bluebubblesclient.model.ApiV1MessageTextPostRequest;
 import io.breland.bbagent.generated.bluebubblesclient.model.FindMyFriendLocation;
+import io.breland.bbagent.server.agent.account.AgentAccountResolver;
 import io.breland.bbagent.server.agent.cadence.CadenceWorkflowLauncher;
 import io.breland.bbagent.server.agent.cadence.models.CadenceMessageWorkflowRequest;
 import io.breland.bbagent.server.agent.location.ReverseLocationLookup;
@@ -42,6 +43,10 @@ import io.breland.bbagent.server.agent.location.ReverseLocationLookupResult;
 import io.breland.bbagent.server.agent.model_picker.ModelAccessService;
 import io.breland.bbagent.server.agent.model_picker.ModelPicker;
 import io.breland.bbagent.server.agent.persistence.account.AgentAccountEntity;
+import io.breland.bbagent.server.agent.profile.AgentProfileService;
+import io.breland.bbagent.server.agent.profile.AgentSettingsStore;
+import io.breland.bbagent.server.agent.profile.AssistantResponsiveness;
+import io.breland.bbagent.server.agent.reactions.MessageReactionSupport;
 import io.breland.bbagent.server.agent.tools.AgentTool;
 import io.breland.bbagent.server.agent.tools.ToolContext;
 import io.breland.bbagent.server.agent.tools.assistant.AssistantNameAgentTool;
@@ -77,50 +82,18 @@ class BBMessageAgentTest {
   private static final String DEVELOPER_PROMPT_MARKER = "Only call send_text";
 
   @Test
-  void handlesSimpleTextConversationEndToEnd() {
+  void dispatchesIncomingTextToCadenceWorkflow() {
     OpenAIClient openAIClient = Mockito.mock(OpenAIClient.class);
     var responseService = Mockito.mock(com.openai.services.blocking.ResponseService.class);
-    V1MessageApi messageApi = Mockito.mock(V1MessageApi.class);
-    V1ContactApi contactApi = Mockito.mock(V1ContactApi.class);
-    Mem0Client mem0Client = Mockito.mock(Mem0Client.class);
-    GcalClient gcalClient = Mockito.mock(GcalClient.class);
-    GiphyClient giphyClient = Mockito.mock(GiphyClient.class);
     StubBBHttpClientWrapper bbHttpClientWrapper = new StubBBHttpClientWrapper();
-    AgentWorkflowProperties workflowProperties = new AgentWorkflowProperties();
+    CadenceWorkflowLauncher cadenceWorkflowLauncher = Mockito.mock(CadenceWorkflowLauncher.class);
+    WorkflowExecution execution = new WorkflowExecution();
+    execution.setRunId("run-simple");
 
     when(openAIClient.responses()).thenReturn(responseService);
-
-    BBMessageAgent agent =
-        new BBMessageAgent(
-            openAIClient,
-            bbHttpClientWrapper,
-            mem0Client,
-            gcalClient,
-            null,
-            null,
-            null,
-            null,
-            giphyClient,
-            ReverseLocationLookup.noop(),
-            new InMemoryAgentSettingsStore(),
-            workflowProperties,
-            null,
-            null,
-            null,
-            null,
-            null,
-            null,
-            null,
-            new ModelPicker());
-
-    Response first =
-        responseWithFunctionCall(
-            "send_text",
-            "{\"chatGuid\":\"iMessage;+;chat-1\",\"message\":\"Hey! Doing well—how about you?\"}",
-            "call-1");
-    Response second = responseWithNoToolCalls();
-
-    when(responseService.create(any(ResponseCreateParams.class))).thenReturn(first, second);
+    when(cadenceWorkflowLauncher.startWorkflow(any(CadenceMessageWorkflowRequest.class)))
+        .thenReturn(execution);
+    BBMessageAgent agent = newAgent(openAIClient, bbHttpClientWrapper, cadenceWorkflowLauncher);
 
     IncomingMessage incoming =
         new IncomingMessage(
@@ -138,7 +111,12 @@ class BBMessageAgentTest {
 
     agent.handleIncomingMessage(incoming);
 
-    verify(responseService, times(2)).create(any(ResponseCreateParams.class));
+    ArgumentCaptor<CadenceMessageWorkflowRequest> requestCaptor =
+        ArgumentCaptor.forClass(CadenceMessageWorkflowRequest.class);
+    verify(cadenceWorkflowLauncher).startWorkflow(requestCaptor.capture());
+    assertEquals("iMessage;+;chat-1", requestCaptor.getValue().workflowContext().workflowId());
+    assertEquals("msg-1", requestCaptor.getValue().workflowContext().messageGuid());
+    verify(responseService, never()).create(any(ResponseCreateParams.class));
   }
 
   @Test
@@ -241,27 +219,27 @@ class BBMessageAgentTest {
 
   @Test
   void reactionMessageMatcherCoversReactedEmojiTo() {
-    assertTrue(BBMessageAgent.isReactionMessage("Reacted 😂 to"));
-    assertTrue(BBMessageAgent.isReactionMessage("  Reacted 😂 to"));
+    assertTrue(MessageReactionSupport.isReactionMessage("Reacted 😂 to"));
+    assertTrue(MessageReactionSupport.isReactionMessage("  Reacted 😂 to"));
   }
 
   @Test
   void reactionMessageMatcherCoversCommonPrefixes() {
-    assertTrue(BBMessageAgent.isReactionMessage("Loved \"nice!\""));
-    assertTrue(BBMessageAgent.isReactionMessage("Liked it"));
-    assertTrue(BBMessageAgent.isReactionMessage("Disliked that"));
-    assertTrue(BBMessageAgent.isReactionMessage("Questioned \"why?\""));
-    assertTrue(BBMessageAgent.isReactionMessage("Emphasized wow"));
-    assertTrue(BBMessageAgent.isReactionMessage("Laughed at that"));
+    assertTrue(MessageReactionSupport.isReactionMessage("Loved \"nice!\""));
+    assertTrue(MessageReactionSupport.isReactionMessage("Liked it"));
+    assertTrue(MessageReactionSupport.isReactionMessage("Disliked that"));
+    assertTrue(MessageReactionSupport.isReactionMessage("Questioned \"why?\""));
+    assertTrue(MessageReactionSupport.isReactionMessage("Emphasized wow"));
+    assertTrue(MessageReactionSupport.isReactionMessage("Laughed at that"));
   }
 
   @Test
   void reactionMessageMatcherIgnoresNormalText() {
-    assertFalse(BBMessageAgent.isReactionMessage("Reacted? I don't think so."));
-    assertFalse(BBMessageAgent.isReactionMessage("I loved that"));
-    assertFalse(BBMessageAgent.isReactionMessage("questioned"));
-    assertFalse(BBMessageAgent.isReactionMessage(""));
-    assertFalse(BBMessageAgent.isReactionMessage(null));
+    assertFalse(MessageReactionSupport.isReactionMessage("Reacted? I don't think so."));
+    assertFalse(MessageReactionSupport.isReactionMessage("I loved that"));
+    assertFalse(MessageReactionSupport.isReactionMessage("questioned"));
+    assertFalse(MessageReactionSupport.isReactionMessage(""));
+    assertFalse(MessageReactionSupport.isReactionMessage(null));
   }
 
   @Test
@@ -335,12 +313,12 @@ class BBMessageAgentTest {
 
   @Test
   void agentInstructionsTellModelToUseAllInOneToolForCoderTasks() {
-    BBMessageAgent agent =
-        newAgent(Mockito.mock(OpenAIClient.class), new StubBBHttpClientWrapper());
+    AgentPromptBuilder promptBuilder = promptBuilder(new StubBBHttpClientWrapper());
 
     String prompt =
-        agent
+        promptBuilder
             .buildConversationInput(
+                List.of(),
                 List.of(),
                 incomingMessage("iMessage;+;chat-coder", "msg-coder", "start a coder task", 1_000L))
             .toString();
@@ -371,11 +349,14 @@ class BBMessageAgentTest {
     when(openAIClient.responses()).thenReturn(responseService);
     when(responseService.create(any(ResponseCreateParams.class)))
         .thenReturn(responseWithNoToolCalls());
-    BBMessageAgent agent = newAgent(openAIClient, bbHttpClientWrapper, reverseLocationLookup);
+    BBMessageAgent agent = newAgent(openAIClient, bbHttpClientWrapper);
     IncomingMessage incoming =
         incomingMessage("iMessage;+;chat-location", "msg-location", "where am I?", 1_000L);
+    AgentPromptBuilder promptBuilder =
+        promptBuilder(bbHttpClientWrapper, null, reverseLocationLookup);
 
-    List<ResponseInputItem> input = agent.buildConversationInput(List.of(), incoming);
+    List<ResponseInputItem> input =
+        promptBuilder.buildConversationInput(List.of(), List.of(), incoming);
 
     ResponseInputItem locationContext = input.get(input.size() - 1);
     assertTrue(isDeveloperEasyInputMessage(locationContext));
@@ -411,12 +392,13 @@ class BBMessageAgentTest {
   @Test
   void injectsFindMySharingHintWhenDirectMessageHasNoLocation() {
     StubBBHttpClientWrapper bbHttpClientWrapper = new StubBBHttpClientWrapper();
-    BBMessageAgent agent = newAgent(Mockito.mock(OpenAIClient.class), bbHttpClientWrapper);
+    AgentPromptBuilder promptBuilder = promptBuilder(bbHttpClientWrapper);
     IncomingMessage incoming =
         incomingMessage(
             "iMessage;+;chat-no-location", "msg-no-location", "what is near me?", 1_000L);
 
-    List<ResponseInputItem> input = agent.buildConversationInput(List.of(), incoming);
+    List<ResponseInputItem> input =
+        promptBuilder.buildConversationInput(List.of(), List.of(), incoming);
 
     ResponseInputItem locationContext = input.get(input.size() - 1);
     assertTrue(isDeveloperEasyInputMessage(locationContext));
@@ -442,17 +424,14 @@ class BBMessageAgentTest {
             1777050691000L));
     when(websiteAccountService.findLinkedAccountEmail(any(IncomingMessage.class)))
         .thenReturn(Optional.of("alice@example.com"));
-    BBMessageAgent agent =
-        newAgent(
-            Mockito.mock(OpenAIClient.class),
-            bbHttpClientWrapper,
-            websiteAccountService,
-            ReverseLocationLookup.noop());
+    AgentPromptBuilder promptBuilder =
+        promptBuilder(bbHttpClientWrapper, websiteAccountService, ReverseLocationLookup.noop());
     IncomingMessage incoming =
         incomingMessage(
             "iMessage;+;chat-linked-location", "msg-linked-location", "where am I?", 1_000L);
 
-    List<ResponseInputItem> input = agent.buildConversationInput(List.of(), incoming);
+    List<ResponseInputItem> input =
+        promptBuilder.buildConversationInput(List.of(), List.of(), incoming);
 
     ResponseInputItem locationContext = input.get(input.size() - 1);
     assertTrue(
@@ -473,6 +452,7 @@ class BBMessageAgentTest {
             "1 Apple Park Way, Cupertino, CA 95014, United States",
             1777050691000L));
     BBMessageAgent agent = newAgent(Mockito.mock(OpenAIClient.class), bbHttpClientWrapper);
+    AgentPromptBuilder promptBuilder = promptBuilder(bbHttpClientWrapper);
     IncomingMessage groupMessage =
         new IncomingMessage(
             "iMessage;+;chat-group-location",
@@ -487,7 +467,8 @@ class BBMessageAgentTest {
             List.of(),
             false);
 
-    List<ResponseInputItem> input = agent.buildConversationInput(List.of(), groupMessage);
+    List<ResponseInputItem> input =
+        promptBuilder.buildConversationInput(List.of(), List.of(), groupMessage);
 
     assertFalse(input.stream().map(this::extractText).anyMatch(text -> text.contains("Find My")));
     assertEquals(0, bbHttpClientWrapper.findMyLookupCalls);
@@ -503,7 +484,11 @@ class BBMessageAgentTest {
     BBMessageAgent agent = newAgent(openAIClient, new StubBBHttpClientWrapper());
     IncomingMessage incoming = incomingMessage("iMessage;+;chat-qwen", "msg-qwen", "hello", 1_000L);
 
-    agent.createResponse(agent.buildConversationInput(List.of(), incoming), incoming, null);
+    agent.createResponse(
+        promptBuilder(new StubBBHttpClientWrapper())
+            .buildConversationInput(List.of(), List.of(), incoming),
+        incoming,
+        null);
 
     ArgumentCaptor<ResponseCreateParams> paramsCaptor =
         ArgumentCaptor.forClass(ResponseCreateParams.class);
@@ -529,7 +514,9 @@ class BBMessageAgentTest {
     BBMessageAgent agent = newAgent(openAIClient, new StubBBHttpClientWrapper());
     IncomingMessage incoming =
         incomingMessage("iMessage;+;chat-qwen-cadence", "msg-qwen-cadence", "hello", 1_000L);
-    List<ResponseInputItem> originalInput = agent.buildConversationInput(List.of(), incoming);
+    List<ResponseInputItem> originalInput =
+        promptBuilder(new StubBBHttpClientWrapper())
+            .buildConversationInput(List.of(), List.of(), incoming);
     JsonNode inputNode = JsonValue.from(originalInput).convert(JsonNode.class);
     List<ResponseInputItem> roundTrippedInput =
         JsonValue.fromJsonNode(inputNode).convert(new TypeReference<List<ResponseInputItem>>() {});
@@ -559,11 +546,14 @@ class BBMessageAgentTest {
     IncomingMessage incoming =
         incomingMessage("iMessage;+;chat-qwen-history", "msg-qwen-history", "hello", 3_000L);
     List<ResponseInputItem> originalInput =
-        agent.buildConversationInput(
-            List.of(
-                ConversationTurn.user("Alice: older user text", Instant.ofEpochSecond(1_000L)),
-                ConversationTurn.assistant("older assistant text", Instant.ofEpochSecond(2_000L))),
-            incoming);
+        promptBuilder(new StubBBHttpClientWrapper())
+            .buildConversationInput(
+                List.of(
+                    ConversationTurn.user("Alice: older user text", Instant.ofEpochSecond(1_000L)),
+                    ConversationTurn.assistant(
+                        "older assistant text", Instant.ofEpochSecond(2_000L))),
+                List.of(),
+                incoming);
     JsonNode inputNode = JsonValue.from(originalInput).convert(JsonNode.class);
     List<ResponseInputItem> roundTrippedInput =
         JsonValue.fromJsonNode(inputNode).convert(new TypeReference<List<ResponseInputItem>>() {});
@@ -605,7 +595,11 @@ class BBMessageAgentTest {
         newAgent(openAIClient, new StubBBHttpClientWrapper(), new ModelPicker(modelAccessService));
     IncomingMessage incoming = incomingMessage("iMessage;+;chat-gpt", "msg-gpt", "hello", 1_000L);
 
-    agent.createResponse(agent.buildConversationInput(List.of(), incoming), incoming, null);
+    agent.createResponse(
+        promptBuilder(new StubBBHttpClientWrapper())
+            .buildConversationInput(List.of(), List.of(), incoming),
+        incoming,
+        null);
 
     ArgumentCaptor<ResponseCreateParams> paramsCaptor =
         ArgumentCaptor.forClass(ResponseCreateParams.class);
@@ -651,16 +645,15 @@ class BBMessageAgentTest {
   @Test
   void cadenceWorkflowIdStaysChatScopedSoNewMessagesCancelOlderRuns() {
     CadenceWorkflowLauncher cadenceWorkflowLauncher = Mockito.mock(CadenceWorkflowLauncher.class);
-    AgentWorkflowProperties workflowProperties = new AgentWorkflowProperties();
-    workflowProperties.setMode(AgentWorkflowProperties.Mode.CADENCE);
     WorkflowExecution execution = new WorkflowExecution();
     execution.setRunId("run-1");
     when(cadenceWorkflowLauncher.startWorkflow(any(CadenceMessageWorkflowRequest.class)))
         .thenReturn(execution);
+    StubBBHttpClientWrapper bbHttpClientWrapper = new StubBBHttpClientWrapper();
     BBMessageAgent agent =
         new BBMessageAgent(
             null,
-            new StubBBHttpClientWrapper(),
+            bbHttpClientWrapper,
             Mockito.mock(Mem0Client.class),
             Mockito.mock(GcalClient.class),
             null,
@@ -668,13 +661,11 @@ class BBMessageAgentTest {
             null,
             null,
             Mockito.mock(GiphyClient.class),
-            ReverseLocationLookup.noop(),
-            new InMemoryAgentSettingsStore(),
-            workflowProperties,
+            profileService(),
+            attachmentInputBuilder(bbHttpClientWrapper),
             null,
             null,
             cadenceWorkflowLauncher,
-            null,
             null,
             null,
             null,
@@ -703,7 +694,8 @@ class BBMessageAgentTest {
     state.recordPendingIncomingTurn(second);
 
     List<ResponseInputItem> input =
-        agent.buildConversationInput(state.history(), state.pendingIncomingTurns(), second);
+        promptBuilder(new StubBBHttpClientWrapper())
+            .buildConversationInput(state.history(), state.pendingIncomingTurns(), second);
     List<String> texts = input.stream().map(this::extractText).toList();
 
     assertTrue(texts.stream().anyMatch(text -> text.contains("Alice: first request")));
@@ -770,19 +762,24 @@ class BBMessageAgentTest {
     OpenAIClient openAIClient = Mockito.mock(OpenAIClient.class);
     var responseService = Mockito.mock(com.openai.services.blocking.ResponseService.class);
     StubBBHttpClientWrapper bbHttpClientWrapper = new StubBBHttpClientWrapper();
+    CadenceWorkflowLauncher cadenceWorkflowLauncher = Mockito.mock(CadenceWorkflowLauncher.class);
     String chatGuid = "iMessage;+;chat-duplicate";
 
     when(openAIClient.responses()).thenReturn(responseService);
-    when(responseService.create(any(ResponseCreateParams.class)))
-        .thenReturn(responseWithNoToolCalls());
-    BBMessageAgent agent = newAgent(openAIClient, bbHttpClientWrapper);
+    WorkflowExecution execution = new WorkflowExecution();
+    execution.setRunId("run-duplicate");
+    when(cadenceWorkflowLauncher.startWorkflow(any(CadenceMessageWorkflowRequest.class)))
+        .thenReturn(execution);
+    BBMessageAgent agent = newAgent(openAIClient, bbHttpClientWrapper, cadenceWorkflowLauncher);
     IncomingMessage incoming =
         incomingMessage(chatGuid, "msg-duplicate", "please only process once", 1_000L);
 
     agent.handleIncomingMessage(incoming);
     agent.handleIncomingMessage(incoming);
 
-    verify(responseService, times(1)).create(any(ResponseCreateParams.class));
+    verify(cadenceWorkflowLauncher, times(1))
+        .startWorkflow(any(CadenceMessageWorkflowRequest.class));
+    verify(responseService, never()).create(any(ResponseCreateParams.class));
   }
 
   @Test
@@ -818,7 +815,6 @@ class BBMessageAgentTest {
     Mem0Client mem0Client = Mockito.mock(Mem0Client.class);
     GcalClient gcalClient = Mockito.mock(GcalClient.class);
     GiphyClient giphyClient = Mockito.mock(GiphyClient.class);
-    AgentWorkflowProperties workflowProperties = new AgentWorkflowProperties();
 
     when(openAIClient.responses()).thenReturn(responseService);
     when(responseService.create(any(ResponseCreateParams.class)))
@@ -837,13 +833,11 @@ class BBMessageAgentTest {
             null,
             null,
             giphyClient,
-            ReverseLocationLookup.noop(),
-            new InMemoryAgentSettingsStore(),
-            workflowProperties,
+            profileService(),
+            attachmentInputBuilder(bbHttpClientWrapper),
             null,
             null,
-            null,
-            null,
+            Mockito.mock(CadenceWorkflowLauncher.class),
             null,
             null,
             null,
@@ -863,7 +857,12 @@ class BBMessageAgentTest {
             List.of(),
             false);
 
-    agent.handleIncomingMessage(incoming);
+    agent.createResponse(
+        promptBuilder(new StubBBHttpClientWrapper())
+            .buildConversationInput(List.of(), List.of(), incoming),
+        incoming,
+        new AgentWorkflowContext(
+            incoming.chatGuid(), incoming.chatGuid(), incoming.messageGuid(), Instant.now()));
 
     ArgumentCaptor<ResponseCreateParams> paramsCaptor =
         ArgumentCaptor.forClass(ResponseCreateParams.class);
@@ -895,20 +894,23 @@ class BBMessageAgentTest {
             null,
             null,
             Mockito.mock(GiphyClient.class),
-            ReverseLocationLookup.noop(),
-            new InMemoryAgentSettingsStore(),
-            new AgentWorkflowProperties(),
+            profileService(),
+            attachmentInputBuilder(bbHttpClientWrapper),
             null,
             null,
-            null,
-            null,
+            Mockito.mock(CadenceWorkflowLauncher.class),
             null,
             null,
             null,
             new ModelPicker());
 
-    agent.handleIncomingMessage(
-        incomingMessage("iMessage;+;chat-coder", "msg-coder-tools", "what coder tools?", 1_000L));
+    IncomingMessage incoming =
+        incomingMessage("iMessage;+;chat-coder", "msg-coder-tools", "what coder tools?", 1_000L);
+    agent.createResponse(
+        promptBuilder(bbHttpClientWrapper).buildConversationInput(List.of(), List.of(), incoming),
+        incoming,
+        new AgentWorkflowContext(
+            incoming.chatGuid(), incoming.chatGuid(), incoming.messageGuid(), Instant.now()));
 
     ArgumentCaptor<ResponseCreateParams> paramsCaptor =
         ArgumentCaptor.forClass(ResponseCreateParams.class);
@@ -942,20 +944,23 @@ class BBMessageAgentTest {
             Mockito.mock(CoderAsyncTaskStartStore.class),
             null,
             Mockito.mock(GiphyClient.class),
-            ReverseLocationLookup.noop(),
-            new InMemoryAgentSettingsStore(),
-            new AgentWorkflowProperties(),
+            profileService(),
+            attachmentInputBuilder(bbHttpClientWrapper),
             null,
             null,
-            null,
-            null,
+            Mockito.mock(CadenceWorkflowLauncher.class),
             null,
             null,
             null,
             new ModelPicker());
 
-    agent.handleIncomingMessage(
-        incomingMessage("iMessage;+;chat-coder", "msg-coder-task", "start a coder task", 1_000L));
+    IncomingMessage incoming =
+        incomingMessage("iMessage;+;chat-coder", "msg-coder-task", "start a coder task", 1_000L);
+    agent.createResponse(
+        promptBuilder(bbHttpClientWrapper).buildConversationInput(List.of(), List.of(), incoming),
+        incoming,
+        new AgentWorkflowContext(
+            incoming.chatGuid(), incoming.chatGuid(), incoming.messageGuid(), Instant.now()));
 
     ArgumentCaptor<ResponseCreateParams> paramsCaptor =
         ArgumentCaptor.forClass(ResponseCreateParams.class);
@@ -973,10 +978,11 @@ class BBMessageAgentTest {
   @Test
   void runToolActivityRecordsSuccessAndFailureMetrics() {
     AgentMetricsService metricsService = Mockito.mock(AgentMetricsService.class);
+    StubBBHttpClientWrapper bbHttpClientWrapper = new StubBBHttpClientWrapper();
     BBMessageAgent agent =
         new BBMessageAgent(
             null,
-            new StubBBHttpClientWrapper(),
+            bbHttpClientWrapper,
             Mockito.mock(Mem0Client.class),
             Mockito.mock(GcalClient.class),
             null,
@@ -984,13 +990,11 @@ class BBMessageAgentTest {
             null,
             null,
             Mockito.mock(GiphyClient.class),
-            ReverseLocationLookup.noop(),
-            new InMemoryAgentSettingsStore(),
-            new AgentWorkflowProperties(),
+            profileService(),
+            attachmentInputBuilder(bbHttpClientWrapper),
             null,
             null,
-            null,
-            null,
+            Mockito.mock(CadenceWorkflowLauncher.class),
             metricsService,
             null,
             null,
@@ -1143,6 +1147,61 @@ class BBMessageAgentTest {
     return newAgent(openAIClient, bbHttpClientWrapper, new ModelPicker());
   }
 
+  private static AgentPromptBuilder promptBuilder(BBHttpClientWrapper bbHttpClientWrapper) {
+    return promptBuilder(bbHttpClientWrapper, null, ReverseLocationLookup.noop());
+  }
+
+  private static AgentProfileService profileService() {
+    return profileService(null);
+  }
+
+  private static AgentProfileService profileService(AgentAccountResolver accountResolver) {
+    return new AgentProfileService(new InMemoryAgentSettingsStore(), accountResolver);
+  }
+
+  private static AgentAttachmentInputBuilder attachmentInputBuilder(
+      BBHttpClientWrapper bbHttpClientWrapper) {
+    return new AgentAttachmentInputBuilder(bbHttpClientWrapper);
+  }
+
+  private static AgentPromptBuilder promptBuilder(
+      BBHttpClientWrapper bbHttpClientWrapper,
+      WebsiteAccountService websiteAccountService,
+      ReverseLocationLookup reverseLocationLookup) {
+    return new AgentPromptBuilder(
+        bbHttpClientWrapper,
+        reverseLocationLookup,
+        profileService(),
+        attachmentInputBuilder(bbHttpClientWrapper),
+        websiteAccountService,
+        null);
+  }
+
+  private static BBMessageAgent newAgent(
+      OpenAIClient openAIClient,
+      BBHttpClientWrapper bbHttpClientWrapper,
+      CadenceWorkflowLauncher cadenceWorkflowLauncher) {
+    return new BBMessageAgent(
+        openAIClient,
+        bbHttpClientWrapper,
+        Mockito.mock(Mem0Client.class),
+        Mockito.mock(GcalClient.class),
+        Mockito.mock(CoderMcpClient.class),
+        null,
+        Mockito.mock(CoderAsyncTaskStartStore.class),
+        null,
+        Mockito.mock(GiphyClient.class),
+        profileService(),
+        attachmentInputBuilder(bbHttpClientWrapper),
+        null,
+        null,
+        cadenceWorkflowLauncher,
+        null,
+        null,
+        null,
+        new ModelPicker());
+  }
+
   private static BBMessageAgent newAgent(
       OpenAIClient openAIClient,
       BBHttpClientWrapper bbHttpClientWrapper,
@@ -1157,48 +1216,11 @@ class BBMessageAgentTest {
         Mockito.mock(CoderAsyncTaskStartStore.class),
         null,
         Mockito.mock(GiphyClient.class),
-        ReverseLocationLookup.noop(),
-        new InMemoryAgentSettingsStore(),
-        new AgentWorkflowProperties(),
+        profileService(accountResolver),
+        attachmentInputBuilder(bbHttpClientWrapper),
         null,
         null,
-        null,
-        accountResolver,
-        null,
-        null,
-        null,
-        new ModelPicker());
-  }
-
-  private static BBMessageAgent newAgent(
-      OpenAIClient openAIClient,
-      BBHttpClientWrapper bbHttpClientWrapper,
-      ReverseLocationLookup reverseLocationLookup) {
-    return newAgent(openAIClient, bbHttpClientWrapper, null, reverseLocationLookup);
-  }
-
-  private static BBMessageAgent newAgent(
-      OpenAIClient openAIClient,
-      BBHttpClientWrapper bbHttpClientWrapper,
-      WebsiteAccountService websiteAccountService,
-      ReverseLocationLookup reverseLocationLookup) {
-    return new BBMessageAgent(
-        openAIClient,
-        bbHttpClientWrapper,
-        Mockito.mock(Mem0Client.class),
-        Mockito.mock(GcalClient.class),
-        null,
-        null,
-        null,
-        websiteAccountService,
-        Mockito.mock(GiphyClient.class),
-        reverseLocationLookup,
-        new InMemoryAgentSettingsStore(),
-        new AgentWorkflowProperties(),
-        null,
-        null,
-        null,
-        null,
+        Mockito.mock(CadenceWorkflowLauncher.class),
         null,
         null,
         null,
@@ -1217,13 +1239,11 @@ class BBMessageAgentTest {
         Mockito.mock(CoderAsyncTaskStartStore.class),
         null,
         Mockito.mock(GiphyClient.class),
-        ReverseLocationLookup.noop(),
-        new InMemoryAgentSettingsStore(),
-        new AgentWorkflowProperties(),
+        profileService(),
+        attachmentInputBuilder(bbHttpClientWrapper),
         null,
         null,
-        null,
-        null,
+        Mockito.mock(CadenceWorkflowLauncher.class),
         null,
         null,
         null,
@@ -1450,19 +1470,17 @@ class BBMessageAgentTest {
   }
 
   private static class InMemoryAgentSettingsStore implements AgentSettingsStore {
-    private final Map<String, BBMessageAgent.AssistantResponsiveness> responsivenessByChat =
+    private final Map<String, AssistantResponsiveness> responsivenessByChat =
         new ConcurrentHashMap<>();
     private final Map<String, String> globalNames = new ConcurrentHashMap<>();
 
     @Override
-    public Optional<BBMessageAgent.AssistantResponsiveness> findAssistantResponsiveness(
-        String chatGuid) {
+    public Optional<AssistantResponsiveness> findAssistantResponsiveness(String chatGuid) {
       return Optional.ofNullable(responsivenessByChat.get(chatGuid));
     }
 
     @Override
-    public void saveAssistantResponsiveness(
-        String chatGuid, BBMessageAgent.AssistantResponsiveness value) {
+    public void saveAssistantResponsiveness(String chatGuid, AssistantResponsiveness value) {
       responsivenessByChat.put(chatGuid, value);
     }
 

@@ -24,12 +24,11 @@ import java.time.Duration;
 import java.time.Instant;
 import java.time.format.DateTimeParseException;
 import kotlin.Lazy;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.context.annotation.Profile;
 
 @Configuration
-@ConditionalOnProperty(prefix = "agent.workflow", name = "mode", havingValue = "cadence")
 public class CadenceWorkflowConfig {
 
   @Bean
@@ -63,6 +62,7 @@ public class CadenceWorkflowConfig {
   }
 
   @Bean
+  @Profile("!test")
   public WorkerFactory cadenceWorkerFactory(
       WorkflowClient cadenceWorkflowClient,
       AgentWorkflowProperties properties,

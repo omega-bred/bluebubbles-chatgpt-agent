@@ -1,5 +1,6 @@
-package io.breland.bbagent.server.agent;
+package io.breland.bbagent.server.agent.account;
 
+import io.breland.bbagent.server.agent.IncomingMessage;
 import java.util.Locale;
 import java.util.Optional;
 import java.util.regex.Pattern;

@@ -4,9 +4,9 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import io.breland.bbagent.server.agent.AgentAccountResolver;
-import io.breland.bbagent.server.agent.BBMessageAgent;
 import io.breland.bbagent.server.agent.IncomingMessage;
+import io.breland.bbagent.server.agent.account.AgentAccountResolver;
+import io.breland.bbagent.server.agent.profile.AssistantResponsiveness;
 import java.util.Optional;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -23,17 +23,14 @@ class PostgresAgentSettingsStoreTest {
     String chatGuid = "iMessage;+;chat123";
     assertTrue(store.findAssistantResponsiveness(chatGuid).isEmpty());
 
-    store.saveAssistantResponsiveness(
-        chatGuid, BBMessageAgent.AssistantResponsiveness.MORE_RESPONSIVE);
-    Optional<BBMessageAgent.AssistantResponsiveness> loaded =
-        store.findAssistantResponsiveness(chatGuid);
+    store.saveAssistantResponsiveness(chatGuid, AssistantResponsiveness.MORE_RESPONSIVE);
+    Optional<AssistantResponsiveness> loaded = store.findAssistantResponsiveness(chatGuid);
     assertTrue(loaded.isPresent());
-    assertEquals(BBMessageAgent.AssistantResponsiveness.MORE_RESPONSIVE, loaded.get());
+    assertEquals(AssistantResponsiveness.MORE_RESPONSIVE, loaded.get());
 
-    store.saveAssistantResponsiveness(
-        chatGuid, BBMessageAgent.AssistantResponsiveness.LESS_RESPONSIVE);
+    store.saveAssistantResponsiveness(chatGuid, AssistantResponsiveness.LESS_RESPONSIVE);
     assertEquals(
-        BBMessageAgent.AssistantResponsiveness.LESS_RESPONSIVE,
+        AssistantResponsiveness.LESS_RESPONSIVE,
         store.findAssistantResponsiveness(chatGuid).orElse(null));
 
     store.deleteAssistantResponsiveness(chatGuid);

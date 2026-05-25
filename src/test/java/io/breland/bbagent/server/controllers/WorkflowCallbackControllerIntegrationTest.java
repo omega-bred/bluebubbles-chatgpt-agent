@@ -1,13 +1,16 @@
 package io.breland.bbagent.server.controllers;
 
-import static org.mockito.Mockito.timeout;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-import io.breland.bbagent.server.agent.BBMessageAgent;
+import com.uber.cadence.WorkflowExecution;
 import io.breland.bbagent.server.agent.IncomingMessage;
+import io.breland.bbagent.server.agent.cadence.CadenceWorkflowLauncher;
+import io.breland.bbagent.server.agent.cadence.models.CadenceMessageWorkflowRequest;
 import io.breland.bbagent.server.agent.persistence.workflowcallback.AgentWorkflowCallbackRepository;
 import io.breland.bbagent.server.agent.workflowcallback.StandardWebhookVerifier;
 import io.breland.bbagent.server.agent.workflowcallback.WorkflowCallbackService;
@@ -32,7 +35,7 @@ class WorkflowCallbackControllerIntegrationTest {
   @Autowired private AgentWorkflowCallbackRepository callbackRepository;
   @Autowired private StandardWebhookVerifier verifier;
 
-  @MockBean private BBMessageAgent messageAgent;
+  @MockBean private CadenceWorkflowLauncher cadenceWorkflowLauncher;
 
   @BeforeEach
   void clean() {
@@ -40,13 +43,18 @@ class WorkflowCallbackControllerIntegrationTest {
   }
 
   @Test
-  void signedCallbackWithoutContentTypeIsAcceptedAndProcessedInline() throws Exception {
+  void signedCallbackWithoutContentTypeIsAcceptedAndProcessedWithCadence() throws Exception {
     WorkflowCallbackService.CreatedCallback callback =
         callbackService.createCallback(
             incomingMessage(),
             "Clone repo and summarize commits",
             "Send the summary.",
             Duration.ofMinutes(30));
+    WorkflowExecution execution = new WorkflowExecution();
+    execution.setWorkflowId("callback:" + callback.callbackId());
+    execution.setRunId("run-1");
+    when(cadenceWorkflowLauncher.startWorkflow(any(CadenceMessageWorkflowRequest.class)))
+        .thenReturn(execution);
     byte[] payload = payload();
     String webhookId = "evt_callback_integration_1";
     String timestamp = String.valueOf(Instant.now().getEpochSecond());
@@ -63,11 +71,12 @@ class WorkflowCallbackControllerIntegrationTest {
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.status").value("processed"))
         .andExpect(jsonPath("$.workflow_id").value("callback:" + callback.callbackId()))
-        .andExpect(jsonPath("$.run_id").value("inline"));
+        .andExpect(jsonPath("$.run_id").value("run-1"));
 
-    ArgumentCaptor<IncomingMessage> messageCaptor = ArgumentCaptor.forClass(IncomingMessage.class);
-    verify(messageAgent, timeout(1000)).handleIncomingMessage(messageCaptor.capture());
-    String callbackText = messageCaptor.getValue().text();
+    ArgumentCaptor<CadenceMessageWorkflowRequest> requestCaptor =
+        ArgumentCaptor.forClass(CadenceMessageWorkflowRequest.class);
+    verify(cadenceWorkflowLauncher).startWorkflow(requestCaptor.capture());
+    String callbackText = requestCaptor.getValue().message().text();
     org.junit.jupiter.api.Assertions.assertTrue(callbackText.contains("Callback payload"));
     org.junit.jupiter.api.Assertions.assertTrue(
         callbackText.contains("Clone repo and summarize commits"));
@@ -81,7 +90,7 @@ class WorkflowCallbackControllerIntegrationTest {
         null,
         "start task",
         false,
-        BBMessageAgent.IMESSAGE_SERVICE,
+        "iMessage",
         "Alice",
         false,
         Instant.now(),

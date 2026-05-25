@@ -3,10 +3,10 @@ package io.breland.bbagent.server.agent.transport.bb;
 import io.breland.bbagent.generated.bluebubblesclient.model.ApiV1ChatChatGuidMessageGet200ResponseDataInner;
 import io.breland.bbagent.generated.bluebubblesclient.model.ApiV1MessageReactPostRequest;
 import io.breland.bbagent.generated.bluebubblesclient.model.ApiV1MessageTextPostRequest;
-import io.breland.bbagent.server.agent.BBMessageAgent;
 import io.breland.bbagent.server.agent.ConversationState;
 import io.breland.bbagent.server.agent.ConversationTurn;
 import io.breland.bbagent.server.agent.IncomingMessage;
+import io.breland.bbagent.server.agent.reactions.MessageReactionSupport;
 import io.breland.bbagent.server.agent.transport.MessageTransport;
 import io.breland.bbagent.server.agent.transport.OutgoingTextMessage;
 import java.time.Instant;
@@ -77,7 +77,7 @@ public class BlueBubblesMessageTransport implements MessageTransport {
       return false;
     }
     String text = msg.getText();
-    return text != null && !text.isBlank() && !BBMessageAgent.isReactionMessage(text);
+    return text != null && !text.isBlank() && !MessageReactionSupport.isReactionMessage(text);
   }
 
   private boolean isCurrentMessage(String hydratedMessageGuid, IncomingMessage currentMessage) {
