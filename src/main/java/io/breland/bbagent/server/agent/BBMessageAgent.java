@@ -14,8 +14,6 @@ import io.breland.bbagent.server.agent.tools.AgentTool;
 import io.breland.bbagent.server.agent.tools.AgentToolRegistry;
 import io.breland.bbagent.server.agent.tools.ToolContext;
 import io.breland.bbagent.server.agent.tools.bb.SendTextAgentTool;
-import io.breland.bbagent.server.agent.tools.coder.CoderAsyncTaskStartStore;
-import io.breland.bbagent.server.agent.tools.coder.CoderMcpClient;
 import io.breland.bbagent.server.agent.tools.gcal.*;
 import io.breland.bbagent.server.agent.tools.giphy.GiphyClient;
 import io.breland.bbagent.server.agent.tools.memory.*;
@@ -94,9 +92,6 @@ public class BBMessageAgent {
       BBHttpClientWrapper bbHttpClientWrapper,
       Mem0Client mem0Client,
       GcalClient gcalClient,
-      CoderMcpClient coderMcpClient,
-      WorkflowCallbackService workflowCallbackService,
-      CoderAsyncTaskStartStore coderAsyncTaskStartStore,
       WebsiteAccountService websiteAccountService,
       GiphyClient giphyClient,
       AgentProfileService profileService,
@@ -129,9 +124,6 @@ public class BBMessageAgent {
             bbHttpClientWrapper,
             mem0Client,
             gcalClient,
-            coderMcpClient,
-            workflowCallbackService,
-            coderAsyncTaskStartStore,
             websiteAccountService,
             giphyClient,
             this.transportRegistry,
@@ -473,7 +465,7 @@ public class BBMessageAgent {
     AgentTool tool = resolvedTool.tool();
     String output;
     String failureType;
-    String toolCategory = toolRegistry.toolCategory(toolCall.name(), resolvedTool.coderMcpTool());
+    String toolCategory = toolRegistry.toolCategory(toolCall.name());
     boolean success = false;
     Instant startedAt = Instant.now();
     try {
@@ -550,12 +542,6 @@ public class BBMessageAgent {
     }
     if (normalized.startsWith("unknown tool:")) {
       return "unknown_tool";
-    }
-    if (normalized.startsWith("coder account mismatch")) {
-      return "account_mismatch";
-    }
-    if (normalized.startsWith("coder mcp tool call failed:")) {
-      return "tool_error";
     }
     if (normalized.startsWith("failed:")
         || normalized.startsWith("failed ")

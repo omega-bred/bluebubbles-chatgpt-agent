@@ -1,36 +1,18 @@
 package io.breland.bbagent.server.agent.tools.coder;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
-import com.fasterxml.jackson.core.type.TypeReference;
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.openai.models.responses.FunctionTool;
 import io.breland.bbagent.server.agent.persistence.coder.CoderOauthCredentialEntity;
 import io.breland.bbagent.server.agent.persistence.coder.CoderOauthCredentialRepository;
 import io.breland.bbagent.server.agent.persistence.coder.CoderOauthPendingAuthorizationEntity;
 import io.breland.bbagent.server.agent.persistence.coder.CoderOauthPendingAuthorizationRepository;
-import io.breland.bbagent.server.agent.tools.AgentTool;
-import io.breland.bbagent.server.agent.tools.JsonSchemaUtilities;
-import io.modelcontextprotocol.client.McpClient;
-import io.modelcontextprotocol.client.McpSyncClient;
-import io.modelcontextprotocol.client.transport.HttpClientStreamableHttpTransport;
-import io.modelcontextprotocol.client.transport.customizer.McpHttpClientAuthorizationErrorHandler;
-import io.modelcontextprotocol.spec.McpError;
-import io.modelcontextprotocol.spec.McpSchema;
 import java.io.IOException;
 import java.net.URI;
 import java.time.Duration;
 import java.time.Instant;
-import java.util.ArrayList;
-import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.function.Function;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.commons.lang3.StringUtils;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
@@ -44,15 +26,9 @@ import org.springframework.web.util.UriComponentsBuilder;
 @Slf4j
 @Component
 public class CoderMcpClient {
-  public static final String TOOL_PREFIX = "coder__";
-
   private static final Duration OAUTH_STATE_TTL = Duration.ofMinutes(10);
   private static final Duration TOKEN_REFRESH_LEEWAY = Duration.ofMinutes(1);
-  private static final TypeReference<Map<String, Object>> MAP_TYPE = new TypeReference<>() {};
 
-  private final ObjectMapper objectMapper;
-  private final CoderToolNameMapper toolNameMapper = new CoderToolNameMapper();
-  private final CoderToolResultFormatter toolResultFormatter;
   private final RestClient restClient;
   private final CoderOauthCredentialRepository credentialRepository;
   private final CoderOauthPendingAuthorizationRepository pendingAuthorizationRepository;
@@ -61,10 +37,7 @@ public class CoderMcpClient {
   private final String configuredClientId;
   private final String configuredClientSecret;
   private final String scopes;
-  private final Duration requestTimeout;
-  private final Duration toolCacheTtl;
   private final CoderOauthStateCodec stateCodec;
-  private final Map<String, CachedTools> toolsCache = new ConcurrentHashMap<>();
 
   private volatile ProtectedResourceMetadata protectedResourceMetadata;
   private volatile AuthorizationServerMetadata authorizationServerMetadata;
@@ -76,25 +49,18 @@ public class CoderMcpClient {
       @Value("${coder.oauth.client_id:}") String configuredClientId,
       @Value("${coder.oauth.client_secret:}") String configuredClientSecret,
       @Value("${coder.oauth.scopes:coder:all}") String scopes,
-      @Value("${coder.mcp.request_timeout_seconds:30}") long requestTimeoutSeconds,
-      @Value("${coder.mcp.tool_cache_ttl_seconds:300}") long toolCacheTtlSeconds,
       RestClient.Builder restClientBuilder,
       CoderOauthCredentialRepository credentialRepository,
-      CoderOauthPendingAuthorizationRepository pendingAuthorizationRepository,
-      ObjectMapper objectMapper) {
+      CoderOauthPendingAuthorizationRepository pendingAuthorizationRepository) {
     this.serverUrl = serverUrl;
     this.redirectUri = redirectUri;
     this.stateCodec = new CoderOauthStateCodec(stateSecret, OAUTH_STATE_TTL);
     this.configuredClientId = configuredClientId;
     this.configuredClientSecret = configuredClientSecret;
     this.scopes = scopes;
-    this.requestTimeout = Duration.ofSeconds(Math.max(1, requestTimeoutSeconds));
-    this.toolCacheTtl = Duration.ofSeconds(Math.max(1, toolCacheTtlSeconds));
     this.restClient = restClientBuilder.build();
     this.credentialRepository = credentialRepository;
     this.pendingAuthorizationRepository = pendingAuthorizationRepository;
-    this.objectMapper = objectMapper;
-    this.toolResultFormatter = new CoderToolResultFormatter(objectMapper);
   }
 
   public boolean isConfigured() {
@@ -183,7 +149,6 @@ public class CoderMcpClient {
           requestAuthorizationCodeToken(code, pendingAuth.getCodeVerifier());
       saveCredential(oauthState.accountId(), tokenResponse);
       pendingAuthorizationRepository.deleteById(pendingAuth.getPendingId());
-      toolsCache.remove(oauthState.accountId());
       return Optional.of(
           new OauthCompletion(
               oauthState.accountId(), oauthState.chatGuid(), oauthState.messageGuid()));
@@ -203,198 +168,7 @@ public class CoderMcpClient {
         credentialRepository.findById(credentialAccountId);
     existing.ifPresent(this::tryRevokeRemote);
     credentialRepository.deleteById(credentialAccountId);
-    toolsCache.remove(credentialAccountId);
     return existing.isPresent();
-  }
-
-  public List<AgentTool> getAgentTools(String accountId, java.util.Set<String> excludedMcpNames) {
-    if (!isConfigured()) {
-      return List.of();
-    }
-    Optional<String> linkedAccountId = resolveLinkedAccountId(accountId);
-    if (linkedAccountId.isEmpty()) {
-      return List.of();
-    }
-    try {
-      String credentialAccountId = linkedAccountId.get();
-      List<CoderToolDefinition> definitions = getToolDefinitions(credentialAccountId);
-      List<AgentTool> result = new ArrayList<>();
-      for (CoderToolDefinition definition : definitions) {
-        if (excludedMcpNames != null && excludedMcpNames.contains(definition.mcpName())) {
-          continue;
-        }
-        result.add(toAgentTool(accountId, credentialAccountId, definition));
-      }
-      return result;
-    } catch (Exception e) {
-      log.warn("Failed to load Coder MCP tools", e);
-      return List.of();
-    }
-  }
-
-  public Optional<AgentTool> getAgentTool(
-      String accountId, String agentToolName, java.util.Set<String> excludedMcpNames) {
-    if (agentToolName == null || !agentToolName.startsWith(TOOL_PREFIX)) {
-      return Optional.empty();
-    }
-    return getAgentTools(accountId, excludedMcpNames).stream()
-        .filter(tool -> agentToolName.equals(tool.name()))
-        .findFirst();
-  }
-
-  public String callMcpTool(String accountId, String mcpToolName, Map<String, Object> arguments)
-      throws IOException {
-    if (mcpToolName == null || mcpToolName.isBlank()) {
-      throw new IOException("missing Coder MCP tool name");
-    }
-    Optional<String> linkedAccountId = resolveLinkedAccountId(accountId);
-    if (linkedAccountId.isEmpty()) {
-      throw new IOException("Coder account is not linked");
-    }
-    String credentialAccountId = linkedAccountId.get();
-    CoderToolDefinition definition =
-        getToolDefinitions(credentialAccountId).stream()
-            .filter(tool -> mcpToolName.equals(tool.mcpName()))
-            .findFirst()
-            .orElseThrow(() -> new IOException("Unknown Coder MCP tool: " + mcpToolName));
-    McpSchema.CallToolResult result =
-        withClient(
-            credentialAccountId,
-            client ->
-                client.callTool(
-                    new McpSchema.CallToolRequest(
-                        definition.mcpName(),
-                        arguments == null ? Map.of() : Map.copyOf(arguments))));
-    return toolResultFormatter.format(result);
-  }
-
-  private AgentTool toAgentTool(
-      String requestedAccountId, String credentialAccountId, CoderToolDefinition definition) {
-    return new AgentTool(
-        definition.agentName(),
-        toolDescription(definition),
-        parameters(definition.tool().inputSchema()),
-        false,
-        (context, args) -> {
-          try {
-            String resolvedAccountId = context.accountId();
-            if (resolvedAccountId == null || !resolvedAccountId.equals(requestedAccountId)) {
-              return "Coder account mismatch";
-            }
-            return callTool(credentialAccountId, definition.agentName(), args);
-          } catch (Exception e) {
-            log.warn("Coder MCP tool call failed: {}", definition.mcpName(), e);
-            return "Coder MCP tool call failed: " + e.getMessage();
-          }
-        });
-  }
-
-  private String callTool(String accountId, String agentToolName, JsonNode args)
-      throws IOException {
-    CoderToolDefinition definition =
-        getToolDefinitions(accountId).stream()
-            .filter(tool -> agentToolName.equals(tool.agentName()))
-            .findFirst()
-            .orElseThrow(() -> new IOException("Unknown Coder MCP tool: " + agentToolName));
-    Map<String, Object> arguments =
-        args == null || args.isNull() ? Map.of() : objectMapper.convertValue(args, MAP_TYPE);
-    McpSchema.CallToolResult result =
-        withClient(
-            accountId,
-            client ->
-                client.callTool(new McpSchema.CallToolRequest(definition.mcpName(), arguments)));
-    return toolResultFormatter.format(result);
-  }
-
-  private List<CoderToolDefinition> getToolDefinitions(String accountId) throws IOException {
-    CachedTools cached = toolsCache.get(accountId);
-    if (cached != null && cached.expiresAt().isAfter(Instant.now())) {
-      return cached.tools();
-    }
-    List<McpSchema.Tool> mcpTools =
-        withClient(
-            accountId,
-            client -> {
-              List<McpSchema.Tool> allTools = new ArrayList<>();
-              String cursor = null;
-              do {
-                McpSchema.ListToolsResult page =
-                    cursor == null ? client.listTools() : client.listTools(cursor);
-                if (page != null && page.tools() != null) {
-                  allTools.addAll(page.tools());
-                }
-                cursor = page == null ? null : page.nextCursor();
-              } while (cursor != null && !cursor.isBlank());
-              return allTools;
-            });
-    List<CoderToolDefinition> definitions = new ArrayList<>();
-    if (mcpTools != null) {
-      Map<String, Integer> nameCounts = new LinkedHashMap<>();
-      for (McpSchema.Tool tool : mcpTools) {
-        String agentName = toolNameMapper.toAgentToolName(tool.name());
-        int count = nameCounts.merge(agentName, 1, Integer::sum);
-        if (count > 1) {
-          agentName = toolNameMapper.disambiguateAgentToolName(tool.name(), count);
-        }
-        definitions.add(new CoderToolDefinition(agentName, tool.name(), tool));
-      }
-    }
-    CachedTools next = new CachedTools(List.copyOf(definitions), Instant.now().plus(toolCacheTtl));
-    toolsCache.put(accountId, next);
-    return next.tools();
-  }
-
-  private <T> T withClient(String accountId, Function<McpSyncClient, T> callback)
-      throws IOException {
-    if (!isLinked(accountId)) {
-      throw new IOException("Coder account is not linked");
-    }
-    ParsedMcpServer parsedServer = parseServerUrl();
-    HttpClientStreamableHttpTransport transport =
-        HttpClientStreamableHttpTransport.builder(parsedServer.baseUri())
-            .endpoint(parsedServer.endpoint())
-            .httpRequestCustomizer(
-                (builder, method, endpoint, body, context) ->
-                    builder.header(
-                        HttpHeaders.AUTHORIZATION,
-                        "Bearer " + getValidAccessTokenUnchecked(accountId)))
-            .authorizationErrorHandler(
-                McpHttpClientAuthorizationErrorHandler.fromSync(
-                    (responseInfo, context) -> refreshCredential(accountId, true).isPresent()))
-            .connectTimeout(requestTimeout)
-            .build();
-    McpSyncClient client =
-        McpClient.sync(transport)
-            .requestTimeout(requestTimeout)
-            .initializationTimeout(requestTimeout)
-            .clientInfo(new McpSchema.Implementation("BlueChat", "0.0.1"))
-            .build();
-    try {
-      client.initialize();
-      return callback.apply(client);
-    } catch (McpError e) {
-      throw new IOException("Coder MCP request failed: " + throwableMessage(e), e);
-    } catch (RuntimeException e) {
-      throw toCoderMcpIOException(e);
-    } finally {
-      client.closeGracefully();
-    }
-  }
-
-  private IOException toCoderMcpIOException(RuntimeException e) {
-    Throwable current = e;
-    while (current != null) {
-      if (current instanceof McpError) {
-        return new IOException("Coder MCP request failed: " + throwableMessage(current), current);
-      }
-      current = current.getCause();
-    }
-    return new IOException("Coder MCP request failed: " + throwableMessage(e), e);
-  }
-
-  private static String throwableMessage(Throwable throwable) {
-    String message = throwable.getMessage();
-    return message == null || message.isBlank() ? throwable.getClass().getSimpleName() : message;
   }
 
   private String getValidAccessToken(String accountId) throws IOException {
@@ -486,7 +260,6 @@ public class CoderMcpClient {
     try {
       TokenResponse tokenResponse = requestRefreshToken(credential.getRefreshToken());
       CoderOauthCredentialEntity saved = saveCredential(accountId, tokenResponse);
-      toolsCache.remove(accountId);
       return Optional.of(saved);
     } catch (Exception e) {
       log.warn("Failed to refresh Coder OAuth token", e);
@@ -645,65 +418,8 @@ public class CoderMcpClient {
     return metadata;
   }
 
-  private ParsedMcpServer parseServerUrl() {
-    URI uri = URI.create(serverUrl);
-    String baseUri = serverOrigin(uri);
-    String endpoint = uri.getRawPath();
-    if (endpoint == null || endpoint.isBlank()) {
-      endpoint = "/mcp";
-    }
-    if (uri.getRawQuery() != null && !uri.getRawQuery().isBlank()) {
-      endpoint += "?" + uri.getRawQuery();
-    }
-    return new ParsedMcpServer(baseUri, endpoint);
-  }
-
   private String serverOrigin(URI uri) {
     return uri.getScheme() + "://" + uri.getAuthority();
-  }
-
-  private String toolDescription(CoderToolDefinition definition) {
-    String description = definition.tool().description();
-    if (description == null || description.isBlank()) {
-      description = definition.tool().title();
-    }
-    if (description == null || description.isBlank()) {
-      description = "Call a Coder MCP tool.";
-    }
-    if ("coder_create_task".equals(definition.mcpName())) {
-      description +=
-          " For template_version_id, pass a valid template version UUID from Coder, not a template"
-              + " name, display name, or template ID.";
-    }
-    String full = "Coder MCP tool `" + definition.mcpName() + "`: " + description;
-    return StringUtils.abbreviate(full, 900);
-  }
-
-  private FunctionTool.Parameters parameters(McpSchema.JsonSchema schema) {
-    Map<String, Object> normalized = new LinkedHashMap<>();
-    if (schema != null) {
-      if (schema.type() != null) {
-        normalized.put("type", schema.type());
-      }
-      if (schema.properties() != null) {
-        normalized.put("properties", schema.properties());
-      }
-      if (schema.required() != null) {
-        normalized.put("required", schema.required());
-      }
-      if (schema.additionalProperties() != null) {
-        normalized.put("additionalProperties", schema.additionalProperties());
-      }
-      if (schema.defs() != null) {
-        normalized.put("$defs", schema.defs());
-      }
-      if (schema.definitions() != null) {
-        normalized.put("definitions", schema.definitions());
-      }
-    }
-    normalized.putIfAbsent("type", "object");
-    normalized.putIfAbsent("properties", new LinkedHashMap<>());
-    return JsonSchemaUtilities.functionParameters(normalized);
   }
 
   public record OauthCompletion(String accountId, String chatGuid, String messageGuid) {}
@@ -713,12 +429,6 @@ public class CoderMcpClient {
 
   private record OAuthClientRegistration(
       String issuer, String clientId, String clientSecret, String tokenEndpointAuthMethod) {}
-
-  private record ParsedMcpServer(String baseUri, String endpoint) {}
-
-  private record CachedTools(List<CoderToolDefinition> tools, Instant expiresAt) {}
-
-  private record CoderToolDefinition(String agentName, String mcpName, McpSchema.Tool tool) {}
 
   private record ProtectedResourceMetadata(
       String resource,

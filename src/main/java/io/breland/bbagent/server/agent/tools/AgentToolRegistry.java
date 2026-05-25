@@ -15,10 +15,6 @@ import io.breland.bbagent.server.agent.tools.bb.SendPollAgentTool;
 import io.breland.bbagent.server.agent.tools.bb.SendReactionAgentTool;
 import io.breland.bbagent.server.agent.tools.bb.SendTextAgentTool;
 import io.breland.bbagent.server.agent.tools.bb.SetGroupIconAgentTool;
-import io.breland.bbagent.server.agent.tools.coder.CoderAsyncTaskStartStore;
-import io.breland.bbagent.server.agent.tools.coder.CoderAuthAgentTool;
-import io.breland.bbagent.server.agent.tools.coder.CoderMcpClient;
-import io.breland.bbagent.server.agent.tools.coder.StartCoderAsyncTaskAgentTool;
 import io.breland.bbagent.server.agent.tools.feedback.FeedbackAgentTool;
 import io.breland.bbagent.server.agent.tools.gcal.CreateEventAgentTool;
 import io.breland.bbagent.server.agent.tools.gcal.DeleteEventAgentTool;
@@ -51,11 +47,9 @@ import io.breland.bbagent.server.agent.tools.website.LinkWebsiteAccountAgentTool
 import io.breland.bbagent.server.agent.transport.MessageTransport;
 import io.breland.bbagent.server.agent.transport.MessageTransportRegistry;
 import io.breland.bbagent.server.agent.transport.bb.BBHttpClientWrapper;
-import io.breland.bbagent.server.agent.workflowcallback.WorkflowCallbackService;
 import io.breland.bbagent.server.feedback.FeedbackService;
 import io.breland.bbagent.server.ratelimit.MessageResponseRateLimitService;
 import io.breland.bbagent.server.website.WebsiteAccountService;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -79,8 +73,6 @@ public final class AgentToolRegistry {
           GetThreadContextAgentTool.TOOL_NAME,
           SendPollAgentTool.TOOL_NAME,
           ReadPollAgentTool.TOOL_NAME);
-  static final Set<String> HIDDEN_CODER_MCP_TOOL_NAMES =
-      Set.of(StartCoderAsyncTaskAgentTool.CREATE_TASK_MCP_TOOL);
   private static final Set<String> BLUEBUBBLES_TOOL_NAMES =
       Set.of(
           SendTextAgentTool.TOOL_NAME,
@@ -107,8 +99,6 @@ public final class AgentToolRegistry {
           ManageAccountsAgentTool.TOOL_NAME,
           ListColorsAgentTool.TOOL_NAME,
           GetCurrentTimeAgentTool.TOOL_NAME);
-  private static final Set<String> CODER_TOOL_NAMES =
-      Set.of(CoderAuthAgentTool.TOOL_NAME, StartCoderAsyncTaskAgentTool.TOOL_NAME);
   private static final Set<String> WEBSITE_TOOL_NAMES =
       Set.of(LinkWebsiteAccountAgentTool.TOOL_NAME, GetWebsiteAccountLinkStatusAgentTool.TOOL_NAME);
   private static final Set<String> ASSISTANT_TOOL_NAMES =
@@ -125,16 +115,12 @@ public final class AgentToolRegistry {
 
   private final Map<String, AgentTool> tools = new ConcurrentHashMap<>();
   private final MessageTransportRegistry transportRegistry;
-  private final @Nullable CoderMcpClient coderMcpClient;
   private final Function<IncomingMessage, Optional<String>> accountIdResolver;
 
   public AgentToolRegistry(
       BBHttpClientWrapper bbHttpClientWrapper,
       Mem0Client mem0Client,
       GcalClient gcalClient,
-      @Nullable CoderMcpClient coderMcpClient,
-      @Nullable WorkflowCallbackService workflowCallbackService,
-      @Nullable CoderAsyncTaskStartStore coderAsyncTaskStartStore,
       @Nullable WebsiteAccountService websiteAccountService,
       GiphyClient giphyClient,
       MessageTransportRegistry transportRegistry,
@@ -145,15 +131,11 @@ public final class AgentToolRegistry {
       CadenceWorkflowLauncher cadenceWorkflowLauncher,
       Function<IncomingMessage, Optional<String>> accountIdResolver) {
     this.transportRegistry = transportRegistry;
-    this.coderMcpClient = coderMcpClient;
     this.accountIdResolver = accountIdResolver;
     registerBuiltInTools(
         bbHttpClientWrapper,
         mem0Client,
         gcalClient,
-        coderMcpClient,
-        workflowCallbackService,
-        coderAsyncTaskStartStore,
         websiteAccountService,
         giphyClient,
         objectMapper,
@@ -164,12 +146,10 @@ public final class AgentToolRegistry {
   }
 
   public List<AgentTool> availableTools(IncomingMessage message) {
-    List<AgentTool> available = new ArrayList<>(tools.values());
     String accountId = resolveAccountId(message);
-    if (coderMcpClient != null) {
-      available.addAll(coderMcpClient.getAgentTools(accountId, HIDDEN_CODER_MCP_TOOL_NAMES));
-    }
-    return available.stream().filter(tool -> shouldIncludeTool(tool, message, accountId)).toList();
+    return tools.values().stream()
+        .filter(tool -> shouldIncludeTool(tool, message, accountId))
+        .toList();
   }
 
   public ResolvedTool resolveTool(String toolName, IncomingMessage message) {
@@ -177,35 +157,22 @@ public final class AgentToolRegistry {
     if (tool != null) {
       if (KUBERNETES_TOOL_NAMES.contains(toolName)
           && !isKubernetesToolAllowed(message, resolveAccountId(message))) {
-        return new ResolvedTool(null, false);
+        return new ResolvedTool(null);
       }
-      return new ResolvedTool(tool, false);
+      return new ResolvedTool(tool);
     }
-    if (coderMcpClient == null) {
-      return new ResolvedTool(null, false);
-    }
-    String accountId = resolveAccountId(message);
-    return coderMcpClient
-        .getAgentTool(accountId, toolName, HIDDEN_CODER_MCP_TOOL_NAMES)
-        .map(coderTool -> new ResolvedTool(coderTool, true))
-        .orElseGet(() -> new ResolvedTool(null, false));
+    return new ResolvedTool(null);
   }
 
-  public String toolCategory(String toolName, boolean coderMcpTool) {
+  public String toolCategory(String toolName) {
     if (toolName == null || toolName.isBlank()) {
       return "other";
-    }
-    if (coderMcpTool || toolName.startsWith(CoderMcpClient.TOOL_PREFIX)) {
-      return "coder_mcp";
     }
     if (BLUEBUBBLES_TOOL_NAMES.contains(toolName)) {
       return "bluebubbles";
     }
     if (GCAL_TOOL_NAMES.contains(toolName)) {
       return "google_calendar";
-    }
-    if (CODER_TOOL_NAMES.contains(toolName)) {
-      return "coder";
     }
     if (WEBSITE_TOOL_NAMES.contains(toolName)) {
       return "website";
@@ -265,9 +232,6 @@ public final class AgentToolRegistry {
       BBHttpClientWrapper bbHttpClientWrapper,
       Mem0Client mem0Client,
       GcalClient gcalClient,
-      @Nullable CoderMcpClient coderMcpClient,
-      @Nullable WorkflowCallbackService workflowCallbackService,
-      @Nullable CoderAsyncTaskStartStore coderAsyncTaskStartStore,
       @Nullable WebsiteAccountService websiteAccountService,
       GiphyClient giphyClient,
       ObjectMapper objectMapper,
@@ -306,20 +270,6 @@ public final class AgentToolRegistry {
     registerTool(new ManageAccountsAgentTool(gcalClient).getTool());
     registerTool(new ListColorsAgentTool(gcalClient).getTool());
     registerTool(new GetCurrentTimeAgentTool(gcalClient).getTool());
-    if (coderMcpClient != null) {
-      registerTool(new CoderAuthAgentTool(coderMcpClient).getTool());
-    }
-    if (coderMcpClient != null
-        && workflowCallbackService != null
-        && coderAsyncTaskStartStore != null) {
-      registerTool(
-          new StartCoderAsyncTaskAgentTool(
-                  coderMcpClient,
-                  workflowCallbackService,
-                  coderAsyncTaskStartStore,
-                  cadenceWorkflowLauncher)
-              .getTool());
-    }
     if (websiteAccountService != null) {
       registerTool(new LinkWebsiteAccountAgentTool(websiteAccountService).getTool());
       registerTool(new GetWebsiteAccountLinkStatusAgentTool(websiteAccountService).getTool());
@@ -342,5 +292,5 @@ public final class AgentToolRegistry {
     tools.put(tool.name(), tool);
   }
 
-  public record ResolvedTool(@Nullable AgentTool tool, boolean coderMcpTool) {}
+  public record ResolvedTool(@Nullable AgentTool tool) {}
 }

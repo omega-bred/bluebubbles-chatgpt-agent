@@ -56,7 +56,6 @@ public class ScheduledEventTool implements ToolProvider {
             + "For recurring tasks, include repeatInterval only when recurrence is explicitly needed; "
             + "repeatInterval must be representable as Unix cron, such as PT1M, PT5M, PT1H, or PT24H. "
             + "Use this for reminders, follow-ups, and watching long-running work. "
-            + "After starting a long-running Coder task or workspace build, schedule a one-time status check with delaySeconds and no repeatInterval unless the user asks for repeated checks. "
             + "For long-running work checks, write the task so that if the work is still pending or running, the assistant must call schedule_event again for another one-time check before ending the turn, unless the work is complete, failed, canceled, expired, or the task's max attempts/deadline has been reached. "
             + "Use the task to describe what should happen, include any IDs needed to continue, attempt count, deadline or callback expiration, and say how the user should be notified.",
         jsonSchema(ScheduledEventRequest.class),

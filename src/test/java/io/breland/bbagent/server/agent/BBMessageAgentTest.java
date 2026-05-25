@@ -4,9 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anySet;
 import static org.mockito.ArgumentMatchers.anyString;
-import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -51,15 +49,10 @@ import io.breland.bbagent.server.agent.tools.AgentTool;
 import io.breland.bbagent.server.agent.tools.ToolContext;
 import io.breland.bbagent.server.agent.tools.assistant.AssistantNameAgentTool;
 import io.breland.bbagent.server.agent.tools.bb.RenameConversationAgentTool;
-import io.breland.bbagent.server.agent.tools.coder.CoderAsyncTaskStartStore;
-import io.breland.bbagent.server.agent.tools.coder.CoderAuthAgentTool;
-import io.breland.bbagent.server.agent.tools.coder.CoderMcpClient;
-import io.breland.bbagent.server.agent.tools.coder.StartCoderAsyncTaskAgentTool;
 import io.breland.bbagent.server.agent.tools.gcal.GcalClient;
 import io.breland.bbagent.server.agent.tools.giphy.GiphyClient;
 import io.breland.bbagent.server.agent.tools.memory.Mem0Client;
 import io.breland.bbagent.server.agent.transport.bb.BBHttpClientWrapper;
-import io.breland.bbagent.server.agent.workflowcallback.WorkflowCallbackService;
 import io.breland.bbagent.server.metrics.AgentMetricsService;
 import io.breland.bbagent.server.metrics.AgentToolMetricEvent;
 import io.breland.bbagent.server.website.WebsiteAccountService;
@@ -71,7 +64,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
-import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -312,7 +304,7 @@ class BBMessageAgentTest {
   }
 
   @Test
-  void agentInstructionsTellModelToUseAllInOneToolForCoderTasks() {
+  void agentInstructionsDoNotMentionCoderTools() {
     AgentPromptBuilder promptBuilder = promptBuilder(new StubBBHttpClientWrapper());
 
     String prompt =
@@ -320,15 +312,13 @@ class BBMessageAgentTest {
             .buildConversationInput(
                 List.of(),
                 List.of(),
-                incomingMessage("iMessage;+;chat-coder", "msg-coder", "start a coder task", 1_000L))
+                incomingMessage("iMessage;+;chat-prompt", "msg-prompt", "hello", 1_000L))
             .toString();
 
-    assertTrue(prompt.contains(StartCoderAsyncTaskAgentTool.TOOL_NAME));
-    assertTrue(prompt.contains("creates the callback"));
-    assertTrue(prompt.contains("starts the Coder task"));
-    assertTrue(prompt.contains("schedule_event"));
-    assertTrue(prompt.contains("still pending or running"));
-    assertTrue(prompt.contains("do not call create_workflow_callback"));
+    assertFalse(prompt.contains("Coder"));
+    assertFalse(prompt.contains("coder__"));
+    assertFalse(prompt.contains("coder_auth"));
+    assertFalse(prompt.contains("start_coder_async_task"));
   }
 
   @Test
@@ -657,9 +647,6 @@ class BBMessageAgentTest {
             Mockito.mock(Mem0Client.class),
             Mockito.mock(GcalClient.class),
             null,
-            null,
-            null,
-            null,
             Mockito.mock(GiphyClient.class),
             profileService(),
             attachmentInputBuilder(bbHttpClientWrapper),
@@ -829,9 +816,6 @@ class BBMessageAgentTest {
             mem0Client,
             gcalClient,
             null,
-            null,
-            null,
-            null,
             giphyClient,
             profileService(),
             attachmentInputBuilder(bbHttpClientWrapper),
@@ -871,17 +855,14 @@ class BBMessageAgentTest {
   }
 
   @Test
-  void injectsCoderMcpToolsAlongsideAuthToolWhenLinked() {
+  void doesNotInjectCoderTools() {
     OpenAIClient openAIClient = Mockito.mock(OpenAIClient.class);
     var responseService = Mockito.mock(com.openai.services.blocking.ResponseService.class);
     StubBBHttpClientWrapper bbHttpClientWrapper = new StubBBHttpClientWrapper();
-    CoderMcpClient coderMcpClient = Mockito.mock(CoderMcpClient.class);
 
     when(openAIClient.responses()).thenReturn(responseService);
     when(responseService.create(any(ResponseCreateParams.class)))
         .thenReturn(responseWithNoToolCalls());
-    when(coderMcpClient.getAgentTools(eq("Alice"), anySet()))
-        .thenReturn(List.of(testTool("coder__coder_list_templates_abc123")));
 
     BBMessageAgent agent =
         new BBMessageAgent(
@@ -889,9 +870,6 @@ class BBMessageAgentTest {
             bbHttpClientWrapper,
             Mockito.mock(Mem0Client.class),
             Mockito.mock(GcalClient.class),
-            coderMcpClient,
-            null,
-            null,
             null,
             Mockito.mock(GiphyClient.class),
             profileService(),
@@ -916,22 +894,15 @@ class BBMessageAgentTest {
         ArgumentCaptor.forClass(ResponseCreateParams.class);
     verify(responseService).create(paramsCaptor.capture());
     String request = paramsCaptor.getValue().toString();
-    assertTrue(request.contains(CoderAuthAgentTool.TOOL_NAME));
-    assertTrue(request.contains("coder__coder_list_templates_abc123"));
+    assertFalse(request.contains("coder_auth"));
+    assertFalse(request.contains("start_coder_async_task"));
+    assertFalse(request.contains("coder__"));
   }
 
   @Test
-  void injectsAllInOneCoderTaskToolAndHidesDirectCreateTaskTool() {
+  void doesNotResolveCoderMcpToolCalls() {
     OpenAIClient openAIClient = Mockito.mock(OpenAIClient.class);
-    var responseService = Mockito.mock(com.openai.services.blocking.ResponseService.class);
     StubBBHttpClientWrapper bbHttpClientWrapper = new StubBBHttpClientWrapper();
-    CoderMcpClient coderMcpClient = Mockito.mock(CoderMcpClient.class);
-
-    when(openAIClient.responses()).thenReturn(responseService);
-    when(responseService.create(any(ResponseCreateParams.class)))
-        .thenReturn(responseWithNoToolCalls());
-    when(coderMcpClient.getAgentTools(eq("Alice"), anySet()))
-        .thenReturn(List.of(testTool("coder__coder_list_templates_abc123")));
 
     BBMessageAgent agent =
         new BBMessageAgent(
@@ -939,9 +910,6 @@ class BBMessageAgentTest {
             bbHttpClientWrapper,
             Mockito.mock(Mem0Client.class),
             Mockito.mock(GcalClient.class),
-            coderMcpClient,
-            Mockito.mock(WorkflowCallbackService.class),
-            Mockito.mock(CoderAsyncTaskStartStore.class),
             null,
             Mockito.mock(GiphyClient.class),
             profileService(),
@@ -956,23 +924,18 @@ class BBMessageAgentTest {
 
     IncomingMessage incoming =
         incomingMessage("iMessage;+;chat-coder", "msg-coder-task", "start a coder task", 1_000L);
-    agent.createResponse(
-        promptBuilder(bbHttpClientWrapper).buildConversationInput(List.of(), List.of(), incoming),
-        incoming,
-        new AgentWorkflowContext(
-            incoming.chatGuid(), incoming.chatGuid(), incoming.messageGuid(), Instant.now()));
+    ResponseInputItem output =
+        agent.runToolActivity(
+            ResponseFunctionToolCall.builder()
+                .name("coder__coder_list_templates_abc123")
+                .arguments("{}")
+                .callId("call-coder")
+                .build(),
+            incoming,
+            new AgentWorkflowContext(
+                incoming.chatGuid(), incoming.chatGuid(), incoming.messageGuid(), Instant.now()));
 
-    ArgumentCaptor<ResponseCreateParams> paramsCaptor =
-        ArgumentCaptor.forClass(ResponseCreateParams.class);
-    verify(responseService).create(paramsCaptor.capture());
-    String request = paramsCaptor.getValue().toString();
-    assertTrue(request.contains(StartCoderAsyncTaskAgentTool.TOOL_NAME));
-
-    @SuppressWarnings("unchecked")
-    ArgumentCaptor<Set<String>> hiddenToolsCaptor = ArgumentCaptor.forClass((Class) Set.class);
-    verify(coderMcpClient).getAgentTools(eq("Alice"), hiddenToolsCaptor.capture());
-    assertTrue(
-        hiddenToolsCaptor.getValue().contains(StartCoderAsyncTaskAgentTool.CREATE_TASK_MCP_TOOL));
+    assertTrue(output.toString().contains("Unknown tool: coder__coder_list_templates_abc123"));
   }
 
   @Test
@@ -985,9 +948,6 @@ class BBMessageAgentTest {
             bbHttpClientWrapper,
             Mockito.mock(Mem0Client.class),
             Mockito.mock(GcalClient.class),
-            null,
-            null,
-            null,
             null,
             Mockito.mock(GiphyClient.class),
             profileService(),
@@ -1186,9 +1146,6 @@ class BBMessageAgentTest {
         bbHttpClientWrapper,
         Mockito.mock(Mem0Client.class),
         Mockito.mock(GcalClient.class),
-        Mockito.mock(CoderMcpClient.class),
-        null,
-        Mockito.mock(CoderAsyncTaskStartStore.class),
         null,
         Mockito.mock(GiphyClient.class),
         profileService(),
@@ -1211,9 +1168,6 @@ class BBMessageAgentTest {
         bbHttpClientWrapper,
         Mockito.mock(Mem0Client.class),
         Mockito.mock(GcalClient.class),
-        Mockito.mock(CoderMcpClient.class),
-        null,
-        Mockito.mock(CoderAsyncTaskStartStore.class),
         null,
         Mockito.mock(GiphyClient.class),
         profileService(accountResolver),
@@ -1234,9 +1188,6 @@ class BBMessageAgentTest {
         bbHttpClientWrapper,
         Mockito.mock(Mem0Client.class),
         Mockito.mock(GcalClient.class),
-        Mockito.mock(CoderMcpClient.class),
-        null,
-        Mockito.mock(CoderAsyncTaskStartStore.class),
         null,
         Mockito.mock(GiphyClient.class),
         profileService(),

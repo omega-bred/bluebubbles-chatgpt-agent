@@ -18,9 +18,6 @@ import io.breland.bbagent.server.agent.tools.bb.SearchConvoHistoryAgentTool;
 import io.breland.bbagent.server.agent.tools.bb.SendPollAgentTool;
 import io.breland.bbagent.server.agent.tools.bb.SendReactionAgentTool;
 import io.breland.bbagent.server.agent.tools.bb.SendTextAgentTool;
-import io.breland.bbagent.server.agent.tools.coder.CoderAuthAgentTool;
-import io.breland.bbagent.server.agent.tools.coder.CoderMcpClient;
-import io.breland.bbagent.server.agent.tools.coder.StartCoderAsyncTaskAgentTool;
 import io.breland.bbagent.server.agent.tools.feedback.FeedbackAgentTool;
 import io.breland.bbagent.server.agent.tools.gcal.CreateEventAgentTool;
 import io.breland.bbagent.server.agent.tools.gcal.DeleteEventAgentTool;
@@ -46,7 +43,6 @@ import io.breland.bbagent.server.agent.tools.scheduled.ScheduledEventTool;
 import io.breland.bbagent.server.agent.tools.website.GetWebsiteAccountLinkStatusAgentTool;
 import io.breland.bbagent.server.agent.tools.website.LinkWebsiteAccountAgentTool;
 import io.breland.bbagent.server.agent.transport.bb.BBHttpClientWrapper;
-import io.breland.bbagent.server.agent.workflowcallback.WorkflowCallbackService;
 import io.breland.bbagent.server.feedback.FeedbackService;
 import io.breland.bbagent.server.website.WebsiteAccountService;
 import java.time.Instant;
@@ -299,7 +295,7 @@ public final class AgentPromptBuilder {
                   + "Only call "
                   + SendTextAgentTool.TOOL_NAME
                   + " when you specifically need to send an extra message; plain text is fine otherwise. "
-                  + "Use available tools for tasks like calendars, memory, Coder, scheduled follow-ups, or lookups when asked. "
+                  + "Use available tools for tasks like calendars, memory, scheduled follow-ups, or lookups when asked. "
                   + "When the user asks about quota, usage limits, daily messages, or remaining messages, call "
                   + GetUsageLimitsAgentTool.TOOL_NAME
                   + " before answering. "
@@ -411,7 +407,7 @@ public final class AgentPromptBuilder {
                 + "When a scheduled follow-up checks async work and finds it is still pending or running, it must call "
                 + ScheduledEventTool.TOOL_NAME
                 + " again before ending the turn to create another one-time follow-up, unless the work is complete, failed, canceled, expired, or the task text's max attempts or deadline has been reached. Include the current attempt count, deadline or callback expiration, task id, callback id when available, original user intent, current status, and exact status/log tool to call next. Do not notify the user on every pending poll unless there is a useful change. "
-                + "When a tool starts external work that may not finish immediately, such as a Coder task, Coder workspace build, deployment, test run, or log wait, you must call "
+                + "When a tool starts external work that may not finish immediately, you must call "
                 + ScheduledEventTool.TOOL_NAME
                 + " in the same turn after the start succeeds if the user expects results or monitoring. Use a one-time delaySeconds follow-up by default. "
                 + "Use "
@@ -419,38 +415,6 @@ public final class AgentPromptBuilder {
                 + " to inspect pending follow-ups and "
                 + ScheduledEventDeleteTool.TOOL_NAME
                 + " to cancel them when requested. "
-                + "When the user asks whether Coder is linked or says Coder tools are missing, call "
-                + CoderAuthAgentTool.TOOL_NAME
-                + " with status before answering; do not infer Coder availability from prior turns or static tool names. "
-                + "When the user asks what Coder tools are available, answer from the currently available tool names whose names start with "
-                + CoderMcpClient.TOOL_PREFIX
-                + " plus "
-                + StartCoderAsyncTaskAgentTool.TOOL_NAME
-                + "; "
-                + CoderAuthAgentTool.TOOL_NAME
-                + " is only for auth/status/revoke, not Coder work. "
-                + "When the user asks to start, run, kick off, or watch a Coder AI/dev task, call "
-                + StartCoderAsyncTaskAgentTool.TOOL_NAME
-                + " with the full task prompt. This one tool creates the callback, selects the task template, starts the Coder task, and schedules a fallback check; do not call "
-                + WorkflowCallbackService.TOOL_NAME
-                + ", "
-                + StartCoderAsyncTaskAgentTool.CREATE_TASK_MCP_TOOL
-                + ", or "
-                + ScheduledEventTool.TOOL_NAME
-                + " separately for initial Coder AI task startup. "
-                + "For other Coder workspace, template, file, shell, status, or log requests, use available Coder MCP tools whose names start with "
-                + CoderMcpClient.TOOL_PREFIX
-                + ". If Coder is needed but no Coder task/tool path is available, call "
-                + CoderAuthAgentTool.TOOL_NAME
-                + " with auth_url and ask the user to complete the login link. "
-                + "For multi-step Coder requests, keep using tool calls in the current turn until the requested action is complete or blocked by a specific error. "
-                + "If a Coder tool returns a validation error and you have enough information to correct it, call the needed Coder tools and retry in the same turn. "
-                + "After starting a long-running Coder workspace build or other non-task Coder work, use "
-                + ScheduledEventTool.TOOL_NAME
-                + " to check status/results later when the user expects you to watch it; include the task/workspace identifier, original request, callback id when available, maximum watch deadline, attempt count, which Coder status/log tools to call, and an instruction to call "
-                + ScheduledEventTool.TOOL_NAME
-                + " again if the Coder work is still pending or running. "
-                + "Do not say a Coder action is done, starting, or being watched until the matching Coder tool has succeeded; only promise future watching if you have created an explicit follow-up mechanism. "
                 + "When the user shares information about themselves, or information that is helpful to remember "
                 + "use the "
                 + MemorySaveAgentTool.TOOL_NAME

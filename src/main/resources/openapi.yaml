@@ -1682,7 +1682,7 @@ components:
           type: string
         tool_category:
           type: string
-          description: Coarse tool grouping such as bluebubbles, google_calendar, coder, coder_mcp, memory, website, or other.
+          description: Coarse tool grouping such as bluebubbles, google_calendar, memory, website, scheduled, kubernetes, or other.
         call_count:
           type: integer
           format: int64

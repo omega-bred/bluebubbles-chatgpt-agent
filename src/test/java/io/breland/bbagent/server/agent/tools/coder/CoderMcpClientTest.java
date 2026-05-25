@@ -4,7 +4,6 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.when;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import io.breland.bbagent.server.agent.persistence.coder.CoderOauthCredentialRepository;
 import io.breland.bbagent.server.agent.persistence.coder.CoderOauthPendingAuthorizationRepository;
 import org.junit.jupiter.api.Test;
@@ -36,12 +35,9 @@ class CoderMcpClientTest {
         clientId,
         "",
         "coder:all",
-        5,
-        60,
         RestClient.builder(),
         credentials,
-        Mockito.mock(CoderOauthPendingAuthorizationRepository.class),
-        new ObjectMapper());
+        Mockito.mock(CoderOauthPendingAuthorizationRepository.class));
   }
 
   private static CoderOauthCredentialRepository credentials() {

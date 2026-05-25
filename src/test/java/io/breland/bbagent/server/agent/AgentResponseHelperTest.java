@@ -98,7 +98,7 @@ call:create_workflow_callback{purpose:Clone repos, cherry-pick commit, and push 
                     "call-1", WorkflowCallbackService.TOOL_NAME));
 
     assertTrue(outputJson.contains("already been created in this turn"));
-    assertTrue(outputJson.contains("create or start the Coder task now"));
+    assertTrue(outputJson.contains("Do not call create_workflow_callback again"));
   }
 
   @Test

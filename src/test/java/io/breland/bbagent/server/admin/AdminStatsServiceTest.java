@@ -115,8 +115,8 @@ class AdminStatsServiceTest {
     adminStatsService.recordToolCall(
         new AgentToolMetricEvent(
             incomingMessage("chat-1", "msg-2", "Alice"),
-            "coder_auth",
-            "coder",
+            "list_calendar_events",
+            "google_calendar",
             false,
             "tool_error",
             50L));
