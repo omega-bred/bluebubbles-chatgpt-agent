@@ -19,6 +19,7 @@ import io.breland.bbagent.server.agent.tools.coder.CoderMcpClient;
 import io.breland.bbagent.server.agent.tools.gcal.*;
 import io.breland.bbagent.server.agent.tools.giphy.GiphyClient;
 import io.breland.bbagent.server.agent.tools.memory.*;
+import io.breland.bbagent.server.agent.tools.reservations.RestaurantReservationGateway;
 import io.breland.bbagent.server.agent.tools.scheduled.ScheduledEventTool;
 import io.breland.bbagent.server.agent.transport.MessageTransport;
 import io.breland.bbagent.server.agent.transport.MessageTransportRegistry;
@@ -151,6 +152,12 @@ public class BBMessageAgent {
             workflowLauncher,
             agentMetricsService,
             this::termsUrl);
+  }
+
+  @Autowired(required = false)
+  public void setRestaurantReservationGateway(
+      RestaurantReservationGateway restaurantReservationGateway) {
+    toolRegistry.registerRestaurantReservationGateway(restaurantReservationGateway);
   }
 
   public ConversationState computeConversationState(String chatId, IncomingMessage message) {
