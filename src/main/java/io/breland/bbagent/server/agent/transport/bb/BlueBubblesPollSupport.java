@@ -2,7 +2,9 @@ package io.breland.bbagent.server.agent.transport.bb;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import io.breland.bbagent.server.agent.IncomingMessage;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.StringJoiner;
 
@@ -88,6 +90,61 @@ public final class BlueBubblesPollSupport {
     return text.toString();
   }
 
+  public static String formatPollReadResult(
+      JsonNode poll, String readMessageGuid, List<String> attemptedMessageGuids) {
+    StringBuilder text = new StringBuilder();
+    text.append("Poll read result\n");
+    String resolvedGuid = textValue(poll, "messageGuid");
+    if (resolvedGuid != null) {
+      text.append("Resolved poll message GUID: ").append(resolvedGuid).append('\n');
+    }
+    if (readMessageGuid != null && !readMessageGuid.isBlank()) {
+      text.append("Read using message GUID: ").append(readMessageGuid).append('\n');
+    }
+    if (attemptedMessageGuids != null && !attemptedMessageGuids.isEmpty()) {
+      text.append("Attempted message GUIDs: ")
+          .append(String.join(", ", attemptedMessageGuids))
+          .append('\n');
+    }
+    String title = textValue(poll, "title");
+    text.append("Title: ").append(title == null ? "(untitled)" : title).append('\n');
+
+    JsonNode options = poll == null ? null : poll.get("options");
+    Map<String, List<String>> votersByOptionId = votersByOptionIdentifier(poll);
+    if (options != null && options.isArray() && !options.isEmpty()) {
+      text.append("Options and votes:\n");
+      int index = 1;
+      for (JsonNode option : options) {
+        String id = textValue(option, "optionIdentifier");
+        String label = textValue(option, "text");
+        if (label == null) {
+          label = id == null ? "(unlabeled option)" : "(unlabeled option " + id + ")";
+        }
+        List<String> voters = id == null ? List.of() : votersByOptionId.getOrDefault(id, List.of());
+        text.append(index++)
+            .append(". ")
+            .append(label)
+            .append(" - ")
+            .append(voters.size())
+            .append(voters.size() == 1 ? " vote" : " votes");
+        if (!voters.isEmpty()) {
+          text.append(" (").append(String.join(", ", voters)).append(")");
+        }
+        if (id != null) {
+          text.append(" [optionIdentifier=").append(id).append(']');
+        }
+        text.append('\n');
+      }
+    } else {
+      text.append("Options and votes: unavailable\n");
+    }
+
+    String responses = pollResponsesSummary(poll);
+    text.append("Responses: ").append(responses == null ? "none" : responses).append('\n');
+    text.append("Raw poll JSON: ").append(poll == null ? "null" : poll.toString());
+    return text.toString();
+  }
+
   private static String pollOptionsSummary(JsonNode poll) {
     JsonNode options = poll == null ? null : poll.get("options");
     if (options == null || !options.isArray() || options.isEmpty()) {
@@ -152,6 +209,29 @@ public final class BlueBubblesPollSupport {
       }
     }
     return optionTexts;
+  }
+
+  private static Map<String, List<String>> votersByOptionIdentifier(JsonNode poll) {
+    Map<String, List<String>> votersByOptionId = new LinkedHashMap<>();
+    JsonNode responses = poll == null ? null : poll.get("responses");
+    if (responses == null || !responses.isArray()) {
+      return votersByOptionId;
+    }
+    for (JsonNode response : responses) {
+      String handle = textValue(response, "handle");
+      JsonNode optionIdentifiers = response.get("optionIdentifiers");
+      if (handle == null || optionIdentifiers == null || !optionIdentifiers.isArray()) {
+        continue;
+      }
+      for (JsonNode optionIdentifier : optionIdentifiers) {
+        String id = optionIdentifier.asText(null);
+        if (id == null) {
+          continue;
+        }
+        votersByOptionId.computeIfAbsent(id, ignored -> new ArrayList<>()).add(handle);
+      }
+    }
+    return votersByOptionId;
   }
 
   private static String textValue(JsonNode node, String field) {

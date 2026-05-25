@@ -58,7 +58,7 @@ public class ReadPollAgentTool implements ToolProvider {
             try {
               attemptedGuids.add(messageGuid);
               JsonNode data = bbHttpClientWrapper.readPollJson(messageGuid);
-              return data.toString();
+              return BlueBubblesPollSupport.formatPollReadResult(data, messageGuid, attemptedGuids);
             } catch (RuntimeException e) {
               // Keep trying; reply targets and poll update items can point at non-root messages.
             }

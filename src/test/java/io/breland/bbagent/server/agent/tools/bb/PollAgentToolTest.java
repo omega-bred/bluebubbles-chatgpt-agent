@@ -90,6 +90,40 @@ class PollAgentToolTest {
   }
 
   @Test
+  void readPollFormatsOptionLabelsAndVotesForModel() throws Exception {
+    CapturingBBHttpClientWrapper wrapper = new CapturingBBHttpClientWrapper(mapper);
+    wrapper.pollReadResponse =
+        mapper.readTree(
+            """
+            {
+              "messageGuid": "poll-guid",
+              "title": "Dinner?",
+              "options": [
+                { "optionIdentifier": "a", "text": "Sushi" },
+                { "optionIdentifier": "b", "text": "Pizza" }
+              ],
+              "responses": [
+                { "handle": "+15555550123", "optionIdentifiers": [ "b" ] }
+              ]
+            }
+            """);
+    IncomingMessage message = incomingMessage("iMessage;-;+15555550123", "poll-guid", null);
+    ToolContext context = toolContext(message, null);
+
+    String output =
+        new ReadPollAgentTool(wrapper)
+            .getTool()
+            .handler()
+            .apply(context, mapper.createObjectNode());
+
+    assertTrue(output.contains("Title: Dinner?"));
+    assertTrue(output.contains("Sushi - 0 votes"));
+    assertTrue(output.contains("Pizza - 1 vote (+15555550123)"));
+    assertTrue(output.contains("+15555550123 voted for Pizza"));
+    assertTrue(output.contains("\"optionIdentifier\":\"b\""));
+  }
+
+  @Test
   void readPollFindsLatestPollInRecentConversationWhenCurrentMessageIsPlainText() throws Exception {
     CapturingBBHttpClientWrapper wrapper = new CapturingBBHttpClientWrapper(mapper);
     wrapper.historyMessages =
@@ -264,6 +298,7 @@ class PollAgentToolTest {
     private final List<String> readPollGuids = new java.util.ArrayList<>();
     private List<ApiV1ChatChatGuidMessageGet200ResponseDataInner> historyMessages = List.of();
     private final Set<String> failingReadPollGuids = new HashSet<>();
+    private JsonNode pollReadResponse;
     private boolean failReadPoll;
 
     CapturingBBHttpClientWrapper(ObjectMapper mapper) {
@@ -289,6 +324,9 @@ class PollAgentToolTest {
       this.readPollGuids.add(messageGuid);
       if (failReadPoll || failingReadPollGuids.contains(messageGuid)) {
         throw new IllegalStateException("BlueBubbles failed");
+      }
+      if (pollReadResponse != null) {
+        return pollReadResponse;
       }
       return mapper.createObjectNode().put("messageGuid", messageGuid).put("title", "Lunch?");
     }
