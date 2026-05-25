@@ -10,10 +10,15 @@ Focus on high-confidence cleanup only:
 - Reduce unnecessary classes, wrappers, factories, adapters, or indirection when they do not add meaningful value.
 - Reduce complexity and unnecessary wiring.
 - Reduce "hard parsing" of things (eg prefer typed classes when serializing or deserializing json, arbitrary map construction should be avoided in favor of a strongly modeled class. Either a pojo or an object in the OpenAPI spec as appropriate.)
-- Reduce cyclomatic complexity 
-- Commonize constants (remove repeated literals in favor of shared constants) 
+- Reduce cyclomatic complexity
+- Commonize constants (remove repeated literals in favor of shared constants)
+- Find and fix any potential security issues.
+- Find and fix any concrete provable bugs.
+- Remove any unused or unreachable methods
 
-In addition, if you are able to access the `bdawg-3646` kube cluster - and the bluebubbles-chatgpt-agent namespace is available - look through recnet logs to see if there are any fixable or correctable errors and try to fix those. You'll need to test access outside of your sandbox unfortunately. 
+In addition, if you are able to access the `bdawg-3646` kube cluster - and the bluebubbles-chatgpt-agent namespace is available - look through recnet logs to see if there are any fixable or correctable errors and try to fix those. You'll need to test access outside of your sandbox unfortunately.
+
+If inteillij mcp is open/available, use that to do symbol analysis/deeper java specific introspection looking for unused methods or other problems with the code base to inform your decision.
 
 Constraints:
 - Preserve behavior.
@@ -25,7 +30,7 @@ Constraints:
 - Add or update tests only when needed to protect the cleanup.
 
 Workflow:
-0. Check that you're on `main` and have pulled recently. If you're too far behind (eg more than a day old) - abort the cleanup. 
+0. Check that you're on `main` and have pulled recently. If you're too far behind (eg more than a day old) - abort the cleanup.
 1. Scan for the best cleanup opportunity.
 2. Choose one focused change with a strong simplicity payoff.
 3. Implement it.
