@@ -17,7 +17,9 @@ import io.breland.bbagent.server.agent.IncomingMessage;
 import io.breland.bbagent.server.agent.tools.ToolContext;
 import io.breland.bbagent.server.agent.transport.bb.BBHttpClientWrapper;
 import java.time.Instant;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
 
@@ -83,7 +85,7 @@ class PollAgentToolTest {
             .handler()
             .apply(context, mapper.createObjectNode());
 
-    assertEquals("poll-guid", wrapper.lastReadPollGuid);
+    assertEquals(List.of("poll-guid"), wrapper.readPollGuids);
     assertTrue(output.contains("\"messageGuid\":\"poll-guid\""));
   }
 
@@ -111,6 +113,50 @@ class PollAgentToolTest {
   }
 
   @Test
+  void readPollFallsBackWhenCurrentReplyTargetIsNotPoll() throws Exception {
+    CapturingBBHttpClientWrapper wrapper = new CapturingBBHttpClientWrapper(mapper);
+    wrapper.historyMessages =
+        List.of(
+            historyMessage("question-guid", null, null),
+            historyMessage("vote-guid", pollBundleId(), "poll-root-guid"));
+    wrapper.failingReadPollGuids.add("plain-reply-guid");
+    IncomingMessage message =
+        plainIncomingMessage(
+            "any;-;+15555550123", "question-guid", "what were the results?", "plain-reply-guid");
+    ToolContext context = toolContext(message, null);
+
+    String output =
+        new ReadPollAgentTool(wrapper)
+            .getTool()
+            .handler()
+            .apply(context, mapper.createObjectNode());
+
+    assertEquals(List.of("plain-reply-guid", "poll-root-guid"), wrapper.readPollGuids);
+    assertEquals("poll-root-guid", wrapper.lastReadPollGuid);
+    assertTrue(output.contains("\"messageGuid\":\"poll-root-guid\""));
+  }
+
+  @Test
+  void readPollFallsBackFromExplicitPollUpdateGuidToAssociatedHistoryPoll() throws Exception {
+    CapturingBBHttpClientWrapper wrapper = new CapturingBBHttpClientWrapper(mapper);
+    wrapper.historyMessages =
+        List.of(
+            historyMessage("newer-vote-guid", pollBundleId(), "newer-poll-root-guid"),
+            historyMessage("vote-guid", pollBundleId(), "p:0/poll-root-guid"));
+    wrapper.failingReadPollGuids.add("vote-guid");
+    IncomingMessage message =
+        plainIncomingMessage("any;-;+15555550123", "question-guid", "read the poll");
+    ToolContext context = toolContext(message, null);
+    JsonNode args = mapper.readTree("{\"message_guid\":\"vote-guid\"}");
+
+    String output = new ReadPollAgentTool(wrapper).getTool().handler().apply(context, args);
+
+    assertEquals(List.of("vote-guid", "poll-root-guid"), wrapper.readPollGuids);
+    assertEquals("poll-root-guid", wrapper.lastReadPollGuid);
+    assertTrue(output.contains("\"messageGuid\":\"poll-root-guid\""));
+  }
+
+  @Test
   void readPollNormalizesTapbackStyleMessageGuid() throws Exception {
     CapturingBBHttpClientWrapper wrapper = new CapturingBBHttpClientWrapper(mapper);
     IncomingMessage message = incomingMessage("iMessage;-;+15555550123", "p:0/poll-guid", null);
@@ -122,7 +168,7 @@ class PollAgentToolTest {
             .handler()
             .apply(context, mapper.createObjectNode());
 
-    assertEquals("poll-guid", wrapper.lastReadPollGuid);
+    assertEquals(List.of("poll-guid"), wrapper.readPollGuids);
     assertTrue(output.contains("\"messageGuid\":\"poll-guid\""));
   }
 
@@ -139,8 +185,9 @@ class PollAgentToolTest {
             .handler()
             .apply(context, mapper.createObjectNode());
 
-    assertEquals("poll-guid", wrapper.lastReadPollGuid);
-    assertTrue(output.contains("could not read poll poll-guid"));
+    assertEquals(List.of("poll-guid", "message-guid"), wrapper.readPollGuids);
+    assertTrue(output.contains("could not read poll"));
+    assertTrue(output.contains("poll-guid"));
   }
 
   private ToolContext toolContext(IncomingMessage message, AgentWorkflowContext workflowContext) {
@@ -172,6 +219,11 @@ class PollAgentToolTest {
 
   private static IncomingMessage plainIncomingMessage(
       String chatGuid, String messageGuid, String text) {
+    return plainIncomingMessage(chatGuid, messageGuid, text, null);
+  }
+
+  private static IncomingMessage plainIncomingMessage(
+      String chatGuid, String messageGuid, String text, String replyToGuid) {
     return new IncomingMessage(
         IncomingMessage.TRANSPORT_BLUEBUBBLES,
         chatGuid,
@@ -186,7 +238,7 @@ class PollAgentToolTest {
         List.of(),
         null,
         null,
-        null,
+        replyToGuid,
         false);
   }
 
@@ -209,7 +261,9 @@ class PollAgentToolTest {
     private List<String> lastPollOptionTexts;
     private String lastReadPollGuid;
     private String lastHistoryChatGuid;
+    private final List<String> readPollGuids = new java.util.ArrayList<>();
     private List<ApiV1ChatChatGuidMessageGet200ResponseDataInner> historyMessages = List.of();
+    private final Set<String> failingReadPollGuids = new HashSet<>();
     private boolean failReadPoll;
 
     CapturingBBHttpClientWrapper(ObjectMapper mapper) {
@@ -232,7 +286,8 @@ class PollAgentToolTest {
     @Override
     public JsonNode readPollJson(String messageGuid) {
       this.lastReadPollGuid = messageGuid;
-      if (failReadPoll) {
+      this.readPollGuids.add(messageGuid);
+      if (failReadPoll || failingReadPollGuids.contains(messageGuid)) {
         throw new IllegalStateException("BlueBubbles failed");
       }
       return mapper.createObjectNode().put("messageGuid", messageGuid).put("title", "Lunch?");
