@@ -31,7 +31,7 @@ export function PrivacyPage({ auth }: { auth: AuthState }) {
               We may collect messages, attachments, sender identifiers, chat identifiers, timestamps,
               conversation history, thread context, reactions, generated content, account profile
               details, linked chat identities, login metadata, OAuth tokens, integration metadata,
-              calendar or Coder data you ask the agent to access, usage limits, feedback, logs,
+              calendar data you ask the agent to access, usage limits, feedback, logs,
               device/browser metadata, and technical diagnostics needed to operate the service.
             </p>
           </section>
@@ -52,7 +52,7 @@ export function PrivacyPage({ auth }: { auth: AuthState }) {
             <p>
               Message content, prompts, files, context, and tool results may be sent to configured
               AI model providers and infrastructure providers so the service can generate responses
-              or perform requested actions. Connected services such as Google Calendar, Coder,
+              or perform requested actions. Connected services such as Google Calendar,
               Keycloak, message relay services, Giphy, memory services, hosting providers, databases, logging
               systems, and deployment infrastructure may process information according to their own
               terms and privacy practices.

@@ -403,9 +403,6 @@ function LinkedIdentity({
             {modelLabel === "Free" ? "Free" : `Model ${modelLabel}`}
           </span>
         ) : null}
-        <span className={integration.coder_linked ? "pill good" : "pill"}>
-          Coder {integration.coder_linked ? "linked" : "not linked"}
-        </span>
         <span className={calendars.length > 0 ? "pill good" : "pill"}>
           Google Calendar{" "}
           {calendars.length > 0
@@ -478,7 +475,7 @@ function LinkedAccountRow({
   unlinking: boolean;
   onUnlink: () => Promise<void>;
 }) {
-  const typeLabel = account.type === "gcal" ? "Google Calendar" : "Coder";
+  const typeLabel = "Google Calendar";
   const identifier = account.email || account.account_key;
   return (
     <div className="linked-account-row">

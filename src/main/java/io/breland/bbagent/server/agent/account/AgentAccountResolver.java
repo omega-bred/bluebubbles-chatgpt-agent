@@ -312,10 +312,6 @@ public class AgentAccountResolver {
       }
     }
 
-    moveSingleRow("coder_oauth_credentials", "account_id", targetAccountId, sourceAccountId);
-    updateAccountColumn(
-        "coder_oauth_pending_authorizations", "account_id", targetAccountId, sourceAccountId);
-    updateAccountColumn("coder_async_task_starts", "account_id", targetAccountId, sourceAccountId);
     updateAccountColumn(
         "gcal_oauth_credentials", "agent_account_id", targetAccountId, sourceAccountId);
     updateAccountColumn(
@@ -372,20 +368,6 @@ public class AgentAccountResolver {
     target.setUpdatedAt(Instant.now());
     accountRepository.save(target);
     accountRepository.deleteById(sourceAccountId);
-  }
-
-  private void moveSingleRow(
-      String table, String column, String targetAccountId, String sourceAccountId) {
-    Integer targetCount =
-        jdbcTemplate.queryForObject(
-            "select count(*) from " + table + " where " + column + " = ?",
-            Integer.class,
-            targetAccountId);
-    if (targetCount != null && targetCount > 0) {
-      jdbcTemplate.update("delete from " + table + " where " + column + " = ?", sourceAccountId);
-      return;
-    }
-    updateAccountColumn(table, column, targetAccountId, sourceAccountId);
   }
 
   private void updateAccountColumn(

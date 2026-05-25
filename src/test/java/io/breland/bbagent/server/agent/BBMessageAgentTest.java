@@ -304,7 +304,7 @@ class BBMessageAgentTest {
   }
 
   @Test
-  void agentInstructionsDoNotMentionCoderTools() {
+  void agentInstructionsDoNotMentionRetiredAsyncTools() {
     AgentPromptBuilder promptBuilder = promptBuilder(new StubBBHttpClientWrapper());
 
     String prompt =
@@ -315,10 +315,9 @@ class BBMessageAgentTest {
                 incomingMessage("iMessage;+;chat-prompt", "msg-prompt", "hello", 1_000L))
             .toString();
 
-    assertFalse(prompt.contains("Coder"));
-    assertFalse(prompt.contains("coder__"));
-    assertFalse(prompt.contains("coder_auth"));
-    assertFalse(prompt.contains("start_coder_async_task"));
+    assertFalse(prompt.contains("retired__"));
+    assertFalse(prompt.contains("retired_auth"));
+    assertFalse(prompt.contains("start_retired_async_task"));
   }
 
   @Test
@@ -855,7 +854,7 @@ class BBMessageAgentTest {
   }
 
   @Test
-  void doesNotInjectCoderTools() {
+  void doesNotInjectRetiredTools() {
     OpenAIClient openAIClient = Mockito.mock(OpenAIClient.class);
     var responseService = Mockito.mock(com.openai.services.blocking.ResponseService.class);
     StubBBHttpClientWrapper bbHttpClientWrapper = new StubBBHttpClientWrapper();
@@ -883,7 +882,7 @@ class BBMessageAgentTest {
             new ModelPicker());
 
     IncomingMessage incoming =
-        incomingMessage("iMessage;+;chat-coder", "msg-coder-tools", "what coder tools?", 1_000L);
+        incomingMessage("iMessage;+;chat-tools", "msg-tools", "what tools are available?", 1_000L);
     agent.createResponse(
         promptBuilder(bbHttpClientWrapper).buildConversationInput(List.of(), List.of(), incoming),
         incoming,
@@ -894,13 +893,13 @@ class BBMessageAgentTest {
         ArgumentCaptor.forClass(ResponseCreateParams.class);
     verify(responseService).create(paramsCaptor.capture());
     String request = paramsCaptor.getValue().toString();
-    assertFalse(request.contains("coder_auth"));
-    assertFalse(request.contains("start_coder_async_task"));
-    assertFalse(request.contains("coder__"));
+    assertFalse(request.contains("retired_auth"));
+    assertFalse(request.contains("start_retired_async_task"));
+    assertFalse(request.contains("retired__"));
   }
 
   @Test
-  void doesNotResolveCoderMcpToolCalls() {
+  void doesNotResolveUnknownToolCalls() {
     OpenAIClient openAIClient = Mockito.mock(OpenAIClient.class);
     StubBBHttpClientWrapper bbHttpClientWrapper = new StubBBHttpClientWrapper();
 
@@ -923,19 +922,19 @@ class BBMessageAgentTest {
             new ModelPicker());
 
     IncomingMessage incoming =
-        incomingMessage("iMessage;+;chat-coder", "msg-coder-task", "start a coder task", 1_000L);
+        incomingMessage("iMessage;+;chat-tool", "msg-tool", "run a retired tool", 1_000L);
     ResponseInputItem output =
         agent.runToolActivity(
             ResponseFunctionToolCall.builder()
-                .name("coder__coder_list_templates_abc123")
+                .name("retired__list_templates_abc123")
                 .arguments("{}")
-                .callId("call-coder")
+                .callId("call-retired")
                 .build(),
             incoming,
             new AgentWorkflowContext(
                 incoming.chatGuid(), incoming.chatGuid(), incoming.messageGuid(), Instant.now()));
 
-    assertTrue(output.toString().contains("Unknown tool: coder__coder_list_templates_abc123"));
+    assertTrue(output.toString().contains("Unknown tool: retired__list_templates_abc123"));
   }
 
   @Test

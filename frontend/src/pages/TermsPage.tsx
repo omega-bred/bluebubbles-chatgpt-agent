@@ -77,8 +77,8 @@ export function TermsPage({ auth }: { auth: AuthState }) {
           <section>
             <h2>Accounts and Integrations</h2>
             <p>
-              You are responsible for your account, linked senders, connected calendars, Coder
-              access, and any other integrations you enable. Only connect accounts you own or are
+              You are responsible for your account, linked senders, connected calendars, and any
+              other integrations you enable. Only connect accounts you own or are
               authorized to use. Third-party services are governed by their own terms, privacy
               policies, availability, and fees.
             </p>

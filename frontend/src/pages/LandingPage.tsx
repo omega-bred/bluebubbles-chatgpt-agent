@@ -63,7 +63,7 @@ export function LandingPage({ auth }: { auth: AuthState }) {
       <section className="section capability-grid">
         <article>
           <h3>Personal chats</h3>
-          <p>Fast answers, memory, calendar help, Coder tasks, and model choice from one thread.</p>
+          <p>Fast answers, memory, calendar help, coding support, and model choice from one thread.</p>
         </article>
         <article>
           <h3>Group chats</h3>
@@ -75,8 +75,8 @@ export function LandingPage({ auth }: { auth: AuthState }) {
         <article>
           <h3>Linked accounts</h3>
           <p>
-            Connect your sender to the web account and see services like Coder and Google Calendar
-            in one place.
+            Connect your sender to the web account and see services like Google Calendar in one
+            place.
           </p>
         </article>
       </section>

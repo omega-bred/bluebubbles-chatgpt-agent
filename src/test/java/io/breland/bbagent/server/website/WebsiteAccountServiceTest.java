@@ -11,7 +11,6 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-import io.breland.bbagent.generated.model.WebsiteLinkedIntegrationAccount;
 import io.breland.bbagent.generated.model.WebsiteModelAccessSummary;
 import io.breland.bbagent.server.agent.IncomingMessage;
 import io.breland.bbagent.server.agent.account.AgentAccountIdentifiers;
@@ -21,7 +20,6 @@ import io.breland.bbagent.server.agent.persistence.account.AgentAccountEntity;
 import io.breland.bbagent.server.agent.persistence.account.AgentAccountIdentityEntity;
 import io.breland.bbagent.server.agent.persistence.website.WebsiteAccountLinkTokenEntity;
 import io.breland.bbagent.server.agent.persistence.website.WebsiteAccountLinkTokenRepository;
-import io.breland.bbagent.server.agent.tools.coder.CoderMcpClient;
 import io.breland.bbagent.server.agent.tools.gcal.GcalClient;
 import java.time.Instant;
 import java.util.List;
@@ -39,14 +37,12 @@ class WebsiteAccountServiceTest {
   private final WebsiteAccountLinkTokenRepository tokenRepository =
       Mockito.mock(WebsiteAccountLinkTokenRepository.class);
   private final GcalClient gcalClient = Mockito.mock(GcalClient.class);
-  private final CoderMcpClient coderMcpClient = Mockito.mock(CoderMcpClient.class);
   private final ModelAccessService modelAccessService = Mockito.mock(ModelAccessService.class);
   private final WebsiteAccountService service =
       new WebsiteAccountService(
           accountResolver,
           tokenRepository,
           gcalClient,
-          coderMcpClient,
           modelAccessService,
           "https://chatagent.example",
           30,
@@ -124,15 +120,9 @@ class WebsiteAccountServiceTest {
   }
 
   @Test
-  void listLinkedAccountsAggregatesCoderAndGcalStatus() {
+  void listLinkedAccountsAggregatesGcalStatus() {
     when(accountResolver.upsertWebsiteAccount(any(Jwt.class))).thenReturn(account());
     when(accountResolver.identitiesForAccount("account-1")).thenReturn(List.of(identity()));
-    when(coderMcpClient.isLinked("account-1")).thenReturn(true);
-    when(coderMcpClient.findLinkedAccount("account-1"))
-        .thenReturn(
-            Optional.of(
-                new CoderMcpClient.CoderLinkedAccount(
-                    "account-1", "alice@coder.example", "alice")));
     when(gcalClient.listLinkedAccountsFor("account-1"))
         .thenReturn(
             List.of(
@@ -142,16 +132,10 @@ class WebsiteAccountServiceTest {
     var response = service.listLinkedAccounts(jwt());
 
     assertEquals(1, response.getIntegrations().size());
-    assertTrue(response.getIntegrations().get(0).getCoderLinked());
     assertEquals(
         "primary", response.getIntegrations().get(0).getGcalAccounts().get(0).getAccountId());
     assertEquals(
-        "alice@coder.example",
-        response.getIntegrations().get(0).getLinkedAccounts().stream()
-            .filter(account -> account.getType() == WebsiteLinkedIntegrationAccount.TypeEnum.CODER)
-            .findFirst()
-            .orElseThrow()
-            .getEmail());
+        "primary", response.getIntegrations().get(0).getLinkedAccounts().get(0).getEmail());
     assertFalse(response.getIntegrations().get(0).getModelAccess().getIsPremium());
   }
 

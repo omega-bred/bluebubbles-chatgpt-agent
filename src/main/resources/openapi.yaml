@@ -14,8 +14,6 @@ tags:
     description: LXMF bridge webhook endpoints
   - name: gcal
     description: Google Calendar OAuth endpoints
-  - name: coder
-    description: Coder MCP OAuth endpoints
   - name: workflowCallback
     description: Agent workflow callback endpoints
   - name: websiteAccount
@@ -118,41 +116,6 @@ paths:
         - name: error
           in: query
           description: OAuth error returned by Google when authorization is denied
-          required: false
-          schema:
-            type: string
-      responses:
-        '303':
-          description: Browser redirected to the frontend OAuth result page
-          headers:
-            Location:
-              description: Frontend OAuth result URL
-              schema:
-                type: string
-                format: uri-reference
-  /api/v1/coder/completeOauth.coder:
-    get:
-      operationId: coderCompleteOauth
-      tags:
-        - coder
-      summary: Completes Coder MCP OAuth flow
-      description: Handles the OAuth redirect from Coder and exchanges the code for tokens.
-      parameters:
-        - name: code
-          in: query
-          description: OAuth authorization code from Coder
-          required: false
-          schema:
-            type: string
-        - name: state
-          in: query
-          description: Signed OAuth state used to associate the Coder login session
-          required: false
-          schema:
-            type: string
-        - name: error
-          in: query
-          description: OAuth error returned by Coder when authorization is denied
           required: false
           schema:
             type: string
@@ -332,7 +295,6 @@ paths:
             type: string
             enum:
               - gcal
-              - coder
         - name: account_key
           in: query
           description: Integration account key to remove.
@@ -1061,7 +1023,6 @@ components:
           type: string
           enum:
             - gcal
-            - coder
         account_key:
           type: string
         email:
@@ -1128,15 +1089,12 @@ components:
       type: object
       required:
         - link
-        - coder_linked
         - gcal_accounts
         - linked_accounts
         - model_access
       properties:
         link:
           $ref: '#/components/schemas/WebsiteAccountLink'
-        coder_linked:
-          type: boolean
         gcal_accounts:
           type: array
           items:

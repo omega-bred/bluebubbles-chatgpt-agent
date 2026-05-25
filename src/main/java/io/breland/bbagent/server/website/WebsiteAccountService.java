@@ -17,7 +17,6 @@ import io.breland.bbagent.server.agent.persistence.account.AgentAccountEntity;
 import io.breland.bbagent.server.agent.persistence.account.AgentAccountIdentityEntity;
 import io.breland.bbagent.server.agent.persistence.website.WebsiteAccountLinkTokenEntity;
 import io.breland.bbagent.server.agent.persistence.website.WebsiteAccountLinkTokenRepository;
-import io.breland.bbagent.server.agent.tools.coder.CoderMcpClient;
 import io.breland.bbagent.server.agent.tools.gcal.AccountKeyParts;
 import io.breland.bbagent.server.agent.tools.gcal.GcalClient;
 import io.breland.bbagent.server.analytics.UmamiAnalyticsService;
@@ -32,7 +31,6 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
-import java.util.stream.Stream;
 import org.apache.commons.codec.digest.DigestUtils;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.beans.factory.annotation.Value;
@@ -52,7 +50,6 @@ public class WebsiteAccountService {
   private final AgentAccountResolver accountResolver;
   private final WebsiteAccountLinkTokenRepository tokenRepository;
   private final GcalClient gcalClient;
-  private final CoderMcpClient coderMcpClient;
   private final ModelAccessService modelAccessService;
   private final String websiteBaseUrl;
   private final Duration linkTokenTtl;
@@ -63,7 +60,6 @@ public class WebsiteAccountService {
       AgentAccountResolver accountResolver,
       WebsiteAccountLinkTokenRepository tokenRepository,
       GcalClient gcalClient,
-      @Nullable CoderMcpClient coderMcpClient,
       ModelAccessService modelAccessService,
       @Value("${website.base-url:" + DEFAULT_WEBSITE_BASE_URL + "}") String websiteBaseUrl,
       @Value("${website.account-link-token-ttl-minutes:30}") long linkTokenTtlMinutes,
@@ -71,7 +67,6 @@ public class WebsiteAccountService {
     this.accountResolver = accountResolver;
     this.tokenRepository = tokenRepository;
     this.gcalClient = gcalClient;
-    this.coderMcpClient = coderMcpClient;
     this.modelAccessService = modelAccessService;
     this.websiteBaseUrl = stripTrailingSlash(websiteBaseUrl);
     this.linkTokenTtl = Duration.ofMinutes(linkTokenTtlMinutes);
@@ -197,10 +192,6 @@ public class WebsiteAccountService {
           case "gcal" ->
               account.getAccountId().equals(AccountKeyParts.parse(accountKey).accountId())
                   && gcalClient.revokeAccount(accountKey);
-          case "coder" ->
-              account.getAccountId().equals(accountKey)
-                  && coderMcpClient != null
-                  && coderMcpClient.revoke(account.getAccountId());
           default -> throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Unknown type");
         };
     if (!deleted) {
@@ -281,38 +272,22 @@ public class WebsiteAccountService {
             .toList();
     return new WebsiteIntegrationSummary()
         .link(toLink(account))
-        .coderLinked(coderMcpClient != null && coderMcpClient.isLinked(account.getAccountId()))
         .gcalAccounts(gcalAccounts)
         .linkedAccounts(linkedAccounts(account))
         .modelAccess(modelAccessService.toWebsiteSummary(account.getAccountId()));
   }
 
   private List<WebsiteLinkedIntegrationAccount> linkedAccounts(AgentAccountEntity account) {
-    Stream<WebsiteLinkedIntegrationAccount> gcalAccounts =
-        gcalClient.listLinkedAccountsFor(account.getAccountId()).stream()
-            .map(
-                linked ->
-                    new WebsiteLinkedIntegrationAccount()
-                        .type(WebsiteLinkedIntegrationAccount.TypeEnum.GCAL)
-                        .accountKey(linked.accountKey())
-                        .email(linked.googleAccountId())
-                        .label("Google Calendar")
-                        .unlinkable(true));
-    Stream<WebsiteLinkedIntegrationAccount> coderAccounts =
-        coderMcpClient == null
-            ? Stream.empty()
-            : coderMcpClient
-                .findLinkedAccount(account.getAccountId())
-                .map(
-                    linked ->
-                        new WebsiteLinkedIntegrationAccount()
-                            .type(WebsiteLinkedIntegrationAccount.TypeEnum.CODER)
-                            .accountKey(linked.accountId())
-                            .email(linked.email())
-                            .label(StringUtils.defaultIfBlank(linked.label(), "Coder"))
-                            .unlinkable(true))
-                .stream();
-    return Stream.concat(gcalAccounts, coderAccounts).toList();
+    return gcalClient.listLinkedAccountsFor(account.getAccountId()).stream()
+        .map(
+            linked ->
+                new WebsiteLinkedIntegrationAccount()
+                    .type(WebsiteLinkedIntegrationAccount.TypeEnum.GCAL)
+                    .accountKey(linked.accountKey())
+                    .email(linked.googleAccountId())
+                    .label("Google Calendar")
+                    .unlinkable(true))
+        .toList();
   }
 
   private WebsiteAccountProfile toProfile(AgentAccountEntity account) {

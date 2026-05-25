@@ -10,7 +10,6 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-import io.breland.bbagent.server.agent.tools.coder.CoderMcpClient;
 import io.breland.bbagent.server.agent.tools.gcal.GcalClient;
 import io.breland.bbagent.server.agent.transport.bb.BBHttpClientWrapper;
 import io.breland.bbagent.server.config.SecurityConfig;
@@ -23,12 +22,10 @@ import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 
-@WebMvcTest({CoderOauthController.class, GcalOauthController.class, RootController.class})
+@WebMvcTest({GcalOauthController.class, RootController.class})
 @Import(SecurityConfig.class)
 class OauthCallbackControllerTest {
   @Autowired private MockMvc mockMvc;
-
-  @MockBean private CoderMcpClient coderMcpClient;
 
   @MockBean private GcalClient gcalClient;
 
@@ -108,49 +105,5 @@ class OauthCallbackControllerTest {
                         && "message-guid".equals(request.getSelectedMessageGuid())
                         && Integer.valueOf(0).equals(request.getPartIndex())
                         && "Calendar successfully linked.".equals(request.getMessage())));
-  }
-
-  @Test
-  void coderMissingOauthParamsRedirectsToFrontendResult() throws Exception {
-    mockMvc
-        .perform(get("/api/v1/coder/completeOauth.coder"))
-        .andExpect(status().isSeeOther())
-        .andExpect(header().string("Location", containsString("/oauth/callback?")))
-        .andExpect(header().string("Location", containsString("service=coder")))
-        .andExpect(header().string("Location", containsString("status=error")));
-
-    verifyNoInteractions(bbHttpClientWrapper);
-  }
-
-  @Test
-  void coderSuccessSendsFollowupAndRedirectsToFrontendResult() throws Exception {
-    when(coderMcpClient.isConfigured()).thenReturn(true);
-    when(coderMcpClient.completeOauth("oauth-code", "state-token"))
-        .thenReturn(
-            Optional.of(
-                new CoderMcpClient.OauthCompletion("account-base", "chat-guid", "message-guid")));
-
-    mockMvc
-        .perform(
-            get("/api/v1/coder/completeOauth.coder")
-                .param("code", "oauth-code")
-                .param("state", "state-token"))
-        .andExpect(status().isSeeOther())
-        .andExpect(header().string("Location", containsString("service=coder")))
-        .andExpect(header().string("Location", containsString("status=success")))
-        .andExpect(
-            header()
-                .string(
-                    "Location",
-                    containsString("Coder%20linked.%20You%20can%20close%20this%20tab.")));
-
-    verify(bbHttpClientWrapper)
-        .sendTextDirect(
-            argThat(
-                request ->
-                    "chat-guid".equals(request.getChatGuid())
-                        && "message-guid".equals(request.getSelectedMessageGuid())
-                        && Integer.valueOf(0).equals(request.getPartIndex())
-                        && "Coder successfully linked.".equals(request.getMessage())));
   }
 }
