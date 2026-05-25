@@ -92,8 +92,7 @@ public class BlueBubblesMessageTransport implements MessageTransport {
       return false;
     }
     ApiV1MessageTextPostRequest request = new ApiV1MessageTextPostRequest();
-    request.setChatGuid(
-        BBHttpClientWrapper.normalizeDirectAnyChatGuid(message.chatGuid(), message.service()));
+    request.setChatGuid(message.chatGuid());
     request.setMessage(outgoingMessage.text());
     request.setTempGuid(java.util.UUID.randomUUID().toString());
     if (outgoingMessage.selectedMessageGuid() != null

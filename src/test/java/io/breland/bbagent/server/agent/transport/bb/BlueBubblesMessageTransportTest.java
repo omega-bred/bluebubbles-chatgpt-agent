@@ -37,7 +37,7 @@ import reactor.core.publisher.Mono;
 class BlueBubblesMessageTransportTest {
 
   @Test
-  void sendTextNormalizesAnyDirectGuidUsingIncomingService() {
+  void sendTextPreservesAnyDirectGuidForWrapperConfirmation() {
     CapturingBBHttpClientWrapper wrapper = new CapturingBBHttpClientWrapper();
     BlueBubblesMessageTransport transport = new BlueBubblesMessageTransport(wrapper);
 
@@ -47,7 +47,7 @@ class BlueBubblesMessageTransportTest {
             OutgoingTextMessage.plain("hello"));
 
     assertTrue(sent);
-    assertEquals("iMessage;-;mindstorms6+apple@gmail.com", wrapper.lastText.getChatGuid());
+    assertEquals("any;-;mindstorms6+apple@gmail.com", wrapper.lastText.getChatGuid());
   }
 
   @Test
@@ -97,7 +97,7 @@ class BlueBubblesMessageTransportTest {
         ArgumentCaptor.forClass(ApiV1MessageTextPostRequest.class);
     verify(messageApi).apiV1MessageTextPost(eq("pw"), requestCaptor.capture());
     assertEquals("iMessage;-;mindstorms6+apple@gmail.com", requestCaptor.getValue().getChatGuid());
-    assertEquals("iMessage;-;mindstorms6+apple@gmail.com", wrapper.lastMessageLookupChatGuid);
+    assertEquals("any;-;mindstorms6+apple@gmail.com", wrapper.lastMessageLookupChatGuid);
   }
 
   @Test

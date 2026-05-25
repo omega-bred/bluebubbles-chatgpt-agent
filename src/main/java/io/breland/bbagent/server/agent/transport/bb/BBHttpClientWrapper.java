@@ -611,7 +611,9 @@ public class BBHttpClientWrapper {
     if (request == null) {
       return false;
     }
+    String confirmationChatGuid = request.getChatGuid();
     request.setChatGuid(normalizeDirectAnyChatGuid(request.getChatGuid()));
+    confirmationChatGuid = StringUtils.defaultIfBlank(confirmationChatGuid, request.getChatGuid());
     if (StringUtils.isBlank(request.getTempGuid())) {
       request.setTempGuid(UUID.randomUUID().toString());
     }
@@ -632,15 +634,17 @@ public class BBHttpClientWrapper {
       }
 
       log.info(
-          "Attempting to send direct text message chatGuid={} tempGuid={} attempt={}/{} timeout={} request={}",
+          "Attempting to send direct text message chatGuid={} confirmationChatGuid={} tempGuid={} attempt={}/{} timeout={} request={}",
           request.getChatGuid(),
+          confirmationChatGuid,
           request.getTempGuid(),
           attempt,
           DIRECT_SEND_MAX_ATTEMPTS,
           apiTimeout,
           request);
       submitDirectTextMessage(request, attempt, overallStartedNanos);
-      if (confirmDirectTextSend(request, firstAttemptStartedAt, attempt, overallStartedNanos)) {
+      if (confirmDirectTextSend(
+          request, confirmationChatGuid, firstAttemptStartedAt, attempt, overallStartedNanos)) {
         return true;
       }
     }
@@ -726,6 +730,7 @@ public class BBHttpClientWrapper {
 
   private boolean confirmDirectTextSend(
       ApiV1MessageTextPostRequest request,
+      String confirmationChatGuid,
       Instant firstAttemptStartedAt,
       int attempt,
       long overallStartedNanos) {
@@ -733,32 +738,37 @@ public class BBHttpClientWrapper {
       return false;
     }
     try {
+      String historyChatGuid =
+          StringUtils.defaultIfBlank(confirmationChatGuid, request.getChatGuid());
       List<ApiV1ChatChatGuidMessageGet200ResponseDataInner> messages =
-          getMessagesInChat(request.getChatGuid());
+          getMessagesInChat(historyChatGuid);
       boolean confirmed =
           messages != null
               && messages.stream()
                   .anyMatch(message -> isMatchingSentText(message, request, firstAttemptStartedAt));
       if (confirmed) {
         log.info(
-            "Confirmed BlueBubbles direct text send in chat history chatGuid={} tempGuid={} attempt={} elapsedMs={}",
+            "Confirmed BlueBubbles direct text send in chat history chatGuid={} historyChatGuid={} tempGuid={} attempt={} elapsedMs={}",
             request.getChatGuid(),
+            historyChatGuid,
             request.getTempGuid(),
             attempt,
             elapsedMillis(overallStartedNanos));
         return true;
       }
       log.warn(
-          "BlueBubbles direct text send not found in chat history chatGuid={} tempGuid={} attempt={} elapsedMs={}",
+          "BlueBubbles direct text send not found in chat history chatGuid={} historyChatGuid={} tempGuid={} attempt={} elapsedMs={}",
           request.getChatGuid(),
+          historyChatGuid,
           request.getTempGuid(),
           attempt,
           elapsedMillis(overallStartedNanos));
       return false;
     } catch (Exception e) {
       log.warn(
-          "Failed to confirm BlueBubbles direct text send from chat history chatGuid={} tempGuid={} attempt={} elapsedMs={}",
+          "Failed to confirm BlueBubbles direct text send from chat history chatGuid={} confirmationChatGuid={} tempGuid={} attempt={} elapsedMs={}",
           request.getChatGuid(),
+          confirmationChatGuid,
           request.getTempGuid(),
           attempt,
           elapsedMillis(overallStartedNanos),

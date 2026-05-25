@@ -10,6 +10,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.breland.bbagent.generated.bluebubblesclient.api.V1ContactApi;
 import io.breland.bbagent.generated.bluebubblesclient.api.V1MessageApi;
+import io.breland.bbagent.generated.bluebubblesclient.model.ApiV1ChatChatGuidMessageGet200ResponseDataInner;
 import io.breland.bbagent.server.agent.AgentWorkflowContext;
 import io.breland.bbagent.server.agent.BBMessageAgent;
 import io.breland.bbagent.server.agent.IncomingMessage;
@@ -87,6 +88,29 @@ class PollAgentToolTest {
   }
 
   @Test
+  void readPollFindsLatestPollInRecentConversationWhenCurrentMessageIsPlainText() throws Exception {
+    CapturingBBHttpClientWrapper wrapper = new CapturingBBHttpClientWrapper(mapper);
+    wrapper.historyMessages =
+        List.of(
+            historyMessage("question-guid", null, null),
+            historyMessage("vote-guid", pollBundleId(), "p:0/poll-root-guid"),
+            historyMessage("older-poll-guid", pollBundleId(), null));
+    IncomingMessage message =
+        plainIncomingMessage("any;-;+15555550123", "question-guid", "what were the results?");
+    ToolContext context = toolContext(message, null);
+
+    String output =
+        new ReadPollAgentTool(wrapper)
+            .getTool()
+            .handler()
+            .apply(context, mapper.createObjectNode());
+
+    assertEquals("any;-;+15555550123", wrapper.lastHistoryChatGuid);
+    assertEquals("poll-root-guid", wrapper.lastReadPollGuid);
+    assertTrue(output.contains("\"messageGuid\":\"poll-root-guid\""));
+  }
+
+  @Test
   void readPollNormalizesTapbackStyleMessageGuid() throws Exception {
     CapturingBBHttpClientWrapper wrapper = new CapturingBBHttpClientWrapper(mapper);
     IncomingMessage message = incomingMessage("iMessage;-;+15555550123", "p:0/poll-guid", null);
@@ -140,10 +164,42 @@ class PollAgentToolTest {
         false,
         Instant.now(),
         List.of(),
-        "com.apple.messages.MSMessageExtensionBalloonPlugin:0000000000:com.apple.messages.Polls",
+        pollBundleId(),
         associatedMessageGuid,
         replyToGuid,
         false);
+  }
+
+  private static IncomingMessage plainIncomingMessage(
+      String chatGuid, String messageGuid, String text) {
+    return new IncomingMessage(
+        IncomingMessage.TRANSPORT_BLUEBUBBLES,
+        chatGuid,
+        messageGuid,
+        null,
+        text,
+        false,
+        BBMessageAgent.IMESSAGE_SERVICE,
+        "+15555550123",
+        false,
+        Instant.now(),
+        List.of(),
+        null,
+        null,
+        null,
+        false);
+  }
+
+  private static ApiV1ChatChatGuidMessageGet200ResponseDataInner historyMessage(
+      String guid, String balloonBundleId, String associatedMessageGuid) {
+    return new ApiV1ChatChatGuidMessageGet200ResponseDataInner()
+        .guid(guid)
+        .balloonBundleId(balloonBundleId)
+        .associatedMessageGuid(associatedMessageGuid);
+  }
+
+  private static String pollBundleId() {
+    return "com.apple.messages.MSMessageExtensionBalloonPlugin:0000000000:com.apple.messages.Polls";
   }
 
   private static final class CapturingBBHttpClientWrapper extends BBHttpClientWrapper {
@@ -152,6 +208,8 @@ class PollAgentToolTest {
     private String lastPollTitle;
     private List<String> lastPollOptionTexts;
     private String lastReadPollGuid;
+    private String lastHistoryChatGuid;
+    private List<ApiV1ChatChatGuidMessageGet200ResponseDataInner> historyMessages = List.of();
     private boolean failReadPoll;
 
     CapturingBBHttpClientWrapper(ObjectMapper mapper) {
@@ -178,6 +236,13 @@ class PollAgentToolTest {
         throw new IllegalStateException("BlueBubbles failed");
       }
       return mapper.createObjectNode().put("messageGuid", messageGuid).put("title", "Lunch?");
+    }
+
+    @Override
+    public List<ApiV1ChatChatGuidMessageGet200ResponseDataInner> getMessagesInChat(
+        String chatGuid) {
+      this.lastHistoryChatGuid = chatGuid;
+      return historyMessages;
     }
   }
 }
