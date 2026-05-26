@@ -11,9 +11,6 @@ public class AgentWorkflowProperties {
   private String cadenceTaskList = "bbagent";
   private String cadenceHost = "localhost";
   private int cadencePort = 7933;
-  private String callbackBaseUrl = "http://localhost:8080";
-  private int callbackDefaultTtlHours = 24;
-  private long callbackTimestampToleranceSeconds = 300;
 
   public String getCadenceDomain() {
     return cadenceDomain;
@@ -45,29 +42,5 @@ public class AgentWorkflowProperties {
 
   public void setCadencePort(int cadencePort) {
     this.cadencePort = cadencePort;
-  }
-
-  public String getCallbackBaseUrl() {
-    return callbackBaseUrl;
-  }
-
-  public void setCallbackBaseUrl(String callbackBaseUrl) {
-    this.callbackBaseUrl = callbackBaseUrl;
-  }
-
-  public int getCallbackDefaultTtlHours() {
-    return callbackDefaultTtlHours;
-  }
-
-  public void setCallbackDefaultTtlHours(int callbackDefaultTtlHours) {
-    this.callbackDefaultTtlHours = callbackDefaultTtlHours;
-  }
-
-  public long getCallbackTimestampToleranceSeconds() {
-    return callbackTimestampToleranceSeconds;
-  }
-
-  public void setCallbackTimestampToleranceSeconds(long callbackTimestampToleranceSeconds) {
-    this.callbackTimestampToleranceSeconds = callbackTimestampToleranceSeconds;
   }
 }

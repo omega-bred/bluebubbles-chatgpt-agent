@@ -5,7 +5,6 @@ import io.breland.bbagent.server.agent.tools.bb.SendReactionAgentTool;
 import io.breland.bbagent.server.agent.tools.bb.SendTextAgentTool;
 import io.breland.bbagent.server.agent.tools.bb.SetGroupIconAgentTool;
 import io.breland.bbagent.server.agent.tools.giphy.SendGiphyAgentTool;
-import io.breland.bbagent.server.agent.workflowcallback.WorkflowCallbackService;
 import java.util.HashMap;
 import java.util.Map;
 import lombok.extern.slf4j.Slf4j;
@@ -21,8 +20,7 @@ public final class AgentToolLoopGuard {
           SendTextAgentTool.TOOL_NAME, 2,
           SendReactionAgentTool.TOOL_NAME, 2,
           RenameConversationAgentTool.TOOL_NAME, 1,
-          SetGroupIconAgentTool.TOOL_NAME, 1,
-          WorkflowCallbackService.TOOL_NAME, 1);
+          SetGroupIconAgentTool.TOOL_NAME, 1);
 
   private final Map<String, Integer> maxCallsByTool;
   private final int maxIdenticalCalls;

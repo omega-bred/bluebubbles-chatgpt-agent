@@ -289,21 +289,6 @@ class BBMessageAgentTest {
   }
 
   @Test
-  void callbackWorkflowCanSendEvenWhenAnotherWorkflowIsLatest() {
-    BBMessageAgent agent =
-        newAgent(Mockito.mock(OpenAIClient.class), new StubBBHttpClientWrapper());
-    String chatGuid = "iMessage;+;chat-callback";
-    ConversationState state = new ConversationState();
-    state.setLatestWorkflowRunId("newer-live-run");
-    agent.getConversations().put(chatGuid, state);
-    AgentWorkflowContext callbackContext =
-        new AgentWorkflowContext(
-            "callback:callback-id", chatGuid, "callback-message", Instant.now());
-
-    assertTrue(agent.canSendResponsesForWorkflowRun(callbackContext, "callback-run"));
-  }
-
-  @Test
   void agentInstructionsDoNotMentionRetiredAsyncTools() {
     AgentPromptBuilder promptBuilder = promptBuilder(new StubBBHttpClientWrapper());
 

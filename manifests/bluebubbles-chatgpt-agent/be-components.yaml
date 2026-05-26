@@ -235,8 +235,6 @@ spec:
                 secretKeyRef:
                   key: "password"
                   name: gcal-oauth-state-secret
-            - name: AGENT_WORKFLOW_CALLBACK_BASE_URL
-              value: "https://chatagent.bre.land"
             - name: WEBSITE_BASE_URL
               value: "https://chatagent.bre.land"
             - name: UMAMI_ANALYTICS_ENABLED

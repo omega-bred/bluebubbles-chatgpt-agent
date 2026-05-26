@@ -5,7 +5,6 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.openai.models.responses.Response;
-import io.breland.bbagent.server.agent.workflowcallback.WorkflowCallbackService;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 
@@ -27,18 +26,18 @@ class AgentResponseHelperTest {
   void parseTextFunctionCalls_preservesCommasInsideArgumentValues() throws Exception {
     List<com.openai.models.responses.ResponseFunctionToolCall> calls =
         AgentResponseHelper.parseTextFunctionCalls(
-            "call:create_workflow_callback{purpose:Clone repos, cherry-pick commit, and push to"
-                + " GitHub.,resume_instructions:Notify Breland once the cherry-pick and push are"
+            "call:send_text{message:Clone repos, cherry-pick commit, and push to"
+                + " GitHub.,thread_id:Notify Breland once the cherry-pick and push are"
                 + " complete.}");
 
     assertEquals(1, calls.size());
-    assertEquals("create_workflow_callback", calls.getFirst().name());
+    assertEquals("send_text", calls.getFirst().name());
     var args = new ObjectMapper().readTree(calls.getFirst().arguments());
     assertEquals(
-        "Clone repos, cherry-pick commit, and push to GitHub.", args.get("purpose").asText());
+        "Clone repos, cherry-pick commit, and push to GitHub.", args.get("message").asText());
     assertEquals(
         "Notify Breland once the cherry-pick and push are complete.",
-        args.get("resume_instructions").asText());
+        args.get("thread_id").asText());
   }
 
   @Test
@@ -60,7 +59,7 @@ class AgentResponseHelperTest {
             new ObjectMapper(),
 """
 I'll start that now.
-call:create_workflow_callback{purpose:Clone repos, cherry-pick commit, and push to GitHub.,resume_instructions:Notify Breland once complete.}
+call:send_text{message:Clone repos, cherry-pick commit, and push to GitHub.,thread_id:Notify Breland once complete.}
 """);
 
     assertEquals("I'll start that now.", normalized);
@@ -71,8 +70,8 @@ call:create_workflow_callback{purpose:Clone repos, cherry-pick commit, and push 
     String normalized =
         AgentResponseHelper.normalizeAssistantText(
             new ObjectMapper(),
-            "call:create_workflow_callback{purpose:Clone repos, cherry-pick commit, and push to"
-                + " GitHub.,resume_instructions:Notify Breland once complete.}");
+            "call:send_text{message:Clone repos, cherry-pick commit, and push to"
+                + " GitHub.,thread_id:Notify Breland once complete.}");
 
     assertEquals("", normalized);
   }
@@ -90,15 +89,13 @@ call:create_workflow_callback{purpose:Clone repos, cherry-pick commit, and push 
   }
 
   @Test
-  void blockedWorkflowCallbackOutputTellsModelToUseExistingCallback() throws Exception {
+  void blockedToolCallOutputTellsModelNotToRepeatTool() throws Exception {
     String outputJson =
         new ObjectMapper()
-            .writeValueAsString(
-                AgentResponseHelper.blockedToolCallOutput(
-                    "call-1", WorkflowCallbackService.TOOL_NAME));
+            .writeValueAsString(AgentResponseHelper.blockedToolCallOutput("call-1", "send_text"));
 
-    assertTrue(outputJson.contains("already been created in this turn"));
-    assertTrue(outputJson.contains("Do not call create_workflow_callback again"));
+    assertTrue(outputJson.contains("prevent repeated loops"));
+    assertTrue(outputJson.contains("without calling this tool again"));
   }
 
   @Test

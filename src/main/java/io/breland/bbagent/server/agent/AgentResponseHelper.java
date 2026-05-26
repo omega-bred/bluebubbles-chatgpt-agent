@@ -9,7 +9,6 @@ import com.openai.models.responses.ResponseInputItem;
 import com.openai.models.responses.ResponseOutputItem;
 import com.openai.models.responses.ResponseOutputMessage;
 import io.breland.bbagent.server.agent.reactions.MessageReactionSupport;
-import io.breland.bbagent.server.agent.workflowcallback.WorkflowCallbackService;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -29,11 +28,6 @@ public final class AgentResponseHelper {
   private static final String REPEATED_TOOL_CALL_BLOCKED_OUTPUT =
       "Tool call blocked to prevent repeated loops in one turn. Summarize the current status to the"
           + " user without calling this tool again unless the user explicitly asks.";
-  private static final String REPEATED_WORKFLOW_CALLBACK_BLOCKED_OUTPUT =
-      "Workflow callback creation was blocked because one callback has already been created in this"
-          + " turn. Use the earlier callback_id and callback_instructions from the previous tool"
-          + " result, then continue with the next tool call. Do not call create_workflow_callback"
-          + " again in this turn.";
   public static final String EMPTY_ASSISTANT_RESPONSE_RETRY_INSTRUCTION =
       "Your previous response did not contain a user-visible assistant message or a tool call. "
           + "Continue now with either a concise user-visible answer or the next tool call needed to "
@@ -168,12 +162,11 @@ public final class AgentResponseHelper {
   }
 
   public static ResponseInputItem blockedToolCallOutput(String callId, String toolName) {
-    String output =
-        WorkflowCallbackService.TOOL_NAME.equals(toolName)
-            ? REPEATED_WORKFLOW_CALLBACK_BLOCKED_OUTPUT
-            : REPEATED_TOOL_CALL_BLOCKED_OUTPUT;
     ResponseInputItem.FunctionCallOutput toolOutput =
-        ResponseInputItem.FunctionCallOutput.builder().callId(callId).output(output).build();
+        ResponseInputItem.FunctionCallOutput.builder()
+            .callId(callId)
+            .output(REPEATED_TOOL_CALL_BLOCKED_OUTPUT)
+            .build();
     return ResponseInputItem.ofFunctionCallOutput(toolOutput);
   }
 

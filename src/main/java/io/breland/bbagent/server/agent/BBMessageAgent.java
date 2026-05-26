@@ -22,7 +22,6 @@ import io.breland.bbagent.server.agent.transport.MessageTransport;
 import io.breland.bbagent.server.agent.transport.MessageTransportRegistry;
 import io.breland.bbagent.server.agent.transport.OutgoingTextMessage;
 import io.breland.bbagent.server.agent.transport.bb.BBHttpClientWrapper;
-import io.breland.bbagent.server.agent.workflowcallback.WorkflowCallbackService;
 import io.breland.bbagent.server.feedback.FeedbackService;
 import io.breland.bbagent.server.metrics.AgentMetricsService;
 import io.breland.bbagent.server.metrics.AgentToolMetricEvent;
@@ -184,9 +183,6 @@ public class BBMessageAgent {
       return true;
     }
     if (ScheduledEventTool.isScheduledWorkflowId(workflowContext.workflowId())) {
-      return true;
-    }
-    if (WorkflowCallbackService.isCallbackWorkflowId(workflowContext.workflowId())) {
       return true;
     }
     if (workflowContext.chatGuid() == null || workflowContext.chatGuid().isBlank()) {
