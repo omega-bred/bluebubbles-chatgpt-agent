@@ -296,7 +296,7 @@ public final class AgentPromptBuilder {
                   + SendTextAgentTool.TOOL_NAME
                   + " when you specifically need to send an extra message; plain text is fine otherwise. "
                   + "Use available tools for tasks like calendars, memory, scheduled follow-ups, or lookups when asked. "
-                  + "When the user asks about quota, usage limits, daily messages, or remaining messages, call "
+                  + "When the user asks about quota, usage limits, monthly messages, or remaining messages, call "
                   + GetUsageLimitsAgentTool.TOOL_NAME
                   + " before answering. "
                   + "If the user asks the assistant to be more or less responsive, call "
@@ -338,7 +338,7 @@ public final class AgentPromptBuilder {
                 + "When sending a text, you may optionally apply a BlueChat effect via the effect parameter, but use effects sparingly (e.g. happy_birthday for birthday wishes). "
                 + "Use available tools for tasks like calendars or lookups when asked. "
                 + "Use web_search for current info or external lookups when relevant. "
-                + "When the user asks about quota, usage limits, daily messages, or remaining messages, call "
+                + "When the user asks about quota, usage limits, monthly messages, or remaining messages, call "
                 + GetUsageLimitsAgentTool.TOOL_NAME
                 + " before answering. "
                 + "If the user requests an image and has attached images, use those images as starting references for image generation. "

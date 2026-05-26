@@ -154,6 +154,37 @@ Subscription billing:
   1Password item `stripe-bbagent-subscriptions-test` for local boot/test, while the Kubernetes
   manifest leaves the live item wiring in place for future promotion.
 
+Operational metrics, dashboards, and alerts:
+- Prefer Micrometer/MeterRegistry instrumentation for new operational metrics. Use stable
+  `bbagent.*` dot-separated meter names in code and low-cardinality tags such as `operation`,
+  `outcome`, `model`, `failure_type`, `transport`, `tool`, or `provider`. Do not tag raw user ids,
+  chat guids, message contents, prompts, tokens, phone numbers, emails, or other
+  high-cardinality/sensitive values. For agent traffic, use the operational `transport` tag values
+  `imessage` and `lxmf`; BlueBubbles-originated iMessage traffic should not be tagged as
+  `bluebubbles`.
+- Current Influx/Grafana wiring writes these meters into the `bluebubbles-chatgpt-agent` bucket.
+  Influx measurement names use underscores, e.g. `bbagent.agent.llm.call.count` becomes
+  `bbagent_agent_llm_call_count`. Counter/gauge values use `_field == "value"`. Timer summaries may
+  expose fields such as `count`, `sum`, `mean`, and `upper`.
+- When adding a metric that should be operationally visible, update the BlueBubbles Grafana
+  dashboard as part of the same pass. The production dashboard is `BlueBubbles`
+  (`/d/brtxbw8/bluebubbles`, UID `brtxbw8`), the Influx datasource UID is `bf1yfcwx2pv5sf`, and
+  the bucket is `bluebubbles-chatgpt-agent`. Prefer panels that split by meaningful low-cardinality
+  tags and show both rate/count and latency/health where applicable.
+- For alerting, use the Grafana MCP/API rather than hand-editing exported dashboard JSON. Put
+  BlueBubbles alert rules in folder UID `bluebubbles`, rule group `BlueBubbles operational alerts`,
+  and route page-worthy alerts to the Grafana contact point `pagerduty-bluebubbles`. The PagerDuty
+  service is `BlueBubbles ChatGPT Agent`; do not paste or commit PagerDuty routing/integration keys.
+  If the key changes, store it in the Grafana contact point or 1Password, not in source.
+- Seed Flux alert queries with `array.from`/`union` when a metric may be absent or idle so the alert
+  returns a deterministic zero instead of noisy no-data. Use `noDataState=OK` for idle workload
+  metrics where no traffic is healthy, but `noDataState=Alerting` for required health telemetry.
+  Keep `execErrState=Alerting` for page-worthy alerts so broken queries do not hide real incidents.
+- Existing paging examples: `bluebubbles-health-down` pages when `bbagent_bluebubbles_health_up` is
+  below 1 or missing for more than one minute; `bluebubbles-llm-calls-failing` pages when
+  `bbagent_agent_llm_call_count` has at least one `outcome=failure` and zero `outcome=success` in
+  the last ten minutes.
+
 If you add new configs:
 - Prefer environment variables with sensible defaults in `application.properties`.
 - Update `manifests/bluebubbles-chatgpt-agent/be-components.yaml` if needed for production deploys.

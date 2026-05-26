@@ -1,5 +1,6 @@
 package io.breland.bbagent.server.agent;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -64,5 +65,40 @@ class IncomingMessageTest {
             false);
 
     assertFalse(message.isGroup());
+  }
+
+  @Test
+  void metricTransportMapsBlueBubblesToImessageAndPreservesLxmf() {
+    IncomingMessage imessage =
+        new IncomingMessage(
+            IncomingMessage.TRANSPORT_BLUEBUBBLES,
+            "iMessage;+;user-1",
+            "msg-1",
+            null,
+            "hello",
+            false,
+            "iMessage",
+            "Alice",
+            false,
+            Instant.now(),
+            List.of(),
+            false);
+    IncomingMessage lxmf =
+        new IncomingMessage(
+            IncomingMessage.TRANSPORT_LXMF,
+            "lxmf:abc",
+            "msg-2",
+            null,
+            "hello",
+            false,
+            "LXMF",
+            "abc",
+            false,
+            Instant.now(),
+            List.of(),
+            false);
+
+    assertEquals(IncomingMessage.METRIC_TRANSPORT_IMESSAGE, imessage.metricTransport());
+    assertEquals(IncomingMessage.TRANSPORT_LXMF, lxmf.metricTransport());
   }
 }

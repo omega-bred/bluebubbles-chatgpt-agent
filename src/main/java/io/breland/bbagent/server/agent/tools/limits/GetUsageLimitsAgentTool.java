@@ -34,7 +34,7 @@ public class GetUsageLimitsAgentTool implements ToolProvider {
     return new AgentTool(
         TOOL_NAME,
         "Check how close the current chat account is to its usage limits. Use when the user asks"
-            + " about quota, limits, daily messages, remaining messages, or usage.",
+            + " about quota, limits, monthly messages, remaining messages, or usage.",
         jsonSchema(GetUsageLimitsRequest.class),
         false,
         (context, args) -> {
@@ -77,14 +77,14 @@ public class GetUsageLimitsAgentTool implements ToolProvider {
       return "I could not determine your usage limits for this chat identity.";
     }
     RateLimitStatus status = messageStatus.rateLimit();
-    String accountType = messageStatus.premium() ? "paid" : "free";
+    String accountType = messageStatus.premium() ? "premium" : "free";
     String resetAt = INSTANT_FORMATTER.format(status.windowEnd());
     String text =
         "You have used "
             + status.used()
             + " of "
             + status.limit()
-            + " daily assistant responses on the "
+            + " monthly assistant responses on the "
             + accountType
             + " account. "
             + status.remaining()
@@ -92,7 +92,7 @@ public class GetUsageLimitsAgentTool implements ToolProvider {
             + resetAt
             + ".";
     if (!messageStatus.premium() && status.remaining() <= 25) {
-      text += " Paid accounts currently get 5000 responses per day.";
+      text += " Premium accounts currently get 5,000 messages per month.";
     }
     return text;
   }

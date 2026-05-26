@@ -64,7 +64,7 @@ public class SubscriptionProperties {
   public static class Plan {
     private String key = "premium_monthly";
     private String displayName = "Premium";
-    private String description = "Premium model access";
+    private String description = "Premium model access and 5,000 messages per month";
     private BigDecimal priceAmount = BigDecimal.ZERO;
     private String currency = "USD";
     private String billingInterval = "monthly";

@@ -407,27 +407,27 @@ public class BBMessageAgent {
     RateLimitStatus rateLimit = status.rateLimit();
     String resetAt =
         rateLimit == null
-            ? "the next UTC day"
+            ? "the next UTC month"
             : DateTimeFormatter.ISO_INSTANT.format(rateLimit.windowEnd());
     long limit = rateLimit == null ? 0L : rateLimit.limit();
     if (!status.premium()) {
       StringBuilder text =
           new StringBuilder(
-              "You've hit the free daily limit of "
+              "You've hit the free monthly limit of "
                   + limit
-                  + " assistant responses. Paid accounts currently get 5000 responses per day. ");
+                  + " messages. Premium accounts currently get 5,000 messages per month. ");
       createUpgradeLinkText(message)
           .ifPresentOrElse(
               text::append,
               () ->
                   text.append(
-                      "Link this chat identity to the website and upgrade to keep chatting today. "));
+                      "Link this chat identity to the website and upgrade to keep chatting this month. "));
       text.append("Your free limit resets at ").append(resetAt).append(".");
       return text.toString();
     }
-    return "You've hit the paid daily limit of "
+    return "You've hit the premium monthly limit of "
         + limit
-        + " assistant responses. Your limit resets at "
+        + " messages. Your limit resets at "
         + resetAt
         + ".";
   }
@@ -475,7 +475,7 @@ public class BBMessageAgent {
           requestInputItems.size());
       log.trace("Final message: {}", finalRequest);
       Response response = openAiSupplier.get().responses().create(finalRequest);
-      recordLlmCallMetric(finalRequest, true, null, startedNanos);
+      recordLlmCallMetric(message, finalRequest, true, null, startedNanos);
       log.info(
           "Created model response chat={} messageGuid={} workflowId={} elapsedMs={}",
           message.chatGuid(),
@@ -486,7 +486,7 @@ public class BBMessageAgent {
     } catch (RuntimeException e) {
       if (finalRequest != null) {
         recordLlmCallMetric(
-            finalRequest, false, OperationalMetricsService.failureType(e), startedNanos);
+            message, finalRequest, false, OperationalMetricsService.failureType(e), startedNanos);
       }
       log.warn(
           "OpenAI response failed chat={} messageGuid={} workflowId={}",
@@ -499,6 +499,7 @@ public class BBMessageAgent {
   }
 
   private void recordLlmCallMetric(
+      IncomingMessage message,
       ResponseCreateParams request,
       boolean success,
       @Nullable String failureType,
@@ -508,6 +509,7 @@ public class BBMessageAgent {
     }
     try {
       operationalMetricsService.recordLlmCall(
+          message == null ? "unknown" : message.metricTransport(),
           "agent_response",
           request,
           success,

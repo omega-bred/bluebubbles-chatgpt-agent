@@ -25,6 +25,7 @@ public record IncomingMessage(
 
   public static final String TRANSPORT_BLUEBUBBLES = "bluebubbles";
   public static final String TRANSPORT_LXMF = "lxmf";
+  public static final String METRIC_TRANSPORT_IMESSAGE = "imessage";
 
   public IncomingMessage(
       String transport,
@@ -150,6 +151,16 @@ public record IncomingMessage(
 
   public boolean isLxmfTransport() {
     return TRANSPORT_LXMF.equalsIgnoreCase(transportOrDefault());
+  }
+
+  public String metricTransport() {
+    if (isLxmfTransport()) {
+      return TRANSPORT_LXMF;
+    }
+    if (isBlueBubblesTransport()) {
+      return METRIC_TRANSPORT_IMESSAGE;
+    }
+    return transportOrDefault();
   }
 
   public IncomingMessage withText(String newText) {

@@ -58,8 +58,20 @@ public class OperationalMetricsService {
       boolean success,
       @Nullable String failureType,
       Duration duration) {
+    recordAgentToolInvocation("unknown", toolName, toolCategory, success, failureType, duration);
+  }
+
+  public void recordAgentToolInvocation(
+      String transport,
+      String toolName,
+      String toolCategory,
+      boolean success,
+      @Nullable String failureType,
+      Duration duration) {
     Tags tags =
         Tags.of(
+            "transport",
+            tagValue(transport, "unknown"),
             "tool_name",
             tagValue(toolName, "unknown"),
             "tool_category",
@@ -79,7 +91,17 @@ public class OperationalMetricsService {
       boolean success,
       @Nullable String failureType,
       Duration duration) {
-    recordLlmCall(operation, responseModelName(request), success, failureType, duration);
+    recordLlmCall("unknown", operation, responseModelName(request), success, failureType, duration);
+  }
+
+  public void recordLlmCall(
+      String transport,
+      String operation,
+      @Nullable ResponseCreateParams request,
+      boolean success,
+      @Nullable String failureType,
+      Duration duration) {
+    recordLlmCall(transport, operation, responseModelName(request), success, failureType, duration);
   }
 
   public void recordLlmCall(
@@ -88,8 +110,20 @@ public class OperationalMetricsService {
       boolean success,
       @Nullable String failureType,
       Duration duration) {
+    recordLlmCall("unknown", operation, model, success, failureType, duration);
+  }
+
+  public void recordLlmCall(
+      String transport,
+      String operation,
+      @Nullable String model,
+      boolean success,
+      @Nullable String failureType,
+      Duration duration) {
     Tags tags =
         Tags.of(
+            "transport",
+            tagValue(transport, "unknown"),
             "operation",
             tagValue(operation, "unknown"),
             "model",

@@ -7,6 +7,8 @@ const screenTwo = new URL("../../../images/screen2.png", import.meta.url).href;
 const screenThree = new URL("../../../images/screen3.jpg", import.meta.url).href;
 const agentPhoneDisplay = "+1 (415) 867-4956";
 const agentSmsHref = "sms:+14158674956";
+const standardMonthlyMessageLimit = "200";
+const premiumMonthlyMessageLimit = "5,000";
 
 export function LandingPage({ auth }: { auth: AuthState }) {
   return (
@@ -77,6 +79,13 @@ export function LandingPage({ auth }: { auth: AuthState }) {
           <p>
             Connect your sender to the web account and see services like Google Calendar in one
             place.
+          </p>
+        </article>
+        <article>
+          <h3>Clear limits</h3>
+          <p>
+            Free accounts include {standardMonthlyMessageLimit} messages per month. Premium includes{" "}
+            {premiumMonthlyMessageLimit} messages per month.
           </p>
         </article>
       </section>

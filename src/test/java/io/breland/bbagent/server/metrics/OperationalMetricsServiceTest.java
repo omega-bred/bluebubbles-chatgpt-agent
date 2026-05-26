@@ -14,12 +14,13 @@ class OperationalMetricsServiceTest {
     OperationalMetricsService service = new OperationalMetricsService(registry);
 
     service.recordAgentToolInvocation(
-        "send_text", "bluebubbles", false, "tool_error", Duration.ofMillis(42));
+        "imessage", "send_text", "bluebubbles", false, "tool_error", Duration.ofMillis(42));
 
     assertEquals(
         1.0,
         registry
             .get("bbagent.agent.tool.invocation.count")
+            .tag("transport", "imessage")
             .tag("tool_name", "send_text")
             .tag("tool_category", "bluebubbles")
             .tag("outcome", "failure")
@@ -30,6 +31,7 @@ class OperationalMetricsServiceTest {
         1L,
         registry
             .get("bbagent.agent.tool.invocation.duration")
+            .tag("transport", "imessage")
             .tag("tool_name", "send_text")
             .tag("tool_category", "bluebubbles")
             .tag("outcome", "failure")
@@ -43,12 +45,14 @@ class OperationalMetricsServiceTest {
     SimpleMeterRegistry registry = new SimpleMeterRegistry();
     OperationalMetricsService service = new OperationalMetricsService(registry);
 
-    service.recordLlmCall("agent_response", "Qwen/Qwen3.6-27B", true, null, Duration.ofMillis(123));
+    service.recordLlmCall(
+        "lxmf", "agent_response", "Qwen/Qwen3.6-27B", true, null, Duration.ofMillis(123));
 
     assertEquals(
         1.0,
         registry
             .get("bbagent.agent.llm.call.count")
+            .tag("transport", "lxmf")
             .tag("operation", "agent_response")
             .tag("model", "Qwen/Qwen3.6-27B")
             .tag("outcome", "success")
@@ -59,6 +63,7 @@ class OperationalMetricsServiceTest {
         1L,
         registry
             .get("bbagent.agent.llm.call.duration")
+            .tag("transport", "lxmf")
             .tag("operation", "agent_response")
             .tag("model", "Qwen/Qwen3.6-27B")
             .tag("outcome", "success")

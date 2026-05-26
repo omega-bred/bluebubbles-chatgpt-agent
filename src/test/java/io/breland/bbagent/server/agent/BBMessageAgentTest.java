@@ -520,6 +520,7 @@ class BBMessageAgentTest {
         1.0,
         registry
             .get("bbagent.agent.llm.call.count")
+            .tag("transport", IncomingMessage.METRIC_TRANSPORT_IMESSAGE)
             .tag("operation", "agent_response")
             .tag("model", ModelAccessService.STANDARD_RESPONSES_MODEL)
             .tag("outcome", "success")

@@ -17,6 +17,9 @@ import { subscriptionApi, websiteAccountApi } from "../services/api-client";
 import { trackEvent } from "../services/analytics";
 import { displayModelLabel } from "../utils/model-label";
 
+const standardMonthlyMessageLimit = "200";
+const premiumMonthlyMessageLimit = "5,000";
+
 export function AccountPage({ auth }: { auth: AuthState }) {
   const [data, setData] = React.useState<WebsiteLinkedAccountsResponse | null>(null);
   const [subscription, setSubscription] = React.useState<SubscriptionSummaryResponse | null>(null);
@@ -165,6 +168,9 @@ function BillingPanel({
   const isPremium = Boolean(subscription?.is_premium);
   const showCheckoutOptions = !isPremium && !activeSubscription;
   const planCheckoutCopy = checkoutOptionCopy(plan?.provider);
+  const usageCopy = isPremium
+    ? `Premium includes ${premiumMonthlyMessageLimit} messages per month.`
+    : `Free includes ${standardMonthlyMessageLimit} messages per month. Premium raises that to ${premiumMonthlyMessageLimit} messages per month.`;
   return (
     <article className="billing-panel">
       <div>
@@ -175,6 +181,7 @@ function BillingPanel({
             ? premiumAccessText(subscription, activeSubscription)
             : premiumPlanSummary(plans)}
         </p>
+        <p className="muted">{usageCopy}</p>
       </div>
       <div className="billing-actions">
         {activeSubscription ? (
@@ -201,7 +208,9 @@ function BillingPanel({
               >
                 <span className="provider-plan-copy">
                   <span className="provider-plan-title">{checkoutCopy.title}</span>
-                  <span className="provider-plan-note">{checkoutCopy.description}</span>
+                  <span className="provider-plan-note">
+                    {providerPlanDescription(checkoutCopy.description, availablePlan)}
+                  </span>
                   <span className="provider-plan-price">
                     {formatProviderLabel(availablePlan.provider)} / {formatPlanPrice(availablePlan)}
                   </span>
@@ -219,6 +228,17 @@ function BillingPanel({
       ) : null}
     </article>
   );
+}
+
+function providerPlanDescription(baseDescription: string, plan: SubscriptionPlan) {
+  const planDescription = plan.description?.trim();
+  if (!planDescription) {
+    return baseDescription;
+  }
+  const punctuatedPlanDescription = /[.!?]$/.test(planDescription)
+    ? planDescription
+    : `${planDescription}.`;
+  return `${baseDescription} ${punctuatedPlanDescription}`;
 }
 
 function SubscriptionRows({

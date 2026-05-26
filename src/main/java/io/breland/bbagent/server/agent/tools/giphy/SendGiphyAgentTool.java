@@ -92,7 +92,7 @@ public class SendGiphyAgentTool implements ToolProvider {
     if (candidates.isEmpty()) {
       return "no results";
     }
-    int bestIndex = pickBestGifIndex(query, caption, candidates);
+    int bestIndex = pickBestGifIndex(message, query, caption, candidates);
     if (bestIndex < 0 || bestIndex >= candidates.size()) {
       bestIndex = 0;
     }
@@ -123,7 +123,10 @@ public class SendGiphyAgentTool implements ToolProvider {
   }
 
   private int pickBestGifIndex(
-      String query, String caption, List<GiphyClient.GiphyGif> candidates) {
+      IncomingMessage message,
+      String query,
+      String caption,
+      List<GiphyClient.GiphyGif> candidates) {
     if (candidates.size() <= 1 || openAiSupplier == null) {
       return 0;
     }
@@ -147,9 +150,10 @@ public class SendGiphyAgentTool implements ToolProvider {
       Response response;
       try {
         response = openAiSupplier.get().responses().create(params);
-        recordLlmCallMetric(params, true, null, startedNanos);
+        recordLlmCallMetric(message, params, true, null, startedNanos);
       } catch (Exception e) {
-        recordLlmCallMetric(params, false, OperationalMetricsService.failureType(e), startedNanos);
+        recordLlmCallMetric(
+            message, params, false, OperationalMetricsService.failureType(e), startedNanos);
         throw e;
       }
       String text = extractResponseText(response);
@@ -164,12 +168,17 @@ public class SendGiphyAgentTool implements ToolProvider {
   }
 
   private void recordLlmCallMetric(
-      ResponseCreateParams request, boolean success, String failureType, long startedNanos) {
+      IncomingMessage message,
+      ResponseCreateParams request,
+      boolean success,
+      String failureType,
+      long startedNanos) {
     if (operationalMetricsService == null) {
       return;
     }
     try {
       operationalMetricsService.recordLlmCall(
+          message == null ? "unknown" : message.metricTransport(),
           "giphy_picker",
           request,
           success,

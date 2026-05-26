@@ -688,13 +688,13 @@ paths:
       tags:
         - admin
       summary: Gets current rate-limit usage
-      description: Returns current usage for app rate limits, including daily assistant response usage by account.
+      description: Returns current usage for app rate limits, including monthly assistant response usage by account.
       security:
         - bearerAuth: []
       parameters:
         - name: limit_key
           in: query
-          description: Rate limit key to inspect. Defaults to daily assistant response usage.
+          description: Rate limit key to inspect. Defaults to monthly assistant response usage.
           required: false
           schema:
             type: string
@@ -1722,7 +1722,7 @@ components:
       properties:
         limit_key:
           type: string
-          description: Stable app limit key, such as message_responses_per_day.
+          description: Stable app limit key, such as message_responses_per_month.
         limit_label:
           type: string
         scope_type:

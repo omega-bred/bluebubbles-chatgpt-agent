@@ -90,7 +90,7 @@ public class AdminStatsService implements AgentMetricsService {
             now));
     if (operationalMetricsService != null) {
       operationalMetricsService.recordAcceptedMessage(
-          firstNonBlank(message.transportOrDefault(), "unknown"),
+          firstNonBlank(message.metricTransport(), "unknown"),
           firstNonBlank(context.modelAccess().currentModelKey(), "unknown"),
           context.modelAccess().premium(),
           WORKFLOW_MODE);
@@ -132,6 +132,7 @@ public class AdminStatsService implements AgentMetricsService {
             now));
     if (operationalMetricsService != null) {
       operationalMetricsService.recordAgentToolInvocation(
+          firstNonBlank(message.metricTransport(), "unknown"),
           firstNonBlank(event.toolName(), "unknown"),
           firstNonBlank(event.toolCategory(), "other"),
           event.success(),

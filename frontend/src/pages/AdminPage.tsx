@@ -717,7 +717,7 @@ function SenderUsage({ senders }: { senders: AdminSenderStats[] }) {
 
 function RateLimitUsage({ usages }: { usages: AdminRateLimitUsage[] }) {
   if (usages.length === 0) {
-    return <p className="muted">No rate-limit usage in the current daily window.</p>;
+    return <p className="muted">No rate-limit usage in the current monthly window.</p>;
   }
   return (
     <div className="rate-limit-usage-list">

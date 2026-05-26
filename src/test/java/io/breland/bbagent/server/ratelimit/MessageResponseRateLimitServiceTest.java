@@ -11,6 +11,7 @@ import io.breland.bbagent.server.agent.account.AgentAccountResolver;
 import io.breland.bbagent.server.agent.persistence.account.AgentAccountRepository;
 import io.breland.bbagent.server.agent.persistence.ratelimit.AppRateLimitUsageRepository;
 import java.time.Instant;
+import java.time.ZoneOffset;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -26,7 +27,7 @@ class MessageResponseRateLimitServiceTest {
   @Autowired private AgentAccountRepository accountRepository;
 
   @Test
-  void enforcesDailyStandardAccountLimit() {
+  void enforcesMonthlyStandardAccountLimit() {
     usageRepository.deleteAll();
     IncomingMessage message = incomingMessage("Alice");
 
@@ -34,6 +35,9 @@ class MessageResponseRateLimitServiceTest {
     assertTrue(initial.tracked());
     assertEquals(200L, initial.rateLimit().limit());
     assertEquals(200L, initial.rateLimit().remaining());
+    assertEquals("message_responses_per_month", initial.rateLimit().limitKey());
+    assertEquals("Monthly assistant responses", initial.rateLimit().limitLabel());
+    assertMonthlyWindow(initial.rateLimit());
 
     for (int i = 0; i < 200; i++) {
       assertTrue(service.tryConsume(message).allowed());
@@ -46,7 +50,7 @@ class MessageResponseRateLimitServiceTest {
   }
 
   @Test
-  void premiumAccountsUsePaidDailyLimit() {
+  void premiumAccountsUsePaidMonthlyLimit() {
     usageRepository.deleteAll();
     var account =
         accountResolver
@@ -64,7 +68,7 @@ class MessageResponseRateLimitServiceTest {
   }
 
   @Test
-  void upgradedAccountsUsePaidLimitForExistingDailyUsageAndAdminMetering() {
+  void upgradedAccountsUsePaidLimitForExistingMonthlyUsageAndAdminMetering() {
     usageRepository.deleteAll();
     IncomingMessage message = incomingMessage("Alice");
 
@@ -111,6 +115,16 @@ class MessageResponseRateLimitServiceTest {
     assertEquals(1, response.getUsages().size());
     assertEquals(2L, response.getUsages().get(0).getUsed());
     assertEquals(200L, response.getUsages().get(0).getLimit());
+  }
+
+  private void assertMonthlyWindow(RateLimitStatus status) {
+    var start = status.windowStart().atOffset(ZoneOffset.UTC);
+    var end = status.windowEnd().atOffset(ZoneOffset.UTC);
+    assertEquals(1, start.getDayOfMonth());
+    assertEquals(0, start.getHour());
+    assertEquals(0, start.getMinute());
+    assertEquals(0, start.getSecond());
+    assertEquals(start.plusMonths(1), end);
   }
 
   private IncomingMessage incomingMessage(String sender) {
