@@ -63,8 +63,8 @@ client_settings=(
   -s implicitFlowEnabled=false
   -s directAccessGrantsEnabled=false
   -s serviceAccountsEnabled=false
-  -s 'redirectUris=["https://chatagent.bre.land/*","http://localhost:8080/*","http://localhost:5174/*"]'
-  -s 'webOrigins=["https://chatagent.bre.land","http://localhost:8080","http://localhost:5174"]'
+  -s 'redirectUris=["https://bluechat.bre.land/*","https://chatagent.bre.land/*","http://localhost:8080/*","http://localhost:5174/*"]'
+  -s 'webOrigins=["https://bluechat.bre.land","https://chatagent.bre.land","http://localhost:8080","http://localhost:5174"]'
   -s 'attributes."pkce.code.challenge.method"=S256'
 )
 

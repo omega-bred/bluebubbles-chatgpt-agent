@@ -243,14 +243,14 @@ spec:
             - name: "GCAL_OAUTH_CLIENT_SECRET_PATH"
               value: "/var/run/secrets/gcal/client_secret_552753055766-0fnkjtl0ug4i39hhrr0q9jk49648akra.apps.googleusercontent.com.json"
             - name: GCAL_OAUTH_REDIRECT_URI
-              value: "https://chatagent.bre.land/api/v1/gcal/completeOauth.gcal"
+              value: "https://bluechat.bre.land/api/v1/gcal/completeOauth.gcal"
             - name: GCAL_OAUTH_STATE_SECRET
               valueFrom:
                 secretKeyRef:
                   key: "password"
                   name: gcal-oauth-state-secret
             - name: WEBSITE_BASE_URL
-              value: "https://chatagent.bre.land"
+              value: "https://bluechat.bre.land"
             - name: UMAMI_ANALYTICS_ENABLED
               value: "true"
             - name: UMAMI_HOST_URL
@@ -258,7 +258,7 @@ spec:
             - name: UMAMI_WEBSITE_ID
               value: "944a19b7-0e55-4a9b-b67f-48503cbead0d"
             - name: UMAMI_HOSTNAME
-              value: "chatagent.bre.land"
+              value: "bluechat.bre.land"
             - name: CAP_BASE_URL
               value: "https://cap.bre.land"
             - name: CAP_CONTACT_REQUIRED
@@ -611,6 +611,32 @@ spec:
     - hosts:
         - bluebubbles-chatgpt-agent
   ingressClassName: tailscale
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod-brelandio
+  labels:
+    app: bluebubbles-chatgpt-agent
+  name: bluebubbles-chatgpt-agent-bluechat
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts:
+        - bluechat.bre.land
+      secretName: bluechat-bre-land-cert
+  rules:
+    - host: bluechat.bre.land
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: bluebubbles-chatgpt-agent
+                port:
+                  number: 80
 ---
 apiVersion: networking.k8s.io/v1
 kind: Ingress
