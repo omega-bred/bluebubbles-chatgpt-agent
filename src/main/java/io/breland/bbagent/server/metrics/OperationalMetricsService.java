@@ -1,5 +1,7 @@
 package io.breland.bbagent.server.metrics;
 
+import com.openai.models.ResponsesModel;
+import com.openai.models.responses.ResponseCreateParams;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.Gauge;
 import io.micrometer.core.instrument.MeterRegistry;
@@ -69,6 +71,35 @@ public class OperationalMetricsService {
     recordTimer(
         "bbagent.agent.tool.invocation.duration", "Agent tool invocation duration", duration, tags);
     incrementCounter("bbagent.agent.tool.invocation.count", "Agent tool invocation count", tags);
+  }
+
+  public void recordLlmCall(
+      String operation,
+      @Nullable ResponseCreateParams request,
+      boolean success,
+      @Nullable String failureType,
+      Duration duration) {
+    recordLlmCall(operation, responseModelName(request), success, failureType, duration);
+  }
+
+  public void recordLlmCall(
+      String operation,
+      @Nullable String model,
+      boolean success,
+      @Nullable String failureType,
+      Duration duration) {
+    Tags tags =
+        Tags.of(
+            "operation",
+            tagValue(operation, "unknown"),
+            "model",
+            modelTagValue(model),
+            "outcome",
+            outcome(success),
+            "failure_type",
+            failureTag(success, failureType));
+    recordTimer("bbagent.agent.llm.call.duration", "Agent LLM call duration", duration, tags);
+    incrementCounter("bbagent.agent.llm.call.count", "Agent LLM call count", tags);
   }
 
   public void recordBlueBubblesOperation(
@@ -200,6 +231,29 @@ public class OperationalMetricsService {
     return duration;
   }
 
+  private static String responseModelName(@Nullable ResponseCreateParams request) {
+    if (request == null) {
+      return "unknown";
+    }
+    return request.model().map(OperationalMetricsService::responseModelName).orElse("unknown");
+  }
+
+  private static String responseModelName(ResponsesModel model) {
+    if (model == null) {
+      return "unknown";
+    }
+    if (model.isString()) {
+      return model.asString();
+    }
+    if (model.isChat()) {
+      return model.asChat().asString();
+    }
+    if (model.isOnly()) {
+      return model.asOnly().asString();
+    }
+    return "unknown";
+  }
+
   private static String outcome(boolean success) {
     return success ? OUTCOME_SUCCESS : OUTCOME_FAILURE;
   }
@@ -218,6 +272,17 @@ public class OperationalMetricsService {
       return normalized;
     }
     return normalized.substring(0, MAX_TAG_VALUE_LENGTH);
+  }
+
+  private static String modelTagValue(@Nullable String value) {
+    String trimmed = value == null ? null : value.trim();
+    if (trimmed == null || trimmed.isBlank()) {
+      return "unknown";
+    }
+    if (trimmed.length() <= MAX_TAG_VALUE_LENGTH) {
+      return trimmed;
+    }
+    return trimmed.substring(0, MAX_TAG_VALUE_LENGTH);
   }
 
   private static boolean hasCause(Throwable throwable, Class<? extends Throwable> type) {

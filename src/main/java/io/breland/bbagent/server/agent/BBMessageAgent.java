@@ -25,6 +25,7 @@ import io.breland.bbagent.server.agent.transport.bb.BBHttpClientWrapper;
 import io.breland.bbagent.server.feedback.FeedbackService;
 import io.breland.bbagent.server.metrics.AgentMetricsService;
 import io.breland.bbagent.server.metrics.AgentToolMetricEvent;
+import io.breland.bbagent.server.metrics.OperationalMetricsService;
 import io.breland.bbagent.server.ratelimit.MessageResponseRateLimitService;
 import io.breland.bbagent.server.ratelimit.RateLimitDecision;
 import io.breland.bbagent.server.ratelimit.RateLimitStatus;
@@ -80,6 +81,7 @@ public class BBMessageAgent {
   private final WebsiteAccountService websiteAccountService;
   private final ModelPicker modelPicker;
   private final AgentMetricsService agentMetricsService;
+  private final OperationalMetricsService operationalMetricsService;
   private final MessageResponseRateLimitService messageResponseRateLimitService;
 
   @Value("${website.base-url:http://localhost:8080}")
@@ -101,6 +103,7 @@ public class BBMessageAgent {
       @Nullable AgentMetricsService agentMetricsService,
       @Nullable FeedbackService feedbackService,
       @Nullable MessageResponseRateLimitService messageResponseRateLimitService,
+      @Nullable OperationalMetricsService operationalMetricsService,
       ModelPicker modelPicker) {
     if (openAiClient != null) {
       this.openAIClient = openAiClient;
@@ -114,6 +117,7 @@ public class BBMessageAgent {
     this.profileService = profileService;
     this.attachmentInputBuilder = attachmentInputBuilder;
     this.agentMetricsService = agentMetricsService;
+    this.operationalMetricsService = operationalMetricsService;
     this.messageResponseRateLimitService = messageResponseRateLimitService;
     this.modelPicker = modelPicker;
     CadenceWorkflowLauncher workflowLauncher =
@@ -131,7 +135,8 @@ public class BBMessageAgent {
             feedbackService,
             messageResponseRateLimitService,
             workflowLauncher,
-            profileService::resolveOrCreateAccountId);
+            profileService::resolveOrCreateAccountId,
+            operationalMetricsService);
     this.incomingMessageHandler =
         new CadenceIncomingMessageHandler(
             this,
@@ -142,6 +147,41 @@ public class BBMessageAgent {
             workflowLauncher,
             agentMetricsService,
             this::termsUrl);
+  }
+
+  public BBMessageAgent(
+      @Nullable OpenAIClient openAiClient,
+      BBHttpClientWrapper bbHttpClientWrapper,
+      Mem0Client mem0Client,
+      GcalClient gcalClient,
+      WebsiteAccountService websiteAccountService,
+      GiphyClient giphyClient,
+      AgentProfileService profileService,
+      AgentAttachmentInputBuilder attachmentInputBuilder,
+      MessageTransportRegistry transportRegistry,
+      @Nullable ObjectMapper objectMapper,
+      CadenceWorkflowLauncher cadenceWorkflowLauncher,
+      @Nullable AgentMetricsService agentMetricsService,
+      @Nullable FeedbackService feedbackService,
+      @Nullable MessageResponseRateLimitService messageResponseRateLimitService,
+      ModelPicker modelPicker) {
+    this(
+        openAiClient,
+        bbHttpClientWrapper,
+        mem0Client,
+        gcalClient,
+        websiteAccountService,
+        giphyClient,
+        profileService,
+        attachmentInputBuilder,
+        transportRegistry,
+        objectMapper,
+        cadenceWorkflowLauncher,
+        agentMetricsService,
+        feedbackService,
+        messageResponseRateLimitService,
+        null,
+        modelPicker);
   }
 
   public ConversationState computeConversationState(String chatId, IncomingMessage message) {
@@ -422,9 +462,11 @@ public class BBMessageAgent {
     for (AgentTool tool : toolRegistry.availableTools(message)) {
       params.addTool(Tool.ofFunction(tool.asFunctionTool()));
     }
+    ResponseCreateParams finalRequest = null;
+    long startedNanos = 0L;
     try {
-      long startedNanos = System.nanoTime();
-      ResponseCreateParams finalRequest = params.build();
+      finalRequest = params.build();
+      startedNanos = System.nanoTime();
       log.info(
           "Creating model response chat={} messageGuid={} workflowId={} inputItems={}",
           message.chatGuid(),
@@ -433,6 +475,7 @@ public class BBMessageAgent {
           requestInputItems.size());
       log.trace("Final message: {}", finalRequest);
       Response response = openAiSupplier.get().responses().create(finalRequest);
+      recordLlmCallMetric(finalRequest, true, null, startedNanos);
       log.info(
           "Created model response chat={} messageGuid={} workflowId={} elapsedMs={}",
           message.chatGuid(),
@@ -441,6 +484,10 @@ public class BBMessageAgent {
           elapsedMillis(startedNanos));
       return response;
     } catch (RuntimeException e) {
+      if (finalRequest != null) {
+        recordLlmCallMetric(
+            finalRequest, false, OperationalMetricsService.failureType(e), startedNanos);
+      }
       log.warn(
           "OpenAI response failed chat={} messageGuid={} workflowId={}",
           message.chatGuid(),
@@ -448,6 +495,26 @@ public class BBMessageAgent {
           workflowContext == null ? null : workflowContext.workflowId(),
           e);
       return null;
+    }
+  }
+
+  private void recordLlmCallMetric(
+      ResponseCreateParams request,
+      boolean success,
+      @Nullable String failureType,
+      long startedNanos) {
+    if (operationalMetricsService == null || startedNanos <= 0L) {
+      return;
+    }
+    try {
+      operationalMetricsService.recordLlmCall(
+          "agent_response",
+          request,
+          success,
+          failureType,
+          Duration.ofNanos(System.nanoTime() - startedNanos));
+    } catch (RuntimeException e) {
+      log.warn("Failed to record LLM call metric", e);
     }
   }
 

@@ -48,6 +48,7 @@ import io.breland.bbagent.server.agent.transport.MessageTransport;
 import io.breland.bbagent.server.agent.transport.MessageTransportRegistry;
 import io.breland.bbagent.server.agent.transport.bb.BBHttpClientWrapper;
 import io.breland.bbagent.server.feedback.FeedbackService;
+import io.breland.bbagent.server.metrics.OperationalMetricsService;
 import io.breland.bbagent.server.ratelimit.MessageResponseRateLimitService;
 import io.breland.bbagent.server.website.WebsiteAccountService;
 import java.util.List;
@@ -130,6 +131,36 @@ public final class AgentToolRegistry {
       @Nullable MessageResponseRateLimitService messageResponseRateLimitService,
       CadenceWorkflowLauncher cadenceWorkflowLauncher,
       Function<IncomingMessage, Optional<String>> accountIdResolver) {
+    this(
+        bbHttpClientWrapper,
+        mem0Client,
+        gcalClient,
+        websiteAccountService,
+        giphyClient,
+        transportRegistry,
+        objectMapper,
+        openAiSupplier,
+        feedbackService,
+        messageResponseRateLimitService,
+        cadenceWorkflowLauncher,
+        accountIdResolver,
+        null);
+  }
+
+  public AgentToolRegistry(
+      BBHttpClientWrapper bbHttpClientWrapper,
+      Mem0Client mem0Client,
+      GcalClient gcalClient,
+      @Nullable WebsiteAccountService websiteAccountService,
+      GiphyClient giphyClient,
+      MessageTransportRegistry transportRegistry,
+      ObjectMapper objectMapper,
+      Supplier<OpenAIClient> openAiSupplier,
+      @Nullable FeedbackService feedbackService,
+      @Nullable MessageResponseRateLimitService messageResponseRateLimitService,
+      CadenceWorkflowLauncher cadenceWorkflowLauncher,
+      Function<IncomingMessage, Optional<String>> accountIdResolver,
+      @Nullable OperationalMetricsService operationalMetricsService) {
     this.transportRegistry = transportRegistry;
     this.accountIdResolver = accountIdResolver;
     registerBuiltInTools(
@@ -142,7 +173,8 @@ public final class AgentToolRegistry {
         openAiSupplier,
         feedbackService,
         messageResponseRateLimitService,
-        cadenceWorkflowLauncher);
+        cadenceWorkflowLauncher,
+        operationalMetricsService);
   }
 
   public List<AgentTool> availableTools(IncomingMessage message) {
@@ -238,7 +270,8 @@ public final class AgentToolRegistry {
       Supplier<OpenAIClient> openAiSupplier,
       @Nullable FeedbackService feedbackService,
       @Nullable MessageResponseRateLimitService messageResponseRateLimitService,
-      CadenceWorkflowLauncher cadenceWorkflowLauncher) {
+      CadenceWorkflowLauncher cadenceWorkflowLauncher,
+      @Nullable OperationalMetricsService operationalMetricsService) {
     registerTool(new SendTextAgentTool().getTool());
     registerTool(new SendReactionAgentTool().getTool());
     registerTool(new SendPollAgentTool(bbHttpClientWrapper).getTool());
@@ -248,7 +281,9 @@ public final class AgentToolRegistry {
     registerTool(new RenameConversationAgentTool(bbHttpClientWrapper).getTool());
     registerTool(new SetGroupIconAgentTool(bbHttpClientWrapper, openAiSupplier).getTool());
     registerTool(
-        new SendGiphyAgentTool(bbHttpClientWrapper, giphyClient, openAiSupplier).getTool());
+        new SendGiphyAgentTool(
+                bbHttpClientWrapper, giphyClient, openAiSupplier, operationalMetricsService)
+            .getTool());
     registerTool(new AssistantResponsivenessAgentTool().getTool());
     registerTool(new AssistantNameAgentTool().getTool());
     registerTool(new MemorySaveAgentTool(mem0Client).getTool());

@@ -55,7 +55,9 @@ import io.breland.bbagent.server.agent.tools.memory.Mem0Client;
 import io.breland.bbagent.server.agent.transport.bb.BBHttpClientWrapper;
 import io.breland.bbagent.server.metrics.AgentMetricsService;
 import io.breland.bbagent.server.metrics.AgentToolMetricEvent;
+import io.breland.bbagent.server.metrics.OperationalMetricsService;
 import io.breland.bbagent.server.website.WebsiteAccountService;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collection;
@@ -476,6 +478,54 @@ class BBMessageAgentTest {
     assertTrue(systemText.contains("You are a chat assistant for BlueChat."));
     assertTrue(systemText.contains("The public phone number for this agent is +1 (415) 867-4956."));
     assertTrue(systemText.contains(DEVELOPER_PROMPT_MARKER));
+  }
+
+  @Test
+  void createResponseRecordsLlmCallMetricWithModelTag() {
+    OpenAIClient openAIClient = Mockito.mock(OpenAIClient.class);
+    var responseService = Mockito.mock(com.openai.services.blocking.ResponseService.class);
+    SimpleMeterRegistry registry = new SimpleMeterRegistry();
+    OperationalMetricsService operationalMetricsService = new OperationalMetricsService(registry);
+    StubBBHttpClientWrapper bbHttpClientWrapper = new StubBBHttpClientWrapper();
+    when(openAIClient.responses()).thenReturn(responseService);
+    when(responseService.create(any(ResponseCreateParams.class)))
+        .thenReturn(responseWithNoToolCalls());
+    BBMessageAgent agent =
+        new BBMessageAgent(
+            openAIClient,
+            bbHttpClientWrapper,
+            Mockito.mock(Mem0Client.class),
+            Mockito.mock(GcalClient.class),
+            null,
+            Mockito.mock(GiphyClient.class),
+            profileService(),
+            attachmentInputBuilder(bbHttpClientWrapper),
+            null,
+            null,
+            Mockito.mock(CadenceWorkflowLauncher.class),
+            null,
+            null,
+            null,
+            operationalMetricsService,
+            new ModelPicker());
+    IncomingMessage incoming =
+        incomingMessage("iMessage;+;chat-llm-metric", "msg-llm-metric", "hello", 1_000L);
+
+    agent.createResponse(
+        promptBuilder(bbHttpClientWrapper).buildConversationInput(List.of(), List.of(), incoming),
+        incoming,
+        null);
+
+    assertEquals(
+        1.0,
+        registry
+            .get("bbagent.agent.llm.call.count")
+            .tag("operation", "agent_response")
+            .tag("model", ModelAccessService.STANDARD_RESPONSES_MODEL)
+            .tag("outcome", "success")
+            .tag("failure_type", "none")
+            .counter()
+            .count());
   }
 
   @Test

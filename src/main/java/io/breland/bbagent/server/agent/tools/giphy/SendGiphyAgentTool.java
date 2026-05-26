@@ -17,7 +17,9 @@ import io.breland.bbagent.server.agent.tools.AgentTool;
 import io.breland.bbagent.server.agent.tools.ToolContext;
 import io.breland.bbagent.server.agent.tools.ToolProvider;
 import io.breland.bbagent.server.agent.transport.bb.BBHttpClientWrapper;
+import io.breland.bbagent.server.metrics.OperationalMetricsService;
 import io.swagger.v3.oas.annotations.media.Schema;
+import java.time.Duration;
 import java.util.List;
 import java.util.Optional;
 import java.util.function.Supplier;
@@ -30,6 +32,7 @@ public class SendGiphyAgentTool implements ToolProvider {
   private final BBHttpClientWrapper bbHttpClientWrapper;
   private final GiphyClient giphyClient;
   private final Supplier<OpenAIClient> openAiSupplier;
+  private final OperationalMetricsService operationalMetricsService;
 
   @Schema(description = "Search Giphy and send a GIF.")
   public record SendGiphyRequest(
@@ -45,9 +48,18 @@ public class SendGiphyAgentTool implements ToolProvider {
       BBHttpClientWrapper bbHttpClientWrapper,
       GiphyClient giphyClient,
       Supplier<OpenAIClient> openAiSupplier) {
+    this(bbHttpClientWrapper, giphyClient, openAiSupplier, null);
+  }
+
+  public SendGiphyAgentTool(
+      BBHttpClientWrapper bbHttpClientWrapper,
+      GiphyClient giphyClient,
+      Supplier<OpenAIClient> openAiSupplier,
+      OperationalMetricsService operationalMetricsService) {
     this.bbHttpClientWrapper = bbHttpClientWrapper;
     this.giphyClient = giphyClient;
     this.openAiSupplier = openAiSupplier;
+    this.operationalMetricsService = operationalMetricsService;
   }
 
   public AgentTool getTool() {
@@ -131,7 +143,15 @@ public class SendGiphyAgentTool implements ToolProvider {
               .temperature(0.0)
               .maxOutputTokens(30)
               .build();
-      Response response = openAiSupplier.get().responses().create(params);
+      long startedNanos = System.nanoTime();
+      Response response;
+      try {
+        response = openAiSupplier.get().responses().create(params);
+        recordLlmCallMetric(params, true, null, startedNanos);
+      } catch (Exception e) {
+        recordLlmCallMetric(params, false, OperationalMetricsService.failureType(e), startedNanos);
+        throw e;
+      }
       String text = extractResponseText(response);
       Integer index = parseIndex(text);
       if (index != null) {
@@ -141,6 +161,23 @@ public class SendGiphyAgentTool implements ToolProvider {
       // fall back to first result
     }
     return 0;
+  }
+
+  private void recordLlmCallMetric(
+      ResponseCreateParams request, boolean success, String failureType, long startedNanos) {
+    if (operationalMetricsService == null) {
+      return;
+    }
+    try {
+      operationalMetricsService.recordLlmCall(
+          "giphy_picker",
+          request,
+          success,
+          failureType,
+          Duration.ofNanos(System.nanoTime() - startedNanos));
+    } catch (RuntimeException ignored) {
+      // GIF selection is best effort; metrics should not change the user-visible fallback behavior.
+    }
   }
 
   private List<ResponseInputItem> buildPickerInput(

@@ -39,6 +39,35 @@ class OperationalMetricsServiceTest {
   }
 
   @Test
+  void recordsLlmCallCountersAndTimersWithModelTag() {
+    SimpleMeterRegistry registry = new SimpleMeterRegistry();
+    OperationalMetricsService service = new OperationalMetricsService(registry);
+
+    service.recordLlmCall("agent_response", "Qwen/Qwen3.6-27B", true, null, Duration.ofMillis(123));
+
+    assertEquals(
+        1.0,
+        registry
+            .get("bbagent.agent.llm.call.count")
+            .tag("operation", "agent_response")
+            .tag("model", "Qwen/Qwen3.6-27B")
+            .tag("outcome", "success")
+            .tag("failure_type", "none")
+            .counter()
+            .count());
+    assertEquals(
+        1L,
+        registry
+            .get("bbagent.agent.llm.call.duration")
+            .tag("operation", "agent_response")
+            .tag("model", "Qwen/Qwen3.6-27B")
+            .tag("outcome", "success")
+            .tag("failure_type", "none")
+            .timer()
+            .count());
+  }
+
+  @Test
   void recordsBlueBubblesHealthGaugesAndCheckMetrics() {
     SimpleMeterRegistry registry = new SimpleMeterRegistry();
     OperationalMetricsService service = new OperationalMetricsService(registry);
