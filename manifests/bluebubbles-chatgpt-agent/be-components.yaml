@@ -202,6 +202,12 @@ spec:
                   name: lxmf-bridge-webhook-secret
             - name: LXMF_BRIDGE_BASE_URL
               value: "http://lxmf-bridge.bluebubbles-chatgpt-agent.svc.cluster.local:8091"
+            - name: BBAGENT_CANARY_MARKER
+              value: "BBAGENT_LXMF_CANARY_V1"
+            - name: BBAGENT_CANARY_LABEL
+              value: "lxmf-free-tier"
+            - name: BBAGENT_CANARY_CLEANUP_MAX_AGE
+              value: "PT24H"
             - name: "MEM0_API_KEY"
               valueFrom:
                 secretKeyRef:
@@ -501,6 +507,72 @@ spec:
   selector:
     app: lxmf-bridge
   type: ClusterIP
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: lxmf-free-tier-canary
+  namespace: bluebubbles-chatgpt-agent
+  labels:
+    app: lxmf-free-tier-canary
+spec:
+  schedule: "*/15 * * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 2
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      activeDeadlineSeconds: 420
+      ttlSecondsAfterFinished: 86400
+      template:
+        metadata:
+          labels:
+            app: lxmf-free-tier-canary
+        spec:
+          enableServiceLinks: false
+          restartPolicy: Never
+          containers:
+            - name: lxmf-free-tier-canary
+              image: ghcr.io/omega-bred/bluebubbles-chatgpt-agent-lxmf-bridge:latest
+              imagePullPolicy: Always
+              command:
+                - python
+                - /app/canary.py
+              env:
+                - name: CANARY_MARKER
+                  value: "BBAGENT_LXMF_CANARY_V1"
+                - name: CANARY_DISPLAY_NAME
+                  value: "BlueChat Canary"
+                - name: LXMF_BRIDGE_BASE_URL
+                  value: "http://lxmf-bridge.bluebubbles-chatgpt-agent.svc.cluster.local:8091"
+                - name: RNS_BACKBONE_REMOTE
+                  value: "rnode-public.rnode.svc.cluster.local"
+                - name: RNS_BACKBONE_PORT
+                  value: "4242"
+                - name: CANARY_TIMEOUT_SECONDS
+                  value: "300"
+                - name: CANARY_STAGE_TIMEOUT_SECONDS
+                  value: "90"
+                - name: CANARY_INFLUX_ENABLED
+                  value: "true"
+                - name: INFLUX_DB_TOKEN
+                  valueFrom:
+                    secretKeyRef:
+                      key: password
+                      name: bluebubbles-chatgpt-agent-influx-token
+                - name: INFLUX_DB_URI
+                  value: "https://influxdb-1.taild1b69.ts.net"
+                - name: INFLUX_DB_BUCKET
+                  value: "bluebubbles-chatgpt-agent"
+                - name: INFLUX_DB_ORG
+                  value: "bred"
+              resources:
+                limits:
+                  cpu: 512m
+                  memory: 512Mi
+                requests:
+                  cpu: 100m
+                  memory: 128Mi
 ---
 kind: Service
 apiVersion: v1

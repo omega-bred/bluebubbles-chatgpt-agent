@@ -10,6 +10,7 @@ import io.breland.bbagent.generated.model.AdminToolAccountTypeStats;
 import io.breland.bbagent.generated.model.AdminToolStats;
 import io.breland.bbagent.server.agent.IncomingMessage;
 import io.breland.bbagent.server.agent.account.AgentAccountResolver;
+import io.breland.bbagent.server.agent.canary.AgentCanaryService;
 import io.breland.bbagent.server.agent.model_picker.ModelAccessService;
 import io.breland.bbagent.server.analytics.UmamiAnalyticsService;
 import io.breland.bbagent.server.metrics.AgentMessageMetric;
@@ -49,24 +50,30 @@ public class AdminStatsService implements AgentMetricsService {
   private final AgentAccountResolver accountResolver;
   private final UmamiAnalyticsService umamiAnalyticsService;
   private final OperationalMetricsService operationalMetricsService;
+  private final AgentCanaryService canaryService;
 
   public AdminStatsService(
       AgentMetricsStore metricsStore,
       ModelAccessService modelAccessService,
       @Nullable AgentAccountResolver accountResolver,
       @Nullable UmamiAnalyticsService umamiAnalyticsService,
-      @Nullable OperationalMetricsService operationalMetricsService) {
+      @Nullable OperationalMetricsService operationalMetricsService,
+      @Nullable AgentCanaryService canaryService) {
     this.metricsStore = metricsStore;
     this.modelAccessService = modelAccessService;
     this.accountResolver = accountResolver;
     this.umamiAnalyticsService = umamiAnalyticsService;
     this.operationalMetricsService = operationalMetricsService;
+    this.canaryService = canaryService;
   }
 
   @Transactional
   @Override
   public void recordAcceptedMessage(IncomingMessage message) {
     if (message == null) {
+      return;
+    }
+    if (isCanaryAccount(message)) {
       return;
     }
     MetricContext context = metricContext(message);
@@ -105,6 +112,9 @@ public class AdminStatsService implements AgentMetricsService {
       return;
     }
     IncomingMessage message = event.message();
+    if (isCanaryAccount(message)) {
+      return;
+    }
     MetricContext context = metricContext(message);
     Instant now = Instant.now();
     boolean premium = context.modelAccess().premium();
@@ -353,6 +363,17 @@ public class AdminStatsService implements AgentMetricsService {
                 .orElse(null);
     userKey = firstNonBlank(userKey, message.sender(), message.chatGuid(), "unknown");
     return new MetricContext(hash(userKey), modelAccess);
+  }
+
+  private boolean isCanaryAccount(IncomingMessage message) {
+    if (canaryService == null || message == null) {
+      return false;
+    }
+    try {
+      return canaryService.isCanaryAccount(message);
+    } catch (RuntimeException e) {
+      return false;
+    }
   }
 
   private enum BucketSize {

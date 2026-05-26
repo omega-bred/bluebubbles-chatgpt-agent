@@ -360,6 +360,9 @@ public class BBMessageAgent {
     if (messageResponseRateLimitService == null || message == null) {
       return false;
     }
+    if (isCanaryAccount(message)) {
+      return false;
+    }
     try {
       MessageResponseRateLimitService.MessageResponseLimitStatus status =
           messageResponseRateLimitService.statusFor(message);
@@ -377,6 +380,9 @@ public class BBMessageAgent {
   public boolean consumeMessageResponseQuota(
       IncomingMessage message, AgentWorkflowContext workflowContext) {
     if (messageResponseRateLimitService == null) {
+      return true;
+    }
+    if (isCanaryAccount(message)) {
       return true;
     }
     if (!canSendResponses(workflowContext)) {
@@ -512,6 +518,9 @@ public class BBMessageAgent {
     if (operationalMetricsService == null || startedNanos <= 0L) {
       return;
     }
+    if (isCanaryAccount(message)) {
+      return;
+    }
     try {
       operationalMetricsService.recordLlmCall(
           message == null ? "unknown" : message.metricTransport(),
@@ -524,6 +533,13 @@ public class BBMessageAgent {
     } catch (RuntimeException e) {
       log.warn("Failed to record LLM call metric", e);
     }
+  }
+
+  private boolean isCanaryAccount(IncomingMessage message) {
+    if (message == null || profileService == null) {
+      return false;
+    }
+    return profileService.isCanaryAccount(message);
   }
 
   public ResponseInputItem runToolActivity(

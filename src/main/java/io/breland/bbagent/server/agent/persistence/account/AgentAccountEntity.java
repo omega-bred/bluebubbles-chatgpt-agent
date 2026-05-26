@@ -65,6 +65,15 @@ public class AgentAccountEntity {
   @Column(name = "processing_blocked_by", length = 255)
   private String processingBlockedBy;
 
+  @Column(name = "canary_account", nullable = false)
+  private boolean canaryAccount;
+
+  @Column(name = "canary_label", length = 128)
+  private String canaryLabel;
+
+  @Column(name = "canary_last_seen_at")
+  private Instant canaryLastSeenAt;
+
   @Column(name = "created_at", nullable = false)
   private Instant createdAt;
 

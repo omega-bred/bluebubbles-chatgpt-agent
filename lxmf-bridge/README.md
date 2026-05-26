@@ -6,6 +6,11 @@ The bridge listens for LXMF deliveries, forwards normalized inbound messages to
 `/api/v1/lxmf/receive.messages`, and exposes `POST /api/v1/messages/send` for
 agent replies.
 
+The same image also includes `canary.py`, a one-shot LXMF free-tier canary. It
+creates a fresh identity, sends the configured canary marker, accepts Terms,
+runs a nonce inference prompt, and writes `bbagent_lxmf_canary_*` measurements
+directly to InfluxDB.
+
 Important environment variables:
 
 - `LXMF_BRIDGE_WEBHOOK_SECRET`: shared secret for both bridge directions.
@@ -17,3 +22,11 @@ Important environment variables:
 - `LXMF_DISPLAY_NAME`: announced LXMF display name.
 - `RNS_BACKBONE_REMOTE`: Reticulum backbone host, defaulting to the rnode service.
 - `RNS_BACKBONE_PORT`: Reticulum backbone port, defaulting to `4242`.
+
+Canary-specific environment variables:
+
+- `CANARY_MARKER`: marker prefix that causes the Spring app to flag the account
+  as synthetic canary traffic.
+- `LXMF_BRIDGE_BASE_URL`: HTTP base URL for the production bridge.
+- `INFLUX_DB_URI`, `INFLUX_DB_TOKEN`, `INFLUX_DB_BUCKET`, `INFLUX_DB_ORG`:
+  InfluxDB v2 write target for canary health metrics.

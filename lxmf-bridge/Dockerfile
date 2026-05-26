@@ -4,6 +4,7 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 COPY app.py .
+COPY canary.py .
 
 EXPOSE 8091
 CMD ["python", "/app/app.py"]

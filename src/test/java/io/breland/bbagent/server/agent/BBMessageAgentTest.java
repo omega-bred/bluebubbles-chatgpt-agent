@@ -36,6 +36,7 @@ import io.breland.bbagent.generated.bluebubblesclient.model.FindMyFriendLocation
 import io.breland.bbagent.server.agent.account.AgentAccountResolver;
 import io.breland.bbagent.server.agent.cadence.CadenceWorkflowLauncher;
 import io.breland.bbagent.server.agent.cadence.models.CadenceMessageWorkflowRequest;
+import io.breland.bbagent.server.agent.canary.AgentCanaryService;
 import io.breland.bbagent.server.agent.location.ReverseLocationLookup;
 import io.breland.bbagent.server.agent.location.ReverseLocationLookupResult;
 import io.breland.bbagent.server.agent.model_picker.ModelAccessService;
@@ -56,6 +57,7 @@ import io.breland.bbagent.server.agent.transport.bb.BBHttpClientWrapper;
 import io.breland.bbagent.server.metrics.AgentMetricsService;
 import io.breland.bbagent.server.metrics.AgentToolMetricEvent;
 import io.breland.bbagent.server.metrics.OperationalMetricsService;
+import io.breland.bbagent.server.ratelimit.MessageResponseRateLimitService;
 import io.breland.bbagent.server.website.WebsiteAccountService;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.time.Instant;
@@ -668,6 +670,41 @@ class BBMessageAgentTest {
   }
 
   @Test
+  void canaryAccountsBypassNormalResponseQuota() {
+    MessageResponseRateLimitService rateLimitService =
+        Mockito.mock(MessageResponseRateLimitService.class);
+    AgentCanaryService canaryService = Mockito.mock(AgentCanaryService.class);
+    IncomingMessage incoming =
+        new IncomingMessage(
+            IncomingMessage.TRANSPORT_LXMF,
+            IncomingMessage.transportPrefix(IncomingMessage.TRANSPORT_LXMF, "aabbccdd"),
+            "msg-canary-quota",
+            null,
+            "health check",
+            false,
+            "LXMF",
+            "aabbccdd",
+            false,
+            Instant.now(),
+            List.of(),
+            false);
+    when(canaryService.isCanaryAccount(incoming)).thenReturn(true);
+    AgentProfileService profileService =
+        new AgentProfileService(new InMemoryAgentSettingsStore(), null, canaryService);
+    BBMessageAgent agent =
+        newAgent(
+            Mockito.mock(OpenAIClient.class),
+            new StubBBHttpClientWrapper(),
+            profileService,
+            rateLimitService);
+
+    assertTrue(agent.consumeMessageResponseQuota(incoming, null));
+    assertFalse(agent.notifyIfMessageResponseLimitExceeded(incoming, null));
+    verify(rateLimitService, never()).tryConsume(any(IncomingMessage.class));
+    verify(rateLimitService, never()).statusFor(any(IncomingMessage.class));
+  }
+
+  @Test
   void cadenceWorkflowIdStaysChatScopedSoNewMessagesCancelOlderRuns() {
     CadenceWorkflowLauncher cadenceWorkflowLauncher = Mockito.mock(CadenceWorkflowLauncher.class);
     WorkflowExecution execution = new WorkflowExecution();
@@ -1212,6 +1249,30 @@ class BBMessageAgentTest {
         Mockito.mock(CadenceWorkflowLauncher.class),
         null,
         null,
+        null,
+        new ModelPicker());
+  }
+
+  private static BBMessageAgent newAgent(
+      OpenAIClient openAIClient,
+      BBHttpClientWrapper bbHttpClientWrapper,
+      AgentProfileService profileService,
+      MessageResponseRateLimitService messageResponseRateLimitService) {
+    return new BBMessageAgent(
+        openAIClient,
+        bbHttpClientWrapper,
+        Mockito.mock(Mem0Client.class),
+        Mockito.mock(GcalClient.class),
+        null,
+        Mockito.mock(GiphyClient.class),
+        profileService,
+        attachmentInputBuilder(bbHttpClientWrapper),
+        null,
+        null,
+        Mockito.mock(CadenceWorkflowLauncher.class),
+        null,
+        null,
+        messageResponseRateLimitService,
         null,
         new ModelPicker());
   }

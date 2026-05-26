@@ -2,12 +2,14 @@ package io.breland.bbagent.server.agent.profile;
 
 import io.breland.bbagent.server.agent.IncomingMessage;
 import io.breland.bbagent.server.agent.account.AgentAccountResolver;
+import io.breland.bbagent.server.agent.canary.AgentCanaryService;
 import io.breland.bbagent.server.agent.persistence.account.AgentAccountEntity;
 import io.breland.bbagent.server.agent.persistence.account.AgentAccountIdentityEntity;
 import java.util.List;
 import java.util.Optional;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.lang.Nullable;
 import org.springframework.stereotype.Service;
 
@@ -16,11 +18,21 @@ import org.springframework.stereotype.Service;
 public final class AgentProfileService implements AgentProfile {
   private final AgentSettingsStore agentSettingsStore;
   private final @Nullable AgentAccountResolver accountResolver;
+  private final @Nullable AgentCanaryService canaryService;
 
   public AgentProfileService(
       AgentSettingsStore agentSettingsStore, @Nullable AgentAccountResolver accountResolver) {
+    this(agentSettingsStore, accountResolver, null);
+  }
+
+  @Autowired
+  public AgentProfileService(
+      AgentSettingsStore agentSettingsStore,
+      @Nullable AgentAccountResolver accountResolver,
+      @Nullable AgentCanaryService canaryService) {
     this.agentSettingsStore = agentSettingsStore;
     this.accountResolver = accountResolver;
+    this.canaryService = canaryService;
   }
 
   public AssistantResponsiveness getAssistantResponsiveness(String chatGuid) {
@@ -80,7 +92,9 @@ public final class AgentProfileService implements AgentProfile {
     if (accountResolver == null || message == null) {
       return Optional.empty();
     }
-    return accountResolver.resolveOrCreate(message);
+    Optional<AgentAccountResolver.ResolvedAccount> resolved =
+        accountResolver.resolveOrCreate(message);
+    return canaryService == null ? resolved : canaryService.touchIfCanary(message, resolved);
   }
 
   public Optional<AgentAccountResolver.ResolvedAccount> resolveAccount(IncomingMessage message) {
@@ -95,6 +109,18 @@ public final class AgentProfileService implements AgentProfile {
       return;
     }
     accountResolver.acceptTerms(message);
+  }
+
+  public boolean isCanaryAccount(IncomingMessage message) {
+    if (canaryService == null || message == null) {
+      return false;
+    }
+    try {
+      return canaryService.isCanaryAccount(message);
+    } catch (RuntimeException e) {
+      log.warn("Failed to check canary account status for {}", message, e);
+      return false;
+    }
   }
 
   public boolean isProcessingBlocked(IncomingMessage message) {

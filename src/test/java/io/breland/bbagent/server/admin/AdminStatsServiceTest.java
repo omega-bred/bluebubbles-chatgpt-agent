@@ -7,6 +7,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import io.breland.bbagent.generated.model.AdminStatsResponse;
 import io.breland.bbagent.server.agent.IncomingMessage;
 import io.breland.bbagent.server.agent.account.AgentAccountResolver;
+import io.breland.bbagent.server.agent.canary.AgentCanaryService;
 import io.breland.bbagent.server.agent.model_picker.ModelAccessService;
 import io.breland.bbagent.server.agent.persistence.account.AgentAccountRepository;
 import io.breland.bbagent.server.agent.persistence.metrics.AgentMessageMetricRepository;
@@ -27,6 +28,7 @@ class AdminStatsServiceTest {
   @Autowired private AgentToolMetricRepository toolMetricRepository;
   @Autowired private AgentAccountResolver accountResolver;
   @Autowired private AgentAccountRepository accountRepository;
+  @Autowired private io.breland.bbagent.server.agent.profile.AgentProfileService profileService;
 
   @Test
   void recordsAcceptedMessagesAndSummarizesByModelAndUser() {
@@ -155,6 +157,24 @@ class AdminStatsServiceTest {
                         && accountType.getSuccessfulCalls() == 1L));
   }
 
+  @Test
+  void skipsCanaryAccountsForNormalMessageAndToolMetrics() {
+    metricRepository.deleteAll();
+    toolMetricRepository.deleteAll();
+    Instant now = Instant.now();
+    IncomingMessage canary = lxmfCanaryMessage("msg-canary-1", AgentCanaryService.DEFAULT_MARKER);
+    profileService.resolveOrCreateAccount(canary).orElseThrow();
+
+    adminStatsService.recordAcceptedMessage(canary);
+    adminStatsService.recordToolCall(
+        new AgentToolMetricEvent(canary, "send_text", "lxmf", true, null, 10L));
+
+    AdminStatsResponse stats =
+        adminStatsService.getStatistics(now.minusSeconds(60), now.plusSeconds(60));
+    assertEquals(0L, stats.getTotalMessages());
+    assertEquals(0L, stats.getTotalToolCalls());
+  }
+
   private IncomingMessage incomingMessage(String chatGuid, String messageGuid, String sender) {
     return new IncomingMessage(
         chatGuid,
@@ -164,6 +184,22 @@ class AdminStatsServiceTest {
         false,
         "iMessage",
         sender,
+        false,
+        Instant.now(),
+        List.of(),
+        false);
+  }
+
+  private IncomingMessage lxmfCanaryMessage(String messageGuid, String text) {
+    return new IncomingMessage(
+        IncomingMessage.TRANSPORT_LXMF,
+        IncomingMessage.transportPrefix(IncomingMessage.TRANSPORT_LXMF, "aabbccdd"),
+        messageGuid,
+        null,
+        text,
+        false,
+        "LXMF",
+        "aabbccdd",
         false,
         Instant.now(),
         List.of(),
