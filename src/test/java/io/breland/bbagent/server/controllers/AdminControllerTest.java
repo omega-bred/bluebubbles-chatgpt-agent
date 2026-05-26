@@ -145,7 +145,7 @@ class AdminControllerTest {
                         .activeSubscriptions(1L)
                         .pastDueSubscriptions(0L)
                         .inactiveSubscriptions(1L)
-                        .monthlyRecurringAmount("10.00")
+                        .monthlyRecurringAmount("5.00")
                         .currency("USD"))
                 .subscriptions(List.of()));
 
@@ -159,7 +159,7 @@ class AdminControllerTest {
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.stats.total_subscriptions").value(2))
         .andExpect(jsonPath("$.stats.active_subscriptions").value(1))
-        .andExpect(jsonPath("$.stats.monthly_recurring_amount").value("10.00"));
+        .andExpect(jsonPath("$.stats.monthly_recurring_amount").value("5.00"));
   }
 
   @Test

@@ -79,6 +79,9 @@ public class SubscriptionProperties {
   public static class ProviderPlan {
     private String offeringId;
     private String planId;
+    private BigDecimal priceAmount;
+    private String currency;
+    private String billingInterval;
   }
 
   @Getter

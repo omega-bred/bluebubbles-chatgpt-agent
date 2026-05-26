@@ -110,14 +110,20 @@ available.
 Optional (subscription billing):
 - `SUBSCRIPTIONS_ENABLED`
 - `SUBSCRIPTIONS_DEFAULT_PROVIDER` (`stripe` by default)
+- `SUBSCRIPTION_PREMIUM_PRICE_AMOUNT` (fallback display amount, defaults to `5.00`)
 - `STRIPE_API_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_PRODUCT_ID`, `STRIPE_PRICE_ID`
+- `STRIPE_SUBSCRIPTION_PREMIUM_PRICE_AMOUNT` (card display amount, defaults to `5.00`)
 - `STRIPE_TEST_MODE_ONLY` (defaults to `true`)
 - `BTCPAY_BASE_URL`, `BTCPAY_API_KEY`, `BTCPAY_STORE_ID`, `BTCPAY_WEBHOOK_SECRET`,
   `BTCPAY_SUBSCRIPTION_OFFERING_ID`, `BTCPAY_SUBSCRIPTION_PLAN_ID`
+- `BTCPAY_SUBSCRIPTION_PREMIUM_PRICE_AMOUNT` (Bitcoin display amount, defaults to `4.00`)
 
 The account page shows available providers when the user is not already subscribed and links to the
-provider portal for manage/cancel when a subscription exists. Stripe local development can use
-`bbagent-stripe-listen` from the Nix shell to forward subscription webhook events.
+provider portal for manage/cancel when a subscription exists. Bitcoin checkout is displayed as
+`4.00` USD monthly by default, while Stripe/card checkout is displayed as `5.00` USD monthly by
+default. Provider checkout charges still come from the configured BTCPay plan and Stripe Price IDs.
+Stripe local development can use `bbagent-stripe-listen` from the Nix shell to forward subscription
+webhook events.
 
 ## Google Calendar OAuth
 

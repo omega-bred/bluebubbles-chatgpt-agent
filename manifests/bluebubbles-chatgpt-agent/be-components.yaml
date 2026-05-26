@@ -285,8 +285,12 @@ spec:
               value: "https://keycloak.bre.land/realms/bbagent/protocol/openid-connect/certs"
             - name: SUBSCRIPTIONS_DEFAULT_PROVIDER
               value: "stripe"
+            - name: SUBSCRIPTION_PREMIUM_PRICE_AMOUNT
+              value: "5.00"
             - name: BTCPAY_BASE_URL
               value: "https://btcpay.bre.land"
+            - name: BTCPAY_SUBSCRIPTION_PREMIUM_PRICE_AMOUNT
+              value: "4.00"
             - name: BTCPAY_STORE_ID
               valueFrom:
                 secretKeyRef:
@@ -318,6 +322,8 @@ spec:
                   key: "test-mode-only"
                   name: stripe-bbagent-subscriptions-live
                   optional: true
+            - name: STRIPE_SUBSCRIPTION_PREMIUM_PRICE_AMOUNT
+              value: "5.00"
             - name: STRIPE_API_KEY
               valueFrom:
                 secretKeyRef:
