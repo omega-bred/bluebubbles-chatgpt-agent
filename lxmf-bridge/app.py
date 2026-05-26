@@ -85,6 +85,25 @@ def hex_bytes(value):
     return str(value)
 
 
+def json_safe(value):
+    if isinstance(value, bytes):
+        return value.hex()
+    if isinstance(value, dict):
+        return {json_key(key): json_safe(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple, set)):
+        return [json_safe(item) for item in value]
+    if isinstance(value, (str, int, float, bool)) or value is None:
+        return value
+    return str(value)
+
+
+def json_key(value):
+    safe = json_safe(value)
+    if isinstance(safe, str):
+        return safe
+    return str(safe)
+
+
 def message_id(message):
     value = getattr(message, "message_id", None) or getattr(message, "hash", None)
     return hex_bytes(value)
@@ -93,13 +112,7 @@ def message_id(message):
 def fields_for_json(fields):
     if fields is None:
         return {}
-    result = {}
-    for key, value in fields.items():
-        if isinstance(value, bytes):
-            result[str(key)] = value.hex()
-        else:
-            result[str(key)] = value
-    return result
+    return json_safe(fields)
 
 
 def post_to_agent(message):
