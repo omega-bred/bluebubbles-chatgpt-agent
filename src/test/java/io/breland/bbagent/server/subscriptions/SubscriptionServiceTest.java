@@ -78,8 +78,11 @@ class SubscriptionServiceTest {
             .getPlans();
 
     assertThat(plans)
-        .extracting(SubscriptionPlan::getProvider, SubscriptionPlan::getPriceAmount)
-        .containsExactly(tuple("stripe", "5"), tuple("btcpay", "4"));
+        .extracting(
+            SubscriptionPlan::getProvider,
+            SubscriptionPlan::getPriceAmount,
+            SubscriptionPlan::getTrialDurationDays)
+        .containsExactly(tuple("stripe", "5", 30), tuple("btcpay", "4", 30));
   }
 
   @Test
@@ -151,6 +154,7 @@ class SubscriptionServiceTest {
     SubscriptionProperties.Plan plan = new SubscriptionProperties.Plan();
     plan.setKey("premium_monthly");
     plan.setPriceAmount(new BigDecimal("5.00"));
+    plan.setTrialDurationDays(30);
 
     SubscriptionProperties.ProviderPlan btcpayPlan = new SubscriptionProperties.ProviderPlan();
     btcpayPlan.setOfferingId("offering-btcpay");

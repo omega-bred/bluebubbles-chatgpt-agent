@@ -111,6 +111,7 @@ Optional (subscription billing):
 - `SUBSCRIPTIONS_ENABLED`
 - `SUBSCRIPTIONS_DEFAULT_PROVIDER` (`stripe` by default)
 - `SUBSCRIPTION_PREMIUM_PRICE_AMOUNT` (fallback display amount, defaults to `5.00`)
+- `SUBSCRIPTION_PREMIUM_TRIAL_DURATION_DAYS` (defaults to `30`)
 - `STRIPE_API_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_PRODUCT_ID`, `STRIPE_PRICE_ID`
 - `STRIPE_SUBSCRIPTION_PREMIUM_PRICE_AMOUNT` (card display amount, defaults to `5.00`)
 - `STRIPE_TEST_MODE_ONLY` (defaults to `true`)
@@ -122,6 +123,8 @@ The account page shows available providers when the user is not already subscrib
 provider portal for manage/cancel when a subscription exists. Bitcoin checkout is displayed as
 `4.00` USD monthly by default, while Stripe/card checkout is displayed as `5.00` USD monthly by
 default. Provider checkout charges still come from the configured BTCPay plan and Stripe Price IDs.
+New checkout sessions include a 30-day Premium trial by default; Stripe receives that duration from
+the app checkout request, while BTCPay receives a trial checkout flag for the configured plan.
 Stripe local development can use `bbagent-stripe-listen` from the Nix shell to forward subscription
 webhook events.
 

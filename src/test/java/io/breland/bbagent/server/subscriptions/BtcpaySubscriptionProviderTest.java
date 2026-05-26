@@ -76,6 +76,7 @@ class BtcpaySubscriptionProviderTest {
             plan,
             providerPlan,
             "https://bbagent.example/account",
+            30,
             30);
 
     Map<String, Object> body = BtcpaySubscriptionProvider.checkoutBody("store-1", request);
@@ -84,6 +85,7 @@ class BtcpaySubscriptionProviderTest {
         .containsEntry("storeId", "store-1")
         .containsEntry("offeringId", "offering-1")
         .containsEntry("planId", "plan-1")
+        .containsEntry("isTrial", true)
         .containsEntry("newSubscriberEmail", "person@example.com")
         .doesNotContainKey("customerSelector");
     assertThat((Map<String, Object>) body.get("newSubscriberMetadata"))

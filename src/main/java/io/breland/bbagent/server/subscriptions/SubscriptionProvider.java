@@ -30,7 +30,8 @@ public interface SubscriptionProvider {
       SubscriptionProperties.Plan plan,
       SubscriptionProperties.ProviderPlan providerPlan,
       String returnUrl,
-      int durationMinutes) {}
+      int durationMinutes,
+      int trialDurationDays) {}
 
   record PortalRequest(
       String accountId,

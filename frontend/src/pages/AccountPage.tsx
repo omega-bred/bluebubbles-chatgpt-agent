@@ -232,13 +232,15 @@ function BillingPanel({
 
 function providerPlanDescription(baseDescription: string, plan: SubscriptionPlan) {
   const planDescription = plan.description?.trim();
-  if (!planDescription) {
-    return baseDescription;
+  const trialOffer = formatTrialOffer(plan.trial_duration_days);
+  const parts = [baseDescription];
+  if (trialOffer) {
+    parts.push(`Includes ${trialOffer}.`);
   }
-  const punctuatedPlanDescription = /[.!?]$/.test(planDescription)
-    ? planDescription
-    : `${planDescription}.`;
-  return `${baseDescription} ${punctuatedPlanDescription}`;
+  if (planDescription) {
+    parts.push(/[.!?]$/.test(planDescription) ? planDescription : `${planDescription}.`);
+  }
+  return parts.join(" ");
 }
 
 function SubscriptionRows({
@@ -335,12 +337,22 @@ function premiumPlanSummary(plans: SubscriptionPlan[]) {
     (availablePlan) => availablePlan.provider?.toLowerCase() === "stripe",
   );
   if (bitcoinPlan && cardPlan) {
-    return `Premium is ${formatPlanPrice(bitcoinPlan)} with Bitcoin or ${formatPlanPrice(
+    const trialIntro = premiumTrialIntro(plans);
+    return `${trialIntro}${formatPlanPrice(bitcoinPlan)} with Bitcoin or ${formatPlanPrice(
       cardPlan,
     )} with card.`;
   }
   const plan = plans[0];
+  const trialOffer = formatTrialOffer(plan.trial_duration_days);
+  if (trialOffer) {
+    return `${plan.display_name} starts with ${trialOffer}, then ${formatPlanPrice(plan)}.`;
+  }
   return `${plan.display_name} is ${formatPlanPrice(plan)}.`;
+}
+
+function premiumTrialIntro(plans: SubscriptionPlan[]) {
+  const trialOffer = plans.map((plan) => formatTrialOffer(plan.trial_duration_days)).find(Boolean);
+  return trialOffer ? `Premium starts with ${trialOffer}, then ` : "Premium is ";
 }
 
 function formatPlanLabel(value: string | undefined, plans: SubscriptionPlan[]) {
@@ -355,6 +367,20 @@ function formatPlanPrice(plan: SubscriptionPlan) {
   const price = [plan.price_amount, plan.currency].filter(Boolean).join(" ");
   const interval = formatBillingInterval(plan.billing_interval);
   return [price, interval].filter(Boolean).join(" ");
+}
+
+function formatTrialOffer(days: number | undefined) {
+  const trialDays = Number(days || 0);
+  if (!Number.isFinite(trialDays) || trialDays <= 0) {
+    return "";
+  }
+  if (trialDays >= 28 && trialDays <= 31) {
+    return "a 1 month free trial";
+  }
+  if (trialDays === 1) {
+    return "a 1 day free trial";
+  }
+  return `a ${trialDays}-day free trial`;
 }
 
 function formatBillingInterval(value: string | undefined) {

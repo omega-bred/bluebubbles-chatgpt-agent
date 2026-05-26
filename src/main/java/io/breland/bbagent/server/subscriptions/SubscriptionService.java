@@ -109,6 +109,7 @@ public class SubscriptionService {
     providerKey = provider.providerKey();
     SubscriptionProperties.Plan plan = requirePlan(request == null ? null : request.getPlanKey());
     SubscriptionProperties.ProviderPlan providerPlan = requireProviderPlan(plan, providerKey);
+    int trialDurationDays = Math.max(0, plan.getTrialDurationDays());
     Instant now = Instant.now();
     Instant expiresAt = now.plusSeconds(Math.max(1, properties.getCheckoutDurationMinutes()) * 60L);
     PaymentCheckoutSessionEntity checkout =
@@ -134,7 +135,8 @@ public class SubscriptionService {
                   plan,
                   providerPlan,
                   properties.getReturnUrl(),
-                  properties.getCheckoutDurationMinutes()));
+                  properties.getCheckoutDurationMinutes(),
+                  trialDurationDays));
     } catch (IllegalStateException e) {
       throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, e.getMessage(), e);
     } catch (RestClientException e) {
@@ -160,7 +162,8 @@ public class SubscriptionService {
             "plan_key", plan.getKey(),
             "currency", effectiveCurrency(plan, providerPlan),
             "price_amount", effectivePriceAmount(plan, providerPlan),
-            "billing_interval", effectiveBillingInterval(plan, providerPlan)));
+            "billing_interval", effectiveBillingInterval(plan, providerPlan),
+            "trial_duration_days", trialDurationDays));
 
     return new SubscriptionCheckoutResponse()
         .checkoutSessionId(checkout.getCheckoutSessionId())
@@ -714,6 +717,7 @@ public class SubscriptionService {
         .priceAmount(priceAmount == null ? "" : priceAmount.stripTrailingZeros().toPlainString())
         .currency(effectiveCurrency(plan, providerPlan))
         .billingInterval(effectiveBillingInterval(plan, providerPlan))
+        .trialDurationDays(Math.max(0, plan.getTrialDurationDays()))
         .provider(providerKey)
         .active(plan.isActive());
   }

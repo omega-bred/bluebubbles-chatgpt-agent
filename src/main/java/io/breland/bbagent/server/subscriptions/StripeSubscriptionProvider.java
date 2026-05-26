@@ -62,6 +62,9 @@ public class StripeSubscriptionProvider implements SubscriptionProvider {
     com.stripe.param.checkout.SessionCreateParams.SubscriptionData.Builder subscriptionData =
         com.stripe.param.checkout.SessionCreateParams.SubscriptionData.builder();
     metadata.forEach(subscriptionData::putMetadata);
+    if (request.trialDurationDays() > 0) {
+      subscriptionData.setTrialPeriodDays((long) request.trialDurationDays());
+    }
     builder.setSubscriptionData(subscriptionData.build());
     if (StringUtils.isNotBlank(request.email())) {
       builder.setCustomerEmail(request.email());

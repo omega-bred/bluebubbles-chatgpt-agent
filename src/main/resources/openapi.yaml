@@ -1123,6 +1123,7 @@ components:
         - price_amount
         - currency
         - billing_interval
+        - trial_duration_days
         - provider
         - active
       properties:
@@ -1140,6 +1141,11 @@ components:
           type: string
         billing_interval:
           type: string
+        trial_duration_days:
+          type: integer
+          format: int32
+          minimum: 0
+          description: Number of free trial days applied when checkout creates a subscription.
         provider:
           type: string
           description: Subscription provider key, such as btcpay or stripe.

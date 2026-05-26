@@ -287,6 +287,8 @@ spec:
               value: "stripe"
             - name: SUBSCRIPTION_PREMIUM_PRICE_AMOUNT
               value: "5.00"
+            - name: SUBSCRIPTION_PREMIUM_TRIAL_DURATION_DAYS
+              value: "30"
             - name: BTCPAY_BASE_URL
               value: "https://btcpay.bre.land"
             - name: BTCPAY_SUBSCRIPTION_PREMIUM_PRICE_AMOUNT

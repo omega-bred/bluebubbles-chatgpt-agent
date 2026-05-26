@@ -190,7 +190,7 @@ public class BtcpaySubscriptionProvider implements SubscriptionProvider {
     body.put("offeringId", request.providerPlan().getOfferingId());
     body.put("planId", request.providerPlan().getPlanId());
     body.put("durationMinutes", request.durationMinutes());
-    body.put("isTrial", false);
+    body.put("isTrial", request.trialDurationDays() > 0);
     body.put("successRedirectLink", request.returnUrl());
     if (StringUtils.isNotBlank(request.email())) {
       body.put("newSubscriberEmail", request.email());

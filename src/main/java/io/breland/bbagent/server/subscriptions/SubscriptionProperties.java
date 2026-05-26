@@ -68,6 +68,7 @@ public class SubscriptionProperties {
     private BigDecimal priceAmount = BigDecimal.ZERO;
     private String currency = "USD";
     private String billingInterval = "monthly";
+    private int trialDurationDays = 0;
     private String entitlement = "premium";
     private boolean active = true;
     private int sortOrder = 0;
