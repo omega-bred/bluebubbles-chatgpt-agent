@@ -270,7 +270,7 @@ def run_canary(stage_durations):
     run_stage("terms_acceptance", terms_acceptance, stage_durations)
     inference_reply = run_stage("inference", inference, stage_durations)
     log(f"LXMF canary succeeded run_id={RUN_ID} reply={inference_reply.get('content', '')!r}")
-    return time.time() - started, stage_durations
+    return time.time() - started
 
 
 def inference_reply_matches(content):
@@ -396,6 +396,9 @@ def emit_metrics_safely(success, duration_seconds, stage, failure_type, stage_du
         return True
     except CanaryFailure as error:
         log(f"LXMF canary metrics failed failure_type={error.failure_type}: {error}")
+        return False
+    except Exception as error:
+        log(f"LXMF canary metrics failed failure_type=metrics_exception: {error}")
         return False
 
 
