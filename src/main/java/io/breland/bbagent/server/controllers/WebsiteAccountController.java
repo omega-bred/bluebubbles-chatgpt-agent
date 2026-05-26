@@ -5,6 +5,8 @@ import io.breland.bbagent.generated.model.WebsiteAccountRedeemLinkRequest;
 import io.breland.bbagent.generated.model.WebsiteAccountRedeemLinkResponse;
 import io.breland.bbagent.generated.model.WebsiteAccountResponse;
 import io.breland.bbagent.generated.model.WebsiteLinkedAccountsResponse;
+import io.breland.bbagent.generated.model.WebsiteModelSelectionRequest;
+import io.breland.bbagent.generated.model.WebsiteModelSelectionResponse;
 import io.breland.bbagent.server.website.WebsiteAccountService;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -63,5 +65,15 @@ public class WebsiteAccountController {
     return ResponseEntity.ok(
         new WebsiteAccountDeleteLinkedAccountResponse()
             .deleted(accountService.deleteLinkedAccount(jwt, type, accountKey)));
+  }
+
+  @PostMapping(
+      path = "/api/v1/websiteAccount/updateModel.websiteAccountModels",
+      consumes = MediaType.APPLICATION_JSON_VALUE,
+      produces = MediaType.APPLICATION_JSON_VALUE)
+  public ResponseEntity<WebsiteModelSelectionResponse> websiteAccountUpdateModel(
+      @RequestBody WebsiteModelSelectionRequest request, @AuthenticationPrincipal Jwt jwt) {
+    String model = request.getModel() == null ? null : request.getModel().getValue();
+    return ResponseEntity.ok(accountService.updatePreferredModel(jwt, model));
   }
 }

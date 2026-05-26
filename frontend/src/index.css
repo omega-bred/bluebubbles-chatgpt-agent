@@ -297,6 +297,30 @@ a {
   font-weight: 700;
 }
 
+.model-picker {
+  display: inline-grid;
+  max-width: 260px;
+  gap: 6px;
+  color: #4a4a46;
+  font-size: 0.92rem;
+  font-weight: 800;
+}
+
+.model-picker select {
+  min-height: 42px;
+  border: 1px solid #c9c9c9;
+  border-radius: 8px;
+  padding: 8px 36px 8px 10px;
+  color: #111111;
+  background: #ffffff;
+}
+
+.error-text {
+  margin: 0;
+  color: #b42318;
+  font-weight: 700;
+}
+
 .account-main {
   padding: 72px 32px;
 }

@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import io.breland.bbagent.generated.model.WebsiteModelAccessSummary;
@@ -71,8 +72,48 @@ class ModelAccessServiceTest {
 
     assertTrue(summary.getIsPremium());
     assertEquals("chatgpt", summary.getCurrentModel());
-    assertFalse(summary.getModelSelectionConfigurable());
+    assertTrue(summary.getModelSelectionConfigurable());
     assertEquals(4, summary.getAvailableModels().size());
+    assertTrue(
+        summary.getAvailableModels().stream()
+            .anyMatch(
+                model ->
+                    "claude".equals(model.getModel()) && Boolean.TRUE.equals(model.getEnabled())));
+    assertTrue(
+        summary.getAvailableModels().stream()
+            .anyMatch(
+                model ->
+                    "gemini".equals(model.getModel()) && Boolean.TRUE.equals(model.getEnabled())));
+  }
+
+  @Test
+  void selectedPremiumModelsResolveToProviderModels() {
+    when(resolver.resolveOrCreate(any(IncomingMessage.class)))
+        .thenReturn(
+            Optional.of(
+                new AgentAccountResolver.ResolvedAccount(account(true, "claude"), List.of())));
+
+    ModelAccessService.ModelAccess access = service.resolve(message());
+
+    assertEquals("claude", access.currentModelKey());
+    assertEquals(ModelAccessService.CLAUDE_MODEL_LABEL, access.currentModelLabel());
+    assertEquals(ModelAccessService.CLAUDE_RESPONSES_MODEL, access.responsesModel());
+    assertEquals("anthropic", access.provider());
+  }
+
+  @Test
+  void premiumAccountCanSelectModel() {
+    AgentAccountEntity account = account(true, null);
+    when(repository.findById("account-1")).thenReturn(Optional.of(account));
+    when(repository.save(any(AgentAccountEntity.class)))
+        .thenAnswer(invocation -> invocation.getArgument(0));
+
+    ModelAccessService.ModelSelectionResult result = service.selectModel("account-1", "gemini");
+
+    assertTrue(result.changed());
+    assertEquals("gemini", result.modelAccess().currentModelKey());
+    assertEquals("gemini", account.getSelectedModel());
+    verify(repository).save(account);
   }
 
   private AgentAccountEntity account(boolean premium, String selectedModel) {

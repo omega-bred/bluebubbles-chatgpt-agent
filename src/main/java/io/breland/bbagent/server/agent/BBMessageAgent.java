@@ -8,6 +8,10 @@ import com.openai.models.responses.*;
 import com.uber.cadence.workflow.Workflow;
 import io.breland.bbagent.server.agent.cadence.CadenceIncomingMessageHandler;
 import io.breland.bbagent.server.agent.cadence.CadenceWorkflowLauncher;
+import io.breland.bbagent.server.agent.llm.LlmProvider;
+import io.breland.bbagent.server.agent.llm.LlmRequest;
+import io.breland.bbagent.server.agent.llm.OpenAiResponsesLlmProvider;
+import io.breland.bbagent.server.agent.model_picker.ModelAccessService;
 import io.breland.bbagent.server.agent.model_picker.ModelPicker;
 import io.breland.bbagent.server.agent.profile.AgentProfileService;
 import io.breland.bbagent.server.agent.tools.AgentTool;
@@ -80,6 +84,7 @@ public class BBMessageAgent {
 
   private final WebsiteAccountService websiteAccountService;
   private final ModelPicker modelPicker;
+  private final LlmProvider llmProvider;
   private final AgentMetricsService agentMetricsService;
   private final OperationalMetricsService operationalMetricsService;
   private final MessageResponseRateLimitService messageResponseRateLimitService;
@@ -120,6 +125,7 @@ public class BBMessageAgent {
     this.operationalMetricsService = operationalMetricsService;
     this.messageResponseRateLimitService = messageResponseRateLimitService;
     this.modelPicker = modelPicker;
+    this.llmProvider = new OpenAiResponsesLlmProvider(openAiSupplier, modelPicker);
     CadenceWorkflowLauncher workflowLauncher =
         Objects.requireNonNull(cadenceWorkflowLauncher, "cadenceWorkflowLauncher");
     this.toolRegistry =
@@ -136,7 +142,8 @@ public class BBMessageAgent {
             messageResponseRateLimitService,
             workflowLauncher,
             profileService::resolveOrCreateAccountId,
-            operationalMetricsService);
+            operationalMetricsService,
+            modelPicker.modelAccessService());
     this.incomingMessageHandler =
         new CadenceIncomingMessageHandler(
             this,
@@ -456,26 +463,24 @@ public class BBMessageAgent {
         modelPicker.shouldSquashDeveloperMessagesIntoSystem(message)
             ? ResponseInputMessages.squashDeveloperMessagesIntoSystem(inputItems)
             : inputItems;
-    ResponseCreateParams.Builder params =
-        ResponseCreateParams.builder().inputOfResponse(requestInputItems);
-    modelPicker.applyResponsesModelParams(params, message, workflowContext);
-    for (AgentTool tool : toolRegistry.availableTools(message)) {
-      params.addTool(Tool.ofFunction(tool.asFunctionTool()));
-    }
-    ResponseCreateParams finalRequest = null;
+    ModelAccessService.ModelAccess modelAccess = modelPicker.resolveModelAccess(message);
+    List<AgentTool> tools = toolRegistry.availableTools(message);
+    LlmRequest request =
+        new LlmRequest(modelAccess, requestInputItems, tools, message, workflowContext);
     long startedNanos = 0L;
     try {
-      finalRequest = params.build();
       startedNanos = System.nanoTime();
       log.info(
-          "Creating model response chat={} messageGuid={} workflowId={} inputItems={}",
+          "Creating model response chat={} messageGuid={} workflowId={} provider={} model={} inputItems={}",
           message.chatGuid(),
           message.messageGuid(),
           workflowContext == null ? null : workflowContext.workflowId(),
+          modelAccess.provider(),
+          modelAccess.responsesModel(),
           requestInputItems.size());
-      log.trace("Final message: {}", finalRequest);
-      Response response = openAiSupplier.get().responses().create(finalRequest);
-      recordLlmCallMetric(message, finalRequest, true, null, startedNanos);
+      log.trace("Final LLM request: {}", request);
+      Response response = llmProvider.createResponse(request);
+      recordLlmCallMetric(message, modelAccess, true, null, startedNanos);
       log.info(
           "Created model response chat={} messageGuid={} workflowId={} elapsedMs={}",
           message.chatGuid(),
@@ -484,15 +489,15 @@ public class BBMessageAgent {
           elapsedMillis(startedNanos));
       return response;
     } catch (RuntimeException e) {
-      if (finalRequest != null) {
-        recordLlmCallMetric(
-            message, finalRequest, false, OperationalMetricsService.failureType(e), startedNanos);
-      }
+      recordLlmCallMetric(
+          message, modelAccess, false, OperationalMetricsService.failureType(e), startedNanos);
       log.warn(
-          "OpenAI response failed chat={} messageGuid={} workflowId={}",
+          "LLM response failed chat={} messageGuid={} workflowId={} provider={} model={}",
           message.chatGuid(),
           message.messageGuid(),
           workflowContext == null ? null : workflowContext.workflowId(),
+          modelAccess.provider(),
+          modelAccess.responsesModel(),
           e);
       return null;
     }
@@ -500,7 +505,7 @@ public class BBMessageAgent {
 
   private void recordLlmCallMetric(
       IncomingMessage message,
-      ResponseCreateParams request,
+      ModelAccessService.ModelAccess modelAccess,
       boolean success,
       @Nullable String failureType,
       long startedNanos) {
@@ -511,7 +516,8 @@ public class BBMessageAgent {
       operationalMetricsService.recordLlmCall(
           message == null ? "unknown" : message.metricTransport(),
           "agent_response",
-          request,
+          modelAccess == null ? "unknown" : modelAccess.provider(),
+          modelAccess == null ? "unknown" : modelAccess.responsesModel(),
           success,
           failureType,
           Duration.ofNanos(System.nanoTime() - startedNanos));

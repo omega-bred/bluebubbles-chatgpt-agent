@@ -10,6 +10,7 @@ import io.breland.bbagent.generated.model.WebsiteIntegrationSummary;
 import io.breland.bbagent.generated.model.WebsiteLinkedAccountsResponse;
 import io.breland.bbagent.generated.model.WebsiteLinkedIntegrationAccount;
 import io.breland.bbagent.generated.model.WebsiteModelAccessSummary;
+import io.breland.bbagent.generated.model.WebsiteModelSelectionResponse;
 import io.breland.bbagent.server.agent.IncomingMessage;
 import io.breland.bbagent.server.agent.account.AgentAccountResolver;
 import io.breland.bbagent.server.agent.model_picker.ModelAccessService;
@@ -200,6 +201,16 @@ public class WebsiteAccountService {
     }
     trackLinkedIntegrationDeleted(account.getAccountId(), type);
     return true;
+  }
+
+  @Transactional
+  public WebsiteModelSelectionResponse updatePreferredModel(Jwt jwt, String modelKey) {
+    AgentAccountEntity account = accountResolver.upsertWebsiteAccount(jwt);
+    ModelAccessService.ModelSelectionResult result =
+        modelAccessService.selectModel(account.getAccountId(), modelKey);
+    return new WebsiteModelSelectionResponse()
+        .modelAccess(modelAccessService.toWebsiteSummary(result.modelAccess()))
+        .message(result.message());
   }
 
   private void trackLinkTokenCreated(String accountId, IncomingMessage message) {

@@ -9,6 +9,7 @@ import type {
   WebsiteIntegrationSummary,
   WebsiteLinkedAccountsResponse,
   WebsiteLinkedIntegrationAccount,
+  WebsiteModelOption,
 } from "../client";
 import { AuthGate } from "../components/AuthGate";
 import { CenteredMessage } from "../components/CenteredMessage";
@@ -141,7 +142,7 @@ export function AccountPage({ auth }: { auth: AuthState }) {
               <LinkedIdentity
                 key={integration.link?.link_id}
                 integration={integration}
-                onDeleted={load}
+                onChanged={load}
               />
             ))
           )}
@@ -433,12 +434,14 @@ function AccountLoader() {
 
 function LinkedIdentity({
   integration,
-  onDeleted,
+  onChanged,
 }: {
   integration: WebsiteIntegrationSummary;
-  onDeleted: () => Promise<void>;
+  onChanged: () => Promise<void>;
 }) {
   const [unlinkingAccountKey, setUnlinkingAccountKey] = React.useState<string | null>(null);
+  const [modelBusy, setModelBusy] = React.useState(false);
+  const [modelError, setModelError] = React.useState<string | null>(null);
   const link = integration.link;
   if (!link) {
     return null;
@@ -448,10 +451,29 @@ function LinkedIdentity({
   const modelAccess = integration.model_access;
   const modelLabel = modelAccess ? displayModelLabel(modelAccess.current_model_label) : "";
   const accountLabel = modelAccess?.is_premium ? "Premium" : "Free";
+  const selectableModels =
+    modelAccess?.available_models?.filter(
+      (model) => model.enabled && model.model !== "local",
+    ) || [];
   const accessNote =
     modelAccess && modelAccess.is_premium
       ? `${accountLabel} account · ${modelLabel}`
       : `${accountLabel} account`;
+  const updateModel = async (model: string) => {
+    setModelBusy(true);
+    setModelError(null);
+    trackEvent("web_model_selection_start", { model });
+    try {
+      await websiteAccountApi.updateModel(model);
+      trackEvent("web_model_selection_updated", { model });
+      await onChanged();
+    } catch (err) {
+      trackEvent("web_model_selection_failed", { model });
+      setModelError(err instanceof Error ? err.message : "Unable to update model.");
+    } finally {
+      setModelBusy(false);
+    }
+  };
   return (
     <article className="linked-item">
       <div>
@@ -473,6 +495,15 @@ function LinkedIdentity({
             : "not linked"}
         </span>
       </div>
+      {modelAccess?.model_selection_configurable && selectableModels.length > 0 ? (
+        <ModelSelector
+          currentModel={modelAccess.current_model}
+          models={selectableModels}
+          busy={modelBusy}
+          onChange={updateModel}
+        />
+      ) : null}
+      {modelError ? <p className="error-text">{modelError}</p> : null}
       {linkedAccounts.length > 0 ? (
         <div className="linked-account-list">
           {(link.identities || []).map((identity) => (
@@ -492,7 +523,7 @@ function LinkedIdentity({
                 try {
                   await websiteAccountApi.deleteLinkedAccount(account.type, account.account_key);
                   trackEvent("web_integration_unlinked", { type: account.type });
-                  await onDeleted();
+                  await onChanged();
                 } catch (err) {
                   trackEvent("web_integration_unlink_failed", { type: account.type });
                   throw err;
@@ -515,6 +546,35 @@ function LinkedIdentity({
         </div>
       ) : null}
     </article>
+  );
+}
+
+function ModelSelector({
+  currentModel,
+  models,
+  busy,
+  onChange,
+}: {
+  currentModel?: string;
+  models: WebsiteModelOption[];
+  busy: boolean;
+  onChange: (model: string) => Promise<void>;
+}) {
+  return (
+    <label className="model-picker">
+      <span>Assistant model</span>
+      <select
+        value={currentModel || ""}
+        disabled={busy}
+        onChange={(event) => void onChange(event.target.value)}
+      >
+        {models.map((model) => (
+          <option key={model.model} value={model.model}>
+            {displayModelLabel(model.label)}
+          </option>
+        ))}
+      </select>
+    </label>
   );
 }
 

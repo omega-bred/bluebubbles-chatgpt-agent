@@ -229,6 +229,36 @@ paths:
           description: Authentication required
         '404':
           description: Linked integration account not found
+  /api/v1/websiteAccount/updateModel.websiteAccountModels:
+    post:
+      operationId: websiteAccountUpdateModel
+      tags:
+        - websiteAccount
+      summary: Updates the preferred assistant model
+      description: Lets premium website accounts choose the assistant model used by linked chat identities.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WebsiteModelSelectionRequest'
+      responses:
+        '200':
+          description: Preferred model updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WebsiteModelSelectionResponse'
+        '400':
+          description: Unknown or unavailable model
+        '401':
+          description: Authentication required
+        '403':
+          description: Premium account required
+        '404':
+          description: Account not found
   /api/v1/contact/get.contactConfig:
     get:
       operationId: contactGetConfig
@@ -1002,6 +1032,28 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/WebsiteModelOption'
+    WebsiteModelSelectionRequest:
+      type: object
+      required:
+        - model
+      properties:
+        model:
+          type: string
+          description: Preferred model key for premium accounts.
+          enum:
+            - chatgpt
+            - claude
+            - gemini
+    WebsiteModelSelectionResponse:
+      type: object
+      required:
+        - model_access
+        - message
+      properties:
+        model_access:
+          $ref: '#/components/schemas/WebsiteModelAccessSummary'
+        message:
+          type: string
     WebsiteIntegrationSummary:
       type: object
       required:

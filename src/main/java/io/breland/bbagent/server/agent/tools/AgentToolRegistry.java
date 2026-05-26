@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.openai.client.OpenAIClient;
 import io.breland.bbagent.server.agent.IncomingMessage;
 import io.breland.bbagent.server.agent.cadence.CadenceWorkflowLauncher;
+import io.breland.bbagent.server.agent.model_picker.ModelAccessService;
 import io.breland.bbagent.server.agent.tools.assistant.AssistantNameAgentTool;
 import io.breland.bbagent.server.agent.tools.assistant.AssistantResponsivenessAgentTool;
 import io.breland.bbagent.server.agent.tools.bb.CurrentConversationInfoAgentTool;
@@ -39,6 +40,7 @@ import io.breland.bbagent.server.agent.tools.memory.MemoryDeleteAgentTool;
 import io.breland.bbagent.server.agent.tools.memory.MemoryGetAgentTool;
 import io.breland.bbagent.server.agent.tools.memory.MemorySaveAgentTool;
 import io.breland.bbagent.server.agent.tools.memory.MemoryUpdateAgentTool;
+import io.breland.bbagent.server.agent.tools.model.SetPreferredModelAgentTool;
 import io.breland.bbagent.server.agent.tools.scheduled.ScheduledEventDeleteTool;
 import io.breland.bbagent.server.agent.tools.scheduled.ScheduledEventListTool;
 import io.breland.bbagent.server.agent.tools.scheduled.ScheduledEventTool;
@@ -103,7 +105,10 @@ public final class AgentToolRegistry {
   private static final Set<String> WEBSITE_TOOL_NAMES =
       Set.of(LinkWebsiteAccountAgentTool.TOOL_NAME, GetWebsiteAccountLinkStatusAgentTool.TOOL_NAME);
   private static final Set<String> ASSISTANT_TOOL_NAMES =
-      Set.of(AssistantResponsivenessAgentTool.TOOL_NAME, AssistantNameAgentTool.TOOL_NAME);
+      Set.of(
+          AssistantResponsivenessAgentTool.TOOL_NAME,
+          AssistantNameAgentTool.TOOL_NAME,
+          SetPreferredModelAgentTool.TOOL_NAME);
   private static final Set<String> SCHEDULED_TOOL_NAMES =
       Set.of(
           ScheduledEventTool.TOOL_NAME,
@@ -144,6 +149,7 @@ public final class AgentToolRegistry {
         messageResponseRateLimitService,
         cadenceWorkflowLauncher,
         accountIdResolver,
+        null,
         null);
   }
 
@@ -161,6 +167,38 @@ public final class AgentToolRegistry {
       CadenceWorkflowLauncher cadenceWorkflowLauncher,
       Function<IncomingMessage, Optional<String>> accountIdResolver,
       @Nullable OperationalMetricsService operationalMetricsService) {
+    this(
+        bbHttpClientWrapper,
+        mem0Client,
+        gcalClient,
+        websiteAccountService,
+        giphyClient,
+        transportRegistry,
+        objectMapper,
+        openAiSupplier,
+        feedbackService,
+        messageResponseRateLimitService,
+        cadenceWorkflowLauncher,
+        accountIdResolver,
+        operationalMetricsService,
+        null);
+  }
+
+  public AgentToolRegistry(
+      BBHttpClientWrapper bbHttpClientWrapper,
+      Mem0Client mem0Client,
+      GcalClient gcalClient,
+      @Nullable WebsiteAccountService websiteAccountService,
+      GiphyClient giphyClient,
+      MessageTransportRegistry transportRegistry,
+      ObjectMapper objectMapper,
+      Supplier<OpenAIClient> openAiSupplier,
+      @Nullable FeedbackService feedbackService,
+      @Nullable MessageResponseRateLimitService messageResponseRateLimitService,
+      CadenceWorkflowLauncher cadenceWorkflowLauncher,
+      Function<IncomingMessage, Optional<String>> accountIdResolver,
+      @Nullable OperationalMetricsService operationalMetricsService,
+      @Nullable ModelAccessService modelAccessService) {
     this.transportRegistry = transportRegistry;
     this.accountIdResolver = accountIdResolver;
     registerBuiltInTools(
@@ -174,7 +212,8 @@ public final class AgentToolRegistry {
         feedbackService,
         messageResponseRateLimitService,
         cadenceWorkflowLauncher,
-        operationalMetricsService);
+        operationalMetricsService,
+        modelAccessService);
   }
 
   public List<AgentTool> availableTools(IncomingMessage message) {
@@ -271,7 +310,8 @@ public final class AgentToolRegistry {
       @Nullable FeedbackService feedbackService,
       @Nullable MessageResponseRateLimitService messageResponseRateLimitService,
       CadenceWorkflowLauncher cadenceWorkflowLauncher,
-      @Nullable OperationalMetricsService operationalMetricsService) {
+      @Nullable OperationalMetricsService operationalMetricsService,
+      @Nullable ModelAccessService modelAccessService) {
     registerTool(new SendTextAgentTool().getTool());
     registerTool(new SendReactionAgentTool().getTool());
     registerTool(new SendPollAgentTool(bbHttpClientWrapper).getTool());
@@ -286,6 +326,9 @@ public final class AgentToolRegistry {
             .getTool());
     registerTool(new AssistantResponsivenessAgentTool().getTool());
     registerTool(new AssistantNameAgentTool().getTool());
+    if (modelAccessService != null) {
+      registerTool(new SetPreferredModelAgentTool(modelAccessService).getTool());
+    }
     registerTool(new MemorySaveAgentTool(mem0Client).getTool());
     registerTool(new MemoryGetAgentTool(mem0Client).getTool());
     registerTool(new MemoryUpdateAgentTool(mem0Client).getTool());

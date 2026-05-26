@@ -37,6 +37,7 @@ import io.breland.bbagent.server.agent.tools.memory.MemoryDeleteAgentTool;
 import io.breland.bbagent.server.agent.tools.memory.MemoryGetAgentTool;
 import io.breland.bbagent.server.agent.tools.memory.MemorySaveAgentTool;
 import io.breland.bbagent.server.agent.tools.memory.MemoryUpdateAgentTool;
+import io.breland.bbagent.server.agent.tools.model.SetPreferredModelAgentTool;
 import io.breland.bbagent.server.agent.tools.scheduled.ScheduledEventDeleteTool;
 import io.breland.bbagent.server.agent.tools.scheduled.ScheduledEventListTool;
 import io.breland.bbagent.server.agent.tools.scheduled.ScheduledEventTool;
@@ -299,6 +300,9 @@ public final class AgentPromptBuilder {
                   + "When the user asks about quota, usage limits, monthly messages, or remaining messages, call "
                   + GetUsageLimitsAgentTool.TOOL_NAME
                   + " before answering. "
+                  + "When the user explicitly asks to switch, change, use, or set the assistant model to ChatGPT, Claude, or Gemini, call "
+                  + SetPreferredModelAgentTool.TOOL_NAME
+                  + " and send the returned user_facing_text. This is only available to premium users. "
                   + "If the user asks the assistant to be more or less responsive, call "
                   + AssistantResponsivenessAgentTool.TOOL_NAME
                   + " to update the setting. The silent mode will only invoke responses when the message starts with 'Chat' (case-insensitive). "
@@ -341,6 +345,9 @@ public final class AgentPromptBuilder {
                 + "When the user asks about quota, usage limits, monthly messages, or remaining messages, call "
                 + GetUsageLimitsAgentTool.TOOL_NAME
                 + " before answering. "
+                + "When the user explicitly asks to switch, change, use, or set the assistant model to ChatGPT, Claude, or Gemini, call "
+                + SetPreferredModelAgentTool.TOOL_NAME
+                + " and send the returned user_facing_text. This is only available to premium users. "
                 + "If the user requests an image and has attached images, use those images as starting references for image generation. "
                 + "If the user asks the assistant to be more or less responsive (especially in group chats), call "
                 + AssistantResponsivenessAgentTool.TOOL_NAME

@@ -26,31 +26,49 @@ public class ModelPicker {
     this.modelAccessService = modelAccessService;
   }
 
+  public @Nullable ModelAccessService modelAccessService() {
+    return modelAccessService;
+  }
+
   public ResponseCreateParams.Builder applyResponsesModelParams(
       ResponseCreateParams.Builder builder,
       IncomingMessage incomingMessage,
       AgentWorkflowContext agentWorkflowContext) {
     ModelAccessService.ModelAccess modelAccess = resolveModelAccess(incomingMessage);
+    return applyResponsesModelParams(builder, modelAccess, incomingMessage, agentWorkflowContext);
+  }
+
+  public ResponseCreateParams.Builder applyResponsesModelParams(
+      ResponseCreateParams.Builder builder,
+      ModelAccessService.ModelAccess modelAccess,
+      IncomingMessage incomingMessage,
+      AgentWorkflowContext agentWorkflowContext) {
     if (modelAccess.premium()) {
-      log.info("User {} is a premium user", incomingMessage.sender());
+      log.info(
+          "User {} is a premium user using model {}",
+          incomingMessage.sender(),
+          modelAccess.currentModelKey());
       builder.maxOutputTokens(2500);
       builder.reasoning(Reasoning.builder().effort(ReasoningEffort.MEDIUM).build());
       builder.model(modelAccess.responsesModel());
-      builder
-          .addTool(
-              Tool.ImageGeneration.builder()
-                  .model(Tool.ImageGeneration.Model.GPT_IMAGE_1_5)
-                  .size(Tool.ImageGeneration.Size._1536X1024)
-                  .moderation(Tool.ImageGeneration.Moderation.LOW)
-                  .background(Tool.ImageGeneration.Background.AUTO)
-                  .outputFormat(Tool.ImageGeneration.OutputFormat.PNG)
-                  .quality(Tool.ImageGeneration.Quality.HIGH)
-                  .build())
-          .addTool(
-              WebSearchTool.builder()
-                  .type(WebSearchTool.Type.WEB_SEARCH_2025_08_26)
-                  .searchContextSize(WebSearchTool.SearchContextSize.MEDIUM)
-                  .build());
+      if (modelAccess.supportsImageGeneration()) {
+        builder.addTool(
+            Tool.ImageGeneration.builder()
+                .model(Tool.ImageGeneration.Model.GPT_IMAGE_1_5)
+                .size(Tool.ImageGeneration.Size._1536X1024)
+                .moderation(Tool.ImageGeneration.Moderation.LOW)
+                .background(Tool.ImageGeneration.Background.AUTO)
+                .outputFormat(Tool.ImageGeneration.OutputFormat.PNG)
+                .quality(Tool.ImageGeneration.Quality.HIGH)
+                .build());
+      }
+      if (modelAccess.supportsWebSearch()) {
+        builder.addTool(
+            WebSearchTool.builder()
+                .type(WebSearchTool.Type.WEB_SEARCH_2025_08_26)
+                .searchContextSize(WebSearchTool.SearchContextSize.MEDIUM)
+                .build());
+      }
     } else {
       log.info("User {} is a standard user", incomingMessage.sender());
       builder.maxOutputTokens(1500);
@@ -67,7 +85,7 @@ public class ModelPicker {
             responsesModel.trim());
   }
 
-  private ModelAccessService.ModelAccess resolveModelAccess(IncomingMessage incomingMessage) {
+  public ModelAccessService.ModelAccess resolveModelAccess(IncomingMessage incomingMessage) {
     if (modelAccessService == null) {
       return new ModelAccessService.ModelAccess(
           null,

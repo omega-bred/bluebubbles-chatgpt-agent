@@ -10,6 +10,7 @@ import {
   type AdminAccountBlockTargetType,
   type ContactMessageRequest,
   type WebsiteAccountDeleteLinkedAccountTypeEnum,
+  type WebsiteModelSelectionRequest,
 } from "../client";
 import type { WebsiteAccountRedeemLinkRequest } from "../client";
 import { getAccessToken, login } from "../auth/keycloak";
@@ -98,6 +99,14 @@ export const websiteAccountApi = {
   ) => {
     const client = await websiteAccountClient();
     return (await client.websiteAccountDeleteLinkedAccount(type, accountKey)).data;
+  },
+
+  updateModel: async (model: string) => {
+    const client = await websiteAccountClient();
+    const request: WebsiteModelSelectionRequest = {
+      model: model as WebsiteModelSelectionRequest["model"],
+    };
+    return (await client.websiteAccountUpdateModel(request)).data;
   },
 };
 

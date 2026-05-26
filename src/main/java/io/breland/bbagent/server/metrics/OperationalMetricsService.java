@@ -120,12 +120,25 @@ public class OperationalMetricsService {
       boolean success,
       @Nullable String failureType,
       Duration duration) {
+    recordLlmCall(transport, operation, "unknown", model, success, failureType, duration);
+  }
+
+  public void recordLlmCall(
+      String transport,
+      String operation,
+      @Nullable String provider,
+      @Nullable String model,
+      boolean success,
+      @Nullable String failureType,
+      Duration duration) {
     Tags tags =
         Tags.of(
             "transport",
             tagValue(transport, "unknown"),
             "operation",
             tagValue(operation, "unknown"),
+            "provider",
+            tagValue(provider, "unknown"),
             "model",
             modelTagValue(model),
             "outcome",

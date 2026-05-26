@@ -175,6 +175,14 @@ spec:
                 secretKeyRef:
                   key: "litellm-api-key"
                   name: openai-bluebubbles-chatgpt-agent-api-key
+            - name: BBAGENT_LOCAL_RESPONSES_MODEL
+              value: "Qwen/Qwen3.6-27B"
+            - name: BBAGENT_CHATGPT_RESPONSES_MODEL
+              value: "openai/gpt-5.4"
+            - name: BBAGENT_CLAUDE_RESPONSES_MODEL
+              value: "anthropic/claude-sonnet-4-6"
+            - name: BBAGENT_GEMINI_RESPONSES_MODEL
+              value: "gemini/gemini-3.5-flash"
             - name: "BLUEBUBBLES_PATH"
               valueFrom:
                 secretKeyRef:

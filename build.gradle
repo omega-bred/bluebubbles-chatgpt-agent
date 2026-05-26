@@ -238,6 +238,8 @@ dependencies {
     implementation 'io.modelcontextprotocol.sdk:mcp-json-jackson2:1.1.1'
 
     implementation("com.openai:openai-java-spring-boot-starter:4.31.0")
+    implementation("com.anthropic:anthropic-java:2.34.0")
+    implementation("com.google.genai:google-genai:1.55.0")
     implementation("com.uber.cadence:cadence-client:3.13.1")
 
     implementation 'io.micrometer:micrometer-core'

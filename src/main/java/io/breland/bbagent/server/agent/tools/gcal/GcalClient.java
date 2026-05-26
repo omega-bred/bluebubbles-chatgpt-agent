@@ -101,7 +101,12 @@ public class GcalClient {
       return null;
     }
     GoogleAuthorizationCodeFlow flow = buildFlow(pendingKey);
-    return flow.newAuthorizationUrl().setRedirectUri(redirectUri).setState(state).build();
+    return flow.newAuthorizationUrl()
+        .setRedirectUri(redirectUri)
+        .setState(state)
+        .set("prompt", "consent")
+        .set("include_granted_scopes", "true")
+        .build();
   }
 
   public Optional<String> exchangeCode(String accountId, String pendingKey, String code) {
@@ -376,6 +381,11 @@ public class GcalClient {
           .findById(fromId)
           .ifPresent(
               existing -> {
+                GcalCredentialEntity target = credentialRepository.findById(toId).orElse(null);
+                String refreshToken = existing.getRefreshToken();
+                if ((refreshToken == null || refreshToken.isBlank()) && target != null) {
+                  refreshToken = target.getRefreshToken();
+                }
                 credentialRepository.save(
                     new GcalCredentialEntity(
                         toId,
@@ -384,7 +394,7 @@ public class GcalClient {
                         keyParts.accountId(),
                         keyParts.googleAccountId(),
                         existing.getAccessToken(),
-                        existing.getRefreshToken(),
+                        refreshToken,
                         existing.getExpirationTimeMs()));
                 credentialRepository.deleteById(fromId);
               });
