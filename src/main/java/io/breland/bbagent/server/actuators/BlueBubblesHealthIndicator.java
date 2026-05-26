@@ -4,6 +4,7 @@ import io.breland.bbagent.server.agent.transport.bb.BBHttpClientWrapper;
 import io.breland.bbagent.server.metrics.OperationalMetricsService;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.Objects;
 import java.util.concurrent.atomic.AtomicReference;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.actuate.health.Health;
@@ -15,6 +16,9 @@ import org.springframework.stereotype.Component;
 @Component
 @Slf4j
 public class BlueBubblesHealthIndicator implements HealthIndicator {
+  private static final String ICLOUD_CONNECTED_STATUS = "Connected";
+  private static final String UNKNOWN_STATUS = "unknown";
+
   private final BBHttpClientWrapper bbHttpClientWrapper;
   private final @Nullable OperationalMetricsService operationalMetricsService;
   private final AtomicReference<Health> health =
@@ -32,7 +36,6 @@ public class BlueBubblesHealthIndicator implements HealthIndicator {
     Instant checkedAt = Instant.now();
     long startedNanos = System.nanoTime();
     boolean pingSucceeded = false;
-    boolean iCloudConnected = false;
     String loginStatusMessage = null;
     try {
       pingSucceeded = bbHttpClientWrapper.ping();
@@ -41,12 +44,12 @@ public class BlueBubblesHealthIndicator implements HealthIndicator {
       }
       var account = bbHttpClientWrapper.getAccount();
       loginStatusMessage = account.getLoginStatusMessage();
-      iCloudConnected = "Connected".equals(loginStatusMessage);
+      boolean iCloudConnected = ICLOUD_CONNECTED_STATUS.equals(loginStatusMessage);
       if (!iCloudConnected) {
-        log.warn("iCloudAccount was not marked as connected {}", account.toString());
+        log.warn("iCloudAccount was not marked as connected {}", account);
         throw new RuntimeException("Account is not marked as connected");
       }
-      recordHealthMetric(true, iCloudConnected, null, startedNanos);
+      recordHealthMetric(true, true, null, startedNanos);
       health.set(
           Health.up()
               .withDetail("lastCheckedAt", checkedAt.toString())
@@ -55,13 +58,16 @@ public class BlueBubblesHealthIndicator implements HealthIndicator {
               .build());
     } catch (Exception e) {
       recordHealthMetric(
-          false, iCloudConnected, OperationalMetricsService.failureType(e), startedNanos);
+          false,
+          ICLOUD_CONNECTED_STATUS.equals(loginStatusMessage),
+          OperationalMetricsService.failureType(e),
+          startedNanos);
       health.set(
           Health.status("DEGRADED")
               .withDetail("lastCheckedAt", checkedAt.toString())
               .withDetail("ping", pingSucceeded ? "ok" : "failed")
-              .withDetail("icloudLoginStatus", loginStatusMessage)
-              .withDetail("error", e.getMessage())
+              .withDetail("icloudLoginStatus", Objects.toString(loginStatusMessage, UNKNOWN_STATUS))
+              .withDetail("error", Objects.toString(e.getMessage(), e.getClass().getSimpleName()))
               .build());
       log.warn("Health ping failed - check bb server", e);
     }
