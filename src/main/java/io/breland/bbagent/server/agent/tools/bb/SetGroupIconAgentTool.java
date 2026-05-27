@@ -12,9 +12,8 @@ import io.breland.bbagent.server.agent.tools.AgentTool;
 import io.breland.bbagent.server.agent.tools.ToolProvider;
 import io.breland.bbagent.server.agent.transport.bb.BBHttpClientWrapper;
 import io.swagger.v3.oas.annotations.media.Schema;
-import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
-import java.net.URL;
+import java.net.URI;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Base64;
@@ -102,7 +101,7 @@ public class SetGroupIconAgentTool implements ToolProvider {
       if (images.isEmpty()) {
         return Optional.empty();
       }
-      Image image = images.get(0);
+      Image image = images.getFirst();
       Optional<byte[]> bytes = resolveImageBytes(image);
       if (bytes.isPresent()) {
         return bytes;
@@ -134,10 +133,8 @@ public class SetGroupIconAgentTool implements ToolProvider {
     if (url == null || url.isBlank()) {
       return Optional.empty();
     }
-    try (InputStream input = new URL(url).openStream();
-        ByteArrayOutputStream output = new ByteArrayOutputStream()) {
-      input.transferTo(output);
-      return Optional.of(output.toByteArray());
+    try (InputStream input = URI.create(url).toURL().openStream()) {
+      return Optional.of(input.readAllBytes());
     } catch (Exception ignored) {
       return Optional.empty();
     }
