@@ -3,7 +3,6 @@ package io.breland.bbagent.server.agent.cadence;
 import com.openai.models.responses.Response;
 import com.openai.models.responses.ResponseOutputItem;
 import io.breland.bbagent.server.agent.cadence.models.GeneratedImage;
-import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
 import java.net.URI;
 import java.util.Base64;
@@ -81,14 +80,8 @@ final class GeneratedImageExtractor {
   }
 
   private byte[] downloadBytes(String url) {
-    try (InputStream input = URI.create(url).toURL().openStream();
-        ByteArrayOutputStream output = new ByteArrayOutputStream()) {
-      byte[] buffer = new byte[8192];
-      int read;
-      while ((read = input.read(buffer)) >= 0) {
-        output.write(buffer, 0, read);
-      }
-      return output.toByteArray();
+    try (InputStream input = URI.create(url).toURL().openStream()) {
+      return input.readAllBytes();
     } catch (Exception e) {
       log.warn("Failed to download image result {}", url, e);
       return null;
