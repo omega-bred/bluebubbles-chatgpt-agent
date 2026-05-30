@@ -118,7 +118,8 @@ public final class AgentProfileService implements AgentProfile {
     try {
       return canaryService.isCanaryAccount(message);
     } catch (RuntimeException e) {
-      log.warn("Failed to check canary account status for {}", message, e);
+      log.warn(
+          "Failed to check canary account status for {}", IncomingMessage.logSummary(message), e);
       return false;
     }
   }
@@ -143,7 +144,8 @@ public final class AgentProfileService implements AgentProfile {
               })
           .orElse(false);
     } catch (RuntimeException e) {
-      log.warn("Failed to check account block status for {}", message, e);
+      log.warn(
+          "Failed to check account block status for {}", IncomingMessage.logSummary(message), e);
       return false;
     }
   }

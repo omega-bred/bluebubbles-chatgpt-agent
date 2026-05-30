@@ -372,7 +372,10 @@ public class BBMessageAgent {
       sendRateLimitExceededNotice(message, status, workflowContext);
       return true;
     } catch (RuntimeException e) {
-      log.warn("Failed to check message response rate limit for {}", message, e);
+      log.warn(
+          "Failed to check message response rate limit for {}",
+          IncomingMessage.logSummary(message),
+          e);
       return false;
     }
   }
@@ -397,7 +400,10 @@ public class BBMessageAgent {
           message, messageResponseRateLimitService.statusFor(message), workflowContext);
       return false;
     } catch (RuntimeException e) {
-      log.warn("Failed to consume message response rate limit for {}", message, e);
+      log.warn(
+          "Failed to consume message response rate limit for {}",
+          IncomingMessage.logSummary(message),
+          e);
       return true;
     }
   }

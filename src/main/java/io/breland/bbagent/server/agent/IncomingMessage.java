@@ -203,6 +203,30 @@ public record IncomingMessage(
     return sender + "|" + text + "|" + timestamp + "|" + attachmentCount;
   }
 
+  public static String logSummary(IncomingMessage message) {
+    return message == null ? "message=null" : message.logSummary();
+  }
+
+  public String logSummary() {
+    int attachmentCount = attachments != null ? attachments.size() : 0;
+    return "transport=%s chatGuid=%s messageGuid=%s threadOriginatorGuid=%s fromMe=%s service=%s isGroup=%s timestamp=%s attachmentCount=%s hasText=%s balloonBundleId=%s associatedMessageGuid=%s replyToGuid=%s isSystemMessage=%s"
+        .formatted(
+            transportOrDefault(),
+            chatGuid,
+            messageGuid,
+            threadOriginatorGuid,
+            fromMe,
+            service,
+            isGroup,
+            timestamp,
+            attachmentCount,
+            text != null && !text.isBlank(),
+            balloonBundleId,
+            associatedMessageGuid,
+            replyToGuid,
+            isSystemMessage);
+  }
+
   public String summaryForHistory() {
     StringBuilder builder = new StringBuilder();
     if (sender != null && !sender.isBlank()) {

@@ -101,4 +101,36 @@ class IncomingMessageTest {
     assertEquals(IncomingMessage.METRIC_TRANSPORT_IMESSAGE, imessage.metricTransport());
     assertEquals(IncomingMessage.TRANSPORT_LXMF, lxmf.metricTransport());
   }
+
+  @Test
+  void logSummaryExcludesMessageTextAndSender() {
+    IncomingMessage message =
+        new IncomingMessage(
+            IncomingMessage.TRANSPORT_BLUEBUBBLES,
+            "chat-guid",
+            "msg-1",
+            "thread-root",
+            "private message body",
+            false,
+            "iMessage",
+            "sender@example.com",
+            false,
+            Instant.parse("2026-05-30T00:00:00Z"),
+            List.of(),
+            false);
+
+    String summary = message.logSummary();
+
+    assertTrue(summary.contains("transport=bluebubbles"));
+    assertTrue(summary.contains("chatGuid=chat-guid"));
+    assertTrue(summary.contains("messageGuid=msg-1"));
+    assertTrue(summary.contains("hasText=true"));
+    assertFalse(summary.contains("private message body"));
+    assertFalse(summary.contains("sender@example.com"));
+  }
+
+  @Test
+  void logSummaryHandlesNullMessage() {
+    assertEquals("message=null", IncomingMessage.logSummary(null));
+  }
 }
