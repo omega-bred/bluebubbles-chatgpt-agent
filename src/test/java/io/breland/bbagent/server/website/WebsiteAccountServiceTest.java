@@ -237,7 +237,6 @@ class WebsiteAccountServiceTest {
         .header("alg", "none")
         .subject("sub-1")
         .claim("email", "alice@example.com")
-        .claim("preferred_username", "alice")
         .build();
   }
 
@@ -281,7 +280,6 @@ class WebsiteAccountServiceTest {
     AgentAccountEntity account = new AgentAccountEntity(accountId, now, now);
     account.setWebsiteSubject("sub-1");
     account.setWebsiteEmail("alice@example.com");
-    account.setWebsitePreferredUsername("alice");
     return account;
   }
 

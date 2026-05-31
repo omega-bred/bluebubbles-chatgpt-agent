@@ -104,10 +104,6 @@ class AgentAccountResolverTest {
 
   private Jwt jwt(String subject, String email) {
     return new Jwt(
-        "token",
-        null,
-        null,
-        Map.of("alg", "none"),
-        Map.of("sub", subject, "email", email, "preferred_username", email));
+        "token", null, null, Map.of("alg", "none"), Map.of("sub", subject, "email", email));
   }
 }

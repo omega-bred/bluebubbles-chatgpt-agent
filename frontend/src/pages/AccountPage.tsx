@@ -117,7 +117,7 @@ export function AccountPage({ auth }: { auth: AuthState }) {
         <section className="account-heading">
           <p className="eyebrow">Account</p>
           <h1>
-            {data?.account?.display_name || data?.account?.preferred_username || "Your account"}
+            {data?.account?.display_name || data?.account?.email || "Your account"}
           </h1>
           <p>{data?.account?.email || "Signed in with Keycloak."}</p>
         </section>

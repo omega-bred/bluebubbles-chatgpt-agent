@@ -140,7 +140,6 @@ public class AccountModerationService {
   private String adminIdentity(Jwt jwt) {
     return StringUtils.firstNonBlank(
         jwt == null ? null : jwt.getClaimAsString("email"),
-        jwt == null ? null : jwt.getClaimAsString("preferred_username"),
         jwt == null ? null : jwt.getSubject(),
         "admin");
   }

@@ -13,6 +13,7 @@ import io.breland.bbagent.generated.model.SubscriptionPlansResponse;
 import io.breland.bbagent.generated.model.SubscriptionPortalResponse;
 import io.breland.bbagent.generated.model.SubscriptionProviderWebhookResponse;
 import io.breland.bbagent.generated.model.SubscriptionSummaryResponse;
+import io.breland.bbagent.server.agent.account.AgentAccountIdentifiers;
 import io.breland.bbagent.server.agent.account.AgentAccountResolver;
 import io.breland.bbagent.server.agent.persistence.account.AgentAccountEntity;
 import io.breland.bbagent.server.agent.persistence.account.AgentAccountRepository;
@@ -423,14 +424,7 @@ public class SubscriptionService {
 
   @Transactional
   public AdminSubscriptionActionResponse adminGrantPremium(AdminPremiumGrantRequest request) {
-    if (request == null || StringUtils.isBlank(request.getAccountId())) {
-      throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Missing account id");
-    }
-    AgentAccountEntity account =
-        accountRepository
-            .findById(request.getAccountId())
-            .orElseThrow(
-                () -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Account not found"));
+    AgentAccountEntity account = resolvePremiumGrantAccount(request);
     account.setPremium(true);
     account.setPremiumEntitlementSource(SOURCE_MANUAL);
     account.setPremiumEntitlementSyncedAt(Instant.now());
@@ -449,14 +443,7 @@ public class SubscriptionService {
   @Transactional
   public AdminSubscriptionActionResponse adminRevokeManualPremium(
       AdminPremiumGrantRequest request) {
-    if (request == null || StringUtils.isBlank(request.getAccountId())) {
-      throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Missing account id");
-    }
-    AgentAccountEntity account =
-        accountRepository
-            .findById(request.getAccountId())
-            .orElseThrow(
-                () -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Account not found"));
+    AgentAccountEntity account = resolvePremiumGrantAccount(request);
     if (SOURCE_MANUAL.equals(account.getPremiumEntitlementSource())) {
       account.setPremiumEntitlementSource(SOURCE_NONE);
       accountRepository.save(account);
@@ -470,6 +457,89 @@ public class SubscriptionService {
     return new AdminSubscriptionActionResponse()
         .status("manual_revoked")
         .accountId(account.getAccountId());
+  }
+
+  @SuppressWarnings("deprecation")
+  private AgentAccountEntity resolvePremiumGrantAccount(AdminPremiumGrantRequest request) {
+    if (request == null) {
+      throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Premium target is required");
+    }
+    String target = StringUtils.trimToNull(request.getTarget());
+    String targetType = request.getTargetType() == null ? null : request.getTargetType().getValue();
+    if (target == null && StringUtils.isNotBlank(request.getAccountId())) {
+      target = request.getAccountId().trim();
+      if (StringUtils.isBlank(targetType)) {
+        targetType = "account_id";
+      }
+    }
+    if (target == null) {
+      throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Premium target is required");
+    }
+    if (StringUtils.isBlank(targetType)) {
+      return resolvePremiumGrantTarget(target);
+    }
+    return switch (targetType) {
+      case "account_id" -> requireAccountById(target);
+      case "email" -> resolvePremiumGrantEmail(target);
+      case "phone" -> resolvePremiumGrantPhone(target);
+      default ->
+          throw new ResponseStatusException(
+              HttpStatus.BAD_REQUEST, "Unsupported premium target type");
+    };
+  }
+
+  private AgentAccountEntity resolvePremiumGrantTarget(String target) {
+    Optional<AgentAccountEntity> account = accountRepository.findById(target);
+    if (account.isPresent()) {
+      return account.get();
+    }
+    if (target.contains("@")) {
+      return resolvePremiumGrantEmail(target);
+    }
+    Optional<AgentAccountEntity> phoneAccount = resolvePremiumGrantPhoneOptional(target);
+    if (phoneAccount.isPresent()) {
+      return phoneAccount.get();
+    }
+    return resolvePremiumGrantEmail(target);
+  }
+
+  private AgentAccountEntity requireAccountById(String accountId) {
+    return accountRepository
+        .findById(accountId)
+        .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Account not found"));
+  }
+
+  private AgentAccountEntity resolvePremiumGrantEmail(String email) {
+    AgentAccountEntity match = null;
+    Optional<AgentAccountEntity> websiteAccount =
+        accountRepository.findByWebsiteEmailIgnoreCase(email);
+    Optional<AgentAccountEntity> blueChatAccount =
+        accountResolver
+            .resolveByIdentityType(AgentAccountIdentifiers.IMESSAGE_EMAIL, email)
+            .map(AgentAccountResolver.ResolvedAccount::account);
+    for (AgentAccountEntity candidate :
+        List.of(websiteAccount, blueChatAccount).stream().flatMap(Optional::stream).toList()) {
+      if (match == null) {
+        match = candidate;
+      } else if (!match.getAccountId().equals(candidate.getAccountId())) {
+        throw new ResponseStatusException(HttpStatus.CONFLICT, "Email matches multiple accounts");
+      }
+    }
+    if (match == null) {
+      throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Account not found");
+    }
+    return match;
+  }
+
+  private AgentAccountEntity resolvePremiumGrantPhone(String phone) {
+    return resolvePremiumGrantPhoneOptional(phone)
+        .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Account not found"));
+  }
+
+  private Optional<AgentAccountEntity> resolvePremiumGrantPhoneOptional(String phone) {
+    return accountResolver
+        .resolveByIdentityType(AgentAccountIdentifiers.IMESSAGE_PHONE, phone)
+        .map(AgentAccountResolver.ResolvedAccount::account);
   }
 
   private void trackAdminSubscriptionAction(

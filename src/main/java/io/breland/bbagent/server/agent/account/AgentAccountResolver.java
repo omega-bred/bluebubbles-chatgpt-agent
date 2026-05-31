@@ -338,9 +338,6 @@ public class AgentAccountResolver {
     if (StringUtils.isBlank(target.getWebsiteEmail())) {
       target.setWebsiteEmail(source.getWebsiteEmail());
     }
-    if (StringUtils.isBlank(target.getWebsitePreferredUsername())) {
-      target.setWebsitePreferredUsername(source.getWebsitePreferredUsername());
-    }
     if (StringUtils.isBlank(target.getWebsiteDisplayName())) {
       target.setWebsiteDisplayName(source.getWebsiteDisplayName());
     }
@@ -419,7 +416,6 @@ public class AgentAccountResolver {
   private void applyWebsiteClaims(AgentAccountEntity account, Jwt jwt, Instant now) {
     account.setWebsiteSubject(jwtSubject(jwt));
     account.setWebsiteEmail(jwt.getClaimAsString("email"));
-    account.setWebsitePreferredUsername(jwt.getClaimAsString("preferred_username"));
     account.setWebsiteDisplayName(resolveDisplayName(jwt));
     account.setUpdatedAt(now);
     if (account.getCreatedAt() == null) {
@@ -451,7 +447,7 @@ public class AgentAccountResolver {
     if (StringUtils.isNotBlank(joined)) {
       return joined;
     }
-    return jwt.getClaimAsString("preferred_username");
+    return null;
   }
 
   public record AccountIdentityInput(

@@ -1,15 +1,22 @@
 package io.breland.bbagent.server.subscriptions;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.tuple;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import io.breland.bbagent.generated.model.AdminPremiumGrantRequest;
+import io.breland.bbagent.generated.model.AdminPremiumGrantTargetType;
+import io.breland.bbagent.generated.model.AdminSubscriptionActionResponse;
 import io.breland.bbagent.generated.model.SubscriptionPlan;
 import io.breland.bbagent.generated.model.SubscriptionProviderWebhookResponse;
+import io.breland.bbagent.server.agent.account.AgentAccountIdentifiers;
 import io.breland.bbagent.server.agent.account.AgentAccountResolver;
+import io.breland.bbagent.server.agent.persistence.account.AgentAccountEntity;
 import io.breland.bbagent.server.agent.persistence.account.AgentAccountRepository;
 import io.breland.bbagent.server.agent.persistence.subscription.PaymentCheckoutSessionRepository;
 import io.breland.bbagent.server.agent.persistence.subscription.PaymentProviderEventEntity;
@@ -24,6 +31,8 @@ import java.util.Optional;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpStatus;
+import org.springframework.web.server.ResponseStatusException;
 
 class SubscriptionServiceTest {
   @Test
@@ -117,6 +126,77 @@ class SubscriptionServiceTest {
     assertThat(monthlyRecurringAmount).isEqualTo("9");
   }
 
+  @Test
+  void adminGrantPremiumResolvesWebsiteEmail() {
+    AgentAccountRepository accountRepository = mock(AgentAccountRepository.class);
+    AgentAccountResolver accountResolver = mock(AgentAccountResolver.class);
+    AgentAccountEntity account = account("account-email");
+    account.setWebsiteEmail("person@example.com");
+    when(accountRepository.findByWebsiteEmailIgnoreCase("person@example.com"))
+        .thenReturn(Optional.of(account));
+    when(accountResolver.resolveByIdentityType(
+            AgentAccountIdentifiers.IMESSAGE_EMAIL, "person@example.com"))
+        .thenReturn(Optional.empty());
+
+    AdminSubscriptionActionResponse response =
+        service(accountResolver, accountRepository)
+            .adminGrantPremium(
+                new AdminPremiumGrantRequest()
+                    .target("person@example.com")
+                    .targetType(AdminPremiumGrantTargetType.EMAIL));
+
+    assertThat(response.getAccountId()).isEqualTo("account-email");
+    assertThat(response.getStatus()).isEqualTo("manual_granted");
+    assertThat(account.isPremium()).isTrue();
+    assertThat(account.getPremiumEntitlementSource()).isEqualTo("manual");
+  }
+
+  @Test
+  void adminGrantPremiumResolvesBlueChatPhone() {
+    AgentAccountRepository accountRepository = mock(AgentAccountRepository.class);
+    AgentAccountResolver accountResolver = mock(AgentAccountResolver.class);
+    AgentAccountEntity account = account("account-phone");
+    when(accountResolver.resolveByIdentityType(
+            eq(AgentAccountIdentifiers.IMESSAGE_PHONE), eq("(555) 123-4567")))
+        .thenReturn(Optional.of(new AgentAccountResolver.ResolvedAccount(account, List.of())));
+
+    AdminSubscriptionActionResponse response =
+        service(accountResolver, accountRepository)
+            .adminGrantPremium(
+                new AdminPremiumGrantRequest()
+                    .target("(555) 123-4567")
+                    .targetType(AdminPremiumGrantTargetType.PHONE));
+
+    assertThat(response.getAccountId()).isEqualTo("account-phone");
+    assertThat(account.isPremium()).isTrue();
+    assertThat(account.getPremiumEntitlementSource()).isEqualTo("manual");
+  }
+
+  @Test
+  void adminGrantPremiumRejectsAmbiguousEmail() {
+    AgentAccountRepository accountRepository = mock(AgentAccountRepository.class);
+    AgentAccountResolver accountResolver = mock(AgentAccountResolver.class);
+    AgentAccountEntity websiteAccount = account("account-website");
+    AgentAccountEntity blueChatAccount = account("account-bluechat");
+    when(accountRepository.findByWebsiteEmailIgnoreCase("person@example.com"))
+        .thenReturn(Optional.of(websiteAccount));
+    when(accountResolver.resolveByIdentityType(
+            AgentAccountIdentifiers.IMESSAGE_EMAIL, "person@example.com"))
+        .thenReturn(
+            Optional.of(new AgentAccountResolver.ResolvedAccount(blueChatAccount, List.of())));
+
+    assertThatThrownBy(
+            () ->
+                service(accountResolver, accountRepository)
+                    .adminGrantPremium(
+                        new AdminPremiumGrantRequest()
+                            .target("person@example.com")
+                            .targetType(AdminPremiumGrantTargetType.EMAIL)))
+        .isInstanceOf(ResponseStatusException.class)
+        .extracting(error -> ((ResponseStatusException) error).getStatusCode())
+        .isEqualTo(HttpStatus.CONFLICT);
+  }
+
   private SubscriptionService service(
       SubscriptionProviderRegistry registry, PaymentProviderEventRepository eventRepository) {
     return service(properties(), registry, eventRepository);
@@ -134,6 +214,19 @@ class SubscriptionServiceTest {
         mock(PaymentCheckoutSessionRepository.class),
         mock(PaymentSubscriptionRepository.class),
         eventRepository,
+        null);
+  }
+
+  private SubscriptionService service(
+      AgentAccountResolver accountResolver, AgentAccountRepository accountRepository) {
+    return new SubscriptionService(
+        properties(),
+        mock(SubscriptionProviderRegistry.class),
+        accountResolver,
+        accountRepository,
+        mock(PaymentCheckoutSessionRepository.class),
+        mock(PaymentSubscriptionRepository.class),
+        mock(PaymentProviderEventRepository.class),
         null);
   }
 
@@ -191,6 +284,11 @@ class SubscriptionServiceTest {
     SubscriptionProvider provider = mock(SubscriptionProvider.class);
     when(provider.providerKey()).thenReturn(providerKey);
     return provider;
+  }
+
+  private AgentAccountEntity account(String accountId) {
+    Instant now = Instant.now();
+    return new AgentAccountEntity(accountId, now, now);
   }
 
   private PaymentSubscriptionEntity subscription(

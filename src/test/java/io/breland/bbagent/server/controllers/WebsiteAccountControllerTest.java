@@ -39,11 +39,7 @@ class WebsiteAccountControllerTest {
     when(accountService.getAccount(any(Jwt.class)))
         .thenReturn(
             new WebsiteAccountResponse()
-                .account(
-                    new WebsiteAccountProfile()
-                        .subject("sub-1")
-                        .email("alice@example.com")
-                        .preferredUsername("alice"))
+                .account(new WebsiteAccountProfile().subject("sub-1").email("alice@example.com"))
                 .links(List.of()));
 
     mockMvc

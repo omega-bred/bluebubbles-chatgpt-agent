@@ -26,9 +26,6 @@ public class AgentAccountEntity {
   @Column(name = "website_email", length = 512)
   private String websiteEmail;
 
-  @Column(name = "website_preferred_username", length = 255)
-  private String websitePreferredUsername;
-
   @Column(name = "website_display_name", length = 512)
   private String websiteDisplayName;
 

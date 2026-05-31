@@ -873,9 +873,6 @@ components:
         email:
           type: string
           nullable: true
-        preferred_username:
-          type: string
-          nullable: true
         display_name:
           type: string
           nullable: true
@@ -1411,11 +1408,24 @@ components:
           nullable: true
     AdminPremiumGrantRequest:
       type: object
-      required:
-        - account_id
       properties:
+        target:
+          type: string
+          description: Account id, website or BlueChat email, or BlueChat phone number to grant or revoke manual premium access for.
+        target_type:
+          $ref: '#/components/schemas/AdminPremiumGrantTargetType'
+          description: Optional target type. When omitted, the server resolves the target as account id, email, then phone.
         account_id:
           type: string
+          nullable: true
+          deprecated: true
+          description: Deprecated. Use target with target_type account_id instead.
+    AdminPremiumGrantTargetType:
+      type: string
+      enum:
+        - account_id
+        - email
+        - phone
     AdminAccountBlockTargetType:
       type: string
       enum:

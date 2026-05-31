@@ -8,6 +8,7 @@ import {
   WebsiteAccountApi,
   type AdminAccountBlockRequest,
   type AdminAccountBlockTargetType,
+  type AdminPremiumGrantTargetType,
   type ContactMessageRequest,
   type WebsiteAccountDeleteLinkedAccountTypeEnum,
   type WebsiteModelSelectionRequest,
@@ -186,14 +187,14 @@ export const adminApi = {
     return (await client.adminUnsuspendSubscription({ subscription_id: subscriptionId })).data;
   },
 
-  grantPremium: async (accountId: string) => {
+  grantPremium: async (target: string, targetType?: AdminPremiumGrantTargetType) => {
     const client = await adminClient();
-    return (await client.adminGrantPremium({ account_id: accountId })).data;
+    return (await client.adminGrantPremium({ target, target_type: targetType })).data;
   },
 
-  revokePremium: async (accountId: string) => {
+  revokePremium: async (target: string, targetType?: AdminPremiumGrantTargetType) => {
     const client = await adminClient();
-    return (await client.adminRevokePremium({ account_id: accountId })).data;
+    return (await client.adminRevokePremium({ target, target_type: targetType })).data;
   },
 
   listAccountBlocks: async (limit = 100) => {

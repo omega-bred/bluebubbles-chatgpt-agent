@@ -306,7 +306,6 @@ public class WebsiteAccountService {
         .subject(account.getWebsiteSubject())
         .accountId(account.getAccountId())
         .email(account.getWebsiteEmail())
-        .preferredUsername(account.getWebsitePreferredUsername())
         .displayName(account.getWebsiteDisplayName())
         .createdAt(offset(account.getCreatedAt()))
         .updatedAt(offset(account.getUpdatedAt()));

@@ -5,6 +5,7 @@ import type {
   AdminAccountBlockListResponse,
   AdminAccountBlockTargetType,
   AdminBlockedAccountItem,
+  AdminPremiumGrantTargetType,
   AdminRateLimitUsage,
   AdminRateLimitUsageResponse,
   AdminSenderStats,
@@ -34,6 +35,22 @@ const bucketDateFormat = new Intl.DateTimeFormat(undefined, {
 });
 const epochSecondsCutoff = 10_000_000_000;
 
+const accountIdPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function inferPremiumGrantTargetType(target: string): AdminPremiumGrantTargetType | undefined {
+  if (accountIdPattern.test(target)) {
+    return "account_id";
+  }
+  if (target.includes("@")) {
+    return "email";
+  }
+  const digitCount = target.replace(/\D/g, "").length;
+  if (digitCount >= 7) {
+    return "phone";
+  }
+  return undefined;
+}
+
 type ApiDateValue = Date | number | string | null | undefined;
 type BlockAction = "block" | "unblock";
 
@@ -60,7 +77,7 @@ export function AdminPage({ auth }: { auth: AuthState }) {
   const [loading, setLoading] = React.useState(false);
   const [subscriptionAction, setSubscriptionAction] = React.useState<string | null>(null);
   const [manualPremiumAction, setManualPremiumAction] = React.useState<"grant" | "revoke" | null>(null);
-  const [manualAccountId, setManualAccountId] = React.useState("");
+  const [manualPremiumTarget, setManualPremiumTarget] = React.useState("");
   const [blockTargetType, setBlockTargetType] =
     React.useState<AdminAccountBlockTargetType>("account_id");
   const [blockTarget, setBlockTarget] = React.useState("");
@@ -135,21 +152,22 @@ export function AdminPage({ auth }: { auth: AuthState }) {
 
   const runManualPremiumAction = React.useCallback(
     async (action: "grant" | "revoke") => {
-      const accountId = manualAccountId.trim();
-      if (!accountId) {
-        setError("Enter an account id before changing premium access.");
+      const target = manualPremiumTarget.trim();
+      if (!target) {
+        setError("Enter an email, phone, or account id before changing premium access.");
         return;
       }
       setManualPremiumAction(action);
       try {
+        const targetType = inferPremiumGrantTargetType(target);
         if (action === "grant") {
-          await adminApi.grantPremium(accountId);
+          await adminApi.grantPremium(target, targetType);
         } else {
-          await adminApi.revokePremium(accountId);
+          await adminApi.revokePremium(target, targetType);
         }
         trackEvent("web_admin_premium_action", { action, status: "success" });
         setSubscriptionData(await adminApi.listSubscriptions());
-        setManualAccountId("");
+        setManualPremiumTarget("");
         setError(null);
       } catch (err) {
         trackEvent("web_admin_premium_action", { action, status: "failed" });
@@ -158,7 +176,7 @@ export function AdminPage({ auth }: { auth: AuthState }) {
         setManualPremiumAction(null);
       }
     },
-    [manualAccountId],
+    [manualPremiumTarget],
   );
 
   const runAccountBlockAction = React.useCallback(
@@ -362,10 +380,10 @@ export function AdminPage({ auth }: { auth: AuthState }) {
             <SubscriptionAdmin
               subscriptions={subscriptionData?.subscriptions || []}
               action={subscriptionAction}
-              manualAccountId={manualAccountId}
+              manualPremiumTarget={manualPremiumTarget}
               manualAction={manualPremiumAction}
               onAction={runSubscriptionAction}
-              onManualAccountIdChange={setManualAccountId}
+              onManualPremiumTargetChange={setManualPremiumTarget}
               onManualAction={runManualPremiumAction}
             />
           </article>
@@ -502,29 +520,29 @@ function AccountBlockAdmin({
 function SubscriptionAdmin({
   subscriptions,
   action,
-  manualAccountId,
+  manualPremiumTarget,
   manualAction,
   onAction,
-  onManualAccountIdChange,
+  onManualPremiumTargetChange,
   onManualAction,
 }: {
   subscriptions: AdminSubscriptionItem[];
   action: string | null;
-  manualAccountId: string;
+  manualPremiumTarget: string;
   manualAction: "grant" | "revoke" | null;
   onAction: (action: "sync" | "suspend" | "unsuspend", subscriptionId: string) => Promise<void>;
-  onManualAccountIdChange: (value: string) => void;
+  onManualPremiumTargetChange: (value: string) => void;
   onManualAction: (action: "grant" | "revoke") => Promise<void>;
 }) {
   return (
     <div className="subscription-admin-stack">
       <div className="subscription-manual-controls">
         <label>
-          <span>Account ID</span>
+          <span>Email or phone</span>
           <input
-            value={manualAccountId}
-            onChange={(event) => onManualAccountIdChange(event.target.value)}
-            placeholder="canonical account id"
+            value={manualPremiumTarget}
+            onChange={(event) => onManualPremiumTargetChange(event.target.value)}
+            placeholder="name@example.com or +1 555 123 4567"
           />
         </label>
         <button
