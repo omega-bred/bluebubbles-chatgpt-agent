@@ -6,16 +6,14 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
 import java.time.Instant;
+import java.util.List;
 import java.util.Map;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
-import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 
-@Component
-@ConditionalOnBean(AppClipSessionService.class)
 public class AppClipSessionAuthenticationFilter extends OncePerRequestFilter {
   public static final String SESSION_HEADER = "X-App-Clip-Session";
 
@@ -52,7 +50,9 @@ public class AppClipSessionAuthenticationFilter extends OncePerRequestFilter {
                             "scope",
                             "appclip"));
                 SecurityContextHolder.getContext()
-                    .setAuthentication(new JwtAuthenticationToken(jwt));
+                    .setAuthentication(
+                        new JwtAuthenticationToken(
+                            jwt, List.of(new SimpleGrantedAuthority("SCOPE_appclip"))));
               });
     }
     filterChain.doFilter(request, response);

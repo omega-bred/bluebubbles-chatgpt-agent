@@ -1,11 +1,13 @@
 package io.breland.bbagent.server.config;
 
 import io.breland.bbagent.server.appclip.AppClipSessionAuthenticationFilter;
+import io.breland.bbagent.server.appclip.AppClipSessionService;
 import java.util.Collection;
 import java.util.LinkedHashSet;
 import java.util.Map;
 import java.util.Set;
 import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.convert.converter.Converter;
@@ -27,6 +29,13 @@ import org.springframework.security.web.SecurityFilterChain;
 @EnableWebSecurity
 public class SecurityConfig {
   private static final String ADMIN_ROLE = "bbagent-admin-role";
+
+  @Bean
+  @ConditionalOnBean(AppClipSessionService.class)
+  AppClipSessionAuthenticationFilter appClipSessionAuthenticationFilter(
+      AppClipSessionService sessionService) {
+    return new AppClipSessionAuthenticationFilter(sessionService);
+  }
 
   @Bean
   SecurityFilterChain securityFilterChain(
