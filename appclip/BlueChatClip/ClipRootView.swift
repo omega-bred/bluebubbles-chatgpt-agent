@@ -101,9 +101,6 @@ struct ClipRootView: View {
                 if let email = model.accountEmail {
                     InfoRow(label: "Email", value: email)
                 }
-                if let accountId = model.accountId {
-                    InfoRow(label: "Account ID", value: accountId)
-                }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding()
@@ -273,16 +270,12 @@ final class ClipViewModel: ObservableObject {
     }
 
     var accountSubtitle: String {
-        firstNonBlank(session?.account.email, primaryIdentity?.identifier, session?.account.accountId)
+        firstNonBlank(session?.account.email, primaryIdentity?.identifier)
             ?? "App Clip session"
     }
 
     var accountEmail: String? {
         firstNonBlank(session?.account.email)
-    }
-
-    var accountId: String? {
-        firstNonBlank(session?.account.accountId)
     }
 
     var selectableModels: [WebsiteModelOption] {
@@ -381,7 +374,7 @@ final class ClipViewModel: ObservableObject {
             .first(where: { $0.name == "token" })?
             .value
         else {
-            errorMessage = "Missing link token."
+            errorMessage = session == nil ? "Missing link token." : nil
             return
         }
         Task {
@@ -491,9 +484,10 @@ final class ClipViewModel: ObservableObject {
             let session = try await client.createSession(linkToken: linkToken)
             UserDefaults.standard.set(session.sessionToken, forKey: sessionTokenKey)
             self.session = session
+            errorMessage = nil
             await loadProductIfNeeded(for: session)
         } catch {
-            errorMessage = error.localizedDescription
+            setBootstrapError(error)
         }
     }
 
@@ -508,10 +502,21 @@ final class ClipViewModel: ObservableObject {
         do {
             let session = try await client.getSession(sessionToken: sessionToken)
             self.session = session
+            errorMessage = nil
             await loadProductIfNeeded(for: session)
         } catch {
-            UserDefaults.standard.removeObject(forKey: sessionTokenKey)
+            if UserDefaults.standard.string(forKey: sessionTokenKey) == sessionToken {
+                UserDefaults.standard.removeObject(forKey: sessionTokenKey)
+            }
+            setBootstrapError(error)
+        }
+    }
+
+    private func setBootstrapError(_ error: Error) {
+        if session == nil {
             errorMessage = error.localizedDescription
+        } else {
+            errorMessage = nil
         }
     }
 
