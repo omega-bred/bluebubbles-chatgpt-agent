@@ -13,11 +13,18 @@ Nix/dev dependencies:
   for example `nix develop --command ./gradlew test` or
   `nix develop --command ./gradlew spotlessApply`.
 - The flake provides OpenJDK 25, Gradle, Node 20/npm, Python 3.13 with LXMF/RNS, Postgres,
-  Docker/Kubernetes helpers, Keycloak admin tooling, OpenAPI/Flyway CLIs, and 1Password CLI.
+  Docker/Kubernetes helpers, Keycloak admin tooling, OpenAPI/Flyway CLIs, 1Password CLI, and
+  Darwin-only App Clip helpers (`swiftformat`, `xcbeautify`).
+- App Clip iOS builds still require local Xcode command line tools (`xcodebuild`, `xcrun`,
+  `codesign`, `security`) outside Nix. App Store Connect distribution uses the real `asc` CLI
+  installed on the machine; do not add nixpkgs `asc`, which is not the App Store Connect CLI.
 - Use `./gradlew` for backend tasks; the shell sets `JAVA_HOME` for the project JDK.
 - Use the generated TypeScript client workflow through Gradle (`./gradlew openApiGenerate` and the
   frontend copy/build tasks). For direct frontend work, run npm through the shell, e.g.
   `nix develop --command npm --prefix frontend run dev`.
+- A Swift OpenAPI client can be generated with `./gradlew openApiGenerateSwiftClient`; it writes an
+  SPM package under `build/swift-client-generated`. The App Clip may keep a small hand-written client
+  until that generated package is intentionally wired into `appclip/BlueChat.xcodeproj`.
 - For LXMF bridge work, the shell Python can import `RNS` and `LXMF`; run bridge checks inside
   `nix develop` rather than installing Python packages globally.
 
@@ -128,6 +135,42 @@ Website account linking:
   those OAuth credentials. The dashboard should not unlink chat identities themselves unless the
   account model is intentionally redesigned.
 
+App Clip:
+- The native App Clip project lives in `appclip/BlueChat.xcodeproj`. The containing app bundle id is
+  `land.bre.bluechat.ios`, the App Clip bundle id is `land.bre.bluechat.ios.Clip`, the Apple team id
+  is `U2Q8X6GTU9`, and the App Clip domain is `bluechat.bre.land`.
+- App Clip entry links use the same `/account/link?token=...` URL as the website. The App Clip calls
+  `/api/v1/appClip/createSession.appClipSessions` with the one-time account link token and then sends
+  the returned session token as `X-App-Clip-Session` on App Clip-authenticated APIs.
+- Link tokens are stored hashed, default to 30 minutes, and are single-use. App Clip session tokens
+  default to 30 days via `appclip.session-token-ttl-days`; do not extend normal link-token TTLs for
+  production convenience.
+- The App Clip should show the same core account state as the website dashboard: linked chat
+  identities, Google Calendar and Coder OAuth integration status, current model access, and billing
+  status. Some accounts have no website email or display name; fall back to linked chat identity or
+  account id instead of rendering blank identity text.
+- Website account summary/model endpoints can accept App Clip session auth. The App Clip currently
+  uses `/api/v1/websiteAccount/listLinkedAccounts.websiteAccountLinks` and
+  `/api/v1/websiteAccount/updateModel.websiteAccountModels` with `X-App-Clip-Session`.
+- Premium users can change the selected model through the shared website account model API. Standard
+  accounts should remain on the local model surface. Premium accounts that did not come from Apple
+  StoreKit should render billing as externally managed, for example `Managed on Website`, instead of
+  showing Apple subscription management controls.
+- StoreKit purchases validate through
+  `/api/v1/subscription/validateStoreKit.subscriptionProviderEvents` with `X-App-Clip-Session`.
+  Preserve `apple` as the subscription provider key for App Store / StoreKit premium state.
+- Keep `apple-app-site-association` valid on `bluechat.bre.land` for both app links and App Clip
+  invocation. The default App Clip experience in App Store Connect should target the account link URL
+  pattern on that domain.
+- Before uploading a new TestFlight build, increment `CFBundleVersion` in both
+  `appclip/BlueChat/Info.plist` and `appclip/BlueChatClip/Info.plist`. Verify the containing app
+  entitlements include `com.apple.developer.associated-appclip-app-identifiers` with
+  `U2Q8X6GTU9.land.bre.bluechat.ios.Clip`; missing this causes ITMS-90876.
+- Distribution should archive/export with Xcode signing and upload through `asc publish testflight`.
+  If App Store Connect says the build is not internally testable yet, wait for processing, set
+  `usesNonExemptEncryption=false`, add the build to the Internal Testers group, and remove older
+  internal-test builds. Do not submit the app for App Review unless the user explicitly asks.
+
 Coder:
 - Do not use a `coder_oauth_clients` table or dynamic Coder client registration. Coder OAuth uses
   one statically configured client from `CODER_OAUTH_CLIENT_ID` and optional
@@ -140,8 +183,8 @@ Model access:
   flags mean standard access.
 - Standard accounts are read-only and use the hard-coded `local` model surface, backed by the
   current local responses model configured in `ModelAccessService`. Premium rows set
-  `is_premium=true`; premium users currently default to `chatgpt`, with future options exposed
-  read-only in account/model summaries until model selection is implemented.
+  `is_premium=true`; premium users can choose among the exposed premium model options through the
+  website dashboard or App Clip model picker.
 
 Subscription billing:
 - Keep BTCPay and Stripe side by side. Do not replace one provider path with the other; new billing

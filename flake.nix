@@ -127,9 +127,14 @@
             pkgs.gfortran.cc.lib
             pkgs.stdenv.cc.cc.lib
           ];
+
+          darwinAppleTools = lib.optionals stdenv.isDarwin [
+            pkgs.swiftformat
+            pkgs.xcbeautify
+          ];
         in
         {
-          inherit jdk linuxNativeLibs python;
+          inherit darwinAppleTools jdk linuxNativeLibs python;
 
           tools = [
             bbagentPostgresStart
@@ -163,6 +168,7 @@
             pkgs.which
             pkgs.zsh
           ]
+          ++ darwinAppleTools
           ++ linuxNativeLibs;
         };
 
@@ -210,6 +216,8 @@
               echo "  Python: $(python --version)"
             ''
             + pkgs.lib.optionalString pkgs.stdenv.isDarwin ''
+              echo "  App Clip helpers: swiftformat, xcbeautify"
+              echo "  App Clip external deps: Xcode and App Store Connect CLI (asc)"
               echo "  LXMF/RNS: omitted on Darwin because nixpkgs packages pull Linux Bluetooth deps"
             ''
             + ''
