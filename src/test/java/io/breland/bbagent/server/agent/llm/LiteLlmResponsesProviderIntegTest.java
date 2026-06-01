@@ -46,10 +46,7 @@ class LiteLlmResponsesProviderIntegTest {
             ModelAccessService.CLAUDE_MODEL_KEY,
             ModelAccessService.CLAUDE_MODEL_LABEL,
             claudeModel(),
-            ModelAccessService.VERBOSITY_MEDIUM,
-            "Balanced",
             true,
-            List.of(),
             List.of());
 
     Response response =

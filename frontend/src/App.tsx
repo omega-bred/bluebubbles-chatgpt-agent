@@ -6,6 +6,7 @@ import { AdminPage } from "./pages/AdminPage";
 import { AdminFeedbackPage } from "./pages/AdminFeedbackPage";
 import { AccountLinkPage } from "./pages/AccountLinkPage";
 import { AccountPage } from "./pages/AccountPage";
+import { ConversationSettingsPage } from "./pages/ConversationSettingsPage";
 import { SiteFooter } from "./components/SiteFooter";
 import { HelpContactPage } from "./pages/HelpContactPage";
 import { LandingPage } from "./pages/LandingPage";
@@ -56,6 +57,10 @@ function pageForPath(path: string, auth: ReturnType<typeof useKeycloak>) {
 
   if (path.startsWith("/account/link")) {
     return <AccountLinkPage auth={auth} />;
+  }
+
+  if (path.startsWith("/conversation/settings")) {
+    return <ConversationSettingsPage auth={auth} />;
   }
 
   if (path.startsWith("/account")) {

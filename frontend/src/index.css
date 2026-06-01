@@ -315,7 +315,7 @@ a {
   background: #ffffff;
 }
 
-.verbosity-picker {
+.responsiveness-picker {
   display: grid;
   gap: 8px;
   color: #4a4a46;
@@ -323,47 +323,51 @@ a {
   font-weight: 800;
 }
 
-.verbosity-options {
+.responsiveness-options {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 8px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
 }
 
-.verbosity-option {
+.responsiveness-option {
   display: grid;
-  min-height: 84px;
-  gap: 5px;
+  min-height: 112px;
+  gap: 7px;
   align-content: start;
   border: 1px solid #c9c9c9;
   border-radius: 8px;
-  padding: 10px;
+  padding: 14px;
   color: #292927;
   background: #ffffff;
   text-align: left;
   cursor: pointer;
 }
 
-.verbosity-option:hover:not(:disabled) {
+.responsiveness-option:hover:not(:disabled) {
   border-color: #1d8cff;
   background: #f3f8ff;
 }
 
-.verbosity-option.selected {
+.responsiveness-option.selected {
   border-color: #1d8cff;
   background: #eaf4ff;
   box-shadow: inset 0 0 0 1px rgba(29, 140, 255, 0.18);
 }
 
-.verbosity-option:disabled {
+.responsiveness-option:disabled {
   cursor: default;
 }
 
-.verbosity-option strong,
-.verbosity-option small {
+.responsiveness-option span,
+.responsiveness-option small {
   overflow-wrap: anywhere;
 }
 
-.verbosity-option small {
+.responsiveness-option span {
+  font-weight: 900;
+}
+
+.responsiveness-option small {
   color: #62625d;
   font-size: 0.78rem;
   font-weight: 700;
@@ -1274,6 +1278,117 @@ a {
   line-height: 1.15;
 }
 
+.conversation-settings-main {
+  max-width: 1120px;
+}
+
+.conversation-settings-hero {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 18px;
+  align-items: center;
+  margin-bottom: 20px;
+  border-bottom: 1px solid #dfdfdf;
+  padding-bottom: 24px;
+}
+
+.conversation-settings-hero h1 {
+  margin: 0;
+  color: #111111;
+  font-size: clamp(2.4rem, 7vw, 4.8rem);
+  line-height: 0.95;
+  overflow-wrap: anywhere;
+}
+
+.conversation-settings-hero p {
+  margin: 8px 0 0;
+  color: #62625d;
+  font-size: 1.05rem;
+  line-height: 1.45;
+}
+
+.conversation-avatar {
+  display: grid;
+  width: 76px;
+  height: 76px;
+  overflow: hidden;
+  place-items: center;
+  border-radius: 8px;
+  color: #ffffff;
+  background: #111111;
+  font-size: 2rem;
+  font-weight: 900;
+}
+
+.conversation-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.conversation-settings-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.conversation-responsiveness-panel,
+.conversation-info-panel {
+  display: grid;
+  gap: 18px;
+  border-radius: 8px;
+  border: 1px solid #dedede;
+  padding: 24px;
+  background: #ffffff;
+}
+
+.conversation-responsiveness-panel {
+  background:
+    linear-gradient(135deg, rgba(51, 209, 122, 0.10), rgba(29, 140, 255, 0.07)),
+    #ffffff;
+}
+
+.conversation-responsiveness-panel h2,
+.conversation-info-panel h2 {
+  margin: 0;
+  color: #111111;
+  font-size: 1.55rem;
+  line-height: 1.15;
+}
+
+.conversation-info-line {
+  display: grid;
+  gap: 4px;
+}
+
+.conversation-info-line span {
+  color: #62625d;
+  font-size: 0.8rem;
+  font-weight: 850;
+  text-transform: uppercase;
+}
+
+.conversation-info-line strong {
+  overflow-wrap: anywhere;
+}
+
+.conversation-participant-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.conversation-participant-list span {
+  border-radius: 8px;
+  border: 1px solid #dedede;
+  padding: 8px 10px;
+  color: #292927;
+  background: #f7f7f7;
+  font-size: 0.88rem;
+  font-weight: 750;
+  overflow-wrap: anywhere;
+}
+
 .billing-actions,
 .subscription-admin-actions {
   display: flex;
@@ -1432,7 +1547,12 @@ a {
     justify-self: start;
   }
 
-  .verbosity-options {
+  .responsiveness-options {
+    grid-template-columns: 1fr;
+  }
+
+  .conversation-settings-hero,
+  .conversation-settings-grid {
     grid-template-columns: 1fr;
   }
 

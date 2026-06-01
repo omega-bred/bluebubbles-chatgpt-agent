@@ -45,6 +45,7 @@ import io.breland.bbagent.server.agent.tools.scheduled.ScheduledEventDeleteTool;
 import io.breland.bbagent.server.agent.tools.scheduled.ScheduledEventListTool;
 import io.breland.bbagent.server.agent.tools.scheduled.ScheduledEventTool;
 import io.breland.bbagent.server.agent.tools.website.GetWebsiteAccountLinkStatusAgentTool;
+import io.breland.bbagent.server.agent.tools.website.LinkConversationSettingsAgentTool;
 import io.breland.bbagent.server.agent.tools.website.LinkWebsiteAccountAgentTool;
 import io.breland.bbagent.server.agent.transport.MessageTransport;
 import io.breland.bbagent.server.agent.transport.MessageTransportRegistry;
@@ -103,7 +104,10 @@ public final class AgentToolRegistry {
           ListColorsAgentTool.TOOL_NAME,
           GetCurrentTimeAgentTool.TOOL_NAME);
   private static final Set<String> WEBSITE_TOOL_NAMES =
-      Set.of(LinkWebsiteAccountAgentTool.TOOL_NAME, GetWebsiteAccountLinkStatusAgentTool.TOOL_NAME);
+      Set.of(
+          LinkWebsiteAccountAgentTool.TOOL_NAME,
+          LinkConversationSettingsAgentTool.TOOL_NAME,
+          GetWebsiteAccountLinkStatusAgentTool.TOOL_NAME);
   private static final Set<String> ASSISTANT_TOOL_NAMES =
       Set.of(
           AssistantResponsivenessAgentTool.TOOL_NAME,
@@ -350,6 +354,7 @@ public final class AgentToolRegistry {
     registerTool(new GetCurrentTimeAgentTool(gcalClient).getTool());
     if (websiteAccountService != null) {
       registerTool(new LinkWebsiteAccountAgentTool(websiteAccountService).getTool());
+      registerTool(new LinkConversationSettingsAgentTool(websiteAccountService).getTool());
       registerTool(new GetWebsiteAccountLinkStatusAgentTool(websiteAccountService).getTool());
     }
     if (messageResponseRateLimitService != null) {

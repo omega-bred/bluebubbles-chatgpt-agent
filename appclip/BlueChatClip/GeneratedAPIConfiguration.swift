@@ -73,10 +73,26 @@ extension AppClipSessionResponse {
     func replacing(subscription: SubscriptionSummaryResponse) -> AppClipSessionResponse {
         AppClipSessionResponse(
             sessionToken: sessionToken,
+            purpose: purpose,
             expiresAt: expiresAt,
             account: account,
             linkedAccounts: linkedAccounts,
             subscription: subscription,
+            conversationSettings: conversationSettings,
+            appAccountToken: appAccountToken,
+            storekitProductIds: storekitProductIds
+        )
+    }
+
+    func replacing(conversationSettings: ConversationSettingsResponse) -> AppClipSessionResponse {
+        AppClipSessionResponse(
+            sessionToken: sessionToken,
+            purpose: purpose,
+            expiresAt: expiresAt,
+            account: account,
+            linkedAccounts: linkedAccounts,
+            subscription: subscription,
+            conversationSettings: conversationSettings,
             appAccountToken: appAccountToken,
             storekitProductIds: storekitProductIds
         )

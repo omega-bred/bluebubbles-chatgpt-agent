@@ -64,11 +64,33 @@ class WebsiteAccountServiceTest {
     assertTrue(link.url().startsWith("https://chatagent.example/account/link?token="));
     assertFalse(link.url().contains("token_hash"));
     assertEquals("account-1", link.accountId());
+    assertEquals(WebsiteAccountService.LINK_PURPOSE_ACCOUNT_LINK, link.purpose());
     ArgumentCaptor<WebsiteAccountLinkTokenEntity> captor =
         ArgumentCaptor.forClass(WebsiteAccountLinkTokenEntity.class);
     Mockito.verify(tokenRepository).save(captor.capture());
     assertEquals("account-1", captor.getValue().getAccountId());
+    assertEquals(WebsiteAccountService.LINK_PURPOSE_ACCOUNT_LINK, captor.getValue().getPurpose());
     assertEquals(64, captor.getValue().getTokenHash().length());
+  }
+
+  @Test
+  void createConversationSettingsTokenStoresConversationPurposeAndUrl() {
+    when(accountResolver.resolveOrCreate(any(IncomingMessage.class)))
+        .thenReturn(Optional.of(new AgentAccountResolver.ResolvedAccount(account(), List.of())));
+    when(tokenRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+
+    WebsiteAccountService.CreatedLinkToken link =
+        service.createConversationSettingsToken(message());
+
+    assertTrue(link.url().startsWith("https://chatagent.example/conversation/settings?token="));
+    assertEquals(WebsiteAccountService.LINK_PURPOSE_CONVERSATION_SETTINGS, link.purpose());
+    assertEquals("iMessage;+;chat-1", link.chatGuid());
+    ArgumentCaptor<WebsiteAccountLinkTokenEntity> captor =
+        ArgumentCaptor.forClass(WebsiteAccountLinkTokenEntity.class);
+    Mockito.verify(tokenRepository).save(captor.capture());
+    assertEquals(
+        WebsiteAccountService.LINK_PURPOSE_CONVERSATION_SETTINGS, captor.getValue().getPurpose());
+    assertEquals("iMessage;+;chat-1", captor.getValue().getChatGuid());
   }
 
   @Test
@@ -235,15 +257,10 @@ class WebsiteAccountServiceTest {
         .isPremium(false)
         .currentModel("local")
         .currentModelLabel("Free")
-        .currentVerbosity(WebsiteModelAccessSummary.CurrentVerbosityEnum.MEDIUM)
-        .currentVerbosityLabel("Balanced")
         .modelSelectionAllowed(false)
         .modelSelectionConfigurable(false)
-        .verbositySelectionAllowed(true)
-        .verbositySelectionConfigurable(true)
         .readOnlyReason("Free accounts use the included model.")
-        .availableModels(List.of())
-        .availableVerbosityOptions(List.of());
+        .availableModels(List.of());
   }
 
   private WebsiteUsageLimitSummary usageLimit() {

@@ -12,7 +12,7 @@ import AnyCodable
 
 public struct AppClipCreateSessionRequest: Codable, JSONEncodable, Hashable {
 
-    /** Short-lived account link token from the App Clip invocation URL. */
+    /** Short-lived account-link or conversation-settings token from the App Clip invocation URL. */
     public var linkToken: String
 
     public init(linkToken: String) {

@@ -17,31 +17,21 @@ public struct WebsiteModelSelectionRequest: Codable, JSONEncodable, Hashable {
         case claude = "claude"
         case gemini = "gemini"
     }
-    public enum Verbosity: String, Codable, CaseIterable {
-        case low = "low"
-        case medium = "medium"
-        case high = "high"
-    }
-    /** Preferred model key for premium accounts. Omit this field when only changing response verbosity. */
-    public var model: Model?
-    /** Preferred response verbosity for future assistant replies. */
-    public var verbosity: Verbosity?
+    /** Preferred model key for premium accounts. */
+    public var model: Model
 
-    public init(model: Model? = nil, verbosity: Verbosity? = nil) {
+    public init(model: Model) {
         self.model = model
-        self.verbosity = verbosity
     }
 
     public enum CodingKeys: String, CodingKey, CaseIterable {
         case model
-        case verbosity
     }
 
     // Encodable protocol methods
 
     public func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
-        try container.encodeIfPresent(model, forKey: .model)
-        try container.encodeIfPresent(verbosity, forKey: .verbosity)
+        try container.encode(model, forKey: .model)
     }
 }

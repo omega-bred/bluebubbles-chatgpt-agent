@@ -77,9 +77,9 @@ Canonical agent accounts:
 - OAuth and async integration state belongs to `account_id`: Google Calendar credentials,
   Coder OAuth credentials, Coder pending authorizations, and Coder async task starts. Do not add
   compatibility paths that look up old sender-based account bases.
-- Model picker entitlement, selected model, model verbosity, and global contact name live on
-  `agent_accounts`; do not recreate `agent_model_account_settings`, `assistant_responsiveness`, or
-  `global_contact` for account-level model preferences.
+- Model picker entitlement, selected model, and global contact name live on `agent_accounts`; do not
+  recreate `agent_model_account_settings` or `global_contact` for account-level model preferences.
+  Assistant responsiveness is conversation-specific and should stay keyed by chat GUID.
 - This project intentionally reset the early test data model. There is no backwards-compatibility
   requirement for the dropped account/link/alias tables unless the user explicitly asks for one.
 
@@ -114,6 +114,9 @@ Website accounts / Keycloak:
 Website account linking:
 - Use the `link_website_account` agent tool when a BlueChat user asks to log in, sign up, manage
   their web account, connect BlueChat to the website, or view linked integrations.
+- Use the `link_conversation_settings` agent tool when a BlueChat user asks to change how often the
+  assistant responds in the current conversation. It creates a `/conversation/settings?token=...`
+  link scoped to that chat GUID and does not change account-level model access.
 - Use the `get_website_account_link_status` agent tool when the user asks whether the current
   sender, another sender, or the current chat identity is already linked to a website account. The
   current incoming message context may already include `websiteAccountLinked` and
@@ -140,9 +143,11 @@ App Clip:
 - The native App Clip project lives in `appclip/BlueChat.xcodeproj`. The containing app bundle id is
   `land.bre.bluechat.ios`, the App Clip bundle id is `land.bre.bluechat.ios.Clip`, the Apple team id
   is `U2Q8X6GTU9`, and the App Clip domain is `bluechat.bre.land`.
-- App Clip entry links use the same `/account/link?token=...` URL as the website. The App Clip calls
-  `/api/v1/appClip/createSession.appClipSessions` with the one-time account link token and then sends
-  the returned session token as `X-App-Clip-Session` on App Clip-authenticated APIs.
+- App Clip entry links use one-time website tokens for either `/account/link?token=...` or
+  `/conversation/settings?token=...`. The App Clip calls
+  `/api/v1/appClip/createSession.appClipSessions` with the token, receives a session `purpose`
+  (`account_link` or `conversation_settings`), and then sends the returned session token as
+  `X-App-Clip-Session` on App Clip-authenticated APIs.
 - Link tokens are stored hashed, default to 30 minutes, and are single-use. App Clip session tokens
   default to 30 days via `appclip.session-token-ttl-days`; do not extend normal link-token TTLs for
   production convenience.
@@ -153,6 +158,10 @@ App Clip:
 - Website account summary/model endpoints can accept App Clip session auth. The App Clip currently
   uses `/api/v1/websiteAccount/listLinkedAccounts.websiteAccountLinks` and
   `/api/v1/websiteAccount/updateModel.websiteAccountModels` with `X-App-Clip-Session`.
+- Conversation settings App Clip sessions can call
+  `/api/v1/conversationSettings/get.conversationSettings` and
+  `/api/v1/conversationSettings/updateResponsiveness.conversationSettings` with
+  `X-App-Clip-Session`; those endpoints must reject account-link sessions.
 - Premium users can change the selected model through the shared website account model API. Standard
   accounts should remain on the local model surface. Premium accounts that did not come from Apple
   StoreKit should render billing as externally managed, for example `Managed on Website`, instead of
@@ -161,8 +170,8 @@ App Clip:
   `/api/v1/subscription/validateStoreKit.subscriptionProviderEvents` with `X-App-Clip-Session`.
   Preserve `apple` as the subscription provider key for App Store / StoreKit premium state.
 - Keep `apple-app-site-association` valid on `bluechat.bre.land` for both app links and App Clip
-  invocation. The default App Clip experience in App Store Connect should target the account link URL
-  pattern on that domain.
+  invocation. The default App Clip experience in App Store Connect should target the account link and
+  conversation settings URL patterns on that domain.
 - Before uploading a new TestFlight build, increment `CFBundleVersion` in both
   `appclip/BlueChat/Info.plist` and `appclip/BlueChatClip/Info.plist`. Verify the containing app
   entitlements include `com.apple.developer.associated-appclip-app-identifiers` with
@@ -186,9 +195,9 @@ Model access:
   current local responses model configured in `ModelAccessService`. Premium rows set
   `is_premium=true`; premium users can choose among the exposed premium model options through the
   website dashboard or App Clip model picker.
-- Response verbosity is an account-level `agent_accounts.model_verbosity` setting with
-  `low`, `medium`, and `high` values. It is available to both free and premium accounts through the
-  website, App Clip, and `set_preferred_model` agent tool.
+- Conversation responsiveness is not an account-level model setting. It is stored through the
+  existing assistant responsiveness flow for a specific chat GUID and can be managed through the
+  agent link tool, `/conversation/settings`, or the App Clip conversation settings purpose.
 
 Subscription billing:
 - Keep BTCPay and Stripe side by side. Do not replace one provider path with the other; new billing

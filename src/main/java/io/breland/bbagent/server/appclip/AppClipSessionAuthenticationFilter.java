@@ -6,6 +6,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
 import java.time.Instant;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
@@ -36,19 +37,17 @@ public class AppClipSessionAuthenticationFilter extends OncePerRequestFilter {
           .ifPresent(
               session -> {
                 Instant now = Instant.now();
+                Map<String, Object> claims = new LinkedHashMap<>();
+                claims.put("sub", "appclip:" + session.accountId());
+                claims.put(AppClipSessionService.APP_CLIP_ACCOUNT_ID_CLAIM, session.accountId());
+                claims.put(AppClipSessionService.APP_CLIP_PURPOSE_CLAIM, session.purpose());
+                if (session.chatGuid() != null && !session.chatGuid().isBlank()) {
+                  claims.put(AppClipSessionService.APP_CLIP_CHAT_GUID_CLAIM, session.chatGuid());
+                }
+                claims.put("scope", "appclip");
                 Jwt jwt =
                     new Jwt(
-                        "appclip-session",
-                        now,
-                        session.expiresAt(),
-                        Map.of("alg", "none"),
-                        Map.of(
-                            "sub",
-                            "appclip:" + session.accountId(),
-                            AppClipSessionService.APP_CLIP_ACCOUNT_ID_CLAIM,
-                            session.accountId(),
-                            "scope",
-                            "appclip"));
+                        "appclip-session", now, session.expiresAt(), Map.of("alg", "none"), claims);
                 SecurityContextHolder.getContext()
                     .setAuthentication(
                         new JwtAuthenticationToken(

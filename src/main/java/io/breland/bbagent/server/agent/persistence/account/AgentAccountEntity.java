@@ -47,9 +47,6 @@ public class AgentAccountEntity {
   @Column(name = "selected_model", length = 128)
   private String selectedModel;
 
-  @Column(name = "model_verbosity", nullable = false, length = 32)
-  private String modelVerbosity = "medium";
-
   @Column(name = "terms_accepted_at")
   private Instant termsAcceptedAt;
 

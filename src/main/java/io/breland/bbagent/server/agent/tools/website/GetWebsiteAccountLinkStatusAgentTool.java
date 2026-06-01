@@ -128,8 +128,6 @@ public class GetWebsiteAccountLinkStatusAgentTool implements ToolProvider {
         + accountType
         + ", current model: "
         + status.modelAccess().getCurrentModelLabel()
-        + ", response style: "
-        + status.modelAccess().getCurrentVerbosityLabel()
         + ".";
   }
 }

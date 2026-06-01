@@ -17,9 +17,7 @@ public class SetPreferredModelAgentTool implements ToolProvider {
 
   private final ModelAccessService modelAccessService;
 
-  @Schema(
-      description =
-          "Change the current account's assistant model preferences. Provide model, verbosity, or both.")
+  @Schema(description = "Change the current account's premium assistant model preference.")
   public record SetPreferredModelRequest(
       @Schema(
               description =
@@ -27,14 +25,7 @@ public class SetPreferredModelAgentTool implements ToolProvider {
               allowableValues = {"chatgpt", "claude", "gemini"},
               requiredMode = Schema.RequiredMode.NOT_REQUIRED)
           @JsonProperty("model")
-          String model,
-      @Schema(
-              description =
-                  "Response verbosity to use for future assistant replies on the current account.",
-              allowableValues = {"low", "medium", "high"},
-              requiredMode = Schema.RequiredMode.NOT_REQUIRED)
-          @JsonProperty("verbosity")
-          String verbosity) {}
+          String model) {}
 
   public SetPreferredModelAgentTool(ModelAccessService modelAccessService) {
     this.modelAccessService = modelAccessService;
@@ -44,11 +35,9 @@ public class SetPreferredModelAgentTool implements ToolProvider {
   public AgentTool getTool() {
     return new AgentTool(
         TOOL_NAME,
-        "Change the preferred assistant model or response verbosity for the current chat account."
+        "Change the preferred assistant model for the current chat account."
             + " Use only when the user explicitly asks to switch, change, use, or set their model"
-            + " to ChatGPT, Claude, or Gemini, or asks future replies to be shorter, concise,"
-            + " balanced, longer, more detailed, or more verbose. Model switching is premium-only;"
-            + " verbosity is available to all linked accounts.",
+            + " to ChatGPT, Claude, or Gemini. Model switching is premium-only.",
         jsonSchema(SetPreferredModelRequest.class),
         false,
         (context, args) -> {
@@ -56,15 +45,12 @@ public class SetPreferredModelAgentTool implements ToolProvider {
               context.getMapper().convertValue(args, SetPreferredModelRequest.class);
           try {
             ModelAccessService.ModelSelectionResult result =
-                modelAccessService.updatePreferences(
-                    context.message(), request.model(), request.verbosity());
+                modelAccessService.updatePreferences(context.message(), request.model());
             Map<String, Object> response = new LinkedHashMap<>();
             response.put("changed", result.changed());
             response.put("account_id", result.modelAccess().accountId());
             response.put("current_model", result.modelAccess().currentModelKey());
             response.put("current_model_label", result.modelAccess().currentModelLabel());
-            response.put("current_verbosity", result.modelAccess().currentVerbosityKey());
-            response.put("current_verbosity_label", result.modelAccess().currentVerbosityLabel());
             response.put("provider", result.modelAccess().provider());
             response.put("is_premium", result.modelAccess().premium());
             response.put("user_facing_text", result.message());

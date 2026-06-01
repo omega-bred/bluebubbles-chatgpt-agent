@@ -88,7 +88,7 @@ open class AppClipAPI {
     }
 
     /**
-     Creates an App Clip session from an account-link token
+     Creates an App Clip session from a texted link token
 
      - parameter appClipCreateSessionRequest: (body)
      - returns: AppClipSessionResponse
@@ -99,9 +99,9 @@ open class AppClipAPI {
     }
 
     /**
-     Creates an App Clip session from an account-link token
+     Creates an App Clip session from a texted link token
      - POST /api/v1/appClip/createSession.appClipSessions
-     - Exchanges a short-lived texted account-link token for an App Clip session token scoped to the linked BlueChat account.
+     - Exchanges a short-lived account-link or conversation-settings token for an App Clip session token scoped to the linked BlueChat account.
      - parameter appClipCreateSessionRequest: (body)
      - returns: RequestBuilder<AppClipSessionResponse>
      */

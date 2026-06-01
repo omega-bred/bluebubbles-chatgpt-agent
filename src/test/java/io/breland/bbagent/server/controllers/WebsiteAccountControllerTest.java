@@ -69,8 +69,8 @@ class WebsiteAccountControllerTest {
         .thenReturn(
             Optional.of(
                 new AppClipSessionService.AuthenticatedAppClipSession(
-                    "account-1", Instant.now().plusSeconds(300))));
-    when(accountService.updatePreferredModel(any(Jwt.class), eq("claude"), eq("high")))
+                    "account-1", "account_link", null, Instant.now().plusSeconds(300))));
+    when(accountService.updatePreferredModel(any(Jwt.class), eq("claude")))
         .thenReturn(
             new WebsiteModelSelectionResponse()
                 .modelAccess(
@@ -79,12 +79,8 @@ class WebsiteAccountControllerTest {
                         .isPremium(true)
                         .currentModel("claude")
                         .currentModelLabel("Claude")
-                        .currentVerbosity(WebsiteModelAccessSummary.CurrentVerbosityEnum.HIGH)
-                        .currentVerbosityLabel("Detailed")
                         .modelSelectionAllowed(true)
                         .modelSelectionConfigurable(true)
-                        .verbositySelectionAllowed(true)
-                        .verbositySelectionConfigurable(true)
                         .availableModels(List.of()))
                 .message("Model changed"));
 
@@ -93,13 +89,13 @@ class WebsiteAccountControllerTest {
             post("/api/v1/websiteAccount/updateModel.websiteAccountModels")
                 .header(AppClipSessionAuthenticationFilter.SESSION_HEADER, "clip-session")
                 .contentType(MediaType.APPLICATION_JSON)
-                .content("{\"model\":\"claude\",\"verbosity\":\"high\"}"))
+                .content("{\"model\":\"claude\"}"))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.model_access.current_model").value("claude"));
 
     ArgumentCaptor<Jwt> jwtCaptor = ArgumentCaptor.forClass(Jwt.class);
     org.mockito.Mockito.verify(accountService)
-        .updatePreferredModel(jwtCaptor.capture(), eq("claude"), eq("high"));
+        .updatePreferredModel(jwtCaptor.capture(), eq("claude"));
     Assertions.assertEquals(
         "account-1",
         jwtCaptor.getValue().getClaimAsString(AppClipSessionService.APP_CLIP_ACCOUNT_ID_CLAIM));

@@ -37,7 +37,6 @@ class ModelAccessServiceTest {
     assertEquals("Free", access.currentModelLabel());
     assertEquals("Qwen/Qwen3.6-27B", ModelAccessService.STANDARD_RESPONSES_MODEL);
     assertEquals(ModelAccessService.STANDARD_RESPONSES_MODEL, access.responsesModel());
-    assertEquals("medium", access.currentVerbosityKey());
   }
 
   @Test
@@ -73,12 +72,8 @@ class ModelAccessServiceTest {
 
     assertTrue(summary.getIsPremium());
     assertEquals("chatgpt", summary.getCurrentModel());
-    assertEquals(
-        WebsiteModelAccessSummary.CurrentVerbosityEnum.MEDIUM, summary.getCurrentVerbosity());
     assertTrue(summary.getModelSelectionConfigurable());
-    assertTrue(summary.getVerbositySelectionConfigurable());
     assertEquals(4, summary.getAvailableModels().size());
-    assertEquals(3, summary.getAvailableVerbosityOptions().size());
     assertTrue(
         summary.getAvailableModels().stream()
             .anyMatch(
@@ -121,29 +116,11 @@ class ModelAccessServiceTest {
     verify(repository).save(account);
   }
 
-  @Test
-  void accountCanSelectVerbosityWithoutPremium() {
-    AgentAccountEntity account = account(false, null);
-    when(repository.findById("account-1")).thenReturn(Optional.of(account));
-    when(repository.save(any(AgentAccountEntity.class)))
-        .thenAnswer(invocation -> invocation.getArgument(0));
-
-    ModelAccessService.ModelSelectionResult result =
-        service.updatePreferences("account-1", null, "high");
-
-    assertTrue(result.changed());
-    assertEquals("local", result.modelAccess().currentModelKey());
-    assertEquals("high", result.modelAccess().currentVerbosityKey());
-    assertEquals("high", account.getModelVerbosity());
-    verify(repository).save(account);
-  }
-
   private AgentAccountEntity account(boolean premium, String selectedModel) {
     Instant now = Instant.now();
     AgentAccountEntity account = new AgentAccountEntity("account-1", now, now);
     account.setPremium(premium);
     account.setSelectedModel(selectedModel);
-    account.setModelVerbosity("medium");
     return account;
   }
 

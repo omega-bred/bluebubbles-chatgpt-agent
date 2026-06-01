@@ -616,10 +616,7 @@ class BBMessageAgentTest {
                 ModelAccessService.PREMIUM_MODEL_KEY,
                 ModelAccessService.PREMIUM_MODEL_LABEL,
                 ModelAccessService.PREMIUM_RESPONSES_MODEL,
-                ModelAccessService.VERBOSITY_MEDIUM,
-                "Balanced",
                 true,
-                List.of(),
                 List.of()));
     BBMessageAgent agent =
         newAgent(openAIClient, new StubBBHttpClientWrapper(), new ModelPicker(modelAccessService));

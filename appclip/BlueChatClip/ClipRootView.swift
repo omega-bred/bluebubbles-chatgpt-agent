@@ -11,14 +11,18 @@ struct ClipRootView: View {
                 VStack(alignment: .leading, spacing: 18) {
                     header
                     statusPanel
-                    usagePanel
-                    accountPanel
-                    modelPanel
-                    if model.session != nil {
-                        billingPanel
+                    if model.isConversationSettingsSession {
+                        conversationSettingsPanel
+                    } else {
+                        usagePanel
+                        accountPanel
+                        modelPanel
+                        if model.session != nil {
+                            billingPanel
+                        }
+                        linkedServicesPanel
+                        linkedAddressesPanel
                     }
-                    linkedServicesPanel
-                    linkedAddressesPanel
                 }
                 .padding(20)
             }
@@ -229,47 +233,108 @@ struct ClipRootView: View {
                         .font(.callout)
                         .foregroundStyle(.secondary)
                 }
-                if model.canChangeVerbosity {
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text("Response style")
-                            .font(.caption.weight(.semibold))
-                            .foregroundStyle(.secondary)
-                        Menu {
-                            ForEach(model.selectableVerbosityOptions, id: \.verbosity) { option in
-                                Button {
-                                    Task {
-                                        await model.updateModelVerbosity(option.verbosity.rawValue)
-                                    }
-                                } label: {
-                                    Label(
-                                        model.verbosityDisplayName(option.label),
-                                        systemImage: option.verbosity.rawValue == access.currentVerbosity.rawValue
-                                            ? "checkmark"
-                                            : "circle"
-                                    )
-                                }
-                                .disabled(model.verbositySelectionInProgress)
+                if let error = model.modelErrorMessage {
+                    Text(error)
+                        .font(.callout)
+                        .foregroundStyle(.red)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding()
+            .background(.thinMaterial)
+            .clipShape(RoundedRectangle(cornerRadius: 8))
+        }
+    }
+
+    @ViewBuilder
+    private var conversationSettingsPanel: some View {
+        if let settings = model.conversationSettings {
+            VStack(alignment: .leading, spacing: 16) {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Response Style")
+                        .font(.headline)
+                    Text(settings.currentResponsivenessLabel)
+                        .font(.title3.weight(.semibold))
+                    Text("Choose how often BlueChatAI participates in this conversation.")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                }
+                VStack(spacing: 10) {
+                    ForEach(model.selectableResponsivenessOptions, id: \.responsiveness) { option in
+                        Button {
+                            Task {
+                                await model.updateConversationResponsiveness(option.responsiveness.rawValue)
                             }
                         } label: {
-                            HStack {
-                                Text(model.selectedVerbosityTitle)
-                                Spacer()
-                                if model.verbositySelectionInProgress {
+                            HStack(alignment: .top, spacing: 12) {
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text(option.label)
+                                        .font(.callout.weight(.semibold))
+                                    Text(option.description)
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                }
+                                Spacer(minLength: 8)
+                                if model.responsivenessSelectionInProgress == option.responsiveness.rawValue {
                                     ProgressView()
                                 } else {
-                                    Image(systemName: "chevron.down")
-                                        .font(.caption.weight(.semibold))
+                                    Image(
+                                        systemName: model.isSelectedResponsiveness(option)
+                                            ? "checkmark.circle.fill"
+                                            : "circle"
+                                    )
+                                    .foregroundStyle(model.isSelectedResponsiveness(option) ? .blue : .secondary)
                                 }
                             }
-                            .frame(maxWidth: .infinity)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(12)
+                            .background(
+                                RoundedRectangle(cornerRadius: 8)
+                                    .fill(model.isSelectedResponsiveness(option) ? Color.blue.opacity(0.14) : Color(.secondarySystemBackground))
+                            )
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 8)
+                                    .stroke(model.isSelectedResponsiveness(option) ? Color.blue.opacity(0.6) : Color.secondary.opacity(0.16))
+                            )
                         }
-                        .buttonStyle(.bordered)
+                        .buttonStyle(.plain)
+                        .disabled(
+                            model.responsivenessSelectionInProgress != nil
+                                || model.isSelectedResponsiveness(option)
+                        )
                     }
                 }
                 if let error = model.modelErrorMessage {
                     Text(error)
                         .font(.callout)
                         .foregroundStyle(.red)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding()
+            .background(.thinMaterial)
+            .clipShape(RoundedRectangle(cornerRadius: 8))
+
+            VStack(alignment: .leading, spacing: 12) {
+                Text("Conversation")
+                    .font(.headline)
+                InfoRow(label: "Name", value: settings.conversation.displayName)
+                InfoRow(label: "Type", value: settings.conversation.isGroup == true ? "Group chat" : "Direct chat")
+                InfoRow(label: "Participants", value: model.participantCountTitle)
+                if let identifier = model.conversationIdentifier {
+                    InfoRow(label: "Identifier", value: identifier)
+                }
+                if !model.conversationParticipants.isEmpty {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("People")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(.secondary)
+                        ForEach(model.conversationParticipants, id: \.address) { participant in
+                            Text(participant.address)
+                                .font(.callout)
+                                .textSelection(.enabled)
+                        }
+                    }
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -429,7 +494,7 @@ final class ClipViewModel: ObservableObject {
     @Published var purchaseInProgress = false
     @Published var restoreInProgress = false
     @Published var modelSelectionInProgress = false
-    @Published var verbositySelectionInProgress = false
+    @Published var responsivenessSelectionInProgress: String?
     @Published var errorMessage: String?
     @Published var billingErrorMessage: String?
     @Published var modelErrorMessage: String?
@@ -452,6 +517,9 @@ final class ClipViewModel: ObservableObject {
         if session == nil {
             return errorMessage == nil ? "Waiting for link" : "Link needs refresh"
         }
+        if isConversationSettingsSession {
+            return "Conversation settings"
+        }
         return session?.subscription.isPremium == true ? "Premium is active" : "Free access"
     }
 
@@ -459,7 +527,10 @@ final class ClipViewModel: ObservableObject {
         if session == nil {
             return errorMessage == nil
                 ? "Open your BlueChatAI link from Messages."
-                : "Ask BlueChatAI to send a fresh account link, then open it from Messages."
+                : "Ask BlueChatAI to send a fresh link, then open it from Messages."
+        }
+        if isConversationSettingsSession {
+            return "Choose how BlueChatAI participates in this chat."
         }
         return "Your account is ready."
     }
@@ -470,7 +541,10 @@ final class ClipViewModel: ObservableObject {
     }
 
     var accountSubtitle: String {
-        firstNonBlank(session?.account.email, primaryIdentity?.identifier)
+        if isConversationSettingsSession {
+            return conversationDisplayName
+        }
+        return firstNonBlank(session?.account.email, primaryIdentity?.identifier)
             ?? "App Clip session"
     }
 
@@ -483,20 +557,10 @@ final class ClipViewModel: ObservableObject {
             .filter { $0.enabled && $0.model != "local" }
     }
 
-    var selectableVerbosityOptions: [WebsiteModelVerbosityOption] {
-        (modelAccess?.availableVerbosityOptions ?? [])
-            .filter(\.enabled)
-    }
-
     var canChangeModel: Bool {
         modelAccess?.isPremium == true
             && modelAccess?.modelSelectionConfigurable == true
             && !selectableModels.isEmpty
-    }
-
-    var canChangeVerbosity: Bool {
-        modelAccess?.verbositySelectionConfigurable == true
-            && !selectableVerbosityOptions.isEmpty
     }
 
     var selectedModelTitle: String {
@@ -507,16 +571,6 @@ final class ClipViewModel: ObservableObject {
             .first(where: { $0.model == access.currentModel })
             .map { modelDisplayName($0.label) }
             ?? modelDisplayName(access.currentModelLabel)
-    }
-
-    var selectedVerbosityTitle: String {
-        guard let access = modelAccess else {
-            return "Balanced"
-        }
-        return selectableVerbosityOptions
-            .first(where: { $0.verbosity.rawValue == access.currentVerbosity.rawValue })
-            .map { verbosityDisplayName($0.label) }
-            ?? verbosityDisplayName(access.currentVerbosityLabel)
     }
 
     var modelReadOnlyReason: String? {
@@ -556,6 +610,38 @@ final class ClipViewModel: ObservableObject {
         session?.linkedAccounts.integrations.compactMap(\.modelAccess).first
     }
 
+    var isConversationSettingsSession: Bool {
+        session?.purpose == .conversationSettings
+    }
+
+    var conversationSettings: ConversationSettingsResponse? {
+        session?.conversationSettings
+    }
+
+    var selectableResponsivenessOptions: [ConversationResponsivenessOption] {
+        (conversationSettings?.options ?? []).filter(\.enabled)
+    }
+
+    var conversationDisplayName: String {
+        firstNonBlank(conversationSettings?.conversation.displayName) ?? "Conversation settings"
+    }
+
+    var conversationIdentifier: String? {
+        firstNonBlank(conversationSettings?.conversation.chatIdentifier)
+    }
+
+    var participantCountTitle: String {
+        let count = conversationSettings?.conversation.participantCount ?? 0
+        if count <= 0 {
+            return "Participants unavailable"
+        }
+        return count == 1 ? "1 participant" : "\(count) participants"
+    }
+
+    var conversationParticipants: [ConversationParticipantSummary] {
+        Array((conversationSettings?.conversation.participants ?? []).prefix(8))
+    }
+
     var billingSummary: String {
         guard let session else {
             return "Premium is available through Apple."
@@ -587,11 +673,14 @@ final class ClipViewModel: ObservableObject {
     }
 
     var canPurchase: Bool {
-        session != nil && product != nil && !purchaseInProgress && session?.subscription.isPremium != true
+        session?.purpose == .accountLink
+            && product != nil
+            && !purchaseInProgress
+            && session?.subscription.isPremium != true
     }
 
     var canRestorePurchases: Bool {
-        session != nil
+        session?.purpose == .accountLink
             && session?.subscription.isPremium != true
             && session?.storekitProductIds.isEmpty == false
     }
@@ -621,7 +710,7 @@ final class ClipViewModel: ObservableObject {
             .value
         else {
             errorMessage = session == nil
-                ? "This link is missing its account token. Ask BlueChatAI to send a fresh link."
+                ? "This link is missing its token. Ask BlueChatAI to send a fresh link."
                 : nil
             return
         }
@@ -639,6 +728,9 @@ final class ClipViewModel: ObservableObject {
 
     func purchasePremium() async {
         guard let session, let product else {
+            return
+        }
+        guard session.purpose == .accountLink else {
             return
         }
         purchaseInProgress = true
@@ -667,6 +759,9 @@ final class ClipViewModel: ObservableObject {
 
     func restoreApplePurchases() async {
         guard let session else {
+            return
+        }
+        guard session.purpose == .accountLink else {
             return
         }
         restoreInProgress = true
@@ -728,10 +823,6 @@ final class ClipViewModel: ObservableObject {
         firstNonBlank(value) ?? "Unknown"
     }
 
-    func verbosityDisplayName(_ value: String) -> String {
-        firstNonBlank(value) ?? "Balanced"
-    }
-
     func usageTitle(_ usage: WebsiteUsageLimitSummary) -> String {
         firstNonBlank(usage.limitLabel) ?? "Monthly assistant responses"
     }
@@ -756,6 +847,9 @@ final class ClipViewModel: ObservableObject {
 
     func updatePreferredModel(_ modelKey: String) async {
         guard let session else {
+            return
+        }
+        guard session.purpose == .accountLink else {
             return
         }
         guard modelKey != modelAccess?.currentModel else {
@@ -784,7 +878,7 @@ final class ClipViewModel: ObservableObject {
                 AppClipAPI.appClipGetSessionWithRequestBuilder()
             }
             self.session = refreshed
-            await loadProductIfNeeded(for: refreshed)
+            await prepareAccountSessionIfNeeded(for: refreshed)
             trackAppClipEvent(
                 "appclip_model_selection_updated",
                 properties: eventContext(for: refreshed).merging(["model": modelKey]) { _, new in new }
@@ -798,45 +892,51 @@ final class ClipViewModel: ObservableObject {
         }
     }
 
-    func updateModelVerbosity(_ verbosityKey: String) async {
+    func isSelectedResponsiveness(_ option: ConversationResponsivenessOption) -> Bool {
+        option.responsiveness.rawValue == conversationSettings?.currentResponsiveness.rawValue
+    }
+
+    func updateConversationResponsiveness(_ responsivenessKey: String) async {
         guard let session else {
             return
         }
-        guard verbosityKey != modelAccess?.currentVerbosity.rawValue else {
+        guard session.purpose == .conversationSettings else {
             return
         }
-        guard let generatedVerbosity = WebsiteModelSelectionRequest.Verbosity(rawValue: verbosityKey) else {
+        guard responsivenessKey != conversationSettings?.currentResponsiveness.rawValue else {
+            return
+        }
+        guard let generatedResponsiveness = ConversationSettingsUpdateRequest.Responsiveness(rawValue: responsivenessKey) else {
             modelErrorMessage = "This response style is not available in the App Clip yet."
             return
         }
-        verbositySelectionInProgress = true
+        responsivenessSelectionInProgress = responsivenessKey
         modelErrorMessage = nil
         defer {
-            verbositySelectionInProgress = false
+            responsivenessSelectionInProgress = nil
         }
         do {
             trackAppClipEvent(
-                "appclip_model_verbosity_started",
-                properties: eventContext(for: session).merging(["verbosity": verbosityKey]) { _, new in new }
+                "appclip_conversation_responsiveness_started",
+                properties: eventContext(for: session).merging(["responsiveness": responsivenessKey]) { _, new in new }
             )
-            _ = try await GeneratedAPIConfiguration.executeWithSession(session.sessionToken) {
-                WebsiteAccountAPI.websiteAccountUpdateModelWithRequestBuilder(
-                    websiteModelSelectionRequest: WebsiteModelSelectionRequest(verbosity: generatedVerbosity)
+            let response = try await GeneratedAPIConfiguration.executeWithSession(session.sessionToken) {
+                ConversationSettingsAPI.conversationSettingsUpdateResponsivenessWithRequestBuilder(
+                    conversationSettingsUpdateRequest: ConversationSettingsUpdateRequest(
+                        responsiveness: generatedResponsiveness
+                    )
                 )
             }
-            let refreshed = try await GeneratedAPIConfiguration.executeWithSession(session.sessionToken) {
-                AppClipAPI.appClipGetSessionWithRequestBuilder()
-            }
+            let refreshed = session.replacing(conversationSettings: response.settings)
             self.session = refreshed
-            await loadProductIfNeeded(for: refreshed)
             trackAppClipEvent(
-                "appclip_model_verbosity_updated",
-                properties: eventContext(for: refreshed).merging(["verbosity": verbosityKey]) { _, new in new }
+                "appclip_conversation_responsiveness_updated",
+                properties: eventContext(for: refreshed).merging(["responsiveness": responsivenessKey]) { _, new in new }
             )
         } catch {
             trackAppClipEvent(
-                "appclip_model_verbosity_failed",
-                properties: eventContext(for: session).merging(["verbosity": verbosityKey]) { _, new in new }
+                "appclip_conversation_responsiveness_failed",
+                properties: eventContext(for: session).merging(["responsiveness": responsivenessKey]) { _, new in new }
             )
             modelErrorMessage = error.localizedDescription
         }
@@ -858,8 +958,7 @@ final class ClipViewModel: ObservableObject {
             UserDefaults.standard.set(session.sessionToken, forKey: sessionTokenKey)
             self.session = session
             errorMessage = nil
-            await loadProductIfNeeded(for: session)
-            await syncCurrentAppleEntitlementsSilently(for: self.session ?? session)
+            await prepareAccountSessionIfNeeded(for: session)
             trackAppClipEvent(
                 "appclip_session_created",
                 properties: eventContext(for: session).merging(["launch_source": "link"]) { _, new in new },
@@ -884,8 +983,7 @@ final class ClipViewModel: ObservableObject {
             }
             self.session = session
             errorMessage = nil
-            await loadProductIfNeeded(for: session)
-            await syncCurrentAppleEntitlementsSilently(for: self.session ?? session)
+            await prepareAccountSessionIfNeeded(for: session)
             trackAppClipEvent(
                 "appclip_session_restored",
                 properties: eventContext(for: session).merging(["launch_source": "stored"]) { _, new in new },
@@ -906,6 +1004,16 @@ final class ClipViewModel: ObservableObject {
         } else {
             errorMessage = nil
         }
+    }
+
+    private func prepareAccountSessionIfNeeded(for session: AppClipSessionResponse) async {
+        guard session.purpose == .accountLink else {
+            product = nil
+            billingErrorMessage = nil
+            return
+        }
+        await loadProductIfNeeded(for: session)
+        await syncCurrentAppleEntitlementsSilently(for: self.session ?? session)
     }
 
     private func loadProductIfNeeded(for session: AppClipSessionResponse) async {
@@ -949,6 +1057,9 @@ final class ClipViewModel: ObservableObject {
     }
 
     private func syncCurrentAppleEntitlementsSilently(for session: AppClipSessionResponse) async {
+        guard session.purpose == .accountLink else {
+            return
+        }
         guard session.subscription.isPremium != true else {
             return
         }
@@ -969,6 +1080,9 @@ final class ClipViewModel: ObservableObject {
     }
 
     private func syncCurrentAppleEntitlements(for session: AppClipSessionResponse) async throws -> Bool {
+        guard session.purpose == .accountLink else {
+            return false
+        }
         let purchases = try await storeKit.currentEntitlements(productIds: session.storekitProductIds)
         guard
             let purchase = purchases.sorted(by: { $0.transaction.purchaseDate > $1.transaction.purchaseDate }).first
@@ -978,7 +1092,7 @@ final class ClipViewModel: ObservableObject {
         let updated = try await validateStoreKitPurchase(purchase, session: session)
         let refreshed = (self.session ?? session).replacing(subscription: updated)
         self.session = refreshed
-        await loadProductIfNeeded(for: refreshed)
+        await prepareAccountSessionIfNeeded(for: refreshed)
         return true
     }
 
@@ -1002,6 +1116,9 @@ final class ClipViewModel: ObservableObject {
         guard let session else {
             return
         }
+        guard session.purpose == .accountLink else {
+            return
+        }
         do {
             let purchase = try storeKit.verifiedPurchase(from: verification)
             guard session.storekitProductIds.contains(purchase.transaction.productID) else {
@@ -1015,7 +1132,7 @@ final class ClipViewModel: ObservableObject {
             await purchase.transaction.finish()
             let refreshed = (self.session ?? session).replacing(subscription: updated)
             self.session = refreshed
-            await loadProductIfNeeded(for: refreshed)
+            await prepareAccountSessionIfNeeded(for: refreshed)
             trackAppClipEvent(
                 "appclip_purchase_transaction_update_completed",
                 properties: eventContext(for: refreshed)
@@ -1079,13 +1196,13 @@ final class ClipViewModel: ObservableObject {
         case "network":
             return "BlueChatAI could not be reached. Check your connection and open the link again."
         case "bad_request", "not_found", "expired", "conflict":
-            return "This account link is expired or already used. Ask BlueChatAI to send a fresh link."
+            return "This BlueChatAI link is expired or already used. Ask BlueChatAI to send a fresh link."
         case "decode":
             return "BlueChatAI returned account info this App Clip cannot read yet. Install the latest TestFlight build and try again."
         case "server":
             return "BlueChatAI could not open this link right now. Try again in a moment."
         default:
-            return "BlueChatAI could not open this link. Ask BlueChatAI to send a fresh account link."
+            return "BlueChatAI could not open this link. Ask BlueChatAI to send a fresh link."
         }
     }
 
@@ -1125,14 +1242,15 @@ final class ClipViewModel: ObservableObject {
 
     private func eventContext(for session: AppClipSessionResponse) -> [String: String] {
         var properties: [String: String] = [
+            "purpose": session.purpose.rawValue,
             "is_premium": session.subscription.isPremium ? "true" : "false",
             "billing_source": session.subscription.entitlementSource
         ]
         if let model = session.linkedAccounts.integrations.compactMap(\.modelAccess).first?.currentModel {
             properties["model"] = model
         }
-        if let verbosity = session.linkedAccounts.integrations.compactMap(\.modelAccess).first?.currentVerbosity.rawValue {
-            properties["verbosity"] = verbosity
+        if let responsiveness = session.conversationSettings?.currentResponsiveness.rawValue {
+            properties["responsiveness"] = responsiveness
         }
         if let usage = session.linkedAccounts.usageLimits.first {
             properties["usage_exhausted"] = usage.exhausted ? "true" : "false"

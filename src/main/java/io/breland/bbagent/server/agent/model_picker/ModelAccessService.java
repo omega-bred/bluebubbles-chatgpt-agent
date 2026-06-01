@@ -2,7 +2,6 @@ package io.breland.bbagent.server.agent.model_picker;
 
 import io.breland.bbagent.generated.model.WebsiteModelAccessSummary;
 import io.breland.bbagent.generated.model.WebsiteModelOption;
-import io.breland.bbagent.generated.model.WebsiteModelVerbosityOption;
 import io.breland.bbagent.server.agent.IncomingMessage;
 import io.breland.bbagent.server.agent.account.AgentAccountResolver;
 import io.breland.bbagent.server.agent.persistence.account.AgentAccountEntity;
@@ -34,9 +33,6 @@ public class ModelAccessService {
   public static final String GEMINI_MODEL_KEY = "gemini";
   public static final String GEMINI_MODEL_LABEL = "Gemini";
   public static final String GEMINI_RESPONSES_MODEL = "gemini/gemini-3.5-flash";
-  public static final String VERBOSITY_LOW = "low";
-  public static final String VERBOSITY_MEDIUM = "medium";
-  public static final String VERBOSITY_HIGH = "high";
   public static final Set<String> DEVELOPER_MESSAGE_SYSTEM_SQUASH_MODELS =
       Set.of(STANDARD_RESPONSES_MODEL);
   private static final List<ModelOption> STANDARD_OPTIONS =
@@ -50,16 +46,6 @@ public class ModelAccessService {
   private static final Map<String, ModelOption> PREMIUM_OPTIONS_BY_KEY =
       PREMIUM_OPTIONS.stream()
           .collect(Collectors.toUnmodifiableMap(ModelOption::modelKey, Function.identity()));
-  private static final List<VerbosityOption> VERBOSITY_OPTIONS =
-      List.of(
-          new VerbosityOption(VERBOSITY_LOW, "Concise", "Shorter, more direct replies.", true),
-          new VerbosityOption(VERBOSITY_MEDIUM, "Balanced", "Default reply length.", true),
-          new VerbosityOption(
-              VERBOSITY_HIGH, "Detailed", "More complete replies with extra context.", true));
-  private static final Map<String, VerbosityOption> VERBOSITY_OPTIONS_BY_KEY =
-      VERBOSITY_OPTIONS.stream()
-          .collect(
-              Collectors.toUnmodifiableMap(VerbosityOption::verbosityKey, Function.identity()));
 
   private final AgentAccountRepository accountRepository;
   private final AgentAccountResolver accountResolver;
@@ -117,35 +103,24 @@ public class ModelAccessService {
         .isPremium(access.premium())
         .currentModel(access.currentModelKey())
         .currentModelLabel(access.currentModelLabel())
-        .currentVerbosity(
-            WebsiteModelAccessSummary.CurrentVerbosityEnum.fromValue(access.currentVerbosityKey()))
-        .currentVerbosityLabel(access.currentVerbosityLabel())
         .modelSelectionAllowed(access.modelSelectionAllowed())
         .modelSelectionConfigurable(access.modelSelectionAllowed())
-        .verbositySelectionAllowed(access.verbositySelectionAllowed())
-        .verbositySelectionConfigurable(access.verbositySelectionAllowed())
         .readOnlyReason(access.premium() ? null : "Free accounts use the included model.")
-        .availableModels(access.availableModels().stream().map(this::toWebsiteOption).toList())
-        .availableVerbosityOptions(
-            access.availableVerbosityOptions().stream()
-                .map(this::toWebsiteVerbosityOption)
-                .toList());
+        .availableModels(access.availableModels().stream().map(this::toWebsiteOption).toList());
   }
 
   public ModelSelectionResult selectModel(IncomingMessage message, String modelKey) {
-    return updatePreferences(message, modelKey, null);
+    return updatePreferences(message, modelKey);
   }
 
   public ModelSelectionResult updatePreferences(
-      IncomingMessage message, @Nullable String modelKey, @Nullable String verbosityKey) {
+      IncomingMessage message, @Nullable String modelKey) {
     if (accountResolver == null) {
       return new ModelSelectionResult(false, standard(null), "Account resolution is unavailable.");
     }
     return accountResolver
         .resolveOrCreate(message)
-        .map(
-            resolved ->
-                updatePreferences(resolved.account().getAccountId(), modelKey, verbosityKey))
+        .map(resolved -> updatePreferences(resolved.account().getAccountId(), modelKey))
         .orElseGet(
             () ->
                 new ModelSelectionResult(
@@ -153,54 +128,40 @@ public class ModelAccessService {
   }
 
   public ModelSelectionResult selectModel(String accountId, String modelKey) {
-    return updatePreferences(accountId, modelKey, null);
+    return updatePreferences(accountId, modelKey);
   }
 
-  public ModelSelectionResult updatePreferences(
-      String accountId, @Nullable String modelKey, @Nullable String verbosityKey) {
+  public ModelSelectionResult updatePreferences(String accountId, @Nullable String modelKey) {
     String cleanAccountId = StringUtils.defaultIfBlank(accountId, null);
     String cleanModelKey = normalizeOptionalModelKey(modelKey);
-    String cleanVerbosityKey = normalizeOptionalVerbosityKey(verbosityKey);
     if (cleanAccountId == null) {
       throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Missing account id");
     }
-    if (cleanModelKey == null && cleanVerbosityKey == null) {
-      throw new ResponseStatusException(
-          HttpStatus.BAD_REQUEST, "Choose a model or verbosity setting");
+    if (cleanModelKey == null) {
+      throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Choose a model");
     }
-    if (cleanModelKey != null && !isSelectableModel(cleanModelKey)) {
+    if (!isSelectableModel(cleanModelKey)) {
       throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Unknown or unavailable model");
-    }
-    if (cleanVerbosityKey != null && !isSelectableVerbosity(cleanVerbosityKey)) {
-      throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Unknown verbosity setting");
     }
     AgentAccountEntity account =
         accountRepository
             .findById(cleanAccountId)
             .orElseThrow(
                 () -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Account not found"));
-    if (cleanModelKey != null && !account.isPremium()) {
+    if (!account.isPremium()) {
       throw new ResponseStatusException(
           HttpStatus.FORBIDDEN, "Model switching is only available to premium accounts");
     }
     boolean changed = false;
-    if (cleanModelKey != null
-        && !cleanModelKey.equals(
-            normalizeOptionalModelKey(
-                StringUtils.defaultIfBlank(account.getSelectedModel(), null)))) {
+    if (!cleanModelKey.equals(
+        normalizeOptionalModelKey(StringUtils.defaultIfBlank(account.getSelectedModel(), null)))) {
       account.setSelectedModel(cleanModelKey);
-      changed = true;
-    }
-    if (cleanVerbosityKey != null
-        && !cleanVerbosityKey.equals(normalizeVerbosityKey(account.getModelVerbosity()))) {
-      account.setModelVerbosity(cleanVerbosityKey);
       changed = true;
     }
     account.setUpdatedAt(Instant.now());
     AgentAccountEntity saved = accountRepository.save(account);
     ModelAccess access = fromEntity(saved);
-    return new ModelSelectionResult(
-        changed, access, preferenceMessage(cleanModelKey, cleanVerbosityKey, access));
+    return new ModelSelectionResult(changed, access, preferenceMessage(access));
   }
 
   public String resolveAccountId(IncomingMessage message) {
@@ -214,7 +175,6 @@ public class ModelAccessService {
   }
 
   private ModelAccess fromEntity(AgentAccountEntity entity) {
-    String verbosityKey = normalizeVerbosityKey(entity.getModelVerbosity());
     if (entity.isPremium()) {
       String selected = StringUtils.defaultIfBlank(entity.getSelectedModel(), null);
       String modelKey = isSelectableModel(selected) ? selected : PREMIUM_MODEL_KEY;
@@ -224,32 +184,21 @@ public class ModelAccessService {
           modelKey,
           displayNameFor(modelKey),
           responsesModelFor(modelKey),
-          verbosityKey,
-          verbosityLabelFor(verbosityKey),
           true,
-          PREMIUM_OPTIONS,
-          VERBOSITY_OPTIONS);
+          PREMIUM_OPTIONS);
     }
-    return standard(entity.getAccountId(), verbosityKey);
+    return standard(entity.getAccountId());
   }
 
   private ModelAccess standard(String accountId) {
-    return standard(accountId, VERBOSITY_MEDIUM);
-  }
-
-  private ModelAccess standard(String accountId, String verbosityKey) {
-    String cleanVerbosityKey = normalizeVerbosityKey(verbosityKey);
     return new ModelAccess(
         accountId,
         false,
         STANDARD_MODEL_KEY,
         STANDARD_MODEL_LABEL,
         standardResponsesModel,
-        cleanVerbosityKey,
-        verbosityLabelFor(cleanVerbosityKey),
         false,
-        STANDARD_OPTIONS,
-        VERBOSITY_OPTIONS);
+        STANDARD_OPTIONS);
   }
 
   private WebsiteModelOption toWebsiteOption(ModelOption option) {
@@ -257,14 +206,6 @@ public class ModelAccessService {
         .model(option.modelKey())
         .label(option.label())
         .provider(option.provider())
-        .enabled(option.enabled());
-  }
-
-  private WebsiteModelVerbosityOption toWebsiteVerbosityOption(VerbosityOption option) {
-    return new WebsiteModelVerbosityOption()
-        .verbosity(WebsiteModelVerbosityOption.VerbosityEnum.fromValue(option.verbosityKey()))
-        .label(option.label())
-        .description(option.description())
         .enabled(option.enabled());
   }
 
@@ -296,25 +237,6 @@ public class ModelAccessService {
         .provider();
   }
 
-  private static String verbosityLabelFor(String verbosityKey) {
-    return VERBOSITY_OPTIONS_BY_KEY
-        .getOrDefault(verbosityKey, VERBOSITY_OPTIONS_BY_KEY.get(VERBOSITY_MEDIUM))
-        .label();
-  }
-
-  private static boolean isSelectableVerbosity(String verbosityKey) {
-    if (StringUtils.isBlank(verbosityKey)) {
-      return false;
-    }
-    VerbosityOption option = VERBOSITY_OPTIONS_BY_KEY.get(verbosityKey);
-    return option != null && option.enabled();
-  }
-
-  private static String normalizeVerbosityKey(String verbosityKey) {
-    String clean = normalizeOptionalVerbosityKey(verbosityKey);
-    return clean == null || !isSelectableVerbosity(clean) ? VERBOSITY_MEDIUM : clean;
-  }
-
   private static boolean isSelectableModel(String modelKey) {
     if (StringUtils.isBlank(modelKey)) {
       return false;
@@ -331,27 +253,8 @@ public class ModelAccessService {
     return StringUtils.isBlank(modelKey) ? null : normalizeModelKey(modelKey);
   }
 
-  private static @Nullable String normalizeOptionalVerbosityKey(@Nullable String verbosityKey) {
-    return StringUtils.isBlank(verbosityKey)
-        ? null
-        : StringUtils.defaultString(verbosityKey).trim().toLowerCase(java.util.Locale.ROOT);
-  }
-
-  private static String preferenceMessage(
-      @Nullable String modelKey, @Nullable String verbosityKey, ModelAccess access) {
-    if (modelKey != null && verbosityKey != null) {
-      return "Model changed to "
-          + access.currentModelLabel()
-          + " with "
-          + access.currentVerbosityLabel().toLowerCase(java.util.Locale.ROOT)
-          + " replies.";
-    }
-    if (modelKey != null) {
-      return "Model changed to " + access.currentModelLabel() + " for this account.";
-    }
-    return "Response style changed to "
-        + access.currentVerbosityLabel().toLowerCase(java.util.Locale.ROOT)
-        + " for this account.";
+  private static String preferenceMessage(ModelAccess access) {
+    return "Model changed to " + access.currentModelLabel() + " for this account.";
   }
 
   public record ModelAccess(
@@ -360,17 +263,10 @@ public class ModelAccessService {
       String currentModelKey,
       String currentModelLabel,
       String responsesModel,
-      String currentVerbosityKey,
-      String currentVerbosityLabel,
       boolean modelSelectionAllowed,
-      List<ModelOption> availableModels,
-      List<VerbosityOption> availableVerbosityOptions) {
+      List<ModelOption> availableModels) {
     public String provider() {
       return providerFor(currentModelKey);
-    }
-
-    public boolean verbositySelectionAllowed() {
-      return StringUtils.isNotBlank(accountId);
     }
 
     public boolean supportsImageGeneration() {
@@ -383,9 +279,6 @@ public class ModelAccessService {
   }
 
   public record ModelOption(String modelKey, String label, String provider, boolean enabled) {}
-
-  public record VerbosityOption(
-      String verbosityKey, String label, String description, boolean enabled) {}
 
   public record ModelSelectionResult(boolean changed, ModelAccess modelAccess, String message) {}
 }

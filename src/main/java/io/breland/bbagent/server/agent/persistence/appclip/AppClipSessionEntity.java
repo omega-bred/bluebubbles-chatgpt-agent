@@ -22,6 +22,12 @@ public class AppClipSessionEntity {
   @Column(name = "account_id", nullable = false, length = 36)
   private String accountId;
 
+  @Column(name = "purpose", nullable = false, length = 64)
+  private String purpose = "account_link";
+
+  @Column(name = "chat_guid", length = 255)
+  private String chatGuid;
+
   @Column(name = "source_link_token_hash", length = 64)
   private String sourceLinkTokenHash;
 
@@ -43,8 +49,21 @@ public class AppClipSessionEntity {
       String sourceLinkTokenHash,
       Instant expiresAt,
       Instant createdAt) {
+    this(tokenHash, accountId, "account_link", null, sourceLinkTokenHash, expiresAt, createdAt);
+  }
+
+  public AppClipSessionEntity(
+      String tokenHash,
+      String accountId,
+      String purpose,
+      String chatGuid,
+      String sourceLinkTokenHash,
+      Instant expiresAt,
+      Instant createdAt) {
     this.tokenHash = tokenHash;
     this.accountId = accountId;
+    this.purpose = purpose;
+    this.chatGuid = chatGuid;
     this.sourceLinkTokenHash = sourceLinkTokenHash;
     this.expiresAt = expiresAt;
     this.createdAt = createdAt;

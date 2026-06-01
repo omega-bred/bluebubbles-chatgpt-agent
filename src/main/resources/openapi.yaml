@@ -22,6 +22,8 @@ tags:
     description: Payment subscription and billing endpoints
   - name: appClip
     description: iOS App Clip session and bootstrap endpoints
+  - name: conversationSettings
+    description: Conversation-scoped assistant settings endpoints
   - name: admin
     description: Admin-only operational endpoints
 paths:
@@ -239,8 +241,8 @@ paths:
       operationId: appClipCreateSession
       tags:
         - appClip
-      summary: Creates an App Clip session from an account-link token
-      description: Exchanges a short-lived texted account-link token for an App Clip session token scoped to the linked BlueChat account.
+      summary: Creates an App Clip session from a texted link token
+      description: Exchanges a short-lived account-link or conversation-settings token for an App Clip session token scoped to the linked BlueChat account.
       requestBody:
         required: true
         content:
@@ -326,13 +328,61 @@ paths:
                 $ref: '#/components/schemas/AppClipEventResponse'
         '400':
           description: Missing or invalid event
+  /api/v1/conversationSettings/get.conversationSettings:
+    get:
+      operationId: conversationSettingsGet
+      tags:
+        - conversationSettings
+      summary: Gets conversation settings for an App Clip/web settings session
+      description: Returns conversation metadata and the current chat-scoped assistant responsiveness setting.
+      security:
+        - appClipSessionAuth: []
+      responses:
+        '200':
+          description: Conversation settings
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConversationSettingsResponse'
+        '401':
+          description: Missing or invalid session
+        '403':
+          description: Conversation settings session required
+  /api/v1/conversationSettings/updateResponsiveness.conversationSettings:
+    post:
+      operationId: conversationSettingsUpdateResponsiveness
+      tags:
+        - conversationSettings
+      summary: Updates chat-scoped assistant responsiveness
+      description: Updates the existing conversation-scoped assistant responsiveness setting used by the BlueChat agent.
+      security:
+        - appClipSessionAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ConversationSettingsUpdateRequest'
+      responses:
+        '200':
+          description: Conversation responsiveness updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConversationSettingsUpdateResponse'
+        '400':
+          description: Missing or invalid responsiveness
+        '401':
+          description: Missing or invalid session
+        '403':
+          description: Conversation settings session required
   /api/v1/websiteAccount/updateModel.websiteAccountModels:
     post:
       operationId: websiteAccountUpdateModel
       tags:
         - websiteAccount
       summary: Updates assistant model preferences
-      description: Lets accounts choose response verbosity and lets premium accounts choose the assistant model used by linked chat identities. At least one preference must be provided.
+      description: Lets premium accounts choose the assistant model used by linked chat identities.
       security:
         - bearerAuth: []
         - appClipSessionAuth: []
@@ -1132,41 +1182,15 @@ components:
         enabled:
           type: boolean
           description: Whether this option can currently be used by the model picker.
-    WebsiteModelVerbosityOption:
-      type: object
-      required:
-        - verbosity
-        - label
-        - description
-        - enabled
-      properties:
-        verbosity:
-          type: string
-          enum:
-            - low
-            - medium
-            - high
-        label:
-          type: string
-        description:
-          type: string
-        enabled:
-          type: boolean
-          description: Whether this verbosity level can currently be used.
     WebsiteModelAccessSummary:
       type: object
       required:
         - is_premium
         - current_model
         - current_model_label
-        - current_verbosity
-        - current_verbosity_label
         - model_selection_allowed
         - model_selection_configurable
-        - verbosity_selection_allowed
-        - verbosity_selection_configurable
         - available_models
-        - available_verbosity_options
       properties:
         account_id:
           type: string
@@ -1179,27 +1203,12 @@ components:
           description: Read-only current model key exposed to the website.
         current_model_label:
           type: string
-        current_verbosity:
-          type: string
-          description: Current response verbosity key exposed to the website and App Clip.
-          enum:
-            - low
-            - medium
-            - high
-        current_verbosity_label:
-          type: string
         model_selection_allowed:
           type: boolean
           description: Whether this account is allowed to choose models once model selection is enabled.
         model_selection_configurable:
           type: boolean
           description: Whether model selection can currently be changed from the website.
-        verbosity_selection_allowed:
-          type: boolean
-          description: Whether this account is allowed to choose response verbosity.
-        verbosity_selection_configurable:
-          type: boolean
-          description: Whether response verbosity can currently be changed from the website or App Clip.
         read_only_reason:
           type: string
           nullable: true
@@ -1207,27 +1216,18 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/WebsiteModelOption'
-        available_verbosity_options:
-          type: array
-          items:
-            $ref: '#/components/schemas/WebsiteModelVerbosityOption'
     WebsiteModelSelectionRequest:
       type: object
+      required:
+        - model
       properties:
         model:
           type: string
-          description: Preferred model key for premium accounts. Omit this field when only changing response verbosity.
+          description: Preferred model key for premium accounts.
           enum:
             - chatgpt
             - claude
             - gemini
-        verbosity:
-          type: string
-          description: Preferred response verbosity for future assistant replies.
-          enum:
-            - low
-            - medium
-            - high
     WebsiteModelSelectionResponse:
       type: object
       required:
@@ -1339,6 +1339,111 @@ components:
       properties:
         deleted:
           type: boolean
+    ConversationParticipantSummary:
+      type: object
+      required:
+        - address
+      properties:
+        address:
+          type: string
+        country:
+          type: string
+          nullable: true
+    ConversationSummary:
+      type: object
+      required:
+        - chat_guid
+        - display_name
+        - participants
+      properties:
+        chat_guid:
+          type: string
+        display_name:
+          type: string
+        chat_identifier:
+          type: string
+          nullable: true
+        is_group:
+          type: boolean
+          nullable: true
+        participant_count:
+          type: integer
+          format: int32
+          nullable: true
+        participants:
+          type: array
+          items:
+            $ref: '#/components/schemas/ConversationParticipantSummary'
+        icon_url:
+          type: string
+          nullable: true
+          description: Conversation icon URL when BlueBubbles exposes one.
+    ConversationResponsivenessOption:
+      type: object
+      required:
+        - responsiveness
+        - label
+        - description
+        - enabled
+      properties:
+        responsiveness:
+          type: string
+          enum:
+            - silent
+            - less_responsive
+            - default
+            - more_responsive
+        label:
+          type: string
+        description:
+          type: string
+        enabled:
+          type: boolean
+    ConversationSettingsResponse:
+      type: object
+      required:
+        - conversation
+        - current_responsiveness
+        - current_responsiveness_label
+        - options
+      properties:
+        conversation:
+          $ref: '#/components/schemas/ConversationSummary'
+        current_responsiveness:
+          type: string
+          enum:
+            - silent
+            - less_responsive
+            - default
+            - more_responsive
+        current_responsiveness_label:
+          type: string
+        options:
+          type: array
+          items:
+            $ref: '#/components/schemas/ConversationResponsivenessOption'
+    ConversationSettingsUpdateRequest:
+      type: object
+      required:
+        - responsiveness
+      properties:
+        responsiveness:
+          type: string
+          enum:
+            - silent
+            - less_responsive
+            - default
+            - more_responsive
+    ConversationSettingsUpdateResponse:
+      type: object
+      required:
+        - settings
+        - message
+      properties:
+        settings:
+          $ref: '#/components/schemas/ConversationSettingsResponse'
+        message:
+          type: string
     AppClipCreateSessionRequest:
       type: object
       required:
@@ -1346,11 +1451,12 @@ components:
       properties:
         link_token:
           type: string
-          description: Short-lived account link token from the App Clip invocation URL.
+          description: Short-lived account-link or conversation-settings token from the App Clip invocation URL.
     AppClipSessionResponse:
       type: object
       required:
         - session_token
+        - purpose
         - expires_at
         - account
         - linked_accounts
@@ -1361,6 +1467,11 @@ components:
         session_token:
           type: string
           description: Opaque App Clip session token. Send as X-App-Clip-Session.
+        purpose:
+          type: string
+          enum:
+            - account_link
+            - conversation_settings
         expires_at:
           type: string
           format: date-time
@@ -1370,6 +1481,9 @@ components:
           $ref: '#/components/schemas/WebsiteLinkedAccountsResponse'
         subscription:
           $ref: '#/components/schemas/SubscriptionSummaryResponse'
+        conversation_settings:
+          nullable: true
+          $ref: '#/components/schemas/ConversationSettingsResponse'
         app_account_token:
           type: string
           format: uuid

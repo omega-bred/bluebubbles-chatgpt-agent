@@ -2,17 +2,20 @@ import axios from "axios";
 
 import {
   AdminApi,
+  AppClipApi,
   Configuration,
   ContactApi,
+  ConversationSettingsApi,
   SubscriptionApi,
   WebsiteAccountApi,
   type AdminAccountBlockRequest,
   type AdminAccountBlockTargetType,
   type AdminPremiumGrantTargetType,
+  type AppClipEventRequest,
+  type ConversationSettingsUpdateRequest,
   type ContactMessageRequest,
   type WebsiteAccountDeleteLinkedAccountTypeEnum,
   type WebsiteModelSelectionRequest,
-  type WebsiteModelSelectionRequestVerbosityEnum,
 } from "../client";
 import type { WebsiteAccountRedeemLinkRequest } from "../client";
 import { getAccessToken, login } from "../auth/keycloak";
@@ -28,7 +31,7 @@ axiosInstance.interceptors.response.use(
       status_code: status,
       path: apiPath(error?.config?.url),
     });
-    if (status === 401) {
+    if (status === 401 && !hasAppClipSessionHeader(error?.config?.headers)) {
       void login();
     }
     return Promise.reject(error);
@@ -48,6 +51,16 @@ async function adminClient(): Promise<AdminApi> {
 async function subscriptionClient(): Promise<SubscriptionApi> {
   const config = await authenticatedConfiguration();
   return new SubscriptionApi(config, config.basePath, axiosInstance);
+}
+
+function appClipClient(sessionToken?: string): AppClipApi {
+  const config = sessionToken ? appClipSessionConfiguration(sessionToken) : publicConfiguration();
+  return new AppClipApi(config, config.basePath, axiosInstance);
+}
+
+function conversationSettingsClient(sessionToken: string): ConversationSettingsApi {
+  const config = appClipSessionConfiguration(sessionToken);
+  return new ConversationSettingsApi(config, config.basePath, axiosInstance);
 }
 
 function contactClient(): ContactApi {
@@ -75,6 +88,17 @@ async function authenticatedConfiguration(): Promise<Configuration> {
 function publicConfiguration(): Configuration {
   return new Configuration({
     basePath: import.meta.env.VITE_API_URL || "",
+  });
+}
+
+function appClipSessionConfiguration(sessionToken: string): Configuration {
+  return new Configuration({
+    basePath: import.meta.env.VITE_API_URL || "",
+    baseOptions: {
+      headers: {
+        "X-App-Clip-Session": sessionToken,
+      },
+    },
   });
 }
 
@@ -110,13 +134,37 @@ export const websiteAccountApi = {
     };
     return (await client.websiteAccountUpdateModel(request)).data;
   },
+};
 
-  updateModelVerbosity: async (verbosity: WebsiteModelSelectionRequestVerbosityEnum) => {
-    const client = await websiteAccountClient();
-    const request: WebsiteModelSelectionRequest = {
-      verbosity,
-    };
-    return (await client.websiteAccountUpdateModel(request)).data;
+export const appClipApi = {
+  createSession: async (linkToken: string) => {
+    const client = appClipClient();
+    return (await client.appClipCreateSession({ link_token: linkToken })).data;
+  },
+
+  getSession: async (sessionToken: string) => {
+    const client = appClipClient(sessionToken);
+    return (await client.appClipGetSession()).data;
+  },
+
+  trackEvent: async (sessionToken: string, request: AppClipEventRequest) => {
+    const client = appClipClient(sessionToken);
+    return (await client.appClipCreateEvent(request)).data;
+  },
+};
+
+export const conversationSettingsApi = {
+  get: async (sessionToken: string) => {
+    const client = conversationSettingsClient(sessionToken);
+    return (await client.conversationSettingsGet()).data;
+  },
+
+  updateResponsiveness: async (
+    sessionToken: string,
+    responsiveness: ConversationSettingsUpdateRequest["responsiveness"],
+  ) => {
+    const client = conversationSettingsClient(sessionToken);
+    return (await client.conversationSettingsUpdateResponsiveness({ responsiveness })).data;
   },
 };
 
@@ -242,4 +290,12 @@ function apiPath(url: string | undefined): string {
   } catch {
     return "unknown";
   }
+}
+
+function hasAppClipSessionHeader(headers: unknown): boolean {
+  if (!headers || typeof headers !== "object") {
+    return false;
+  }
+  const record = headers as Record<string, unknown>;
+  return Boolean(record["X-App-Clip-Session"] || record["x-app-clip-session"]);
 }

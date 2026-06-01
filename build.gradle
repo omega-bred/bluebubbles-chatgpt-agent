@@ -345,6 +345,9 @@ tasks.register('openApiGenerateSwiftClient', GenerateTask) {
 	generatorName = 'swift5'
 	inputSpec = "${projectDir}/src/main/resources/openapi.yaml"
 	outputDir = "$buildDir/swift-client-generated"
+	doFirst {
+		delete("$buildDir/swift-client-generated")
+	}
 	configOptions = [
 			projectName        : 'BlueChatAgentClient',
 			library            : 'urlsession',

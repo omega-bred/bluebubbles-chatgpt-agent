@@ -42,11 +42,13 @@ Class | Method | HTTP request | Description
 *AdminAPI* | [**adminUnsuspendSubscription**](docs/AdminAPI.md#adminunsuspendsubscription) | **POST** /api/v1/admin/unsuspend.subscription | Unsuspends one provider subscription
 *AppClipAPI* | [**appClipCreateBootstrapEvent**](docs/AppClipAPI.md#appclipcreatebootstrapevent) | **POST** /api/v1/appClip/createBootstrapEvent.appClipEvents | Records a pre-session App Clip bootstrap event
 *AppClipAPI* | [**appClipCreateEvent**](docs/AppClipAPI.md#appclipcreateevent) | **POST** /api/v1/appClip/createEvent.appClipEvents | Records a high-level App Clip analytics event
-*AppClipAPI* | [**appClipCreateSession**](docs/AppClipAPI.md#appclipcreatesession) | **POST** /api/v1/appClip/createSession.appClipSessions | Creates an App Clip session from an account-link token
+*AppClipAPI* | [**appClipCreateSession**](docs/AppClipAPI.md#appclipcreatesession) | **POST** /api/v1/appClip/createSession.appClipSessions | Creates an App Clip session from a texted link token
 *AppClipAPI* | [**appClipGetSession**](docs/AppClipAPI.md#appclipgetsession) | **GET** /api/v1/appClip/get.appClipSession | Gets App Clip bootstrap data
 *BluebubblesAPI* | [**bluebubblesMessageReceived**](docs/BluebubblesAPI.md#bluebubblesmessagereceived) | **POST** /api/v1/bluebubbles/messageReceived.message | BlueBubbles message webhook
 *ContactAPI* | [**contactCreateMessage**](docs/ContactAPI.md#contactcreatemessage) | **POST** /api/v1/contact/create.contactMessages | Creates a public contact message
 *ContactAPI* | [**contactGetConfig**](docs/ContactAPI.md#contactgetconfig) | **GET** /api/v1/contact/get.contactConfig | Gets public contact form configuration
+*ConversationSettingsAPI* | [**conversationSettingsGet**](docs/ConversationSettingsAPI.md#conversationsettingsget) | **GET** /api/v1/conversationSettings/get.conversationSettings | Gets conversation settings for an App Clip/web settings session
+*ConversationSettingsAPI* | [**conversationSettingsUpdateResponsiveness**](docs/ConversationSettingsAPI.md#conversationsettingsupdateresponsiveness) | **POST** /api/v1/conversationSettings/updateResponsiveness.conversationSettings | Updates chat-scoped assistant responsiveness
 *GcalAPI* | [**gcalCompleteOauth**](docs/GcalAPI.md#gcalcompleteoauth) | **GET** /api/v1/gcal/completeOauth.gcal | Completes Google Calendar OAuth flow
 *LxmfAPI* | [**lxmfReceiveMessages**](docs/LxmfAPI.md#lxmfreceivemessages) | **POST** /api/v1/lxmf/receive.messages | LXMF bridge message webhook
 *PingAPI* | [**ping**](docs/PingAPI.md#ping) | **GET** /api/v1/ping/get.ping | Pings the server to see if it is alive
@@ -102,6 +104,12 @@ Class | Method | HTTP request | Description
  - [ContactConfigResponse](docs/ContactConfigResponse.md)
  - [ContactMessageRequest](docs/ContactMessageRequest.md)
  - [ContactMessageResponse](docs/ContactMessageResponse.md)
+ - [ConversationParticipantSummary](docs/ConversationParticipantSummary.md)
+ - [ConversationResponsivenessOption](docs/ConversationResponsivenessOption.md)
+ - [ConversationSettingsResponse](docs/ConversationSettingsResponse.md)
+ - [ConversationSettingsUpdateRequest](docs/ConversationSettingsUpdateRequest.md)
+ - [ConversationSettingsUpdateResponse](docs/ConversationSettingsUpdateResponse.md)
+ - [ConversationSummary](docs/ConversationSummary.md)
  - [ErrorModel](docs/ErrorModel.md)
  - [LxmfMessageReceivedRequest](docs/LxmfMessageReceivedRequest.md)
  - [PingResponse](docs/PingResponse.md)
@@ -128,7 +136,6 @@ Class | Method | HTTP request | Description
  - [WebsiteModelOption](docs/WebsiteModelOption.md)
  - [WebsiteModelSelectionRequest](docs/WebsiteModelSelectionRequest.md)
  - [WebsiteModelSelectionResponse](docs/WebsiteModelSelectionResponse.md)
- - [WebsiteModelVerbosityOption](docs/WebsiteModelVerbosityOption.md)
  - [WebsiteUsageLimitSummary](docs/WebsiteUsageLimitSummary.md)
 
 

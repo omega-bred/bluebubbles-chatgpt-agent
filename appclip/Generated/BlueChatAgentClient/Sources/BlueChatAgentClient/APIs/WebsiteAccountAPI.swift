@@ -194,7 +194,7 @@ open class WebsiteAccountAPI {
     /**
      Updates assistant model preferences
      - POST /api/v1/websiteAccount/updateModel.websiteAccountModels
-     - Lets accounts choose response verbosity and lets premium accounts choose the assistant model used by linked chat identities. At least one preference must be provided.
+     - Lets premium accounts choose the assistant model used by linked chat identities.
      - API Key:
        - type: apiKey X-App-Clip-Session (HEADER)
        - name: appClipSessionAuth

@@ -115,14 +115,9 @@ class GetWebsiteAccountLinkStatusAgentToolTest {
             .isPremium(true)
             .currentModel("chatgpt")
             .currentModelLabel("ChatGPT")
-            .currentVerbosity(WebsiteModelAccessSummary.CurrentVerbosityEnum.MEDIUM)
-            .currentVerbosityLabel("Balanced")
             .modelSelectionAllowed(true)
             .modelSelectionConfigurable(false)
-            .verbositySelectionAllowed(true)
-            .verbositySelectionConfigurable(true)
-            .availableModels(List.of())
-            .availableVerbosityOptions(List.of()),
+            .availableModels(List.of()),
         Instant.parse("2026-04-14T00:00:00Z"));
   }
 }

@@ -1,4 +1,5 @@
 .gitignore
+.openapi-generator-ignore
 .swiftformat
 BlueChatAgentClient.podspec
 Cartfile
@@ -10,6 +11,7 @@ Sources/BlueChatAgentClient/APIs/AdminAPI.swift
 Sources/BlueChatAgentClient/APIs/AppClipAPI.swift
 Sources/BlueChatAgentClient/APIs/BluebubblesAPI.swift
 Sources/BlueChatAgentClient/APIs/ContactAPI.swift
+Sources/BlueChatAgentClient/APIs/ConversationSettingsAPI.swift
 Sources/BlueChatAgentClient/APIs/GcalAPI.swift
 Sources/BlueChatAgentClient/APIs/LxmfAPI.swift
 Sources/BlueChatAgentClient/APIs/PingAPI.swift
@@ -58,6 +60,12 @@ Sources/BlueChatAgentClient/Models/BlueBubblesMessageReceivedRequestDataHandle.s
 Sources/BlueChatAgentClient/Models/ContactConfigResponse.swift
 Sources/BlueChatAgentClient/Models/ContactMessageRequest.swift
 Sources/BlueChatAgentClient/Models/ContactMessageResponse.swift
+Sources/BlueChatAgentClient/Models/ConversationParticipantSummary.swift
+Sources/BlueChatAgentClient/Models/ConversationResponsivenessOption.swift
+Sources/BlueChatAgentClient/Models/ConversationSettingsResponse.swift
+Sources/BlueChatAgentClient/Models/ConversationSettingsUpdateRequest.swift
+Sources/BlueChatAgentClient/Models/ConversationSettingsUpdateResponse.swift
+Sources/BlueChatAgentClient/Models/ConversationSummary.swift
 Sources/BlueChatAgentClient/Models/ErrorModel.swift
 Sources/BlueChatAgentClient/Models/LxmfMessageReceivedRequest.swift
 Sources/BlueChatAgentClient/Models/PingResponse.swift
@@ -84,7 +92,6 @@ Sources/BlueChatAgentClient/Models/WebsiteModelAccessSummary.swift
 Sources/BlueChatAgentClient/Models/WebsiteModelOption.swift
 Sources/BlueChatAgentClient/Models/WebsiteModelSelectionRequest.swift
 Sources/BlueChatAgentClient/Models/WebsiteModelSelectionResponse.swift
-Sources/BlueChatAgentClient/Models/WebsiteModelVerbosityOption.swift
 Sources/BlueChatAgentClient/Models/WebsiteUsageLimitSummary.swift
 Sources/BlueChatAgentClient/OpenISO8601DateFormatter.swift
 Sources/BlueChatAgentClient/SynchronizedDictionary.swift

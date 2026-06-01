@@ -30,12 +30,9 @@ class SetPreferredModelAgentToolTest {
             ModelAccessService.GEMINI_MODEL_KEY,
             ModelAccessService.GEMINI_MODEL_LABEL,
             ModelAccessService.GEMINI_RESPONSES_MODEL,
-            ModelAccessService.VERBOSITY_MEDIUM,
-            "Balanced",
             true,
-            List.of(),
             List.of());
-    when(modelAccessService.updatePreferences(message, "gemini", null))
+    when(modelAccessService.updatePreferences(message, "gemini"))
         .thenReturn(
             new ModelAccessService.ModelSelectionResult(
                 true, access, "Model changed to Gemini for this account."));
@@ -48,38 +45,9 @@ class SetPreferredModelAgentToolTest {
   }
 
   @Test
-  void switchesVerbosity() throws Exception {
-    IncomingMessage message = message();
-    ModelAccessService.ModelAccess access =
-        new ModelAccessService.ModelAccess(
-            "account-1",
-            false,
-            ModelAccessService.STANDARD_MODEL_KEY,
-            ModelAccessService.STANDARD_MODEL_LABEL,
-            ModelAccessService.STANDARD_RESPONSES_MODEL,
-            ModelAccessService.VERBOSITY_LOW,
-            "Concise",
-            false,
-            List.of(),
-            List.of());
-    when(modelAccessService.updatePreferences(message, null, "low"))
-        .thenReturn(
-            new ModelAccessService.ModelSelectionResult(
-                true, access, "Response style changed to concise for this account."));
-
-    String output =
-        tool.getTool()
-            .handler()
-            .apply(context(message), mapper.readTree("{\"verbosity\":\"low\"}"));
-
-    assertTrue(output.contains("\"current_verbosity\":\"low\""));
-    assertTrue(output.contains("concise"));
-  }
-
-  @Test
   void reportsPremiumRequirement() throws Exception {
     IncomingMessage message = message();
-    when(modelAccessService.updatePreferences(message, "claude", null))
+    when(modelAccessService.updatePreferences(message, "claude"))
         .thenThrow(new ResponseStatusException(HttpStatus.FORBIDDEN, "premium required"));
 
     String output =

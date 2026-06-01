@@ -12,46 +12,28 @@ import AnyCodable
 
 public struct WebsiteModelAccessSummary: Codable, JSONEncodable, Hashable {
 
-    public enum CurrentVerbosity: String, Codable, CaseIterable {
-        case low = "low"
-        case medium = "medium"
-        case high = "high"
-    }
     /** Canonical account id used by the model picker. */
     public var accountId: String?
     public var isPremium: Bool
     /** Read-only current model key exposed to the website. */
     public var currentModel: String
     public var currentModelLabel: String
-    /** Current response verbosity key exposed to the website and App Clip. */
-    public var currentVerbosity: CurrentVerbosity
-    public var currentVerbosityLabel: String
     /** Whether this account is allowed to choose models once model selection is enabled. */
     public var modelSelectionAllowed: Bool
     /** Whether model selection can currently be changed from the website. */
     public var modelSelectionConfigurable: Bool
-    /** Whether this account is allowed to choose response verbosity. */
-    public var verbositySelectionAllowed: Bool
-    /** Whether response verbosity can currently be changed from the website or App Clip. */
-    public var verbositySelectionConfigurable: Bool
     public var readOnlyReason: String?
     public var availableModels: [WebsiteModelOption]
-    public var availableVerbosityOptions: [WebsiteModelVerbosityOption]
 
-    public init(accountId: String? = nil, isPremium: Bool, currentModel: String, currentModelLabel: String, currentVerbosity: CurrentVerbosity, currentVerbosityLabel: String, modelSelectionAllowed: Bool, modelSelectionConfigurable: Bool, verbositySelectionAllowed: Bool, verbositySelectionConfigurable: Bool, readOnlyReason: String? = nil, availableModels: [WebsiteModelOption], availableVerbosityOptions: [WebsiteModelVerbosityOption]) {
+    public init(accountId: String? = nil, isPremium: Bool, currentModel: String, currentModelLabel: String, modelSelectionAllowed: Bool, modelSelectionConfigurable: Bool, readOnlyReason: String? = nil, availableModels: [WebsiteModelOption]) {
         self.accountId = accountId
         self.isPremium = isPremium
         self.currentModel = currentModel
         self.currentModelLabel = currentModelLabel
-        self.currentVerbosity = currentVerbosity
-        self.currentVerbosityLabel = currentVerbosityLabel
         self.modelSelectionAllowed = modelSelectionAllowed
         self.modelSelectionConfigurable = modelSelectionConfigurable
-        self.verbositySelectionAllowed = verbositySelectionAllowed
-        self.verbositySelectionConfigurable = verbositySelectionConfigurable
         self.readOnlyReason = readOnlyReason
         self.availableModels = availableModels
-        self.availableVerbosityOptions = availableVerbosityOptions
     }
 
     public enum CodingKeys: String, CodingKey, CaseIterable {
@@ -59,15 +41,10 @@ public struct WebsiteModelAccessSummary: Codable, JSONEncodable, Hashable {
         case isPremium = "is_premium"
         case currentModel = "current_model"
         case currentModelLabel = "current_model_label"
-        case currentVerbosity = "current_verbosity"
-        case currentVerbosityLabel = "current_verbosity_label"
         case modelSelectionAllowed = "model_selection_allowed"
         case modelSelectionConfigurable = "model_selection_configurable"
-        case verbositySelectionAllowed = "verbosity_selection_allowed"
-        case verbositySelectionConfigurable = "verbosity_selection_configurable"
         case readOnlyReason = "read_only_reason"
         case availableModels = "available_models"
-        case availableVerbosityOptions = "available_verbosity_options"
     }
 
     // Encodable protocol methods
@@ -78,14 +55,9 @@ public struct WebsiteModelAccessSummary: Codable, JSONEncodable, Hashable {
         try container.encode(isPremium, forKey: .isPremium)
         try container.encode(currentModel, forKey: .currentModel)
         try container.encode(currentModelLabel, forKey: .currentModelLabel)
-        try container.encode(currentVerbosity, forKey: .currentVerbosity)
-        try container.encode(currentVerbosityLabel, forKey: .currentVerbosityLabel)
         try container.encode(modelSelectionAllowed, forKey: .modelSelectionAllowed)
         try container.encode(modelSelectionConfigurable, forKey: .modelSelectionConfigurable)
-        try container.encode(verbositySelectionAllowed, forKey: .verbositySelectionAllowed)
-        try container.encode(verbositySelectionConfigurable, forKey: .verbositySelectionConfigurable)
         try container.encodeIfPresent(readOnlyReason, forKey: .readOnlyReason)
         try container.encode(availableModels, forKey: .availableModels)
-        try container.encode(availableVerbosityOptions, forKey: .availableVerbosityOptions)
     }
 }

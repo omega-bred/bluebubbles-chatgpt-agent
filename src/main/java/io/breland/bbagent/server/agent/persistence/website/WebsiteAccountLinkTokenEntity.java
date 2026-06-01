@@ -23,6 +23,9 @@ public class WebsiteAccountLinkTokenEntity {
   @Column(name = "account_id", nullable = false, length = 36)
   private String accountId;
 
+  @Column(name = "purpose", nullable = false, length = 64)
+  private String purpose = "account_link";
+
   @Column(name = "chat_guid", length = 255)
   private String chatGuid;
 
@@ -64,8 +67,35 @@ public class WebsiteAccountLinkTokenEntity {
       Instant expiresAt,
       Instant createdAt,
       Instant updatedAt) {
+    this(
+        tokenHash,
+        accountId,
+        "account_link",
+        chatGuid,
+        sender,
+        service,
+        group,
+        sourceMessageGuid,
+        expiresAt,
+        createdAt,
+        updatedAt);
+  }
+
+  public WebsiteAccountLinkTokenEntity(
+      String tokenHash,
+      String accountId,
+      String purpose,
+      String chatGuid,
+      String sender,
+      String service,
+      boolean group,
+      String sourceMessageGuid,
+      Instant expiresAt,
+      Instant createdAt,
+      Instant updatedAt) {
     this.tokenHash = tokenHash;
     this.accountId = accountId;
+    this.purpose = purpose;
     this.chatGuid = chatGuid;
     this.sender = sender;
     this.service = service;

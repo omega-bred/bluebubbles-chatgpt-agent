@@ -61,6 +61,8 @@ public class SecurityConfig {
                     .authenticated()
                     .requestMatchers("/api/v1/contact/**")
                     .permitAll()
+                    .requestMatchers("/api/v1/conversationSettings/**")
+                    .authenticated()
                     .requestMatchers("/api/v1/websiteAccount/**")
                     .authenticated()
                     .requestMatchers(

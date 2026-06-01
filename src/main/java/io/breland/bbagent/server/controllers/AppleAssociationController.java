@@ -26,7 +26,10 @@ public class AppleAssociationController {
                 "details",
                 List.of(
                     Map.of(
-                        "appID", MAIN_APP_ID, "paths", List.of("/account/link*", "/appclip/*")))),
+                        "appID",
+                        MAIN_APP_ID,
+                        "paths",
+                        List.of("/account/link*", "/conversation/settings*", "/appclip/*")))),
             "appclips",
             Map.of("apps", List.of(CLIP_APP_ID))));
   }

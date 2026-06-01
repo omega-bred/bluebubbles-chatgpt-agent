@@ -3,7 +3,6 @@ package io.breland.bbagent.server.agent.model_picker;
 import com.openai.models.Reasoning;
 import com.openai.models.ReasoningEffort;
 import com.openai.models.responses.ResponseCreateParams;
-import com.openai.models.responses.ResponseTextConfig;
 import com.openai.models.responses.Tool;
 import com.openai.models.responses.WebSearchTool;
 import io.breland.bbagent.server.agent.AgentWorkflowContext;
@@ -52,8 +51,6 @@ public class ModelPicker {
       builder.maxOutputTokens(2500);
       builder.reasoning(Reasoning.builder().effort(ReasoningEffort.MEDIUM).build());
       builder.model(modelAccess.responsesModel());
-      builder.text(
-          ResponseTextConfig.builder().verbosity(toResponseVerbosity(modelAccess)).build());
       if (modelAccess.supportsImageGeneration()) {
         builder.addTool(
             Tool.ImageGeneration.builder()
@@ -77,8 +74,6 @@ public class ModelPicker {
       builder.maxOutputTokens(1500);
       builder.reasoning(Reasoning.builder().effort(ReasoningEffort.HIGH).build());
       builder.model(modelAccess.responsesModel());
-      builder.text(
-          ResponseTextConfig.builder().verbosity(toResponseVerbosity(modelAccess)).build());
     }
     return builder;
   }
@@ -98,20 +93,9 @@ public class ModelPicker {
           ModelAccessService.STANDARD_MODEL_KEY,
           ModelAccessService.STANDARD_MODEL_LABEL,
           ModelAccessService.STANDARD_RESPONSES_MODEL,
-          ModelAccessService.VERBOSITY_MEDIUM,
-          "Balanced",
           false,
-          java.util.List.of(),
           java.util.List.of());
     }
     return modelAccessService.resolve(incomingMessage);
-  }
-
-  private ResponseTextConfig.Verbosity toResponseVerbosity(ModelAccessService.ModelAccess access) {
-    return switch (access.currentVerbosityKey()) {
-      case ModelAccessService.VERBOSITY_LOW -> ResponseTextConfig.Verbosity.LOW;
-      case ModelAccessService.VERBOSITY_HIGH -> ResponseTextConfig.Verbosity.HIGH;
-      default -> ResponseTextConfig.Verbosity.MEDIUM;
-    };
   }
 }

@@ -15,6 +15,7 @@ public class RootController {
         "/",
         "/account",
         "/account/link",
+        "/conversation/settings",
         "/admin",
         "/admin/feedback",
         "/contact",

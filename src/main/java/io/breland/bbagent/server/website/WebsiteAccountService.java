@@ -47,6 +47,8 @@ import org.springframework.web.util.UriComponentsBuilder;
 
 @Service
 public class WebsiteAccountService {
+  public static final String LINK_PURPOSE_ACCOUNT_LINK = "account_link";
+  public static final String LINK_PURPOSE_CONVERSATION_SETTINGS = "conversation_settings";
   private static final String DEFAULT_WEBSITE_BASE_URL = "http://localhost:8080";
   private static final int LINK_TOKEN_BYTES = 32;
 
@@ -119,6 +121,18 @@ public class WebsiteAccountService {
 
   @Transactional
   public CreatedLinkToken createLinkToken(IncomingMessage message) {
+    return createToken(message, LINK_PURPOSE_ACCOUNT_LINK);
+  }
+
+  @Transactional
+  public CreatedLinkToken createConversationSettingsToken(IncomingMessage message) {
+    if (message == null || StringUtils.isBlank(message.chatGuid())) {
+      throw new IllegalArgumentException("missing conversation context");
+    }
+    return createToken(message, LINK_PURPOSE_CONVERSATION_SETTINGS);
+  }
+
+  private CreatedLinkToken createToken(IncomingMessage message, String purpose) {
     if (message == null) {
       throw new IllegalArgumentException("missing message context");
     }
@@ -135,6 +149,7 @@ public class WebsiteAccountService {
         new WebsiteAccountLinkTokenEntity(
             tokenHash,
             account.getAccountId(),
+            purpose,
             message.chatGuid(),
             message.sender(),
             message.service(),
@@ -143,8 +158,13 @@ public class WebsiteAccountService {
             expiresAt,
             now,
             now));
-    trackLinkTokenCreated(account.getAccountId(), message);
-    return new CreatedLinkToken(buildLinkUrl(token), expiresAt, account.getAccountId());
+    trackLinkTokenCreated(account.getAccountId(), message, purpose);
+    return new CreatedLinkToken(
+        buildLinkUrl(token, purpose),
+        expiresAt,
+        account.getAccountId(),
+        purpose,
+        message.chatGuid());
   }
 
   @Transactional(readOnly = true)
@@ -199,6 +219,9 @@ public class WebsiteAccountService {
             .findById(hashToken(token))
             .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Link not found"));
     Instant now = Instant.now();
+    if (!LINK_PURPOSE_ACCOUNT_LINK.equals(tokenEntity.getPurpose())) {
+      throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Link is not an account link");
+    }
     validateToken(tokenEntity, websiteAccount, now);
     boolean alreadyLinked = tokenEntity.getRedeemedAt() != null;
     AgentAccountEntity linkedAccount =
@@ -233,17 +256,16 @@ public class WebsiteAccountService {
   }
 
   @Transactional
-  public WebsiteModelSelectionResponse updatePreferredModel(
-      Jwt jwt, @Nullable String modelKey, @Nullable String verbosityKey) {
+  public WebsiteModelSelectionResponse updatePreferredModel(Jwt jwt, @Nullable String modelKey) {
     AgentAccountEntity account = accountResolver.upsertWebsiteAccount(jwt);
     ModelAccessService.ModelSelectionResult result =
-        modelAccessService.updatePreferences(account.getAccountId(), modelKey, verbosityKey);
+        modelAccessService.updatePreferences(account.getAccountId(), modelKey);
     return new WebsiteModelSelectionResponse()
         .modelAccess(modelAccessService.toWebsiteSummary(result.modelAccess()))
         .message(result.message());
   }
 
-  private void trackLinkTokenCreated(String accountId, IncomingMessage message) {
+  private void trackLinkTokenCreated(String accountId, IncomingMessage message, String purpose) {
     if (umamiAnalyticsService == null) {
       return;
     }
@@ -254,6 +276,7 @@ public class WebsiteAccountService {
         Map.of(
             "transport", message.transportOrDefault(),
             "is_group", message.isGroup(),
+            "purpose", purpose,
             "ttl_minutes", linkTokenTtl.toMinutes()));
   }
 
@@ -385,9 +408,13 @@ public class WebsiteAccountService {
     return DigestUtils.sha256Hex(token);
   }
 
-  private String buildLinkUrl(String token) {
+  private String buildLinkUrl(String token, String purpose) {
+    String path =
+        LINK_PURPOSE_CONVERSATION_SETTINGS.equals(purpose)
+            ? "/conversation/settings"
+            : "/account/link";
     return UriComponentsBuilder.fromUriString(websiteBaseUrl)
-        .path("/account/link")
+        .path(path)
         .queryParam("token", token)
         .build()
         .toUriString();
@@ -414,7 +441,12 @@ public class WebsiteAccountService {
     tokenRepository.save(tokenEntity);
   }
 
-  public record CreatedLinkToken(String url, Instant expiresAt, String accountId) {}
+  public record CreatedLinkToken(
+      String url, Instant expiresAt, String accountId, String purpose, String chatGuid) {
+    public CreatedLinkToken(String url, Instant expiresAt, String accountId) {
+      this(url, expiresAt, accountId, LINK_PURPOSE_ACCOUNT_LINK, null);
+    }
+  }
 
   public record SenderLinkStatus(
       String accountId,
