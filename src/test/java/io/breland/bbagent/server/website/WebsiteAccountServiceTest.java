@@ -12,6 +12,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import io.breland.bbagent.generated.model.WebsiteModelAccessSummary;
+import io.breland.bbagent.generated.model.WebsiteUsageLimitSummary;
 import io.breland.bbagent.server.agent.IncomingMessage;
 import io.breland.bbagent.server.agent.account.AgentAccountIdentifiers;
 import io.breland.bbagent.server.agent.account.AgentAccountResolver;
@@ -21,6 +22,7 @@ import io.breland.bbagent.server.agent.persistence.account.AgentAccountIdentityE
 import io.breland.bbagent.server.agent.persistence.website.WebsiteAccountLinkTokenEntity;
 import io.breland.bbagent.server.agent.persistence.website.WebsiteAccountLinkTokenRepository;
 import io.breland.bbagent.server.agent.tools.gcal.GcalClient;
+import io.breland.bbagent.server.ratelimit.MessageResponseRateLimitService;
 import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
@@ -38,12 +40,15 @@ class WebsiteAccountServiceTest {
       Mockito.mock(WebsiteAccountLinkTokenRepository.class);
   private final GcalClient gcalClient = Mockito.mock(GcalClient.class);
   private final ModelAccessService modelAccessService = Mockito.mock(ModelAccessService.class);
+  private final MessageResponseRateLimitService messageResponseRateLimitService =
+      Mockito.mock(MessageResponseRateLimitService.class);
   private final WebsiteAccountService service =
       new WebsiteAccountService(
           accountResolver,
           tokenRepository,
           gcalClient,
           modelAccessService,
+          messageResponseRateLimitService,
           "https://chatagent.example",
           30,
           null);
@@ -128,6 +133,8 @@ class WebsiteAccountServiceTest {
             List.of(
                 new GcalClient.GcalLinkedAccount("account-1::primary", "account-1", "primary")));
     when(modelAccessService.toWebsiteSummary("account-1")).thenReturn(modelAccess());
+    when(messageResponseRateLimitService.websiteUsageForAccountId("account-1"))
+        .thenReturn(usageLimit());
 
     var response = service.listLinkedAccounts(jwt());
 
@@ -137,6 +144,8 @@ class WebsiteAccountServiceTest {
     assertEquals(
         "primary", response.getIntegrations().get(0).getLinkedAccounts().get(0).getEmail());
     assertFalse(response.getIntegrations().get(0).getModelAccess().getIsPremium());
+    assertEquals(1, response.getUsageLimits().size());
+    assertEquals("message_responses_per_month", response.getUsageLimits().get(0).getLimitKey());
   }
 
   @Test
@@ -230,6 +239,19 @@ class WebsiteAccountServiceTest {
         .modelSelectionConfigurable(false)
         .readOnlyReason("Free accounts use the included model.")
         .availableModels(List.of());
+  }
+
+  private WebsiteUsageLimitSummary usageLimit() {
+    return new WebsiteUsageLimitSummary()
+        .limitKey("message_responses_per_month")
+        .limitLabel("Monthly assistant responses")
+        .used(4L)
+        .limit(200L)
+        .remaining(196L)
+        .percentage(0.02)
+        .exhausted(false)
+        .windowStart(java.time.OffsetDateTime.parse("2026-06-01T00:00:00Z"))
+        .windowEnd(java.time.OffsetDateTime.parse("2026-07-01T00:00:00Z"));
   }
 
   private Jwt jwt() {

@@ -10,6 +10,7 @@ struct ClipRootView: View {
                 VStack(alignment: .leading, spacing: 18) {
                     header
                     statusPanel
+                    usagePanel
                     accountPanel
                     modelPanel
                     billingPanel
@@ -22,6 +23,50 @@ struct ClipRootView: View {
             .task {
                 await model.restoreSessionIfPossible()
             }
+        }
+    }
+
+    @ViewBuilder
+    private var usagePanel: some View {
+        if model.session != nil, let usage = model.primaryUsageLimit {
+            VStack(alignment: .leading, spacing: 14) {
+                HStack(alignment: .top, spacing: 14) {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("Usage")
+                            .font(.headline)
+                        Text(model.usageTitle(usage))
+                            .font(.subheadline.weight(.semibold))
+                        Text(model.usageSummary(usage))
+                            .font(.callout)
+                            .foregroundStyle(.secondary)
+                    }
+                    Spacer(minLength: 8)
+                    UsageBadge(percentage: usage.percentage)
+                }
+                UsageBar(percentage: usage.percentage)
+                HStack(spacing: 10) {
+                    UsageMetric(label: "Used", value: model.formatCount(usage.used))
+                    UsageMetric(label: "Remaining", value: model.formatCount(usage.remaining))
+                    UsageMetric(label: "Limit", value: model.formatCount(usage.limit))
+                }
+                Text("Resets \(model.formatDate(usage.windowEnd))")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding()
+            .background(
+                LinearGradient(
+                    colors: [
+                        Color.green.opacity(0.18),
+                        Color.blue.opacity(0.10),
+                        Color(.secondarySystemBackground)
+                    ],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+            )
+            .clipShape(RoundedRectangle(cornerRadius: 8))
         }
     }
 
@@ -235,6 +280,83 @@ private struct InfoRow: View {
     }
 }
 
+private struct UsageBadge: View {
+    let percentage: Double
+
+    var body: some View {
+        ZStack {
+            Circle()
+                .stroke(Color.secondary.opacity(0.18), lineWidth: 9)
+            Circle()
+                .trim(from: 0, to: max(0, min(1, percentage)))
+                .stroke(
+                    AngularGradient(
+                        colors: [.green, .blue, .green],
+                        center: .center
+                    ),
+                    style: StrokeStyle(lineWidth: 9, lineCap: .round)
+                )
+                .rotationEffect(.degrees(-90))
+            VStack(spacing: 1) {
+                Text("\(Int((max(0, min(1, percentage)) * 100).rounded()))%")
+                    .font(.headline.weight(.bold))
+                Text("used")
+                    .font(.caption2.weight(.bold))
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .frame(width: 72, height: 72)
+        .accessibilityLabel("\(Int((max(0, min(1, percentage)) * 100).rounded())) percent used")
+    }
+}
+
+private struct UsageBar: View {
+    let percentage: Double
+
+    var body: some View {
+        GeometryReader { proxy in
+            ZStack(alignment: .leading) {
+                Capsule()
+                    .fill(Color.secondary.opacity(0.16))
+                Capsule()
+                    .fill(
+                        LinearGradient(
+                            colors: [.green, .blue],
+                            startPoint: .leading,
+                            endPoint: .trailing
+                        )
+                    )
+                    .frame(width: fillWidth(in: proxy.size.width))
+            }
+        }
+        .frame(height: 10)
+        .accessibilityHidden(true)
+    }
+
+    private func fillWidth(in width: CGFloat) -> CGFloat {
+        let value = max(0, min(1, percentage))
+        return value <= 0 ? 0 : max(8, width * value)
+    }
+}
+
+private struct UsageMetric: View {
+    let label: String
+    let value: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text(label)
+                .font(.caption2.weight(.bold))
+                .foregroundStyle(.secondary)
+            Text(value)
+                .font(.caption.weight(.semibold))
+                .lineLimit(1)
+                .minimumScaleFactor(0.75)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
 @MainActor
 final class ClipViewModel: ObservableObject {
     @Published private(set) var session: AppClipSessionResponse?
@@ -320,6 +442,14 @@ final class ClipViewModel: ObservableObject {
         dedupe(session?.linkedAccounts.integrations.flatMap(\.linkedAccounts) ?? [], by: \.id)
     }
 
+    var usageLimits: [WebsiteUsageLimitSummary] {
+        session?.linkedAccounts.usageLimits ?? []
+    }
+
+    var primaryUsageLimit: WebsiteUsageLimitSummary? {
+        usageLimits.first
+    }
+
     var modelAccess: WebsiteModelAccessSummary? {
         session?.linkedAccounts.integrations.compactMap(\.modelAccess).first
     }
@@ -399,6 +529,7 @@ final class ClipViewModel: ObservableObject {
             purchaseInProgress = false
         }
         do {
+            trackAppClipEvent("appclip_purchase_started", properties: eventContext(for: session))
             let purchase = try await storeKit.purchase(product: product, appAccountToken: session.appAccountToken)
             let updated = try await client.validateStoreKitTransaction(
                 sessionToken: session.sessionToken,
@@ -408,7 +539,15 @@ final class ClipViewModel: ObservableObject {
             )
             await purchase.transaction.finish()
             self.session = session.replacing(subscription: updated)
+            trackAppClipEvent(
+                "appclip_purchase_completed",
+                properties: eventContext(for: self.session ?? session)
+            )
         } catch {
+            trackAppClipEvent(
+                "appclip_purchase_failed",
+                properties: eventContext(for: session)
+            )
             billingErrorMessage = error.localizedDescription
         }
     }
@@ -447,6 +586,28 @@ final class ClipViewModel: ObservableObject {
         firstNonBlank(value) ?? "Unknown"
     }
 
+    func usageTitle(_ usage: WebsiteUsageLimitSummary) -> String {
+        firstNonBlank(usage.limitLabel) ?? "Monthly assistant responses"
+    }
+
+    func usageSummary(_ usage: WebsiteUsageLimitSummary) -> String {
+        if usage.exhausted {
+            return "Monthly responses are used up until the reset."
+        }
+        return "\(formatCount(usage.remaining)) responses remain this month."
+    }
+
+    func formatCount(_ value: Int) -> String {
+        NumberFormatter.localizedString(from: NSNumber(value: value), number: .decimal)
+    }
+
+    func formatDate(_ value: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.dateStyle = .medium
+        formatter.timeStyle = .short
+        return formatter.string(from: value)
+    }
+
     func updatePreferredModel(_ modelKey: String) async {
         guard let session else {
             return
@@ -460,6 +621,10 @@ final class ClipViewModel: ObservableObject {
             modelSelectionInProgress = false
         }
         do {
+            trackAppClipEvent(
+                "appclip_model_selection_started",
+                properties: eventContext(for: session).merging(["model": modelKey]) { _, new in new }
+            )
             _ = try await client.updatePreferredModel(
                 sessionToken: session.sessionToken,
                 model: modelKey
@@ -467,7 +632,15 @@ final class ClipViewModel: ObservableObject {
             let refreshed = try await client.getSession(sessionToken: session.sessionToken)
             self.session = refreshed
             await loadProductIfNeeded(for: refreshed)
+            trackAppClipEvent(
+                "appclip_model_selection_updated",
+                properties: eventContext(for: refreshed).merging(["model": modelKey]) { _, new in new }
+            )
         } catch {
+            trackAppClipEvent(
+                "appclip_model_selection_failed",
+                properties: eventContext(for: session).merging(["model": modelKey]) { _, new in new }
+            )
             modelErrorMessage = error.localizedDescription
         }
     }
@@ -486,6 +659,11 @@ final class ClipViewModel: ObservableObject {
             self.session = session
             errorMessage = nil
             await loadProductIfNeeded(for: session)
+            trackAppClipEvent(
+                "appclip_session_created",
+                properties: eventContext(for: session).merging(["launch_source": "link"]) { _, new in new },
+                sessionToken: session.sessionToken
+            )
         } catch {
             setBootstrapError(error)
         }
@@ -504,6 +682,11 @@ final class ClipViewModel: ObservableObject {
             self.session = session
             errorMessage = nil
             await loadProductIfNeeded(for: session)
+            trackAppClipEvent(
+                "appclip_session_restored",
+                properties: eventContext(for: session).merging(["launch_source": "stored"]) { _, new in new },
+                sessionToken: session.sessionToken
+            )
         } catch {
             if UserDefaults.standard.string(forKey: sessionTokenKey) == sessionToken {
                 UserDefaults.standard.removeObject(forKey: sessionTokenKey)
@@ -542,6 +725,39 @@ final class ClipViewModel: ObservableObject {
         } catch {
             billingErrorMessage = error.localizedDescription
         }
+    }
+
+    private func trackAppClipEvent(
+        _ eventName: String,
+        properties: [String: String] = [:],
+        sessionToken explicitSessionToken: String? = nil
+    ) {
+        let token = explicitSessionToken ?? session?.sessionToken
+        guard let token else {
+            return
+        }
+        Task {
+            _ = try? await client.trackEvent(
+                sessionToken: token,
+                eventName: eventName,
+                properties: properties
+            )
+        }
+    }
+
+    private func eventContext(for session: AppClipSessionResponse) -> [String: String] {
+        var properties: [String: String] = [
+            "is_premium": session.subscription.isPremium ? "true" : "false",
+            "billing_source": session.subscription.entitlementSource
+        ]
+        if let model = session.linkedAccounts.integrations.compactMap(\.modelAccess).first?.currentModel {
+            properties["model"] = model
+        }
+        if let usage = session.linkedAccounts.usageLimits?.first {
+            properties["usage_exhausted"] = usage.exhausted ? "true" : "false"
+            properties["usage_percent"] = String(Int((max(0, min(1, usage.percentage)) * 100).rounded()))
+        }
+        return properties
     }
 
     private func firstNonBlank(_ values: String?...) -> String? {

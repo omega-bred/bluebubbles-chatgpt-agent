@@ -36,6 +36,23 @@ struct WebsiteAccountProfile: Decodable {
 struct WebsiteLinkedAccountsResponse: Decodable {
     let account: WebsiteAccountProfile
     let integrations: [WebsiteIntegrationSummary]
+    let usageLimits: [WebsiteUsageLimitSummary]?
+}
+
+struct WebsiteUsageLimitSummary: Decodable, Identifiable {
+    let limitKey: String
+    let limitLabel: String
+    let used: Int
+    let limit: Int
+    let remaining: Int
+    let percentage: Double
+    let exhausted: Bool
+    let windowStart: Date
+    let windowEnd: Date
+
+    var id: String {
+        limitKey
+    }
 }
 
 struct WebsiteIntegrationSummary: Decodable {
@@ -113,6 +130,15 @@ struct WebsiteModelSelectionRequest: Encodable {
 struct WebsiteModelSelectionResponse: Decodable {
     let modelAccess: WebsiteModelAccessSummary
     let message: String
+}
+
+struct AppClipEventRequest: Encodable {
+    let eventName: String
+    let properties: [String: String]
+}
+
+struct AppClipEventResponse: Decodable {
+    let accepted: Bool
 }
 
 struct SubscriptionSummaryResponse: Decodable {

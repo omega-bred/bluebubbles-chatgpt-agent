@@ -2,6 +2,7 @@ package io.breland.bbagent.server.ratelimit;
 
 import io.breland.bbagent.generated.model.AdminRateLimitUsage;
 import io.breland.bbagent.generated.model.AdminRateLimitUsageResponse;
+import io.breland.bbagent.generated.model.WebsiteUsageLimitSummary;
 import io.breland.bbagent.server.agent.IncomingMessage;
 import io.breland.bbagent.server.agent.model_picker.ModelAccessService;
 import io.breland.bbagent.server.agent.persistence.ratelimit.AppRateLimitUsageEntity;
@@ -53,6 +54,24 @@ public class MessageResponseRateLimitService {
 
   public MessageResponseLimitStatus statusForAccountId(String accountId) {
     return statusFor(modelAccessService.resolve(accountId));
+  }
+
+  public WebsiteUsageLimitSummary websiteUsageForAccountId(String accountId) {
+    MessageResponseLimitStatus status = statusForAccountId(accountId);
+    RateLimitStatus rateLimit = status.rateLimit();
+    if (rateLimit == null) {
+      rateLimit = untrackedStatus(modelAccessService.resolve(accountId));
+    }
+    return new WebsiteUsageLimitSummary()
+        .limitKey(rateLimit.limitKey())
+        .limitLabel(rateLimit.limitLabel())
+        .used(rateLimit.used())
+        .limit(rateLimit.limit())
+        .remaining(rateLimit.remaining())
+        .percentage(rateLimit.percentage())
+        .exhausted(rateLimit.exhausted())
+        .windowStart(offset(rateLimit.windowStart()))
+        .windowEnd(offset(rateLimit.windowEnd()));
   }
 
   public RateLimitDecision tryConsume(IncomingMessage message) {

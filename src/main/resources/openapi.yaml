@@ -278,6 +278,32 @@ paths:
                 $ref: '#/components/schemas/AppClipSessionResponse'
         '401':
           description: Missing or invalid App Clip session
+  /api/v1/appClip/createEvent.appClipEvents:
+    post:
+      operationId: appClipCreateEvent
+      tags:
+        - appClip
+      summary: Records a high-level App Clip analytics event
+      description: Records privacy-safe App Clip product events through the server-side analytics pipeline.
+      security:
+        - appClipSessionAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AppClipEventRequest'
+      responses:
+        '200':
+          description: Event accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AppClipEventResponse'
+        '400':
+          description: Missing or invalid event
+        '401':
+          description: Missing or invalid App Clip session
   /api/v1/websiteAccount/updateModel.websiteAccountModels:
     post:
       operationId: websiteAccountUpdateModel
@@ -1019,6 +1045,7 @@ components:
       required:
         - account
         - links
+        - usage_limits
       properties:
         account:
           $ref: '#/components/schemas/WebsiteAccountProfile'
@@ -1026,6 +1053,10 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/WebsiteAccountLink'
+        usage_limits:
+          type: array
+          items:
+            $ref: '#/components/schemas/WebsiteUsageLimitSummary'
     WebsiteCalendarAccountSummary:
       type: object
       required:
@@ -1160,6 +1191,7 @@ components:
       required:
         - account
         - integrations
+        - usage_limits
       properties:
         account:
           $ref: '#/components/schemas/WebsiteAccountProfile'
@@ -1167,6 +1199,50 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/WebsiteIntegrationSummary'
+        usage_limits:
+          type: array
+          items:
+            $ref: '#/components/schemas/WebsiteUsageLimitSummary'
+    WebsiteUsageLimitSummary:
+      type: object
+      required:
+        - limit_key
+        - limit_label
+        - used
+        - limit
+        - remaining
+        - percentage
+        - exhausted
+        - window_start
+        - window_end
+      properties:
+        limit_key:
+          type: string
+          description: Stable app limit key, such as message_responses_per_month.
+        limit_label:
+          type: string
+        used:
+          type: integer
+          format: int64
+        limit:
+          type: integer
+          format: int64
+        remaining:
+          type: integer
+          format: int64
+        percentage:
+          type: number
+          format: double
+          description: Fraction of the monthly limit used, from 0.0 to 1.0.
+        exhausted:
+          type: boolean
+        window_start:
+          type: string
+          format: date-time
+        window_end:
+          type: string
+          format: date-time
+          description: Reset time for this usage window.
     WebsiteAccountRedeemLinkRequest:
       type: object
       required:
@@ -1231,6 +1307,27 @@ components:
           items:
             type: string
           description: StoreKit product IDs the App Clip should load.
+    AppClipEventRequest:
+      type: object
+      required:
+        - event_name
+      properties:
+        event_name:
+          type: string
+          description: High-level App Clip event name. Server-side analytics truncates this to Umami limits.
+          maxLength: 50
+        properties:
+          type: object
+          nullable: true
+          additionalProperties: true
+          description: Privacy-safe event properties. Do not include link tokens, session tokens, emails, phone numbers, or message contents.
+    AppClipEventResponse:
+      type: object
+      required:
+        - accepted
+      properties:
+        accepted:
+          type: boolean
     ContactConfigResponse:
       type: object
       required:

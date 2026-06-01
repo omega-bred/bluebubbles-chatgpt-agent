@@ -10,6 +10,7 @@ import type {
   WebsiteLinkedAccountsResponse,
   WebsiteLinkedIntegrationAccount,
   WebsiteModelOption,
+  WebsiteUsageLimitSummary,
 } from "../client";
 import { AuthGate } from "../components/AuthGate";
 import { CenteredMessage } from "../components/CenteredMessage";
@@ -17,9 +18,6 @@ import { SiteNav } from "../components/SiteNav";
 import { subscriptionApi, websiteAccountApi } from "../services/api-client";
 import { trackEvent } from "../services/analytics";
 import { displayModelLabel } from "../utils/model-label";
-
-const standardMonthlyMessageLimit = "200";
-const premiumMonthlyMessageLimit = "5,000";
 
 export function AccountPage({ auth }: { auth: AuthState }) {
   const [data, setData] = React.useState<WebsiteLinkedAccountsResponse | null>(null);
@@ -132,6 +130,8 @@ export function AccountPage({ auth }: { auth: AuthState }) {
           onManage={openPortal}
         />
 
+        <UsageLimitsPanel limits={data?.usage_limits || []} />
+
         <section className="linked-list" aria-busy={!hasLoaded || loading}>
           {!hasLoaded ? (
             <AccountLoader />
@@ -169,9 +169,6 @@ function BillingPanel({
   const isPremium = Boolean(subscription?.is_premium);
   const showCheckoutOptions = !isPremium && !activeSubscription;
   const planCheckoutCopy = checkoutOptionCopy(plan?.provider);
-  const usageCopy = isPremium
-    ? `Premium includes ${premiumMonthlyMessageLimit} messages per month.`
-    : `Free includes ${standardMonthlyMessageLimit} messages per month. Premium raises that to ${premiumMonthlyMessageLimit} messages per month.`;
   return (
     <article className="billing-panel">
       <div>
@@ -182,7 +179,6 @@ function BillingPanel({
             ? premiumAccessText(subscription, activeSubscription)
             : premiumPlanSummary(plans)}
         </p>
-        <p className="muted">{usageCopy}</p>
       </div>
       <div className="billing-actions">
         {activeSubscription ? (
@@ -227,6 +223,58 @@ function BillingPanel({
       {activeSubscription ? (
         <SubscriptionRows plans={plans} subscriptions={subscription?.subscriptions || []} />
       ) : null}
+    </article>
+  );
+}
+
+function UsageLimitsPanel({ limits }: { limits: WebsiteUsageLimitSummary[] }) {
+  const primaryLimit = limits[0];
+  if (!primaryLimit) {
+    return (
+      <article className="usage-panel">
+        <div>
+          <p className="eyebrow">Usage</p>
+          <h2>Usage limits</h2>
+          <p className="muted">Your monthly usage will appear here once your account is active.</p>
+        </div>
+      </article>
+    );
+  }
+  const percentage = clampPercentage(primaryLimit.percentage || 0);
+  const remaining = Number(primaryLimit.remaining || 0);
+  const limit = Number(primaryLimit.limit || 0);
+  const used = Number(primaryLimit.used || 0);
+  return (
+    <article className="usage-panel">
+      <div className="usage-panel-copy">
+        <p className="eyebrow">Usage</p>
+        <h2>{primaryLimit.limit_label || "Monthly assistant responses"}</h2>
+        <p className="muted">
+          {formatUsageCount(remaining)} responses remain before the monthly reset.
+        </p>
+      </div>
+      <div
+        className="usage-orbit"
+        style={{ "--usage-fill": `${percentage * 360}deg` } as React.CSSProperties}
+        aria-label={`${Math.round(percentage * 100)}% used`}
+      >
+        <span>{Math.round(percentage * 100)}%</span>
+        <small>used</small>
+      </div>
+      <div className="usage-meter-block">
+        <div className="usage-meter" aria-hidden="true">
+          <span style={{ width: `${(percentage <= 0 ? 0 : Math.max(percentage, 0.015)) * 100}%` }} />
+        </div>
+        <div className="usage-stats">
+          <span>
+            <strong>{formatUsageCount(used)}</strong> used
+          </span>
+          <span>
+            <strong>{formatUsageCount(limit)}</strong> monthly limit
+          </span>
+          <span>Resets {formatAccountDate(primaryLimit.window_end)}</span>
+        </div>
+      </div>
     </article>
   );
 }
@@ -407,6 +455,18 @@ function formatAccountDate(value: Date | number | string | null | undefined) {
   return Number.isFinite(date.getTime())
     ? new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" }).format(date)
     : "";
+}
+
+function formatUsageCount(value: number | string | undefined) {
+  const numeric = Number(value || 0);
+  return Number.isFinite(numeric) ? new Intl.NumberFormat().format(numeric) : "0";
+}
+
+function clampPercentage(value: number) {
+  if (!Number.isFinite(value)) {
+    return 0;
+  }
+  return Math.max(0, Math.min(1, value));
 }
 
 function AccountLoader() {

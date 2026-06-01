@@ -11,6 +11,7 @@ import io.breland.bbagent.generated.model.WebsiteLinkedAccountsResponse;
 import io.breland.bbagent.generated.model.WebsiteLinkedIntegrationAccount;
 import io.breland.bbagent.generated.model.WebsiteModelAccessSummary;
 import io.breland.bbagent.generated.model.WebsiteModelSelectionResponse;
+import io.breland.bbagent.generated.model.WebsiteUsageLimitSummary;
 import io.breland.bbagent.server.agent.IncomingMessage;
 import io.breland.bbagent.server.agent.account.AgentAccountResolver;
 import io.breland.bbagent.server.agent.model_picker.ModelAccessService;
@@ -21,6 +22,7 @@ import io.breland.bbagent.server.agent.persistence.website.WebsiteAccountLinkTok
 import io.breland.bbagent.server.agent.tools.gcal.AccountKeyParts;
 import io.breland.bbagent.server.agent.tools.gcal.GcalClient;
 import io.breland.bbagent.server.analytics.UmamiAnalyticsService;
+import io.breland.bbagent.server.ratelimit.MessageResponseRateLimitService;
 import java.net.URI;
 import java.security.SecureRandom;
 import java.time.Duration;
@@ -52,6 +54,7 @@ public class WebsiteAccountService {
   private final WebsiteAccountLinkTokenRepository tokenRepository;
   private final GcalClient gcalClient;
   private final ModelAccessService modelAccessService;
+  private final MessageResponseRateLimitService messageResponseRateLimitService;
   private final String websiteBaseUrl;
   private final Duration linkTokenTtl;
   private final UmamiAnalyticsService umamiAnalyticsService;
@@ -62,6 +65,7 @@ public class WebsiteAccountService {
       WebsiteAccountLinkTokenRepository tokenRepository,
       GcalClient gcalClient,
       ModelAccessService modelAccessService,
+      MessageResponseRateLimitService messageResponseRateLimitService,
       @Value("${website.base-url:" + DEFAULT_WEBSITE_BASE_URL + "}") String websiteBaseUrl,
       @Value("${website.account-link-token-ttl-minutes:30}") long linkTokenTtlMinutes,
       @Nullable UmamiAnalyticsService umamiAnalyticsService) {
@@ -69,6 +73,7 @@ public class WebsiteAccountService {
     this.tokenRepository = tokenRepository;
     this.gcalClient = gcalClient;
     this.modelAccessService = modelAccessService;
+    this.messageResponseRateLimitService = messageResponseRateLimitService;
     this.websiteBaseUrl = stripTrailingSlash(websiteBaseUrl);
     this.linkTokenTtl = Duration.ofMinutes(linkTokenTtlMinutes);
     this.umamiAnalyticsService = umamiAnalyticsService;
@@ -86,7 +91,10 @@ public class WebsiteAccountService {
   }
 
   private WebsiteAccountResponse getAccount(AgentAccountEntity account) {
-    return new WebsiteAccountResponse().account(toProfile(account)).links(List.of(toLink(account)));
+    return new WebsiteAccountResponse()
+        .account(toProfile(account))
+        .links(List.of(toLink(account)))
+        .usageLimits(usageLimits(account));
   }
 
   @Transactional
@@ -103,7 +111,8 @@ public class WebsiteAccountService {
   private WebsiteLinkedAccountsResponse listLinkedAccounts(AgentAccountEntity account) {
     return new WebsiteLinkedAccountsResponse()
         .account(toProfile(account))
-        .integrations(List.of(toIntegration(account)));
+        .integrations(List.of(toIntegration(account)))
+        .usageLimits(usageLimits(account));
   }
 
   @Transactional
@@ -304,6 +313,11 @@ public class WebsiteAccountService {
         .gcalAccounts(gcalAccounts)
         .linkedAccounts(linkedAccounts(account))
         .modelAccess(modelAccessService.toWebsiteSummary(account.getAccountId()));
+  }
+
+  private List<WebsiteUsageLimitSummary> usageLimits(AgentAccountEntity account) {
+    return List.of(
+        messageResponseRateLimitService.websiteUsageForAccountId(account.getAccountId()));
   }
 
   private List<WebsiteLinkedIntegrationAccount> linkedAccounts(AgentAccountEntity account) {

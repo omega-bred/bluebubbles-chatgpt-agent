@@ -66,6 +66,19 @@ struct BlueChatAPIClient {
         return try await send(request)
     }
 
+    func trackEvent(
+        sessionToken: String,
+        eventName: String,
+        properties: [String: String] = [:]
+    ) async throws -> AppClipEventResponse {
+        var request = URLRequest(url: baseURL.appending(path: "/api/v1/appClip/createEvent.appClipEvents"))
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue(sessionToken, forHTTPHeaderField: "X-App-Clip-Session")
+        request.httpBody = try encoder.encode(AppClipEventRequest(eventName: eventName, properties: properties))
+        return try await send(request)
+    }
+
     private func send<T: Decodable>(_ request: URLRequest) async throws -> T {
         let (data, response) = try await URLSession.shared.data(for: request)
         guard let http = response as? HTTPURLResponse, 200..<300 ~= http.statusCode else {
