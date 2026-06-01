@@ -14,6 +14,7 @@ import java.util.Locale;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
+import org.apache.commons.lang3.StringUtils;
 import org.springframework.lang.Nullable;
 import org.springframework.stereotype.Service;
 
@@ -53,15 +54,6 @@ public class OperationalMetricsService {
   }
 
   public void recordAgentToolInvocation(
-      String toolName,
-      String toolCategory,
-      boolean success,
-      @Nullable String failureType,
-      Duration duration) {
-    recordAgentToolInvocation("unknown", toolName, toolCategory, success, failureType, duration);
-  }
-
-  public void recordAgentToolInvocation(
       String transport,
       String toolName,
       String toolCategory,
@@ -86,15 +78,6 @@ public class OperationalMetricsService {
   }
 
   public void recordLlmCall(
-      String operation,
-      @Nullable ResponseCreateParams request,
-      boolean success,
-      @Nullable String failureType,
-      Duration duration) {
-    recordLlmCall("unknown", operation, responseModelName(request), success, failureType, duration);
-  }
-
-  public void recordLlmCall(
       String transport,
       String operation,
       @Nullable ResponseCreateParams request,
@@ -102,15 +85,6 @@ public class OperationalMetricsService {
       @Nullable String failureType,
       Duration duration) {
     recordLlmCall(transport, operation, responseModelName(request), success, failureType, duration);
-  }
-
-  public void recordLlmCall(
-      String operation,
-      @Nullable String model,
-      boolean success,
-      @Nullable String failureType,
-      Duration duration) {
-    recordLlmCall("unknown", operation, model, success, failureType, duration);
   }
 
   public void recordLlmCall(
@@ -186,7 +160,7 @@ public class OperationalMetricsService {
             "outcome",
             outcome(healthy),
             "icloud_connected",
-            iCloudConnected ? "true" : "false",
+            Boolean.toString(iCloudConnected),
             "failure_type",
             failureTag(healthy, failureType));
     recordTimer(
@@ -310,26 +284,16 @@ public class OperationalMetricsService {
   }
 
   private static String tagValue(@Nullable String value, String fallback) {
-    String trimmed = value == null ? null : value.trim();
-    if (trimmed == null || trimmed.isBlank()) {
+    String trimmed = StringUtils.trimToNull(value);
+    if (trimmed == null) {
       return fallback;
     }
-    String normalized = trimmed.toLowerCase(Locale.ROOT);
-    if (normalized.length() <= MAX_TAG_VALUE_LENGTH) {
-      return normalized;
-    }
-    return normalized.substring(0, MAX_TAG_VALUE_LENGTH);
+    return StringUtils.truncate(trimmed.toLowerCase(Locale.ROOT), MAX_TAG_VALUE_LENGTH);
   }
 
   private static String modelTagValue(@Nullable String value) {
-    String trimmed = value == null ? null : value.trim();
-    if (trimmed == null || trimmed.isBlank()) {
-      return "unknown";
-    }
-    if (trimmed.length() <= MAX_TAG_VALUE_LENGTH) {
-      return trimmed;
-    }
-    return trimmed.substring(0, MAX_TAG_VALUE_LENGTH);
+    String trimmed = StringUtils.trimToNull(value);
+    return trimmed == null ? "unknown" : StringUtils.truncate(trimmed, MAX_TAG_VALUE_LENGTH);
   }
 
   private static boolean hasCause(Throwable throwable, Class<? extends Throwable> type) {
