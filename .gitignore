@@ -50,6 +50,9 @@ HELP.md
 build/
 appclip/.derivedData*/
 appclip/**/*.xcuserstate
+appclip/**/xcuserdata/
+appclip/Generated/**/.build/
+appclip/Generated/**/.swiftpm/
 !gradle/wrapper/gradle-wrapper.jar
 !**/src/main/**/build/
 !**/src/test/**/build/

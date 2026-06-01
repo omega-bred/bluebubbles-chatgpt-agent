@@ -1,3 +1,4 @@
+import BlueChatAgentClient
 import StoreKit
 import SwiftUI
 
@@ -167,7 +168,7 @@ struct ClipRootView: View {
                             .font(.caption.weight(.semibold))
                             .foregroundStyle(.secondary)
                         Menu {
-                            ForEach(model.selectableModels) { option in
+                            ForEach(model.selectableModels, id: \.model) { option in
                                 Button {
                                     Task {
                                         await model.updatePreferredModel(option.model)
@@ -225,7 +226,7 @@ struct ClipRootView: View {
                     Text("No OAuth integrations linked.")
                         .foregroundStyle(.secondary)
                 } else {
-                    ForEach(model.linkedIntegrationAccounts) { account in
+                    ForEach(model.linkedIntegrationAccounts, id: \.accountKey) { account in
                         InfoRow(
                             label: model.integrationLabel(account),
                             value: model.integrationIdentifier(account)
@@ -250,7 +251,7 @@ struct ClipRootView: View {
                     Text("No chat addresses linked yet.")
                         .foregroundStyle(.secondary)
                 } else {
-                    ForEach(model.linkedIdentities) { identity in
+                    ForEach(model.linkedIdentities, id: \.normalizedIdentifier) { identity in
                         InfoRow(label: model.identityLabel(identity), value: model.identityIdentifier(identity))
                     }
                 }
@@ -368,9 +369,12 @@ final class ClipViewModel: ObservableObject {
     @Published var billingErrorMessage: String?
     @Published var modelErrorMessage: String?
 
-    private let client = BlueChatAPIClient()
     private let storeKit = StoreKitManager()
     private let sessionTokenKey = "bluechat.appclip.session-token"
+
+    init() {
+        GeneratedAPIConfiguration.configure()
+    }
 
     var title: String {
         if session == nil {
@@ -435,11 +439,15 @@ final class ClipViewModel: ObservableObject {
     }
 
     var linkedIdentities: [WebsiteAccountIdentity] {
-        dedupe(session?.linkedAccounts.integrations.flatMap { $0.link.identities } ?? [], by: \.id)
+        dedupe(session?.linkedAccounts.integrations.flatMap { $0.link.identities } ?? []) {
+            $0.type.rawValue + ":" + $0.normalizedIdentifier
+        }
     }
 
     var linkedIntegrationAccounts: [WebsiteLinkedIntegrationAccount] {
-        dedupe(session?.linkedAccounts.integrations.flatMap(\.linkedAccounts) ?? [], by: \.id)
+        dedupe(session?.linkedAccounts.integrations.flatMap(\.linkedAccounts) ?? []) {
+            $0.type.rawValue + ":" + $0.accountKey
+        }
     }
 
     var usageLimits: [WebsiteUsageLimitSummary] {
@@ -531,12 +539,15 @@ final class ClipViewModel: ObservableObject {
         do {
             trackAppClipEvent("appclip_purchase_started", properties: eventContext(for: session))
             let purchase = try await storeKit.purchase(product: product, appAccountToken: session.appAccountToken)
-            let updated = try await client.validateStoreKitTransaction(
-                sessionToken: session.sessionToken,
-                signedTransactionInfo: purchase.jwsRepresentation,
-                productId: product.id,
-                transactionId: String(purchase.transaction.id)
-            )
+            let updated = try await GeneratedAPIConfiguration.executeWithSession(session.sessionToken) {
+                SubscriptionAPI.subscriptionValidateStoreKitWithRequestBuilder(
+                    subscriptionStoreKitTransactionRequest: SubscriptionStoreKitTransactionRequest(
+                        signedTransactionInfo: purchase.jwsRepresentation,
+                        productId: product.id,
+                        transactionId: String(purchase.transaction.id)
+                    )
+                )
+            }
             await purchase.transaction.finish()
             self.session = session.replacing(subscription: updated)
             trackAppClipEvent(
@@ -554,23 +565,19 @@ final class ClipViewModel: ObservableObject {
 
     func identityLabel(_ identity: WebsiteAccountIdentity) -> String {
         switch identity.type {
-        case "imessage_email":
+        case .imessageEmail:
             return "BlueChat email"
-        case "imessage_phone":
+        case .imessagePhone:
             return "BlueChat phone"
-        case "lxmf_address":
+        case .lxmfAddress:
             return "LXMF address"
-        default:
-            return "Chat address"
         }
     }
 
     func integrationLabel(_ account: WebsiteLinkedIntegrationAccount) -> String {
         switch account.type {
-        case "gcal":
+        case .gcal:
             return "Google Calendar"
-        default:
-            return account.label
         }
     }
 
@@ -597,7 +604,7 @@ final class ClipViewModel: ObservableObject {
         return "\(formatCount(usage.remaining)) responses remain this month."
     }
 
-    func formatCount(_ value: Int) -> String {
+    func formatCount(_ value: Int64) -> String {
         NumberFormatter.localizedString(from: NSNumber(value: value), number: .decimal)
     }
 
@@ -615,6 +622,10 @@ final class ClipViewModel: ObservableObject {
         guard modelKey != modelAccess?.currentModel else {
             return
         }
+        guard let generatedModel = WebsiteModelSelectionRequest.Model(rawValue: modelKey) else {
+            modelErrorMessage = "This model is not available in the App Clip yet."
+            return
+        }
         modelSelectionInProgress = true
         modelErrorMessage = nil
         defer {
@@ -625,11 +636,14 @@ final class ClipViewModel: ObservableObject {
                 "appclip_model_selection_started",
                 properties: eventContext(for: session).merging(["model": modelKey]) { _, new in new }
             )
-            _ = try await client.updatePreferredModel(
-                sessionToken: session.sessionToken,
-                model: modelKey
-            )
-            let refreshed = try await client.getSession(sessionToken: session.sessionToken)
+            _ = try await GeneratedAPIConfiguration.executeWithSession(session.sessionToken) {
+                WebsiteAccountAPI.websiteAccountUpdateModelWithRequestBuilder(
+                    websiteModelSelectionRequest: WebsiteModelSelectionRequest(model: generatedModel)
+                )
+            }
+            let refreshed = try await GeneratedAPIConfiguration.executeWithSession(session.sessionToken) {
+                AppClipAPI.appClipGetSessionWithRequestBuilder()
+            }
             self.session = refreshed
             await loadProductIfNeeded(for: refreshed)
             trackAppClipEvent(
@@ -654,7 +668,10 @@ final class ClipViewModel: ObservableObject {
             isLoading = false
         }
         do {
-            let session = try await client.createSession(linkToken: linkToken)
+            GeneratedAPIConfiguration.configure()
+            let session = try await AppClipAPI.appClipCreateSession(
+                appClipCreateSessionRequest: AppClipCreateSessionRequest(linkToken: linkToken)
+            )
             UserDefaults.standard.set(session.sessionToken, forKey: sessionTokenKey)
             self.session = session
             errorMessage = nil
@@ -678,7 +695,9 @@ final class ClipViewModel: ObservableObject {
             isLoading = false
         }
         do {
-            let session = try await client.getSession(sessionToken: sessionToken)
+            let session = try await GeneratedAPIConfiguration.executeWithSession(sessionToken) {
+                AppClipAPI.appClipGetSessionWithRequestBuilder()
+            }
             self.session = session
             errorMessage = nil
             await loadProductIfNeeded(for: session)
@@ -737,11 +756,14 @@ final class ClipViewModel: ObservableObject {
             return
         }
         Task {
-            _ = try? await client.trackEvent(
-                sessionToken: token,
-                eventName: eventName,
-                properties: properties
-            )
+            _ = try? await GeneratedAPIConfiguration.executeWithSession(token) {
+                AppClipAPI.appClipCreateEventWithRequestBuilder(
+                    appClipEventRequest: GeneratedAPIConfiguration.appClipEventRequest(
+                        eventName: eventName,
+                        properties: properties
+                    )
+                )
+            }
         }
     }
 
@@ -753,7 +775,7 @@ final class ClipViewModel: ObservableObject {
         if let model = session.linkedAccounts.integrations.compactMap(\.modelAccess).first?.currentModel {
             properties["model"] = model
         }
-        if let usage = session.linkedAccounts.usageLimits?.first {
+        if let usage = session.linkedAccounts.usageLimits.first {
             properties["usage_exhausted"] = usage.exhausted ? "true" : "false"
             properties["usage_percent"] = String(Int((max(0, min(1, usage.percentage)) * 100).rounded()))
         }
@@ -766,10 +788,10 @@ final class ClipViewModel: ObservableObject {
             .first { !$0.isEmpty }
     }
 
-    private func dedupe<T, K: Hashable>(_ values: [T], by keyPath: KeyPath<T, K>) -> [T] {
+    private func dedupe<T, K: Hashable>(_ values: [T], by key: (T) -> K) -> [T] {
         var seen = Set<K>()
         return values.filter { value in
-            seen.insert(value[keyPath: keyPath]).inserted
+            seen.insert(key(value)).inserted
         }
     }
 }
