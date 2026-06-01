@@ -13,6 +13,42 @@ import AnyCodable
 open class AppClipAPI {
 
     /**
+     Records a pre-session App Clip bootstrap event
+
+     - parameter appClipEventRequest: (body)
+     - returns: AppClipEventResponse
+     */
+    @available(macOS 10.15, iOS 13.0, tvOS 13.0, watchOS 6.0, *)
+    open class func appClipCreateBootstrapEvent(appClipEventRequest: AppClipEventRequest) async throws -> AppClipEventResponse {
+        return try await appClipCreateBootstrapEventWithRequestBuilder(appClipEventRequest: appClipEventRequest).execute().body
+    }
+
+    /**
+     Records a pre-session App Clip bootstrap event
+     - POST /api/v1/appClip/createBootstrapEvent.appClipEvents
+     - Records privacy-safe App Clip bootstrap diagnostics before a session token exists.
+     - parameter appClipEventRequest: (body)
+     - returns: RequestBuilder<AppClipEventResponse>
+     */
+    open class func appClipCreateBootstrapEventWithRequestBuilder(appClipEventRequest: AppClipEventRequest) -> RequestBuilder<AppClipEventResponse> {
+        let localVariablePath = "/api/v1/appClip/createBootstrapEvent.appClipEvents"
+        let localVariableURLString = BlueChatAgentClientAPI.basePath + localVariablePath
+        let localVariableParameters = JSONEncodingHelper.encodingParameters(forEncodableObject: appClipEventRequest)
+
+        let localVariableUrlComponents = URLComponents(string: localVariableURLString)
+
+        let localVariableNillableHeaders: [String: Any?] = [
+            "Content-Type": "application/json",
+        ]
+
+        let localVariableHeaderParameters = APIHelper.rejectNilHeaders(localVariableNillableHeaders)
+
+        let localVariableRequestBuilder: RequestBuilder<AppClipEventResponse>.Type = BlueChatAgentClientAPI.requestBuilderFactory.getBuilder()
+
+        return localVariableRequestBuilder.init(method: "POST", URLString: (localVariableUrlComponents?.string ?? localVariableURLString), parameters: localVariableParameters, headers: localVariableHeaderParameters, requiresAuthentication: false)
+    }
+
+    /**
      Records a high-level App Clip analytics event
 
      - parameter appClipEventRequest: (body)

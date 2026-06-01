@@ -23,6 +23,22 @@ public class AppClipEventService {
   }
 
   public AppClipEventResponse track(String accountId, AppClipEventRequest request) {
+    return track(eventName(request), accountId, eventData(request));
+  }
+
+  public AppClipEventResponse trackBootstrap(AppClipEventRequest request) {
+    return track(eventName(request), "appclip-bootstrap", eventData(request));
+  }
+
+  private AppClipEventResponse track(String eventName, String visitorId, Map<String, Object> data) {
+    data.put("source", "app_clip");
+    if (umamiAnalyticsService != null) {
+      umamiAnalyticsService.track(eventName, "/appclip/" + pathSegment(eventName), visitorId, data);
+    }
+    return new AppClipEventResponse().accepted(true);
+  }
+
+  private String eventName(AppClipEventRequest request) {
     if (request == null) {
       throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Missing event");
     }
@@ -31,11 +47,7 @@ public class AppClipEventService {
     if (eventName == null) {
       throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Missing event name");
     }
-    if (umamiAnalyticsService != null) {
-      umamiAnalyticsService.track(
-          eventName, "/appclip/" + pathSegment(eventName), accountId, eventData(request));
-    }
-    return new AppClipEventResponse().accepted(true);
+    return eventName;
   }
 
   private Map<String, Object> eventData(AppClipEventRequest request) {
@@ -43,7 +55,6 @@ public class AppClipEventService {
     if (request.getProperties() != null) {
       data.putAll(request.getProperties());
     }
-    data.put("source", "app_clip");
     return data;
   }
 

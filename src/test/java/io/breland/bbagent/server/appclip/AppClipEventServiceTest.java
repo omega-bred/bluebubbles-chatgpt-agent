@@ -49,4 +49,29 @@ class AppClipEventServiceTest {
         .isInstanceOf(ResponseStatusException.class)
         .hasMessageContaining("Missing event name");
   }
+
+  @Test
+  void trackBootstrapSendsAnonymousAppClipEventToUmami() {
+    UmamiAnalyticsService analyticsService = mock(UmamiAnalyticsService.class);
+    AppClipEventService service = new AppClipEventService(analyticsService);
+    AppClipEventRequest request =
+        new AppClipEventRequest()
+            .eventName("appclip_bootstrap_failed")
+            .properties(Map.of("reason", "invalid_session"));
+
+    assertThat(service.trackBootstrap(request).getAccepted()).isTrue();
+
+    @SuppressWarnings("unchecked")
+    ArgumentCaptor<Map<String, Object>> dataCaptor =
+        ArgumentCaptor.forClass((Class<Map<String, Object>>) (Class<?>) Map.class);
+    verify(analyticsService)
+        .track(
+            eq("appclip_bootstrap_failed"),
+            eq("/appclip/appclip_bootstrap_failed"),
+            eq("appclip-bootstrap"),
+            dataCaptor.capture());
+    assertThat(dataCaptor.getValue())
+        .containsEntry("reason", "invalid_session")
+        .containsEntry("source", "app_clip");
+  }
 }

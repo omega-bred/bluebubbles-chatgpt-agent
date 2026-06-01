@@ -59,4 +59,13 @@ public class AppClipController {
         eventService.track(
             jwt.getClaimAsString(AppClipSessionService.APP_CLIP_ACCOUNT_ID_CLAIM), request));
   }
+
+  @PostMapping(
+      path = "/api/v1/appClip/createBootstrapEvent.appClipEvents",
+      consumes = MediaType.APPLICATION_JSON_VALUE,
+      produces = MediaType.APPLICATION_JSON_VALUE)
+  public ResponseEntity<AppClipEventResponse> appClipCreateBootstrapEvent(
+      @RequestBody AppClipEventRequest request) {
+    return ResponseEntity.ok(eventService.trackBootstrap(request));
+  }
 }

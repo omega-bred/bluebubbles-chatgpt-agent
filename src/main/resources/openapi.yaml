@@ -304,6 +304,28 @@ paths:
           description: Missing or invalid event
         '401':
           description: Missing or invalid App Clip session
+  /api/v1/appClip/createBootstrapEvent.appClipEvents:
+    post:
+      operationId: appClipCreateBootstrapEvent
+      tags:
+        - appClip
+      summary: Records a pre-session App Clip bootstrap event
+      description: Records privacy-safe App Clip bootstrap diagnostics before a session token exists.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AppClipEventRequest'
+      responses:
+        '200':
+          description: Event accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AppClipEventResponse'
+        '400':
+          description: Missing or invalid event
   /api/v1/websiteAccount/updateModel.websiteAccountModels:
     post:
       operationId: websiteAccountUpdateModel

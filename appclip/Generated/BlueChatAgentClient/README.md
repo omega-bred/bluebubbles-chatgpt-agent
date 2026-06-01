@@ -40,6 +40,7 @@ Class | Method | HTTP request | Description
 *AdminAPI* | [**adminSyncSubscription**](docs/AdminAPI.md#adminsyncsubscription) | **POST** /api/v1/admin/sync.subscription | Syncs one provider subscription
 *AdminAPI* | [**adminUnblockAccount**](docs/AdminAPI.md#adminunblockaccount) | **POST** /api/v1/admin/unblock.account | Unblocks an account for agent processing
 *AdminAPI* | [**adminUnsuspendSubscription**](docs/AdminAPI.md#adminunsuspendsubscription) | **POST** /api/v1/admin/unsuspend.subscription | Unsuspends one provider subscription
+*AppClipAPI* | [**appClipCreateBootstrapEvent**](docs/AppClipAPI.md#appclipcreatebootstrapevent) | **POST** /api/v1/appClip/createBootstrapEvent.appClipEvents | Records a pre-session App Clip bootstrap event
 *AppClipAPI* | [**appClipCreateEvent**](docs/AppClipAPI.md#appclipcreateevent) | **POST** /api/v1/appClip/createEvent.appClipEvents | Records a high-level App Clip analytics event
 *AppClipAPI* | [**appClipCreateSession**](docs/AppClipAPI.md#appclipcreatesession) | **POST** /api/v1/appClip/createSession.appClipSessions | Creates an App Clip session from an account-link token
 *AppClipAPI* | [**appClipGetSession**](docs/AppClipAPI.md#appclipgetsession) | **GET** /api/v1/appClip/get.appClipSession | Gets App Clip bootstrap data

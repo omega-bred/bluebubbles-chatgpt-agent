@@ -55,6 +55,8 @@ public class SecurityConfig {
                     .hasAuthority(roleAuthority(ADMIN_ROLE))
                     .requestMatchers("/api/v1/appClip/createSession.appClipSessions")
                     .permitAll()
+                    .requestMatchers("/api/v1/appClip/createBootstrapEvent.appClipEvents")
+                    .permitAll()
                     .requestMatchers("/api/v1/appClip/**")
                     .authenticated()
                     .requestMatchers("/api/v1/contact/**")

@@ -14,7 +14,9 @@ struct ClipRootView: View {
                     usagePanel
                     accountPanel
                     modelPanel
-                    billingPanel
+                    if model.session != nil {
+                        billingPanel
+                    }
                     linkedServicesPanel
                     linkedAddressesPanel
                 }
@@ -436,6 +438,11 @@ final class ClipViewModel: ObservableObject {
     private let sessionTokenKey = "bluechat.appclip.session-token"
     private var transactionUpdatesTask: Task<Void, Never>?
 
+    private enum BootstrapSource: String {
+        case link
+        case stored
+    }
+
     init() {
         GeneratedAPIConfiguration.configure()
         observeStoreKitTransactionUpdates()
@@ -443,14 +450,16 @@ final class ClipViewModel: ObservableObject {
 
     var title: String {
         if session == nil {
-            return "Waiting for link"
+            return errorMessage == nil ? "Waiting for link" : "Link needs refresh"
         }
         return session?.subscription.isPremium == true ? "Premium is active" : "Free access"
     }
 
     var subtitle: String {
         if session == nil {
-            return "Open your BlueChatAI link from Messages."
+            return errorMessage == nil
+                ? "Open your BlueChatAI link from Messages."
+                : "Ask BlueChatAI to send a fresh account link, then open it from Messages."
         }
         return "Your account is ready."
     }
@@ -611,7 +620,9 @@ final class ClipViewModel: ObservableObject {
             .first(where: { $0.name == "token" })?
             .value
         else {
-            errorMessage = session == nil ? "Missing link token." : nil
+            errorMessage = session == nil
+                ? "This link is missing its account token. Ask BlueChatAI to send a fresh link."
+                : nil
             return
         }
         Task {
@@ -855,7 +866,7 @@ final class ClipViewModel: ObservableObject {
                 sessionToken: session.sessionToken
             )
         } catch {
-            setBootstrapError(error)
+            setBootstrapError(error, source: .link)
         }
     }
 
@@ -884,13 +895,14 @@ final class ClipViewModel: ObservableObject {
             if UserDefaults.standard.string(forKey: sessionTokenKey) == sessionToken {
                 UserDefaults.standard.removeObject(forKey: sessionTokenKey)
             }
-            setBootstrapError(error)
+            setBootstrapError(error, source: .stored)
         }
     }
 
-    private func setBootstrapError(_ error: Error) {
+    private func setBootstrapError(_ error: Error, source: BootstrapSource) {
+        trackBootstrapFailure(error, source: source)
         if session == nil {
-            errorMessage = error.localizedDescription
+            errorMessage = bootstrapErrorMessage(for: error, source: source)
         } else {
             errorMessage = nil
         }
@@ -1035,6 +1047,79 @@ final class ClipViewModel: ObservableObject {
                     )
                 )
             }
+        }
+    }
+
+    private func trackBootstrapFailure(_ error: Error, source: BootstrapSource) {
+        let diagnostic = bootstrapDiagnostic(for: error)
+        var properties = [
+            "launch_source": source.rawValue,
+            "reason": diagnostic.reason
+        ]
+        if let status = diagnostic.status {
+            properties["http_status"] = String(status)
+        }
+        Task {
+            GeneratedAPIConfiguration.configure()
+            _ = try? await AppClipAPI.appClipCreateBootstrapEvent(
+                appClipEventRequest: GeneratedAPIConfiguration.appClipEventRequest(
+                    eventName: "appclip_bootstrap_failed",
+                    properties: properties
+                )
+            )
+        }
+    }
+
+    private func bootstrapErrorMessage(for error: Error, source: BootstrapSource) -> String? {
+        let diagnostic = bootstrapDiagnostic(for: error)
+        if source == .stored, ["invalid_session", "forbidden", "not_found", "expired"].contains(diagnostic.reason) {
+            return nil
+        }
+        switch diagnostic.reason {
+        case "network":
+            return "BlueChatAI could not be reached. Check your connection and open the link again."
+        case "bad_request", "not_found", "expired", "conflict":
+            return "This account link is expired or already used. Ask BlueChatAI to send a fresh link."
+        case "decode":
+            return "BlueChatAI returned account info this App Clip cannot read yet. Install the latest TestFlight build and try again."
+        case "server":
+            return "BlueChatAI could not open this link right now. Try again in a moment."
+        default:
+            return "BlueChatAI could not open this link. Ask BlueChatAI to send a fresh account link."
+        }
+    }
+
+    private func bootstrapDiagnostic(for error: Error) -> (status: Int?, reason: String) {
+        guard case let ErrorResponse.error(status, _, _, underlying) = error else {
+            return (nil, "local")
+        }
+        if status == 200 {
+            return (status, "decode")
+        }
+        switch status {
+        case -2:
+            return (status, "missing_response")
+        case -1:
+            return (status, "network")
+        case 400:
+            return (status, "bad_request")
+        case 401:
+            return (status, "invalid_session")
+        case 403:
+            return (status, "forbidden")
+        case 404:
+            return (status, "not_found")
+        case 409:
+            return (status, "conflict")
+        case 410:
+            return (status, "expired")
+        case 500 ... 599:
+            return (status, "server")
+        default:
+            if underlying is DecodingError {
+                return (status, "decode")
+            }
+            return (status, "http_error")
         }
     }
 
