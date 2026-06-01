@@ -45,8 +45,8 @@ public class ModelPicker {
       AgentWorkflowContext agentWorkflowContext) {
     if (modelAccess.premium()) {
       log.info(
-          "User {} is a premium user using model {}",
-          incomingMessage.sender(),
+          "Message {} is using premium model {}",
+          IncomingMessage.logSummary(incomingMessage),
           modelAccess.currentModelKey());
       builder.maxOutputTokens(2500);
       builder.reasoning(Reasoning.builder().effort(ReasoningEffort.MEDIUM).build());
@@ -70,7 +70,7 @@ public class ModelPicker {
                 .build());
       }
     } else {
-      log.info("User {} is a standard user", incomingMessage.sender());
+      log.info("Message {} is using standard model", IncomingMessage.logSummary(incomingMessage));
       builder.maxOutputTokens(1500);
       builder.reasoning(Reasoning.builder().effort(ReasoningEffort.HIGH).build());
       builder.model(modelAccess.responsesModel());
