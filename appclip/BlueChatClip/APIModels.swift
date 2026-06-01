@@ -39,7 +39,49 @@ struct WebsiteLinkedAccountsResponse: Decodable {
 }
 
 struct WebsiteIntegrationSummary: Decodable {
+    let link: WebsiteAccountLink
+    let gcalAccounts: [WebsiteCalendarAccountSummary]
+    let linkedAccounts: [WebsiteLinkedIntegrationAccount]
     let modelAccess: WebsiteModelAccessSummary?
+}
+
+struct WebsiteAccountLink: Decodable {
+    let linkId: String
+    let accountId: String
+    let identities: [WebsiteAccountIdentity]
+    let createdAt: Date?
+}
+
+struct WebsiteAccountIdentity: Decodable, Identifiable {
+    let type: String
+    let identifier: String
+    let normalizedIdentifier: String
+
+    var id: String {
+        type + ":" + normalizedIdentifier
+    }
+}
+
+struct WebsiteCalendarAccountSummary: Decodable, Identifiable {
+    let accountId: String
+    let accountKey: String
+    let email: String?
+
+    var id: String {
+        accountKey
+    }
+}
+
+struct WebsiteLinkedIntegrationAccount: Decodable, Identifiable {
+    let type: String
+    let accountKey: String
+    let email: String?
+    let label: String
+    let unlinkable: Bool
+
+    var id: String {
+        type + ":" + accountKey
+    }
 }
 
 struct WebsiteModelAccessSummary: Decodable {
