@@ -10,8 +10,9 @@ struct ClipRootView: View {
                 VStack(alignment: .leading, spacing: 18) {
                     header
                     statusPanel
-                    billingPanel
                     accountPanel
+                    modelPanel
+                    billingPanel
                     linkedServicesPanel
                     linkedAddressesPanel
                 }
@@ -28,7 +29,7 @@ struct ClipRootView: View {
         VStack(alignment: .leading, spacing: 6) {
             Label("BlueChatAI", systemImage: "message.fill")
                 .font(.title.weight(.semibold))
-            Text(model.accountEmailOrId)
+            Text(model.accountSubtitle)
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
         }
@@ -96,10 +97,73 @@ struct ClipRootView: View {
             VStack(alignment: .leading, spacing: 12) {
                 Text("Website Account")
                     .font(.headline)
-                InfoRow(label: "Email", value: model.accountEmailOrId)
-                InfoRow(label: "Account ID", value: model.accountId)
-                if let modelLabel = model.modelLabel {
-                    InfoRow(label: "Model", value: modelLabel)
+                InfoRow(label: "Name", value: model.accountDisplayName)
+                if let email = model.accountEmail {
+                    InfoRow(label: "Email", value: email)
+                }
+                if let accountId = model.accountId {
+                    InfoRow(label: "Account ID", value: accountId)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding()
+            .background(.thinMaterial)
+            .clipShape(RoundedRectangle(cornerRadius: 8))
+        }
+    }
+
+    @ViewBuilder
+    private var modelPanel: some View {
+        if model.session != nil, let access = model.modelAccess {
+            VStack(alignment: .leading, spacing: 12) {
+                Text("Assistant Model")
+                    .font(.headline)
+                InfoRow(label: "Current", value: model.modelDisplayName(access.currentModelLabel))
+                if model.canChangeModel {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("Select model")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(.secondary)
+                        Menu {
+                            ForEach(model.selectableModels) { option in
+                                Button {
+                                    Task {
+                                        await model.updatePreferredModel(option.model)
+                                    }
+                                } label: {
+                                    Label(
+                                        model.modelDisplayName(option.label),
+                                        systemImage: option.model == access.currentModel
+                                            ? "checkmark"
+                                            : "circle"
+                                    )
+                                }
+                                .disabled(model.modelSelectionInProgress)
+                            }
+                        } label: {
+                            HStack {
+                                Text(model.selectedModelTitle)
+                                Spacer()
+                                if model.modelSelectionInProgress {
+                                    ProgressView()
+                                } else {
+                                    Image(systemName: "chevron.down")
+                                        .font(.caption.weight(.semibold))
+                                }
+                            }
+                            .frame(maxWidth: .infinity)
+                        }
+                        .buttonStyle(.bordered)
+                    }
+                } else if let reason = model.modelReadOnlyReason {
+                    Text(reason)
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                }
+                if let error = model.modelErrorMessage {
+                    Text(error)
+                        .font(.callout)
+                        .foregroundStyle(.red)
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -145,7 +209,7 @@ struct ClipRootView: View {
                         .foregroundStyle(.secondary)
                 } else {
                     ForEach(model.linkedIdentities) { identity in
-                        InfoRow(label: model.identityLabel(identity), value: identity.identifier)
+                        InfoRow(label: model.identityLabel(identity), value: model.identityIdentifier(identity))
                     }
                 }
             }
@@ -180,8 +244,10 @@ final class ClipViewModel: ObservableObject {
     @Published private(set) var product: Product?
     @Published var isLoading = false
     @Published var purchaseInProgress = false
+    @Published var modelSelectionInProgress = false
     @Published var errorMessage: String?
     @Published var billingErrorMessage: String?
+    @Published var modelErrorMessage: String?
 
     private let client = BlueChatAPIClient()
     private let storeKit = StoreKitManager()
@@ -201,19 +267,56 @@ final class ClipViewModel: ObservableObject {
         return "Your account is ready."
     }
 
-    var accountEmailOrId: String {
-        session?.account.email ?? session?.account.accountId ?? "App Clip"
+    var accountDisplayName: String {
+        firstNonBlank(session?.account.displayName, session?.account.email, primaryIdentity?.identifier)
+            ?? "BlueChat account"
     }
 
-    var accountId: String {
-        session?.account.accountId ?? "Unknown"
+    var accountSubtitle: String {
+        firstNonBlank(session?.account.email, primaryIdentity?.identifier, session?.account.accountId)
+            ?? "App Clip session"
     }
 
-    var modelLabel: String? {
-        guard let modelAccess else {
+    var accountEmail: String? {
+        firstNonBlank(session?.account.email)
+    }
+
+    var accountId: String? {
+        firstNonBlank(session?.account.accountId)
+    }
+
+    var selectableModels: [WebsiteModelOption] {
+        (modelAccess?.availableModels ?? [])
+            .filter { $0.enabled && $0.model != "local" }
+    }
+
+    var canChangeModel: Bool {
+        modelAccess?.isPremium == true
+            && modelAccess?.modelSelectionConfigurable == true
+            && !selectableModels.isEmpty
+    }
+
+    var selectedModelTitle: String {
+        guard let access = modelAccess else {
+            return "Select model"
+        }
+        return selectableModels
+            .first(where: { $0.model == access.currentModel })
+            .map { modelDisplayName($0.label) }
+            ?? modelDisplayName(access.currentModelLabel)
+    }
+
+    var modelReadOnlyReason: String? {
+        guard let access = modelAccess else {
             return nil
         }
-        return modelAccess.currentModelLabel
+        if !access.isPremium {
+            return access.readOnlyReason ?? "Free accounts use the included model."
+        }
+        if access.modelSelectionConfigurable != true {
+            return access.readOnlyReason ?? "Model selection is managed on the website."
+        }
+        return nil
     }
 
     var linkedIdentities: [WebsiteAccountIdentity] {
@@ -224,13 +327,19 @@ final class ClipViewModel: ObservableObject {
         dedupe(session?.linkedAccounts.integrations.flatMap(\.linkedAccounts) ?? [], by: \.id)
     }
 
-    private var modelAccess: WebsiteModelAccessSummary? {
+    var modelAccess: WebsiteModelAccessSummary? {
         session?.linkedAccounts.integrations.compactMap(\.modelAccess).first
     }
 
     var billingSummary: String {
-        if session?.subscription.isPremium == true {
-            return "Premium model access is enabled."
+        guard let session else {
+            return "Premium is available through Apple."
+        }
+        if session.subscription.isPremium {
+            if isPremiumManagedOutsideApple {
+                return "Premium is active. Billing is managed on the website."
+            }
+            return "Premium model access is enabled through Apple."
         }
         if let product {
             return product.displayPrice + " per month"
@@ -242,11 +351,28 @@ final class ClipViewModel: ObservableObject {
         if purchaseInProgress {
             return "Purchasing"
         }
+        if isPremiumManagedOutsideApple {
+            return "Managed on Website"
+        }
         return session?.subscription.isPremium == true ? "Premium active" : "Upgrade"
     }
 
     var canPurchase: Bool {
         session != nil && product != nil && !purchaseInProgress && session?.subscription.isPremium != true
+    }
+
+    private var primaryIdentity: WebsiteAccountIdentity? {
+        linkedIdentities.first
+    }
+
+    private var isPremiumManagedOutsideApple: Bool {
+        session?.subscription.isPremium == true && !hasAppleSubscription
+    }
+
+    private var hasAppleSubscription: Bool {
+        session?.subscription.subscriptions.contains {
+            firstNonBlank($0.provider)?.lowercased() == "apple"
+        } == true
     }
 
     func handleInvocation(_ url: URL) {
@@ -317,13 +443,47 @@ final class ClipViewModel: ObservableObject {
     }
 
     func integrationIdentifier(_ account: WebsiteLinkedIntegrationAccount) -> String {
-        account.email ?? account.accountKey
+        firstNonBlank(account.email, account.accountKey, account.label) ?? "Linked account"
+    }
+
+    func identityIdentifier(_ identity: WebsiteAccountIdentity) -> String {
+        firstNonBlank(identity.identifier, identity.normalizedIdentifier) ?? "Linked address"
+    }
+
+    func modelDisplayName(_ value: String) -> String {
+        firstNonBlank(value) ?? "Unknown"
+    }
+
+    func updatePreferredModel(_ modelKey: String) async {
+        guard let session else {
+            return
+        }
+        guard modelKey != modelAccess?.currentModel else {
+            return
+        }
+        modelSelectionInProgress = true
+        modelErrorMessage = nil
+        defer {
+            modelSelectionInProgress = false
+        }
+        do {
+            _ = try await client.updatePreferredModel(
+                sessionToken: session.sessionToken,
+                model: modelKey
+            )
+            let refreshed = try await client.getSession(sessionToken: session.sessionToken)
+            self.session = refreshed
+            await loadProductIfNeeded(for: refreshed)
+        } catch {
+            modelErrorMessage = error.localizedDescription
+        }
     }
 
     private func createSession(linkToken: String) async {
         isLoading = true
         errorMessage = nil
         billingErrorMessage = nil
+        modelErrorMessage = nil
         defer {
             isLoading = false
         }
@@ -341,6 +501,7 @@ final class ClipViewModel: ObservableObject {
         isLoading = true
         errorMessage = nil
         billingErrorMessage = nil
+        modelErrorMessage = nil
         defer {
             isLoading = false
         }
@@ -376,6 +537,12 @@ final class ClipViewModel: ObservableObject {
         } catch {
             billingErrorMessage = error.localizedDescription
         }
+    }
+
+    private func firstNonBlank(_ values: String?...) -> String? {
+        values
+            .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .first { !$0.isEmpty }
     }
 
     private func dedupe<T, K: Hashable>(_ values: [T], by keyPath: KeyPath<T, K>) -> [T] {

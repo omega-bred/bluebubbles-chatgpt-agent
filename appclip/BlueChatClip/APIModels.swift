@@ -85,9 +85,34 @@ struct WebsiteLinkedIntegrationAccount: Decodable, Identifiable {
 }
 
 struct WebsiteModelAccessSummary: Decodable {
+    let accountId: String?
     let isPremium: Bool
     let currentModel: String
     let currentModelLabel: String
+    let modelSelectionAllowed: Bool?
+    let modelSelectionConfigurable: Bool?
+    let readOnlyReason: String?
+    let availableModels: [WebsiteModelOption]?
+}
+
+struct WebsiteModelOption: Decodable, Identifiable {
+    let model: String
+    let label: String
+    let provider: String?
+    let enabled: Bool
+
+    var id: String {
+        model
+    }
+}
+
+struct WebsiteModelSelectionRequest: Encodable {
+    let model: String
+}
+
+struct WebsiteModelSelectionResponse: Decodable {
+    let modelAccess: WebsiteModelAccessSummary
+    let message: String
 }
 
 struct SubscriptionSummaryResponse: Decodable {
