@@ -48,7 +48,7 @@ public class BtcpaySubscriptionProvider implements SubscriptionProvider {
     String id = firstText(response, "id", "planCheckoutId", "checkoutId");
     String url = firstText(response, "url", "checkoutUrl", "checkoutLink", "link", "redirectUrl");
     if (StringUtils.isBlank(url) && StringUtils.isNotBlank(id)) {
-      url = stripTrailingSlash(baseUrl()) + "/plan-checkout/" + id;
+      url = baseUrl() + "/plan-checkout/" + id;
     }
     return new ProviderCheckoutSession(
         firstNonBlank(id, request.internalCheckoutSessionId()),
@@ -72,7 +72,7 @@ public class BtcpaySubscriptionProvider implements SubscriptionProvider {
     String id = firstText(response, "id", "portalSessionId");
     String url = firstText(response, "url", "portalUrl", "portalLink", "link");
     if (StringUtils.isBlank(url) && StringUtils.isNotBlank(id)) {
-      url = stripTrailingSlash(baseUrl()) + "/subscriber-portal/" + id;
+      url = baseUrl() + "/subscriber-portal/" + id;
     }
     return new ProviderPortalSession(id, url, json(response));
   }
@@ -460,14 +460,11 @@ public class BtcpaySubscriptionProvider implements SubscriptionProvider {
   }
 
   private String baseUrl() {
-    return stripTrailingSlash(
-        StringUtils.defaultIfBlank(
-            properties.providerSettings(PROVIDER_KEY).getBaseUrl(), "https://btcpay.bre.land"));
-  }
-
-  private String stripTrailingSlash(String value) {
     return StringUtils.stripEnd(
-        StringUtils.defaultIfBlank(value, "https://btcpay.bre.land").trim(), "/");
+        StringUtils.defaultIfBlank(
+                properties.providerSettings(PROVIDER_KEY).getBaseUrl(), "https://btcpay.bre.land")
+            .trim(),
+        "/");
   }
 
   private String firstNonBlank(String... values) {

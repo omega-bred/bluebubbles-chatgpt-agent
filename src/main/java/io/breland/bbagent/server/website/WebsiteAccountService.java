@@ -74,7 +74,9 @@ public class WebsiteAccountService {
     this.gcalClient = gcalClient;
     this.modelAccessService = modelAccessService;
     this.messageResponseRateLimitService = messageResponseRateLimitService;
-    this.websiteBaseUrl = stripTrailingSlash(websiteBaseUrl);
+    String base = StringUtils.defaultIfBlank(websiteBaseUrl, DEFAULT_WEBSITE_BASE_URL).trim();
+    URI.create(base);
+    this.websiteBaseUrl = StringUtils.stripEnd(base, "/");
     this.linkTokenTtl = Duration.ofMinutes(linkTokenTtlMinutes);
     this.umamiAnalyticsService = umamiAnalyticsService;
   }
@@ -409,12 +411,6 @@ public class WebsiteAccountService {
     tokenEntity.setRedeemedAccountId(account.getAccountId());
     tokenEntity.setUpdatedAt(now);
     tokenRepository.save(tokenEntity);
-  }
-
-  private String stripTrailingSlash(String value) {
-    String base = StringUtils.defaultIfBlank(value, DEFAULT_WEBSITE_BASE_URL).trim();
-    URI.create(base);
-    return StringUtils.stripEnd(base, "/");
   }
 
   public record CreatedLinkToken(String url, Instant expiresAt, String accountId) {}
