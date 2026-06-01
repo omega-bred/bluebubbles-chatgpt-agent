@@ -1,0 +1,125 @@
+{
+  "version": 1,
+  "skills": {
+    "asc-app-create-ui": {
+      "source": "rudrankriyam/asc-skills",
+      "sourceType": "github",
+      "skillPath": "skills/asc-app-create-ui/SKILL.md",
+      "computedHash": "2133917255d58b7bb0d21a6f4ea0967ed4212190c5e8dd5322d9687f650f572e"
+    },
+    "asc-aso-audit": {
+      "source": "rudrankriyam/asc-skills",
+      "sourceType": "github",
+      "skillPath": "skills/asc-aso-audit/SKILL.md",
+      "computedHash": "00d3a89c0601d7a1df280febd7ed38fd749a75427646676e07cc7e16dcf11d82"
+    },
+    "asc-build-lifecycle": {
+      "source": "rudrankriyam/asc-skills",
+      "sourceType": "github",
+      "skillPath": "skills/asc-build-lifecycle/SKILL.md",
+      "computedHash": "d9740c8403f1804242b38996bf5805a227ccd6b7141b280f512f0c0cd8693ce1"
+    },
+    "asc-cli-usage": {
+      "source": "rudrankriyam/asc-skills",
+      "sourceType": "github",
+      "skillPath": "skills/asc-cli-usage/SKILL.md",
+      "computedHash": "7c6737e9d83e101de962b374605ca3f845f4debc53b89f723e5ac8dafd0dd09f"
+    },
+    "asc-crash-triage": {
+      "source": "rudrankriyam/asc-skills",
+      "sourceType": "github",
+      "skillPath": "skills/asc-crash-triage/SKILL.md",
+      "computedHash": "626cddb06999b0251a38c7ef684732dd276ad513e9ed644759c88a86f12dffb6"
+    },
+    "asc-id-resolver": {
+      "source": "rudrankriyam/asc-skills",
+      "sourceType": "github",
+      "skillPath": "skills/asc-id-resolver/SKILL.md",
+      "computedHash": "4531c3721094ee029ab64a15692e87158498be45b429fcb40e28df9f9665454c"
+    },
+    "asc-localize-metadata": {
+      "source": "rudrankriyam/asc-skills",
+      "sourceType": "github",
+      "skillPath": "skills/asc-localize-metadata/SKILL.md",
+      "computedHash": "ea4c1d528dc803d0ac78d1c55adde92e4af11a40fb5bba2c1b7379091852f46a"
+    },
+    "asc-metadata-sync": {
+      "source": "rudrankriyam/asc-skills",
+      "sourceType": "github",
+      "skillPath": "skills/asc-metadata-sync/SKILL.md",
+      "computedHash": "98f43da4c0c38963a32eff04312892c6e1f57184a75ff7e2aa669ab2edbc7761"
+    },
+    "asc-notarization": {
+      "source": "rudrankriyam/asc-skills",
+      "sourceType": "github",
+      "skillPath": "skills/asc-notarization/SKILL.md",
+      "computedHash": "5a352a16af1bc65d8edb39ee676f39a0388df43ef896a44d8f0a111be7568b06"
+    },
+    "asc-ppp-pricing": {
+      "source": "rudrankriyam/asc-skills",
+      "sourceType": "github",
+      "skillPath": "skills/asc-ppp-pricing/SKILL.md",
+      "computedHash": "8afeb97f237de71cf11d3d8ead404d3f21f849c9e071d3278c85abced498d6f3"
+    },
+    "asc-release-flow": {
+      "source": "rudrankriyam/asc-skills",
+      "sourceType": "github",
+      "skillPath": "skills/asc-release-flow/SKILL.md",
+      "computedHash": "6c0dafe6bca88e326c20eb1ee8924caebb1e7570a9b1ae8486018b2142068aab"
+    },
+    "asc-screenshot-resize": {
+      "source": "rudrankriyam/asc-skills",
+      "sourceType": "github",
+      "skillPath": "skills/asc-screenshot-resize/SKILL.md",
+      "computedHash": "0e1fb4bdf0d10b639a60dc529cfb93a47c9c1baa1bb8592026f4890b49e30b8c"
+    },
+    "asc-shots-pipeline": {
+      "source": "rudrankriyam/asc-skills",
+      "sourceType": "github",
+      "skillPath": "skills/asc-shots-pipeline/SKILL.md",
+      "computedHash": "fe53d15d9b91a8c4ee5751ad8981132ce949b6c0018190d86081e82f73a8b0f1"
+    },
+    "asc-signing-setup": {
+      "source": "rudrankriyam/asc-skills",
+      "sourceType": "github",
+      "skillPath": "skills/asc-signing-setup/SKILL.md",
+      "computedHash": "e78e30944b1a797927535f2c5bdc0acd0fdac4e95dbc98868b9ffaa02fc44317"
+    },
+    "asc-submission-health": {
+      "source": "rudrankriyam/asc-skills",
+      "sourceType": "github",
+      "skillPath": "skills/asc-submission-health/SKILL.md",
+      "computedHash": "9638d2e4b942d4dec5849b0a1e1c93c29d5a3f531cfd44ba984a1a81ea2862d8"
+    },
+    "asc-subscription-localization": {
+      "source": "rudrankriyam/asc-skills",
+      "sourceType": "github",
+      "skillPath": "skills/asc-subscription-localization/SKILL.md",
+      "computedHash": "3f9952bf0c0690e0c33f888fb777967cc06aa1bc378780d8ae2ca4a4f19f4ce2"
+    },
+    "asc-testflight-orchestration": {
+      "source": "rudrankriyam/asc-skills",
+      "sourceType": "github",
+      "skillPath": "skills/asc-testflight-orchestration/SKILL.md",
+      "computedHash": "b4622ac936b498a73dbbdcb84d3b1e42af7acbec16b3423c3bfe5cf522efddda"
+    },
+    "asc-wall-submit": {
+      "source": "rudrankriyam/asc-skills",
+      "sourceType": "github",
+      "skillPath": "skills/asc-wall-submit/SKILL.md",
+      "computedHash": "e994819ce63d2fded64408026b0e0793383614f8306319f1b74f87fc9c8d8b99"
+    },
+    "asc-workflow": {
+      "source": "rudrankriyam/asc-skills",
+      "sourceType": "github",
+      "skillPath": "skills/asc-workflow/SKILL.md",
+      "computedHash": "7527bb35c37a0821eba6145dc302da5c4f3b0fce0db7f4bd825fe2ba3c45693b"
+    },
+    "asc-xcode-build": {
+      "source": "rudrankriyam/asc-skills",
+      "sourceType": "github",
+      "skillPath": "skills/asc-xcode-build/SKILL.md",
+      "computedHash": "dbf3577739175b8da50a9b63715eb61b6ab165f3fad7ca4e04c811004f0e1703"
+    }
+  }
+}

@@ -5,6 +5,7 @@ import io.breland.bbagent.generated.model.SubscriptionCheckoutResponse;
 import io.breland.bbagent.generated.model.SubscriptionPlansResponse;
 import io.breland.bbagent.generated.model.SubscriptionPortalResponse;
 import io.breland.bbagent.generated.model.SubscriptionProviderWebhookResponse;
+import io.breland.bbagent.generated.model.SubscriptionStoreKitTransactionRequest;
 import io.breland.bbagent.generated.model.SubscriptionSummaryResponse;
 import io.breland.bbagent.server.subscriptions.SubscriptionService;
 import org.springframework.http.HttpHeaders;
@@ -61,6 +62,16 @@ public class SubscriptionController {
   public ResponseEntity<SubscriptionPortalResponse> subscriptionCreatePortal(
       @AuthenticationPrincipal Jwt jwt) {
     return ResponseEntity.ok(subscriptionService.createPortal(jwt));
+  }
+
+  @PostMapping(
+      path = "/api/v1/subscription/validateStoreKit.subscriptionProviderEvents",
+      consumes = MediaType.APPLICATION_JSON_VALUE,
+      produces = MediaType.APPLICATION_JSON_VALUE)
+  public ResponseEntity<SubscriptionSummaryResponse> subscriptionValidateStoreKit(
+      @RequestBody SubscriptionStoreKitTransactionRequest request,
+      @AuthenticationPrincipal Jwt jwt) {
+    return ResponseEntity.ok(subscriptionService.validateStoreKitTransaction(jwt, request));
   }
 
   @PostMapping(

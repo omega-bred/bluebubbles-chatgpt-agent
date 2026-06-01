@@ -1,9 +1,11 @@
 package io.breland.bbagent.server.config;
 
+import io.breland.bbagent.server.appclip.AppClipSessionAuthenticationFilter;
 import java.util.Collection;
 import java.util.LinkedHashSet;
 import java.util.Map;
 import java.util.Set;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.convert.converter.Converter;
@@ -18,6 +20,7 @@ import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationConverter;
 import org.springframework.security.oauth2.server.resource.authentication.JwtGrantedAuthoritiesConverter;
+import org.springframework.security.oauth2.server.resource.web.authentication.BearerTokenAuthenticationFilter;
 import org.springframework.security.web.SecurityFilterChain;
 
 @Configuration
@@ -27,8 +30,12 @@ public class SecurityConfig {
 
   @Bean
   SecurityFilterChain securityFilterChain(
-      HttpSecurity http, Converter<Jwt, AbstractAuthenticationToken> jwtAuthenticationConverter)
+      HttpSecurity http,
+      Converter<Jwt, AbstractAuthenticationToken> jwtAuthenticationConverter,
+      ObjectProvider<AppClipSessionAuthenticationFilter> appClipSessionAuthenticationFilter)
       throws Exception {
+    appClipSessionAuthenticationFilter.ifAvailable(
+        filter -> http.addFilterBefore(filter, BearerTokenAuthenticationFilter.class));
     return http.csrf(AbstractHttpConfigurer::disable)
         .sessionManagement(
             session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
@@ -37,6 +44,10 @@ public class SecurityConfig {
                 authorize
                     .requestMatchers("/api/v1/admin/**")
                     .hasAuthority(roleAuthority(ADMIN_ROLE))
+                    .requestMatchers("/api/v1/appClip/createSession.appClipSessions")
+                    .permitAll()
+                    .requestMatchers("/api/v1/appClip/**")
+                    .authenticated()
                     .requestMatchers("/api/v1/contact/**")
                     .permitAll()
                     .requestMatchers("/api/v1/websiteAccount/**")

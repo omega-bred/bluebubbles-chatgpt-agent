@@ -48,6 +48,8 @@ src/main/resources/static/site.webmanifest
 HELP.md
 .gradle
 build/
+appclip/.derivedData/
+appclip/**/*.xcuserstate
 !gradle/wrapper/gradle-wrapper.jar
 !**/src/main/**/build/
 !**/src/test/**/build/

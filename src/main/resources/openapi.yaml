@@ -20,6 +20,8 @@ tags:
     description: Public help and contact endpoints
   - name: subscription
     description: Payment subscription and billing endpoints
+  - name: appClip
+    description: iOS App Clip session and bootstrap endpoints
   - name: admin
     description: Admin-only operational endpoints
 paths:
@@ -135,6 +137,7 @@ paths:
       description: Returns the authenticated website account profile and linked BlueChat identities.
       security:
         - bearerAuth: []
+        - appClipSessionAuth: []
       responses:
         '200':
           description: Current website account
@@ -153,6 +156,7 @@ paths:
       description: Lists linked BlueChat identities and integration status derived from those identities.
       security:
         - bearerAuth: []
+        - appClipSessionAuth: []
       responses:
         '200':
           description: Linked account integrations
@@ -203,6 +207,7 @@ paths:
       description: Unlinks an integration account derived from a linked BlueChat identity.
       security:
         - bearerAuth: []
+        - appClipSessionAuth: []
       parameters:
         - name: type
           in: query
@@ -229,6 +234,50 @@ paths:
           description: Authentication required
         '404':
           description: Linked integration account not found
+  /api/v1/appClip/createSession.appClipSessions:
+    post:
+      operationId: appClipCreateSession
+      tags:
+        - appClip
+      summary: Creates an App Clip session from an account-link token
+      description: Exchanges a short-lived texted account-link token for an App Clip session token scoped to the linked BlueChat account.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AppClipCreateSessionRequest'
+      responses:
+        '200':
+          description: App Clip session created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AppClipSessionResponse'
+        '400':
+          description: Missing or invalid link token
+        '404':
+          description: Link token not found
+        '410':
+          description: Link token expired
+  /api/v1/appClip/get.appClipSession:
+    get:
+      operationId: appClipGetSession
+      tags:
+        - appClip
+      summary: Gets App Clip bootstrap data
+      description: Returns account, subscription, and StoreKit bootstrap data for a valid App Clip session.
+      security:
+        - appClipSessionAuth: []
+      responses:
+        '200':
+          description: Current App Clip session
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AppClipSessionResponse'
+        '401':
+          description: Missing or invalid App Clip session
   /api/v1/websiteAccount/updateModel.websiteAccountModels:
     post:
       operationId: websiteAccountUpdateModel
@@ -238,6 +287,7 @@ paths:
       description: Lets premium website accounts choose the assistant model used by linked chat identities.
       security:
         - bearerAuth: []
+        - appClipSessionAuth: []
       requestBody:
         required: true
         content:
@@ -323,6 +373,7 @@ paths:
       description: Returns billing and entitlement state for the authenticated website account.
       security:
         - bearerAuth: []
+        - appClipSessionAuth: []
       responses:
         '200':
           description: Current subscription status
@@ -341,6 +392,7 @@ paths:
       description: Creates a provider checkout session for the authenticated website account.
       security:
         - bearerAuth: []
+        - appClipSessionAuth: []
       requestBody:
         required: false
         content:
@@ -367,6 +419,7 @@ paths:
       description: Creates a provider portal session for the authenticated website account.
       security:
         - bearerAuth: []
+        - appClipSessionAuth: []
       responses:
         '200':
           description: Portal session created
@@ -378,6 +431,33 @@ paths:
           description: Authentication required
         '404':
           description: No subscription found
+  /api/v1/subscription/validateStoreKit.subscriptionProviderEvents:
+    post:
+      operationId: subscriptionValidateStoreKit
+      tags:
+        - subscription
+      summary: Validates a StoreKit transaction
+      description: Validates a StoreKit 2 signed transaction for the authenticated account and updates subscription entitlements.
+      security:
+        - bearerAuth: []
+        - appClipSessionAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SubscriptionStoreKitTransactionRequest'
+      responses:
+        '200':
+          description: Transaction validated and subscription state updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SubscriptionSummaryResponse'
+        '400':
+          description: Invalid StoreKit transaction
+        '401':
+          description: Authentication required
   /api/v1/subscription/receiveWebhook.subscriptionProviderEvents:
     post:
       operationId: subscriptionReceiveWebhook
@@ -858,6 +938,10 @@ components:
       type: http
       scheme: bearer
       bearerFormat: JWT
+    appClipSessionAuth:
+      type: apiKey
+      in: header
+      name: X-App-Clip-Session
   schemas:
     WebsiteAccountProfile:
       type: object
@@ -1107,6 +1191,46 @@ components:
       properties:
         deleted:
           type: boolean
+    AppClipCreateSessionRequest:
+      type: object
+      required:
+        - link_token
+      properties:
+        link_token:
+          type: string
+          description: Short-lived account link token from the App Clip invocation URL.
+    AppClipSessionResponse:
+      type: object
+      required:
+        - session_token
+        - expires_at
+        - account
+        - linked_accounts
+        - subscription
+        - app_account_token
+        - storekit_product_ids
+      properties:
+        session_token:
+          type: string
+          description: Opaque App Clip session token. Send as X-App-Clip-Session.
+        expires_at:
+          type: string
+          format: date-time
+        account:
+          $ref: '#/components/schemas/WebsiteAccountProfile'
+        linked_accounts:
+          $ref: '#/components/schemas/WebsiteLinkedAccountsResponse'
+        subscription:
+          $ref: '#/components/schemas/SubscriptionSummaryResponse'
+        app_account_token:
+          type: string
+          format: uuid
+          description: Deterministic StoreKit appAccountToken for purchases by this account.
+        storekit_product_ids:
+          type: array
+          items:
+            type: string
+          description: StoreKit product IDs the App Clip should load.
     ContactConfigResponse:
       type: object
       required:
@@ -1256,6 +1380,34 @@ components:
         portal_url:
           type: string
           format: uri-reference
+    SubscriptionStoreKitTransactionRequest:
+      type: object
+      required:
+        - signed_transaction_info
+      properties:
+        signed_transaction_info:
+          type: string
+          description: StoreKit 2 transaction JWS from Transaction.jwsRepresentation.
+        signed_renewal_info:
+          type: string
+          nullable: true
+          description: Optional StoreKit renewal-info JWS when available.
+        product_id:
+          type: string
+          nullable: true
+          description: Expected StoreKit product ID.
+        transaction_id:
+          type: string
+          nullable: true
+          description: StoreKit transaction identifier observed by the App Clip.
+        environment:
+          type: string
+          nullable: true
+          description: StoreKit environment hint, such as Xcode, Sandbox, or Production.
+        plan_key:
+          type: string
+          nullable: true
+          description: Internal subscription plan key to apply.
     SubscriptionSummaryResponse:
       type: object
       required:

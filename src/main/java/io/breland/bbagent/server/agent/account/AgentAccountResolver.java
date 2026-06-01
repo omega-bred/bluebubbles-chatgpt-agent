@@ -6,6 +6,7 @@ import io.breland.bbagent.server.agent.persistence.account.AgentAccountIdentityE
 import io.breland.bbagent.server.agent.persistence.account.AgentAccountIdentityRepository;
 import io.breland.bbagent.server.agent.persistence.account.AgentAccountRepository;
 import io.breland.bbagent.server.agent.transport.bb.BBHttpClientWrapper;
+import io.breland.bbagent.server.appclip.AppClipSessionService;
 import java.time.Instant;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -91,6 +92,10 @@ public class AgentAccountResolver {
 
   @Transactional
   public AgentAccountEntity upsertWebsiteAccount(Jwt jwt) {
+    Optional<AgentAccountEntity> appClipAccount = accountFromAppClipJwt(jwt);
+    if (appClipAccount.isPresent()) {
+      return appClipAccount.get();
+    }
     String subject = jwtSubject(jwt);
     Instant now = Instant.now();
     AgentAccountEntity account =
@@ -318,6 +323,7 @@ public class AgentAccountResolver {
         "website_account_link_tokens", "account_id", targetAccountId, sourceAccountId);
     updateAccountColumn(
         "website_account_link_tokens", "redeemed_account_id", targetAccountId, sourceAccountId);
+    updateAccountColumn("app_clip_sessions", "account_id", targetAccountId, sourceAccountId);
     updateAccountColumn(
         "payment_checkout_sessions", "account_id", targetAccountId, sourceAccountId);
     updateAccountColumn("payment_subscriptions", "account_id", targetAccountId, sourceAccountId);
@@ -428,6 +434,15 @@ public class AgentAccountResolver {
       throw new IllegalArgumentException("missing account subject");
     }
     return jwt.getSubject();
+  }
+
+  private Optional<AgentAccountEntity> accountFromAppClipJwt(Jwt jwt) {
+    String accountId =
+        jwt == null ? null : jwt.getClaimAsString(AppClipSessionService.APP_CLIP_ACCOUNT_ID_CLAIM);
+    if (StringUtils.isBlank(accountId)) {
+      return Optional.empty();
+    }
+    return accountRepository.findById(accountId.trim());
   }
 
   private Optional<String> emailFromJwt(Jwt jwt) {

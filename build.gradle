@@ -42,6 +42,9 @@ def opSecretMappings = [
     "op://Kubernetes/stripe-bbagent-subscriptions-test/premium-product-id": "STRIPE_PRODUCT_ID",
     "op://Kubernetes/stripe-bbagent-subscriptions-test/premium-price-id": "STRIPE_PRICE_ID",
     "op://Kubernetes/stripe-bbagent-subscriptions-test/test-mode-only": "STRIPE_TEST_MODE_ONLY",
+    "op://Kubernetes/apple-bbagent-subscriptions/app-id": "APPLE_APP_ID",
+    "op://Kubernetes/apple-bbagent-subscriptions/root-certificates-pem": "APPLE_ROOT_CERTIFICATES_PEM",
+    "op://Kubernetes/apple-bbagent-subscriptions/premium-product-id": "APPLE_SUBSCRIPTION_PREMIUM_PRODUCT_ID",
     "op://Kubernetes/cap-bbagent-contact/site-key": "CAP_CONTACT_SITE_KEY",
     "op://Kubernetes/cap-bbagent-contact/secret-key": "CAP_CONTACT_SECRET_KEY",
     "op://Kubernetes/linear-bbagent/api-key": "LINEAR_API_KEY",
@@ -232,6 +235,7 @@ dependencies {
 
     implementation 'com.auth0:java-jwt:4.5.0'
     implementation 'com.stripe:stripe-java:32.1.0'
+    implementation 'com.apple.itunes.storekit:app-store-server-library:5.2.0'
 
     // MCP
     implementation 'io.modelcontextprotocol.sdk:mcp-core:1.1.1'

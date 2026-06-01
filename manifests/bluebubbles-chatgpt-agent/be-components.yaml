@@ -88,6 +88,14 @@ spec:
 apiVersion: onepassword.com/v1
 kind: OnePasswordItem
 metadata:
+  name: apple-bbagent-subscriptions #this name will also be used for naming the generated kubernetes secret
+  namespace: bluebubbles-chatgpt-agent
+spec:
+  itemPath: "vaults/Kubernetes/items/apple-bbagent-subscriptions"
+---
+apiVersion: onepassword.com/v1
+kind: OnePasswordItem
+metadata:
   name: cap-bbagent-contact #this name will also be used for naming the generated kubernetes secret
   namespace: bluebubbles-chatgpt-agent
 spec:
@@ -363,6 +371,28 @@ spec:
                 secretKeyRef:
                   key: "premium-price-id"
                   name: stripe-bbagent-subscriptions-live
+                  optional: true
+            - name: APPLE_BUNDLE_ID
+              value: "land.bre.bluechat.ios"
+            - name: APPLE_STOREKIT_ENVIRONMENT
+              value: "PRODUCTION"
+            - name: APPLE_ONLINE_CHECKS_ENABLED
+              value: "true"
+            - name: APPLE_STOREKIT_TEST_MODE_ONLY
+              value: "false"
+            - name: APPLE_SUBSCRIPTION_PREMIUM_PRODUCT_ID
+              valueFrom:
+                secretKeyRef:
+                  key: "premium-product-id"
+                  name: apple-bbagent-subscriptions
+                  optional: true
+            - name: APPLE_APP_ID
+              value: "6775352127"
+            - name: APPLE_ROOT_CERTIFICATES_PEM
+              valueFrom:
+                secretKeyRef:
+                  key: "root-certificates-pem"
+                  name: apple-bbagent-subscriptions
                   optional: true
           image: ghcr.io/omega-bred/bluebubbles-chatgpt-agent:latest
           imagePullPolicy: Always

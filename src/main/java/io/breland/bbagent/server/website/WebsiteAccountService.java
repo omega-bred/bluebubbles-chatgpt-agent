@@ -77,12 +77,30 @@ public class WebsiteAccountService {
   @Transactional
   public WebsiteAccountResponse getAccount(Jwt jwt) {
     AgentAccountEntity account = accountResolver.upsertWebsiteAccount(jwt);
+    return getAccount(account);
+  }
+
+  @Transactional
+  public WebsiteAccountResponse getAccount(String accountId) {
+    return getAccount(requireAccount(accountId));
+  }
+
+  private WebsiteAccountResponse getAccount(AgentAccountEntity account) {
     return new WebsiteAccountResponse().account(toProfile(account)).links(List.of(toLink(account)));
   }
 
   @Transactional
   public WebsiteLinkedAccountsResponse listLinkedAccounts(Jwt jwt) {
     AgentAccountEntity account = accountResolver.upsertWebsiteAccount(jwt);
+    return listLinkedAccounts(account);
+  }
+
+  @Transactional
+  public WebsiteLinkedAccountsResponse listLinkedAccounts(String accountId) {
+    return listLinkedAccounts(requireAccount(accountId));
+  }
+
+  private WebsiteLinkedAccountsResponse listLinkedAccounts(AgentAccountEntity account) {
     return new WebsiteLinkedAccountsResponse()
         .account(toProfile(account))
         .integrations(List.of(toIntegration(account)));
@@ -309,6 +327,13 @@ public class WebsiteAccountService {
         .displayName(account.getWebsiteDisplayName())
         .createdAt(offset(account.getCreatedAt()))
         .updatedAt(offset(account.getUpdatedAt()));
+  }
+
+  private AgentAccountEntity requireAccount(String accountId) {
+    return accountResolver
+        .resolveById(accountId)
+        .map(AgentAccountResolver.ResolvedAccount::account)
+        .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Account not found"));
   }
 
   private WebsiteAccountLink toLink(AgentAccountEntity account) {

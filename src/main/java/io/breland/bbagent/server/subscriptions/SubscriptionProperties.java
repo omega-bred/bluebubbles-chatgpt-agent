@@ -96,5 +96,10 @@ public class SubscriptionProperties {
     private String portalConfigurationId = "";
     private boolean automaticTaxEnabled = false;
     private boolean testModeOnly = false;
+    private String bundleId = "";
+    private Long appAppleId;
+    private String environment = "XCODE";
+    private String rootCertificatesPem = "";
+    private boolean onlineChecksEnabled = true;
   }
 }

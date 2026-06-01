@@ -12,6 +12,7 @@ import io.breland.bbagent.generated.model.SubscriptionPlan;
 import io.breland.bbagent.generated.model.SubscriptionPlansResponse;
 import io.breland.bbagent.generated.model.SubscriptionPortalResponse;
 import io.breland.bbagent.generated.model.SubscriptionProviderWebhookResponse;
+import io.breland.bbagent.generated.model.SubscriptionStoreKitTransactionRequest;
 import io.breland.bbagent.generated.model.SubscriptionSummaryResponse;
 import io.breland.bbagent.server.agent.account.AgentAccountIdentifiers;
 import io.breland.bbagent.server.agent.account.AgentAccountResolver;
@@ -24,6 +25,7 @@ import io.breland.bbagent.server.agent.persistence.subscription.PaymentProviderE
 import io.breland.bbagent.server.agent.persistence.subscription.PaymentSubscriptionEntity;
 import io.breland.bbagent.server.agent.persistence.subscription.PaymentSubscriptionRepository;
 import io.breland.bbagent.server.analytics.UmamiAnalyticsService;
+import io.breland.bbagent.server.appclip.AppAccountTokens;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.Instant;
@@ -95,8 +97,13 @@ public class SubscriptionService {
   @Transactional
   public SubscriptionSummaryResponse getAccountSubscription(Jwt jwt) {
     AgentAccountEntity account = accountResolver.upsertWebsiteAccount(jwt);
-    recomputePremium(account.getAccountId());
-    return summary(account.getAccountId());
+    return getAccountSubscription(account.getAccountId());
+  }
+
+  @Transactional
+  public SubscriptionSummaryResponse getAccountSubscription(String accountId) {
+    recomputePremium(accountId);
+    return summary(accountId);
   }
 
   @Transactional
@@ -221,6 +228,56 @@ public class SubscriptionService {
     return new SubscriptionPortalResponse()
         .provider(subscription.getProvider())
         .portalUrl(portal.portalUrl());
+  }
+
+  @Transactional
+  public SubscriptionSummaryResponse validateStoreKitTransaction(
+      Jwt jwt, SubscriptionStoreKitTransactionRequest request) {
+    AgentAccountEntity account = accountResolver.upsertWebsiteAccount(jwt);
+    return validateStoreKitTransaction(account.getAccountId(), request);
+  }
+
+  @Transactional
+  public SubscriptionSummaryResponse validateStoreKitTransaction(
+      String accountId, SubscriptionStoreKitTransactionRequest request) {
+    ensureSubscriptionsEnabled();
+    if (request == null || StringUtils.isBlank(request.getSignedTransactionInfo())) {
+      throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Missing StoreKit transaction");
+    }
+    SubscriptionProvider provider = requireProvider(AppleStoreKitSubscriptionProvider.PROVIDER_KEY);
+    if (!(provider instanceof AppleStoreKitSubscriptionProvider appleProvider)) {
+      throw new ResponseStatusException(
+          HttpStatus.SERVICE_UNAVAILABLE, "Apple StoreKit provider is not configured");
+    }
+    SubscriptionProperties.Plan plan = requirePlan(request.getPlanKey());
+    SubscriptionProperties.ProviderPlan providerPlan =
+        requireProviderPlan(plan, AppleStoreKitSubscriptionProvider.PROVIDER_KEY);
+    try {
+      SubscriptionProvider.ProviderSubscription providerSubscription =
+          appleProvider.validateTransaction(
+              accountId, AppAccountTokens.forAccountId(accountId), plan, providerPlan, request);
+      upsertProviderSubscription(
+          accountId,
+          AppleStoreKitSubscriptionProvider.PROVIDER_KEY,
+          plan,
+          providerPlan,
+          null,
+          providerSubscription);
+      recomputePremium(accountId);
+      trackSubscriptionEvent(
+          "subscription_storekit_validated",
+          "/server/subscription/storekit",
+          accountId,
+          analyticsData(
+              "provider", AppleStoreKitSubscriptionProvider.PROVIDER_KEY,
+              "plan_key", plan.getKey(),
+              "product_id", providerPlan.getPlanId()));
+      return summary(accountId);
+    } catch (IllegalArgumentException e) {
+      throw new ResponseStatusException(HttpStatus.BAD_REQUEST, e.getMessage(), e);
+    } catch (IllegalStateException e) {
+      throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, e.getMessage(), e);
+    }
   }
 
   @Transactional
@@ -585,6 +642,12 @@ public class SubscriptionService {
     String accountId =
         firstNonBlank(webhookEvent.accountId(), checkout == null ? null : checkout.getAccountId());
     if (StringUtils.isBlank(accountId)) {
+      accountId =
+          existingSubscription(providerKey, webhookEvent)
+              .map(PaymentSubscriptionEntity::getAccountId)
+              .orElse(null);
+    }
+    if (StringUtils.isBlank(accountId)) {
       return new ProcessedWebhook(
           false, null, null, null, "Webhook did not include a known account");
     }
@@ -626,6 +689,23 @@ public class SubscriptionService {
     if (StringUtils.isNotBlank(webhookEvent.providerCheckoutId())) {
       return checkoutRepository.findByProviderAndProviderCheckoutId(
           providerKey, webhookEvent.providerCheckoutId());
+    }
+    return Optional.empty();
+  }
+
+  private Optional<PaymentSubscriptionEntity> existingSubscription(
+      String providerKey, SubscriptionProvider.ProviderWebhookEvent webhookEvent) {
+    if (StringUtils.isNotBlank(webhookEvent.providerSubscriptionId())) {
+      Optional<PaymentSubscriptionEntity> subscription =
+          subscriptionRepository.findByProviderAndProviderSubscriptionId(
+              providerKey, webhookEvent.providerSubscriptionId());
+      if (subscription.isPresent()) {
+        return subscription;
+      }
+    }
+    if (StringUtils.isNotBlank(webhookEvent.customerSelector())) {
+      return subscriptionRepository.findByProviderAndProviderCustomerSelector(
+          providerKey, webhookEvent.customerSelector());
     }
     return Optional.empty();
   }
@@ -927,6 +1007,18 @@ public class SubscriptionService {
         .flatMap(Optional::stream)
         .forEach(providerKeys::add);
     return providerKeys;
+  }
+
+  public List<String> storeKitProductIds() {
+    return properties.getPlans().stream()
+        .filter(SubscriptionProperties.Plan::isActive)
+        .map(plan -> providerPlanOrNull(plan, AppleStoreKitSubscriptionProvider.PROVIDER_KEY))
+        .filter(
+            providerPlan ->
+                providerPlan != null && StringUtils.isNotBlank(providerPlan.getPlanId()))
+        .map(SubscriptionProperties.ProviderPlan::getPlanId)
+        .distinct()
+        .toList();
   }
 
   private Optional<String> configuredProviderKey(String requestedProviderKey) {
