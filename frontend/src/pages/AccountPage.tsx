@@ -10,6 +10,7 @@ import type {
   WebsiteLinkedAccountsResponse,
   WebsiteLinkedIntegrationAccount,
   WebsiteModelOption,
+  WebsiteModelVerbosityOption,
   WebsiteUsageLimitSummary,
 } from "../client";
 import { AuthGate } from "../components/AuthGate";
@@ -501,6 +502,7 @@ function LinkedIdentity({
 }) {
   const [unlinkingAccountKey, setUnlinkingAccountKey] = React.useState<string | null>(null);
   const [modelBusy, setModelBusy] = React.useState(false);
+  const [verbosityBusy, setVerbosityBusy] = React.useState(false);
   const [modelError, setModelError] = React.useState<string | null>(null);
   const link = integration.link;
   if (!link) {
@@ -515,10 +517,15 @@ function LinkedIdentity({
     modelAccess?.available_models?.filter(
       (model) => model.enabled && model.model !== "local",
     ) || [];
+  const verbosityOptions =
+    modelAccess?.available_verbosity_options?.filter((option) => option.enabled) || [];
+  const verbosityLabel = modelAccess
+    ? displayVerbosityLabel(modelAccess.current_verbosity_label)
+    : "";
   const accessNote =
     modelAccess && modelAccess.is_premium
-      ? `${accountLabel} account · ${modelLabel}`
-      : `${accountLabel} account`;
+      ? `${accountLabel} account · ${modelLabel} · ${verbosityLabel}`
+      : `${accountLabel} account · ${verbosityLabel}`;
   const updateModel = async (model: string) => {
     setModelBusy(true);
     setModelError(null);
@@ -532,6 +539,23 @@ function LinkedIdentity({
       setModelError(err instanceof Error ? err.message : "Unable to update model.");
     } finally {
       setModelBusy(false);
+    }
+  };
+  const updateVerbosity = async (verbosity: string) => {
+    setVerbosityBusy(true);
+    setModelError(null);
+    trackEvent("web_model_verbosity_start", { verbosity });
+    try {
+      await websiteAccountApi.updateModelVerbosity(
+        verbosity as Parameters<typeof websiteAccountApi.updateModelVerbosity>[0],
+      );
+      trackEvent("web_model_verbosity_updated", { verbosity });
+      await onChanged();
+    } catch (err) {
+      trackEvent("web_model_verbosity_failed", { verbosity });
+      setModelError(err instanceof Error ? err.message : "Unable to update response style.");
+    } finally {
+      setVerbosityBusy(false);
     }
   };
   return (
@@ -548,6 +572,7 @@ function LinkedIdentity({
             {modelLabel === "Free" ? "Free" : `Model ${modelLabel}`}
           </span>
         ) : null}
+        {modelAccess ? <span className="pill">{`Style ${verbosityLabel}`}</span> : null}
         <span className={calendars.length > 0 ? "pill good" : "pill"}>
           Google Calendar{" "}
           {calendars.length > 0
@@ -561,6 +586,14 @@ function LinkedIdentity({
           models={selectableModels}
           busy={modelBusy}
           onChange={updateModel}
+        />
+      ) : null}
+      {modelAccess?.verbosity_selection_configurable && verbosityOptions.length > 0 ? (
+        <VerbositySelector
+          currentVerbosity={modelAccess.current_verbosity}
+          options={verbosityOptions}
+          busy={verbosityBusy}
+          onChange={updateVerbosity}
         />
       ) : null}
       {modelError ? <p className="error-text">{modelError}</p> : null}
@@ -638,6 +671,41 @@ function ModelSelector({
   );
 }
 
+function VerbositySelector({
+  currentVerbosity,
+  options,
+  busy,
+  onChange,
+}: {
+  currentVerbosity?: string;
+  options: WebsiteModelVerbosityOption[];
+  busy: boolean;
+  onChange: (verbosity: string) => Promise<void>;
+}) {
+  return (
+    <div className="verbosity-picker" aria-busy={busy}>
+      <span>Response style</span>
+      <div className="verbosity-options">
+        {options.map((option) => {
+          const selected = option.verbosity === currentVerbosity;
+          return (
+            <button
+              key={option.verbosity}
+              type="button"
+              className={selected ? "verbosity-option selected" : "verbosity-option"}
+              disabled={busy || selected}
+              onClick={() => void onChange(option.verbosity)}
+            >
+              <strong>{displayVerbosityLabel(option.label)}</strong>
+              <small>{option.description}</small>
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 function IdentityRow({ identity }: { identity: WebsiteAccountIdentity }) {
   return (
     <div className="linked-account-row">
@@ -647,6 +715,10 @@ function IdentityRow({ identity }: { identity: WebsiteAccountIdentity }) {
       </div>
     </div>
   );
+}
+
+function displayVerbosityLabel(label?: string | null) {
+  return label?.trim() || "Balanced";
 }
 
 function LinkedAccountRow({

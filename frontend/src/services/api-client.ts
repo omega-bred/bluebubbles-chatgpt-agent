@@ -12,6 +12,7 @@ import {
   type ContactMessageRequest,
   type WebsiteAccountDeleteLinkedAccountTypeEnum,
   type WebsiteModelSelectionRequest,
+  type WebsiteModelSelectionRequestVerbosityEnum,
 } from "../client";
 import type { WebsiteAccountRedeemLinkRequest } from "../client";
 import { getAccessToken, login } from "../auth/keycloak";
@@ -106,6 +107,14 @@ export const websiteAccountApi = {
     const client = await websiteAccountClient();
     const request: WebsiteModelSelectionRequest = {
       model: model as WebsiteModelSelectionRequest["model"],
+    };
+    return (await client.websiteAccountUpdateModel(request)).data;
+  },
+
+  updateModelVerbosity: async (verbosity: WebsiteModelSelectionRequestVerbosityEnum) => {
+    const client = await websiteAccountClient();
+    const request: WebsiteModelSelectionRequest = {
+      verbosity,
     };
     return (await client.websiteAccountUpdateModel(request)).data;
   },

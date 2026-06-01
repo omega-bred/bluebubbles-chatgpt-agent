@@ -59,7 +59,7 @@ Class | Method | HTTP request | Description
 *WebsiteAccountAPI* | [**websiteAccountGet**](docs/WebsiteAccountAPI.md#websiteaccountget) | **GET** /api/v1/websiteAccount/get.websiteAccount | Gets the current website account
 *WebsiteAccountAPI* | [**websiteAccountListLinkedAccounts**](docs/WebsiteAccountAPI.md#websiteaccountlistlinkedaccounts) | **GET** /api/v1/websiteAccount/listLinkedAccounts.websiteAccountLinks | Lists linked website account integrations
 *WebsiteAccountAPI* | [**websiteAccountRedeemLink**](docs/WebsiteAccountAPI.md#websiteaccountredeemlink) | **POST** /api/v1/websiteAccount/redeemLink.websiteAccountLinks | Redeems a BlueChat sender link token
-*WebsiteAccountAPI* | [**websiteAccountUpdateModel**](docs/WebsiteAccountAPI.md#websiteaccountupdatemodel) | **POST** /api/v1/websiteAccount/updateModel.websiteAccountModels | Updates the preferred assistant model
+*WebsiteAccountAPI* | [**websiteAccountUpdateModel**](docs/WebsiteAccountAPI.md#websiteaccountupdatemodel) | **POST** /api/v1/websiteAccount/updateModel.websiteAccountModels | Updates assistant model preferences
 
 
 ## Documentation For Models
@@ -127,6 +127,7 @@ Class | Method | HTTP request | Description
  - [WebsiteModelOption](docs/WebsiteModelOption.md)
  - [WebsiteModelSelectionRequest](docs/WebsiteModelSelectionRequest.md)
  - [WebsiteModelSelectionResponse](docs/WebsiteModelSelectionResponse.md)
+ - [WebsiteModelVerbosityOption](docs/WebsiteModelVerbosityOption.md)
  - [WebsiteUsageLimitSummary](docs/WebsiteUsageLimitSummary.md)
 
 

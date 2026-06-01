@@ -315,6 +315,61 @@ a {
   background: #ffffff;
 }
 
+.verbosity-picker {
+  display: grid;
+  gap: 8px;
+  color: #4a4a46;
+  font-size: 0.92rem;
+  font-weight: 800;
+}
+
+.verbosity-options {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.verbosity-option {
+  display: grid;
+  min-height: 84px;
+  gap: 5px;
+  align-content: start;
+  border: 1px solid #c9c9c9;
+  border-radius: 8px;
+  padding: 10px;
+  color: #292927;
+  background: #ffffff;
+  text-align: left;
+  cursor: pointer;
+}
+
+.verbosity-option:hover:not(:disabled) {
+  border-color: #1d8cff;
+  background: #f3f8ff;
+}
+
+.verbosity-option.selected {
+  border-color: #1d8cff;
+  background: #eaf4ff;
+  box-shadow: inset 0 0 0 1px rgba(29, 140, 255, 0.18);
+}
+
+.verbosity-option:disabled {
+  cursor: default;
+}
+
+.verbosity-option strong,
+.verbosity-option small {
+  overflow-wrap: anywhere;
+}
+
+.verbosity-option small {
+  color: #62625d;
+  font-size: 0.78rem;
+  font-weight: 700;
+  line-height: 1.35;
+}
+
 .error-text {
   margin: 0;
   color: #b42318;
@@ -1375,6 +1430,10 @@ a {
 
   .usage-orbit {
     justify-self: start;
+  }
+
+  .verbosity-options {
+    grid-template-columns: 1fr;
   }
 
   .provider-plan-row,

@@ -77,8 +77,9 @@ Canonical agent accounts:
 - OAuth and async integration state belongs to `account_id`: Google Calendar credentials,
   Coder OAuth credentials, Coder pending authorizations, and Coder async task starts. Do not add
   compatibility paths that look up old sender-based account bases.
-- Model picker entitlement and global contact name live on `agent_accounts`; do not recreate
-  `agent_model_account_settings` or `global_contact`.
+- Model picker entitlement, selected model, model verbosity, and global contact name live on
+  `agent_accounts`; do not recreate `agent_model_account_settings`, `assistant_responsiveness`, or
+  `global_contact` for account-level model preferences.
 - This project intentionally reset the early test data model. There is no backwards-compatibility
   requirement for the dropped account/link/alias tables unless the user explicitly asks for one.
 
@@ -185,6 +186,9 @@ Model access:
   current local responses model configured in `ModelAccessService`. Premium rows set
   `is_premium=true`; premium users can choose among the exposed premium model options through the
   website dashboard or App Clip model picker.
+- Response verbosity is an account-level `agent_accounts.model_verbosity` setting with
+  `low`, `medium`, and `high` values. It is available to both free and premium accounts through the
+  website, App Clip, and `set_preferred_model` agent tool.
 
 Subscription billing:
 - Keep BTCPay and Stripe side by side. Do not replace one provider path with the other; new billing

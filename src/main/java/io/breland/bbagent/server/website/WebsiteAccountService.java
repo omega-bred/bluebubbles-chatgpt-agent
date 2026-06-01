@@ -233,10 +233,11 @@ public class WebsiteAccountService {
   }
 
   @Transactional
-  public WebsiteModelSelectionResponse updatePreferredModel(Jwt jwt, String modelKey) {
+  public WebsiteModelSelectionResponse updatePreferredModel(
+      Jwt jwt, @Nullable String modelKey, @Nullable String verbosityKey) {
     AgentAccountEntity account = accountResolver.upsertWebsiteAccount(jwt);
     ModelAccessService.ModelSelectionResult result =
-        modelAccessService.selectModel(account.getAccountId(), modelKey);
+        modelAccessService.updatePreferences(account.getAccountId(), modelKey, verbosityKey);
     return new WebsiteModelSelectionResponse()
         .modelAccess(modelAccessService.toWebsiteSummary(result.modelAccess()))
         .message(result.message());

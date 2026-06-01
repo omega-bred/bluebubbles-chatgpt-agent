@@ -303,7 +303,10 @@ public final class AgentPromptBuilder {
                   + "When the user explicitly asks to switch, change, use, or set the assistant model to ChatGPT, Claude, or Gemini, call "
                   + SetPreferredModelAgentTool.TOOL_NAME
                   + " and send the returned user_facing_text. This is only available to premium users. "
-                  + "If the user asks the assistant to be more or less responsive, call "
+                  + "When the user asks future assistant replies to be shorter, more concise, balanced, longer, more detailed, or more verbose, call "
+                  + SetPreferredModelAgentTool.TOOL_NAME
+                  + " with verbosity low, medium, or high and send the returned user_facing_text. "
+                  + "If the user asks the assistant to respond more or less often, or to be silent unless called by name, call "
                   + AssistantResponsivenessAgentTool.TOOL_NAME
                   + " to update the setting. The silent mode will only invoke responses when the message starts with 'Chat' (case-insensitive). "
                   + "If a user shares their name, ask if it's okay to store it globally for future chats; only call "
@@ -348,8 +351,11 @@ public final class AgentPromptBuilder {
                 + "When the user explicitly asks to switch, change, use, or set the assistant model to ChatGPT, Claude, or Gemini, call "
                 + SetPreferredModelAgentTool.TOOL_NAME
                 + " and send the returned user_facing_text. This is only available to premium users. "
+                + "When the user asks future assistant replies to be shorter, more concise, balanced, longer, more detailed, or more verbose, call "
+                + SetPreferredModelAgentTool.TOOL_NAME
+                + " with verbosity low, medium, or high and send the returned user_facing_text. "
                 + "If the user requests an image and has attached images, use those images as starting references for image generation. "
-                + "If the user asks the assistant to be more or less responsive (especially in group chats), call "
+                + "If the user asks the assistant to respond more or less often, or to be silent unless called by name (especially in group chats), call "
                 + AssistantResponsivenessAgentTool.TOOL_NAME
                 + " to update the setting. The silent mode will only invoke responses when the message starts with 'Chat' (case-insensitive). "
                 + "If a user shares their name, ask if it's okay to store it globally for future chats; only call "
@@ -533,6 +539,9 @@ public final class AgentPromptBuilder {
       if (status.modelAccess() != null) {
         text.append(" [modelPremium=").append(status.modelAccess().getIsPremium()).append("]");
         text.append(" [currentModel=").append(status.modelAccess().getCurrentModel()).append("]");
+        text.append(" [modelVerbosity=")
+            .append(status.modelAccess().getCurrentVerbosity())
+            .append("]");
       }
     } catch (Exception e) {
       log.debug("Failed to load website account link context", e);

@@ -235,10 +235,15 @@ class WebsiteAccountServiceTest {
         .isPremium(false)
         .currentModel("local")
         .currentModelLabel("Free")
+        .currentVerbosity(WebsiteModelAccessSummary.CurrentVerbosityEnum.MEDIUM)
+        .currentVerbosityLabel("Balanced")
         .modelSelectionAllowed(false)
         .modelSelectionConfigurable(false)
+        .verbositySelectionAllowed(true)
+        .verbositySelectionConfigurable(true)
         .readOnlyReason("Free accounts use the included model.")
-        .availableModels(List.of());
+        .availableModels(List.of())
+        .availableVerbosityOptions(List.of());
   }
 
   private WebsiteUsageLimitSummary usageLimit() {

@@ -130,6 +130,30 @@ struct ClipRootView: View {
             }
             .buttonStyle(.borderedProminent)
             .disabled(!model.canPurchase)
+            if model.canRestorePurchases {
+                Button {
+                    Task {
+                        await model.restoreApplePurchases()
+                    }
+                } label: {
+                    HStack {
+                        if model.restoreInProgress {
+                            ProgressView()
+                        }
+                        Text(model.restoreButtonTitle)
+                    }
+                    .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.bordered)
+                .disabled(model.restoreInProgress)
+            }
+            if let managementURL = model.appleSubscriptionManagementURL {
+                Link(destination: managementURL) {
+                    Text("Manage Apple Subscription")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.bordered)
+            }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding()
@@ -202,6 +226,43 @@ struct ClipRootView: View {
                     Text(reason)
                         .font(.callout)
                         .foregroundStyle(.secondary)
+                }
+                if model.canChangeVerbosity {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("Response style")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(.secondary)
+                        Menu {
+                            ForEach(model.selectableVerbosityOptions, id: \.verbosity) { option in
+                                Button {
+                                    Task {
+                                        await model.updateModelVerbosity(option.verbosity.rawValue)
+                                    }
+                                } label: {
+                                    Label(
+                                        model.verbosityDisplayName(option.label),
+                                        systemImage: option.verbosity.rawValue == access.currentVerbosity.rawValue
+                                            ? "checkmark"
+                                            : "circle"
+                                    )
+                                }
+                                .disabled(model.verbositySelectionInProgress)
+                            }
+                        } label: {
+                            HStack {
+                                Text(model.selectedVerbosityTitle)
+                                Spacer()
+                                if model.verbositySelectionInProgress {
+                                    ProgressView()
+                                } else {
+                                    Image(systemName: "chevron.down")
+                                        .font(.caption.weight(.semibold))
+                                }
+                            }
+                            .frame(maxWidth: .infinity)
+                        }
+                        .buttonStyle(.bordered)
+                    }
                 }
                 if let error = model.modelErrorMessage {
                     Text(error)
@@ -364,16 +425,20 @@ final class ClipViewModel: ObservableObject {
     @Published private(set) var product: Product?
     @Published var isLoading = false
     @Published var purchaseInProgress = false
+    @Published var restoreInProgress = false
     @Published var modelSelectionInProgress = false
+    @Published var verbositySelectionInProgress = false
     @Published var errorMessage: String?
     @Published var billingErrorMessage: String?
     @Published var modelErrorMessage: String?
 
     private let storeKit = StoreKitManager()
     private let sessionTokenKey = "bluechat.appclip.session-token"
+    private var transactionUpdatesTask: Task<Void, Never>?
 
     init() {
         GeneratedAPIConfiguration.configure()
+        observeStoreKitTransactionUpdates()
     }
 
     var title: String {
@@ -409,10 +474,20 @@ final class ClipViewModel: ObservableObject {
             .filter { $0.enabled && $0.model != "local" }
     }
 
+    var selectableVerbosityOptions: [WebsiteModelVerbosityOption] {
+        (modelAccess?.availableVerbosityOptions ?? [])
+            .filter(\.enabled)
+    }
+
     var canChangeModel: Bool {
         modelAccess?.isPremium == true
             && modelAccess?.modelSelectionConfigurable == true
             && !selectableModels.isEmpty
+    }
+
+    var canChangeVerbosity: Bool {
+        modelAccess?.verbositySelectionConfigurable == true
+            && !selectableVerbosityOptions.isEmpty
     }
 
     var selectedModelTitle: String {
@@ -423,6 +498,16 @@ final class ClipViewModel: ObservableObject {
             .first(where: { $0.model == access.currentModel })
             .map { modelDisplayName($0.label) }
             ?? modelDisplayName(access.currentModelLabel)
+    }
+
+    var selectedVerbosityTitle: String {
+        guard let access = modelAccess else {
+            return "Balanced"
+        }
+        return selectableVerbosityOptions
+            .first(where: { $0.verbosity.rawValue == access.currentVerbosity.rawValue })
+            .map { verbosityDisplayName($0.label) }
+            ?? verbosityDisplayName(access.currentVerbosityLabel)
     }
 
     var modelReadOnlyReason: String? {
@@ -488,8 +573,22 @@ final class ClipViewModel: ObservableObject {
         return session?.subscription.isPremium == true ? "Premium active" : "Upgrade"
     }
 
+    var restoreButtonTitle: String {
+        restoreInProgress ? "Checking Apple Purchases" : "Restore Apple Purchase"
+    }
+
     var canPurchase: Bool {
         session != nil && product != nil && !purchaseInProgress && session?.subscription.isPremium != true
+    }
+
+    var canRestorePurchases: Bool {
+        session != nil
+            && session?.subscription.isPremium != true
+            && session?.storekitProductIds.isEmpty == false
+    }
+
+    var appleSubscriptionManagementURL: URL? {
+        hasAppleSubscription ? URL(string: "https://apps.apple.com/account/subscriptions") : nil
     }
 
     private var primaryIdentity: WebsiteAccountIdentity? {
@@ -539,15 +638,7 @@ final class ClipViewModel: ObservableObject {
         do {
             trackAppClipEvent("appclip_purchase_started", properties: eventContext(for: session))
             let purchase = try await storeKit.purchase(product: product, appAccountToken: session.appAccountToken)
-            let updated = try await GeneratedAPIConfiguration.executeWithSession(session.sessionToken) {
-                SubscriptionAPI.subscriptionValidateStoreKitWithRequestBuilder(
-                    subscriptionStoreKitTransactionRequest: SubscriptionStoreKitTransactionRequest(
-                        signedTransactionInfo: purchase.jwsRepresentation,
-                        productId: product.id,
-                        transactionId: String(purchase.transaction.id)
-                    )
-                )
-            }
+            let updated = try await validateStoreKitPurchase(purchase, session: session, productId: product.id)
             await purchase.transaction.finish()
             self.session = session.replacing(subscription: updated)
             trackAppClipEvent(
@@ -557,6 +648,39 @@ final class ClipViewModel: ObservableObject {
         } catch {
             trackAppClipEvent(
                 "appclip_purchase_failed",
+                properties: eventContext(for: session)
+            )
+            billingErrorMessage = error.localizedDescription
+        }
+    }
+
+    func restoreApplePurchases() async {
+        guard let session else {
+            return
+        }
+        restoreInProgress = true
+        billingErrorMessage = nil
+        defer {
+            restoreInProgress = false
+        }
+        do {
+            trackAppClipEvent("appclip_purchase_restore_started", properties: eventContext(for: session))
+            let restored = try await syncCurrentAppleEntitlements(for: session)
+            if restored {
+                trackAppClipEvent(
+                    "appclip_purchase_restore_completed",
+                    properties: eventContext(for: self.session ?? session)
+                )
+            } else {
+                billingErrorMessage = "No active Apple subscription was found for this account."
+                trackAppClipEvent(
+                    "appclip_purchase_restore_empty",
+                    properties: eventContext(for: session)
+                )
+            }
+        } catch {
+            trackAppClipEvent(
+                "appclip_purchase_restore_failed",
                 properties: eventContext(for: session)
             )
             billingErrorMessage = error.localizedDescription
@@ -591,6 +715,10 @@ final class ClipViewModel: ObservableObject {
 
     func modelDisplayName(_ value: String) -> String {
         firstNonBlank(value) ?? "Unknown"
+    }
+
+    func verbosityDisplayName(_ value: String) -> String {
+        firstNonBlank(value) ?? "Balanced"
     }
 
     func usageTitle(_ usage: WebsiteUsageLimitSummary) -> String {
@@ -659,6 +787,50 @@ final class ClipViewModel: ObservableObject {
         }
     }
 
+    func updateModelVerbosity(_ verbosityKey: String) async {
+        guard let session else {
+            return
+        }
+        guard verbosityKey != modelAccess?.currentVerbosity.rawValue else {
+            return
+        }
+        guard let generatedVerbosity = WebsiteModelSelectionRequest.Verbosity(rawValue: verbosityKey) else {
+            modelErrorMessage = "This response style is not available in the App Clip yet."
+            return
+        }
+        verbositySelectionInProgress = true
+        modelErrorMessage = nil
+        defer {
+            verbositySelectionInProgress = false
+        }
+        do {
+            trackAppClipEvent(
+                "appclip_model_verbosity_started",
+                properties: eventContext(for: session).merging(["verbosity": verbosityKey]) { _, new in new }
+            )
+            _ = try await GeneratedAPIConfiguration.executeWithSession(session.sessionToken) {
+                WebsiteAccountAPI.websiteAccountUpdateModelWithRequestBuilder(
+                    websiteModelSelectionRequest: WebsiteModelSelectionRequest(verbosity: generatedVerbosity)
+                )
+            }
+            let refreshed = try await GeneratedAPIConfiguration.executeWithSession(session.sessionToken) {
+                AppClipAPI.appClipGetSessionWithRequestBuilder()
+            }
+            self.session = refreshed
+            await loadProductIfNeeded(for: refreshed)
+            trackAppClipEvent(
+                "appclip_model_verbosity_updated",
+                properties: eventContext(for: refreshed).merging(["verbosity": verbosityKey]) { _, new in new }
+            )
+        } catch {
+            trackAppClipEvent(
+                "appclip_model_verbosity_failed",
+                properties: eventContext(for: session).merging(["verbosity": verbosityKey]) { _, new in new }
+            )
+            modelErrorMessage = error.localizedDescription
+        }
+    }
+
     private func createSession(linkToken: String) async {
         isLoading = true
         errorMessage = nil
@@ -676,6 +848,7 @@ final class ClipViewModel: ObservableObject {
             self.session = session
             errorMessage = nil
             await loadProductIfNeeded(for: session)
+            await syncCurrentAppleEntitlementsSilently(for: self.session ?? session)
             trackAppClipEvent(
                 "appclip_session_created",
                 properties: eventContext(for: session).merging(["launch_source": "link"]) { _, new in new },
@@ -701,6 +874,7 @@ final class ClipViewModel: ObservableObject {
             self.session = session
             errorMessage = nil
             await loadProductIfNeeded(for: session)
+            await syncCurrentAppleEntitlementsSilently(for: self.session ?? session)
             trackAppClipEvent(
                 "appclip_session_restored",
                 properties: eventContext(for: session).merging(["launch_source": "stored"]) { _, new in new },
@@ -746,6 +920,103 @@ final class ClipViewModel: ObservableObject {
         }
     }
 
+    private func validateStoreKitPurchase(
+        _ purchase: StoreKitManager.VerifiedPurchase,
+        session: AppClipSessionResponse,
+        productId: String? = nil
+    ) async throws -> SubscriptionSummaryResponse {
+        try await GeneratedAPIConfiguration.executeWithSession(session.sessionToken) {
+            SubscriptionAPI.subscriptionValidateStoreKitWithRequestBuilder(
+                subscriptionStoreKitTransactionRequest: SubscriptionStoreKitTransactionRequest(
+                    signedTransactionInfo: purchase.jwsRepresentation,
+                    productId: productId ?? purchase.transaction.productID,
+                    transactionId: String(purchase.transaction.id)
+                )
+            )
+        }
+    }
+
+    private func syncCurrentAppleEntitlementsSilently(for session: AppClipSessionResponse) async {
+        guard session.subscription.isPremium != true else {
+            return
+        }
+        do {
+            let restored = try await syncCurrentAppleEntitlements(for: session)
+            if restored {
+                trackAppClipEvent(
+                    "appclip_purchase_auto_restored",
+                    properties: eventContext(for: self.session ?? session)
+                )
+            }
+        } catch {
+            trackAppClipEvent(
+                "appclip_purchase_auto_restore_failed",
+                properties: eventContext(for: session)
+            )
+        }
+    }
+
+    private func syncCurrentAppleEntitlements(for session: AppClipSessionResponse) async throws -> Bool {
+        let purchases = try await storeKit.currentEntitlements(productIds: session.storekitProductIds)
+        guard
+            let purchase = purchases.sorted(by: { $0.transaction.purchaseDate > $1.transaction.purchaseDate }).first
+        else {
+            return false
+        }
+        let updated = try await validateStoreKitPurchase(purchase, session: session)
+        let refreshed = (self.session ?? session).replacing(subscription: updated)
+        self.session = refreshed
+        await loadProductIfNeeded(for: refreshed)
+        return true
+    }
+
+    private func observeStoreKitTransactionUpdates() {
+        guard transactionUpdatesTask == nil else {
+            return
+        }
+        transactionUpdatesTask = Task { [weak self] in
+            for await verification in StoreKit.Transaction.updates {
+                guard !Task.isCancelled else {
+                    return
+                }
+                await self?.handleStoreKitTransactionUpdate(verification)
+            }
+        }
+    }
+
+    private func handleStoreKitTransactionUpdate(
+        _ verification: VerificationResult<StoreKit.Transaction>
+    ) async {
+        guard let session else {
+            return
+        }
+        do {
+            let purchase = try storeKit.verifiedPurchase(from: verification)
+            guard session.storekitProductIds.contains(purchase.transaction.productID) else {
+                return
+            }
+            trackAppClipEvent(
+                "appclip_purchase_transaction_update_started",
+                properties: eventContext(for: session)
+            )
+            let updated = try await validateStoreKitPurchase(purchase, session: session)
+            await purchase.transaction.finish()
+            let refreshed = (self.session ?? session).replacing(subscription: updated)
+            self.session = refreshed
+            await loadProductIfNeeded(for: refreshed)
+            trackAppClipEvent(
+                "appclip_purchase_transaction_update_completed",
+                properties: eventContext(for: refreshed)
+            )
+        } catch {
+            billingErrorMessage = error.localizedDescription
+            trackAppClipEvent(
+                "appclip_purchase_transaction_update_failed",
+                properties: eventContext(for: session)
+            )
+        }
+    }
+
     private func trackAppClipEvent(
         _ eventName: String,
         properties: [String: String] = [:],
@@ -774,6 +1045,9 @@ final class ClipViewModel: ObservableObject {
         ]
         if let model = session.linkedAccounts.integrations.compactMap(\.modelAccess).first?.currentModel {
             properties["model"] = model
+        }
+        if let verbosity = session.linkedAccounts.integrations.compactMap(\.modelAccess).first?.currentVerbosity.rawValue {
+            properties["verbosity"] = verbosity
         }
         if let usage = session.linkedAccounts.usageLimits.first {
             properties["usage_exhausted"] = usage.exhausted ? "true" : "false"

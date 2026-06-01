@@ -84,6 +84,7 @@ Sources/BlueChatAgentClient/Models/WebsiteModelAccessSummary.swift
 Sources/BlueChatAgentClient/Models/WebsiteModelOption.swift
 Sources/BlueChatAgentClient/Models/WebsiteModelSelectionRequest.swift
 Sources/BlueChatAgentClient/Models/WebsiteModelSelectionResponse.swift
+Sources/BlueChatAgentClient/Models/WebsiteModelVerbosityOption.swift
 Sources/BlueChatAgentClient/Models/WebsiteUsageLimitSummary.swift
 Sources/BlueChatAgentClient/OpenISO8601DateFormatter.swift
 Sources/BlueChatAgentClient/SynchronizedDictionary.swift

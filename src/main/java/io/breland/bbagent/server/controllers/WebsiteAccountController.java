@@ -74,6 +74,7 @@ public class WebsiteAccountController {
   public ResponseEntity<WebsiteModelSelectionResponse> websiteAccountUpdateModel(
       @RequestBody WebsiteModelSelectionRequest request, @AuthenticationPrincipal Jwt jwt) {
     String model = request.getModel() == null ? null : request.getModel().getValue();
-    return ResponseEntity.ok(accountService.updatePreferredModel(jwt, model));
+    String verbosity = request.getVerbosity() == null ? null : request.getVerbosity().getValue();
+    return ResponseEntity.ok(accountService.updatePreferredModel(jwt, model, verbosity));
   }
 }

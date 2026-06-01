@@ -10,10 +10,7 @@ struct StoreKitManager {
         let result = try await product.purchase(options: [.appAccountToken(appAccountToken)])
         switch result {
         case .success(let verification):
-            return try VerifiedPurchase(
-                transaction: checkVerified(verification),
-                jwsRepresentation: verification.jwsRepresentation
-            )
+            return try verifiedPurchase(from: verification)
         case .userCancelled:
             throw StoreKitError.userCancelled
         case .pending:
@@ -21,6 +18,25 @@ struct StoreKitManager {
         @unknown default:
             throw StoreKitError.unknown
         }
+    }
+
+    func currentEntitlements(productIds: [String]) async throws -> [VerifiedPurchase] {
+        let requestedIds = Set(productIds)
+        var purchases: [VerifiedPurchase] = []
+        for await verification in Transaction.currentEntitlements {
+            let purchase = try verifiedPurchase(from: verification)
+            if requestedIds.isEmpty || requestedIds.contains(purchase.transaction.productID) {
+                purchases.append(purchase)
+            }
+        }
+        return purchases
+    }
+
+    func verifiedPurchase(from verification: VerificationResult<Transaction>) throws -> VerifiedPurchase {
+        try VerifiedPurchase(
+            transaction: checkVerified(verification),
+            jwsRepresentation: verification.jwsRepresentation
+        )
     }
 
     struct VerifiedPurchase {
