@@ -28,7 +28,8 @@ public class CapVerificationService {
     if (StringUtils.isAnyBlank(properties.getCapBaseUrl(), properties.getCapSiteKey())) {
       return null;
     }
-    return stripTrailingSlash(properties.getCapBaseUrl()) + "/" + properties.getCapSiteKey() + "/";
+    String baseUrl = StringUtils.stripEnd(StringUtils.trimToEmpty(properties.getCapBaseUrl()), "/");
+    return baseUrl + "/" + properties.getCapSiteKey() + "/";
   }
 
   public boolean verify(String token) {
@@ -55,10 +56,6 @@ public class CapVerificationService {
       log.warn("Cap verification failed: {}", e.toString());
       return false;
     }
-  }
-
-  private String stripTrailingSlash(String value) {
-    return StringUtils.stripEnd(StringUtils.trimToEmpty(value), "/");
   }
 
   private record CapVerifyRequest(String secret, String response) {}
