@@ -69,26 +69,25 @@ jobs:
         env:
           ASC_KEY_ID: "op://tyum5kfqny2dlv7mufamoiavyi/gen33eow25m5fcsy2ocispkwyy/key_id"
           ASC_ISSUER_ID: "op://tyum5kfqny2dlv7mufamoiavyi/gen33eow25m5fcsy2ocispkwyy/issuer_id"
-          ASC_PRIVATE_KEY: "op://tyum5kfqny2dlv7mufamoiavyi/gen33eow25m5fcsy2ocispkwyy/password"
           ASC_APP_ID: "op://tyum5kfqny2dlv7mufamoiavyi/gen33eow25m5fcsy2ocispkwyy/app_id"
 
       - name: Prepare App Store Connect API key for Xcode
         run: |
           set -euo pipefail
 
-          if [ -z "${ASC_PRIVATE_KEY:-}" ]; then
-            ASC_PRIVATE_KEY="$(op read 'op://tyum5kfqny2dlv7mufamoiavyi/gen33eow25m5fcsy2ocispkwyy/password')"
-          fi
-
-          if [ -z "${ASC_KEY_ID:-}" ] || [ -z "${ASC_ISSUER_ID:-}" ] || [ -z "${ASC_PRIVATE_KEY:-}" ] || [ -z "${ASC_APP_ID:-}" ]; then
+          if [ -z "${ASC_KEY_ID:-}" ] || [ -z "${ASC_ISSUER_ID:-}" ] || [ -z "${ASC_APP_ID:-}" ]; then
             echo "Missing one or more App Store Connect fields from 1Password" >&2
             exit 1
           fi
 
           auth_key_path="${RUNNER_TEMP}/AuthKey_${ASC_KEY_ID}.p8"
           mkdir -p "$(dirname "$auth_key_path")"
-          printf '%s\n' "$ASC_PRIVATE_KEY" > "$auth_key_path"
+          op read 'op://tyum5kfqny2dlv7mufamoiavyi/gen33eow25m5fcsy2ocispkwyy/AuthKey_NR47RVCL92.p8' > "$auth_key_path"
           chmod 600 "$auth_key_path"
+          if [ ! -s "$auth_key_path" ]; then
+            echo "App Store Connect private key attachment was empty" >&2
+            exit 1
+          fi
           {
             echo "ASC_KEY_ID=$ASC_KEY_ID"
             echo "ASC_ISSUER_ID=$ASC_ISSUER_ID"
