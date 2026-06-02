@@ -132,13 +132,55 @@ jobs:
 
             p12_password="$(openssl rand -base64 32)"
             certificate_json="${bootstrap_dir}/certificate.json"
-            asc_nix certificates create \
-              --certificate-type IOS_DISTRIBUTION \
-              --generate-csr \
-              --common-name "BlueChat GitHub Actions" \
-              --key-out "${bootstrap_dir}/distribution.key" \
-              --csr-out "${bootstrap_dir}/distribution.csr" \
-              --output json > "$certificate_json"
+
+            create_distribution_certificate() {
+              asc_nix certificates create \
+                --certificate-type IOS_DISTRIBUTION \
+                --generate-csr \
+                --common-name "BlueChat GitHub Actions" \
+                --key-out "${bootstrap_dir}/distribution.key" \
+                --csr-out "${bootstrap_dir}/distribution.csr" \
+                --force \
+                --output json > "$certificate_json"
+            }
+
+            if ! create_distribution_certificate; then
+              certificates_json="${bootstrap_dir}/certificates.json"
+              asc_nix certificates list --certificate-type IOS_DISTRIBUTION --output json > "$certificates_json"
+              orphan_certificate_ids="$(
+                jq_nix -r '
+                  .data[]? |
+                  select(
+                    (
+                      .attributes.name //
+                      .attributes.displayName //
+                      .attributes.serialNumber //
+                      ""
+                    ) | contains("BlueChat GitHub Actions")
+                  ) |
+                  .id
+                ' "$certificates_json"
+              )"
+
+              if [ -z "$orphan_certificate_ids" ]; then
+                echo "Certificate creation failed and no BlueChat GitHub Actions certificate was found to revoke." >&2
+                echo "Current iOS Distribution certificates:" >&2
+                jq_nix -r '
+                  .data[]? |
+                  "- id=\(.id) name=\(.attributes.name // "") displayName=\(.attributes.displayName // "") expires=\(.attributes.expirationDate // "")"
+                ' "$certificates_json" >&2
+                exit 1
+              fi
+
+              while IFS= read -r orphan_certificate_id; do
+                if [ -n "$orphan_certificate_id" ]; then
+                  echo "Revoking orphaned BlueChat GitHub Actions distribution certificate ${orphan_certificate_id}"
+                  asc_nix certificates revoke --id "$orphan_certificate_id" --confirm >/dev/null
+                fi
+              done <<< "$orphan_certificate_ids"
+
+              create_distribution_certificate
+            fi
 
             certificate_id="$(jq_nix -r '.data.id // .id // empty' "$certificate_json")"
             certificate_content="$(
