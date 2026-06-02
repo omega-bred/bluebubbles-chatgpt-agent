@@ -1,5 +1,7 @@
 package io.breland.bbagent.server.subscriptions;
 
+import static io.breland.bbagent.server.subscriptions.SubscriptionJson.firstNonBlank;
+
 import io.breland.bbagent.generated.model.AdminPremiumGrantRequest;
 import io.breland.bbagent.generated.model.AdminSubscriptionActionRequest;
 import io.breland.bbagent.generated.model.AdminSubscriptionActionResponse;
@@ -1152,10 +1154,6 @@ public class SubscriptionService {
 
   private OffsetDateTime offset(Instant instant) {
     return instant == null ? null : OffsetDateTime.ofInstant(instant, ZoneOffset.UTC);
-  }
-
-  private String firstNonBlank(String... values) {
-    return StringUtils.trimToNull(StringUtils.firstNonBlank(values));
   }
 
   private record ProcessedWebhook(

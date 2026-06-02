@@ -1,5 +1,7 @@
 package io.breland.bbagent.server.subscriptions;
 
+import static io.breland.bbagent.server.subscriptions.SubscriptionJson.firstNonBlank;
+
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.breland.bbagent.generated.model.SubscriptionStoreKitTransactionRequest;
 import java.nio.charset.StandardCharsets;
@@ -8,7 +10,6 @@ import java.util.Map;
 import java.util.UUID;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.http.HttpHeaders;
-import org.springframework.lang.Nullable;
 import org.springframework.stereotype.Component;
 
 @Component
@@ -146,9 +147,5 @@ public class AppleStoreKitSubscriptionProvider implements SubscriptionProvider {
 
   private String originalTransactionId(AppleStoreKitVerification.VerifiedTransaction transaction) {
     return firstNonBlank(transaction.originalTransactionId(), transaction.transactionId());
-  }
-
-  private String firstNonBlank(@Nullable String... values) {
-    return StringUtils.trimToNull(StringUtils.firstNonBlank(values));
   }
 }

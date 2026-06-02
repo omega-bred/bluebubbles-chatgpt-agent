@@ -1,5 +1,9 @@
 package io.breland.bbagent.server.subscriptions;
 
+import static io.breland.bbagent.server.subscriptions.SubscriptionJson.findObject;
+import static io.breland.bbagent.server.subscriptions.SubscriptionJson.firstNonBlank;
+import static io.breland.bbagent.server.subscriptions.SubscriptionJson.firstText;
+
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.nio.charset.StandardCharsets;
@@ -356,22 +360,6 @@ public class BtcpaySubscriptionProvider implements SubscriptionProvider {
     return false;
   }
 
-  private String firstText(JsonNode node, String... fieldNames) {
-    if (node == null || node.isMissingNode() || node.isNull()) {
-      return null;
-    }
-    for (String fieldName : fieldNames) {
-      JsonNode value = node.get(fieldName);
-      if (value != null && !value.isNull()) {
-        String text = value.isTextual() ? value.asText() : value.asText(null);
-        if (StringUtils.isNotBlank(text)) {
-          return text;
-        }
-      }
-    }
-    return null;
-  }
-
   private String findText(JsonNode node, String fieldName) {
     if (node == null || node.isNull()) {
       return null;
@@ -392,33 +380,6 @@ public class BtcpaySubscriptionProvider implements SubscriptionProvider {
       for (JsonNode item : node) {
         String found = findText(item, fieldName);
         if (StringUtils.isNotBlank(found)) {
-          return found;
-        }
-      }
-    }
-    return null;
-  }
-
-  private JsonNode findObject(JsonNode node, String fieldName) {
-    if (node == null || node.isNull()) {
-      return null;
-    }
-    JsonNode direct = node.get(fieldName);
-    if (direct != null && direct.isObject()) {
-      return direct;
-    }
-    if (node.isObject()) {
-      Iterator<JsonNode> values = node.elements();
-      while (values.hasNext()) {
-        JsonNode found = findObject(values.next(), fieldName);
-        if (found != null) {
-          return found;
-        }
-      }
-    } else if (node.isArray()) {
-      for (JsonNode item : node) {
-        JsonNode found = findObject(item, fieldName);
-        if (found != null) {
           return found;
         }
       }
@@ -465,10 +426,6 @@ public class BtcpaySubscriptionProvider implements SubscriptionProvider {
                 properties.providerSettings(PROVIDER_KEY).getBaseUrl(), "https://btcpay.bre.land")
             .trim(),
         "/");
-  }
-
-  private String firstNonBlank(String... values) {
-    return StringUtils.trimToNull(StringUtils.firstNonBlank(values));
   }
 
   private JsonNode firstNonNull(JsonNode... nodes) {
