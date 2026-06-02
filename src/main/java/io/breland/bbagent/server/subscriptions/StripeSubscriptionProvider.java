@@ -1,5 +1,9 @@
 package io.breland.bbagent.server.subscriptions;
 
+import static io.breland.bbagent.server.subscriptions.SubscriptionJson.findObject;
+import static io.breland.bbagent.server.subscriptions.SubscriptionJson.firstNonBlank;
+import static io.breland.bbagent.server.subscriptions.SubscriptionJson.firstText;
+
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.stripe.StripeClient;
@@ -330,48 +334,6 @@ public class StripeSubscriptionProvider implements SubscriptionProvider {
     return firstText(metadata, key);
   }
 
-  private JsonNode findObject(JsonNode node, String fieldName) {
-    if (node == null || node.isNull()) {
-      return null;
-    }
-    JsonNode direct = node.get(fieldName);
-    if (direct != null && direct.isObject()) {
-      return direct;
-    }
-    if (node.isObject()) {
-      for (JsonNode value : node) {
-        JsonNode found = findObject(value, fieldName);
-        if (found != null) {
-          return found;
-        }
-      }
-    } else if (node.isArray()) {
-      for (JsonNode item : node) {
-        JsonNode found = findObject(item, fieldName);
-        if (found != null) {
-          return found;
-        }
-      }
-    }
-    return null;
-  }
-
-  private String firstText(JsonNode node, String... fieldNames) {
-    if (node == null || node.isMissingNode() || node.isNull()) {
-      return null;
-    }
-    for (String fieldName : fieldNames) {
-      JsonNode value = node.get(fieldName);
-      if (value != null && !value.isNull()) {
-        String text = value.isTextual() ? value.asText() : value.asText(null);
-        if (StringUtils.isNotBlank(text)) {
-          return text;
-        }
-      }
-    }
-    return null;
-  }
-
   private StripeClient client() {
     return new StripeClient(settings().getApiKey());
   }
@@ -421,10 +383,6 @@ public class StripeSubscriptionProvider implements SubscriptionProvider {
       }
     }
     return null;
-  }
-
-  private String firstNonBlank(String... values) {
-    return StringUtils.trimToNull(StringUtils.firstNonBlank(values));
   }
 
   private String json(Object object) {
