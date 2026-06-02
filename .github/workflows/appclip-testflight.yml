@@ -507,9 +507,16 @@ jobs:
             test_notes="GitHub Actions build ${GITHUB_SHA} (${GITHUB_RUN_NUMBER})"
           fi
 
+          beta_groups="$INPUT_BETA_GROUPS"
+          if [ -z "$beta_groups" ]; then
+            echo "A TestFlight beta group is required because asc publish testflight requires --group." >&2
+            exit 1
+          fi
+
           args=(
             publish testflight
             --app "$ASC_APP_ID"
+            --group "$beta_groups"
             --project appclip/BlueChat.xcodeproj
             --scheme BlueChat
             --configuration Release
@@ -543,7 +550,20 @@ jobs:
             --export-xcodebuild-flag "$ASC_ISSUER_ID"
           )
 
-          asc_clean_env "${args[@]}"
+          publish_needs_group_retry=false
+          publish_output="${RUNNER_TEMP}/asc-publish-testflight.log"
+          if asc_clean_env "${args[@]}" >"$publish_output" 2>&1; then
+            cat "$publish_output"
+          else
+            publish_status=$?
+            cat "$publish_output"
+            if ! grep -q 'Build is not assignable' "$publish_output"; then
+              exit "$publish_status"
+            fi
+
+            echo "Build uploaded, but App Store Connect is not ready for group assignment yet; continuing with explicit retry."
+            publish_needs_group_retry=true
+          fi
 
           build_json="$(
             asc_clean_env builds wait \
@@ -569,8 +589,7 @@ jobs:
             --uses-non-exempt-encryption=false \
             --output json >/dev/null
 
-          beta_groups="$INPUT_BETA_GROUPS"
-          if [ -n "$beta_groups" ]; then
+          if [ "$publish_needs_group_retry" = true ] || [ "$INPUT_SUBMIT_BETA_REVIEW" = "true" ]; then
             group_args=(
               builds add-groups
               --build-id "$build_id"
