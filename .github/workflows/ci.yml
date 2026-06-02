@@ -20,18 +20,15 @@ jobs:
       - name: Checkout
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
 
-      - name: Set up Java
-        uses: actions/setup-java@c1e323688fd81a25caa38c78aa6df2d33d3e20d9
+      - name: Install Nix
+        uses: cachix/install-nix-action@8aa03977d8d733052d78f4e008a241fd1dbf36b3
         with:
-          distribution: 'temurin'
-          java-version: '25'
-          cache: 'gradle'
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+            access-tokens = github.com=${{ secrets.GITHUB_TOKEN }}
 
       - name: Run tests
-        uses: gradle/gradle-build-action@ac2d340dc04d9e1113182899e983b5400c17cda1
-        with:
-          arguments: test
-        env: {}
+        run: CI=true BBAGENT_NIX_SHELL_QUIET=1 nix develop --command ./gradlew test
 
   ios_appclip_build:
     name: iOS App Clip Build
@@ -41,20 +38,20 @@ jobs:
       - name: Checkout
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
 
+      - name: Install Nix
+        uses: cachix/install-nix-action@8aa03977d8d733052d78f4e008a241fd1dbf36b3
+        with:
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+            access-tokens = github.com=${{ secrets.GITHUB_TOKEN }}
+
       - name: Select Xcode
         run: |
           sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
           xcodebuild -version
 
-      - name: Set up Java
-        uses: actions/setup-java@c1e323688fd81a25caa38c78aa6df2d33d3e20d9
-        with:
-          distribution: 'temurin'
-          java-version: '25'
-          cache: 'gradle'
-
       - name: Generate Swift OpenAPI client
-        run: CI=true ./gradlew copySwiftClientToAppClip
+        run: CI=true BBAGENT_NIX_SHELL_QUIET=1 nix develop --command ./gradlew copySwiftClientToAppClip
 
       - name: Verify Swift OpenAPI client is current
         run: git diff --exit-code -- appclip/Generated/BlueChatAgentClient
@@ -160,8 +157,12 @@ jobs:
         with:
           ref: main
 
-      - name: Set up kustomize
-        uses: imranismail/setup-kustomize@2ba527d4d055ab63514ba50a99456fc35684947f
+      - name: Install Nix
+        uses: cachix/install-nix-action@8aa03977d8d733052d78f4e008a241fd1dbf36b3
+        with:
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+            access-tokens = github.com=${{ secrets.GITHUB_TOKEN }}
 
       - name: Configure Git user
         run: |
@@ -189,9 +190,9 @@ jobs:
           fi
           NEW_TAG="${BUILD_SHA}-${BUILD_RUN_NUMBER}"
           echo "Setting image ${IMAGE_NAME} to tag ${NEW_TAG}"
-          kustomize edit set image "${IMAGE_NAME}=${IMAGE_NAME}:${NEW_TAG}"
+          nix develop ../.. --command kustomize edit set image "${IMAGE_NAME}=${IMAGE_NAME}:${NEW_TAG}"
           echo "Setting image ${LXMF_BRIDGE_IMAGE_NAME} to tag ${NEW_TAG}"
-          kustomize edit set image "${LXMF_BRIDGE_IMAGE_NAME}=${LXMF_BRIDGE_IMAGE_NAME}:${NEW_TAG}"
+          nix develop ../.. --command kustomize edit set image "${LXMF_BRIDGE_IMAGE_NAME}=${LXMF_BRIDGE_IMAGE_NAME}:${NEW_TAG}"
 
       - name: Commit changes (if any)
         run: |

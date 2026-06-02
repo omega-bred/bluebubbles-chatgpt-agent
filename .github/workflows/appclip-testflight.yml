@@ -1,0 +1,207 @@
+name: iOS App Clip TestFlight Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      beta_groups:
+        description: Comma-separated TestFlight beta group names or IDs.
+        required: false
+        default: Internal Testers
+      build_number:
+        description: CFBundleVersion to upload. Defaults to the next safe App Store Connect build number.
+        required: false
+        default: ''
+      test_notes:
+        description: What to Test notes. Defaults to commit and run metadata.
+        required: false
+        default: ''
+      notify_testers:
+        description: Notify testers after assigning the build to groups.
+        required: false
+        default: false
+        type: boolean
+      submit_beta_review:
+        description: Submit the build for beta app review after upload.
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+jobs:
+  testflight:
+    name: Build and Upload TestFlight
+    runs-on: macos-latest
+    environment: app-store-connect
+    timeout-minutes: 90
+    steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+
+      - name: Install Nix
+        uses: cachix/install-nix-action@8aa03977d8d733052d78f4e008a241fd1dbf36b3
+        with:
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+            access-tokens = github.com=${{ secrets.GITHUB_TOKEN }}
+
+      - name: Select Xcode
+        run: |
+          sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
+          xcodebuild -version
+
+      - name: Show Nix toolchain
+        run: |
+          BBAGENT_NIX_SHELL_QUIET=1 nix develop --command java -version
+          BBAGENT_NIX_SHELL_QUIET=1 nix develop --command ./gradlew --version
+          BBAGENT_NIX_SHELL_QUIET=1 nix develop --command asc --version
+
+      - name: Configure 1Password service account
+        uses: 1password/load-secrets-action/configure@581a835fb51b8e7ec56b71cf2ffddd7e68bb25e0
+        with:
+          service-account-token: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
+
+      - name: Load App Store Connect secrets
+        uses: 1password/load-secrets-action@581a835fb51b8e7ec56b71cf2ffddd7e68bb25e0
+        env:
+          ASC_KEY_ID: "op://GH Actions (omega-bred)/App Store Connect Team API Key/key_id"
+          ASC_ISSUER_ID: "op://GH Actions (omega-bred)/App Store Connect Team API Key/issuer_id"
+          ASC_PRIVATE_KEY: "op://GH Actions (omega-bred)/App Store Connect Team API Key/password"
+          ASC_APP_ID: "op://GH Actions (omega-bred)/App Store Connect Team API Key/app_id"
+
+      - name: Prepare App Store Connect API key for Xcode
+        run: |
+          set -euo pipefail
+          auth_key_path="${RUNNER_TEMP}/AuthKey_${ASC_KEY_ID}.p8"
+          mkdir -p "$(dirname "$auth_key_path")"
+          printf '%s\n' "$ASC_PRIVATE_KEY" > "$auth_key_path"
+          chmod 600 "$auth_key_path"
+          echo "ASC_AUTH_KEY_PATH=$auth_key_path" >> "$GITHUB_ENV"
+          echo "ASC_PRIVATE_KEY_PATH=$auth_key_path" >> "$GITHUB_ENV"
+
+      - name: Validate App Store Connect auth
+        run: |
+          set -euo pipefail
+          BBAGENT_NIX_SHELL_QUIET=1 nix develop --command asc auth status --validate
+          BBAGENT_NIX_SHELL_QUIET=1 nix develop --command asc apps view --id "$ASC_APP_ID" --output json >/dev/null
+
+      - name: Generate Swift OpenAPI client
+        run: CI=true BBAGENT_NIX_SHELL_QUIET=1 nix develop --command ./gradlew copySwiftClientToAppClip
+
+      - name: Verify Swift OpenAPI client is current
+        run: git diff --exit-code -- appclip/Generated/BlueChatAgentClient
+
+      - name: Stamp build number
+        env:
+          INPUT_BUILD_NUMBER: ${{ inputs.build_number }}
+        run: |
+          set -euo pipefail
+
+          build_number="$INPUT_BUILD_NUMBER"
+          if [ -z "$build_number" ]; then
+            next_build_json="$(
+              BBAGENT_NIX_SHELL_QUIET=1 nix develop --command asc builds next-build-number \
+                --app "$ASC_APP_ID" \
+                --platform IOS \
+                --initial-build-number "$GITHUB_RUN_NUMBER" \
+                --output json
+            )"
+            build_number="$(
+              printf '%s' "$next_build_json" |
+                BBAGENT_NIX_SHELL_QUIET=1 nix develop --command jq -r '
+                  if type == "number" then tostring
+                  elif type == "string" then .
+                  elif type == "object" then
+                    (
+                      .buildNumber //
+                      .build_number //
+                      .nextBuildNumber //
+                      .next_build_number //
+                      .number //
+                      .value //
+                      empty
+                    ) | tostring
+                  else
+                    empty
+                  end
+                '
+            )"
+          fi
+
+          if [ -z "$build_number" ]; then
+            echo "Could not resolve a build number" >&2
+            exit 1
+          fi
+
+          echo "BUILD_NUMBER=$build_number" >> "$GITHUB_ENV"
+          BBAGENT_NIX_SHELL_QUIET=1 nix develop --command asc xcode version edit \
+            --project appclip/BlueChat.xcodeproj \
+            --build-number "$build_number" \
+            --output json
+
+      - name: Build, upload, and distribute to TestFlight
+        env:
+          INPUT_BETA_GROUPS: ${{ inputs.beta_groups }}
+          INPUT_NOTIFY_TESTERS: ${{ inputs.notify_testers }}
+          INPUT_SUBMIT_BETA_REVIEW: ${{ inputs.submit_beta_review }}
+          INPUT_TEST_NOTES: ${{ inputs.test_notes }}
+        run: |
+          set -euo pipefail
+
+          mkdir -p appclip/.asc/artifacts
+
+          test_notes="$INPUT_TEST_NOTES"
+          if [ -z "$test_notes" ]; then
+            test_notes="GitHub Actions build ${GITHUB_SHA} (${GITHUB_RUN_NUMBER})"
+          fi
+
+          args=(
+            publish testflight
+            --app "$ASC_APP_ID"
+            --project appclip/BlueChat.xcodeproj
+            --scheme BlueChat
+            --configuration Release
+            --clean
+            --archive-path appclip/.asc/artifacts/BlueChat.xcarchive
+            --export-options appclip/ExportOptions.plist
+            --ipa-path appclip/.asc/artifacts/BlueChat.ipa
+            --build-number "$BUILD_NUMBER"
+            --test-notes "$test_notes"
+            --locale en-US
+            --wait
+            --timeout 60m
+            --output json
+            --archive-xcodebuild-flag -destination
+            --archive-xcodebuild-flag "generic/platform=iOS"
+            --archive-xcodebuild-flag -allowProvisioningUpdates
+            --archive-xcodebuild-flag -authenticationKeyPath
+            --archive-xcodebuild-flag "$ASC_AUTH_KEY_PATH"
+            --archive-xcodebuild-flag -authenticationKeyID
+            --archive-xcodebuild-flag "$ASC_KEY_ID"
+            --archive-xcodebuild-flag -authenticationKeyIssuerID
+            --archive-xcodebuild-flag "$ASC_ISSUER_ID"
+            --archive-xcodebuild-flag -hideShellScriptEnvironment
+            --export-xcodebuild-flag -allowProvisioningUpdates
+            --export-xcodebuild-flag -authenticationKeyPath
+            --export-xcodebuild-flag "$ASC_AUTH_KEY_PATH"
+            --export-xcodebuild-flag -authenticationKeyID
+            --export-xcodebuild-flag "$ASC_KEY_ID"
+            --export-xcodebuild-flag -authenticationKeyIssuerID
+            --export-xcodebuild-flag "$ASC_ISSUER_ID"
+          )
+
+          beta_groups="$INPUT_BETA_GROUPS"
+          if [ -n "$beta_groups" ]; then
+            args+=(--group "$beta_groups")
+          fi
+
+          if [ "$INPUT_NOTIFY_TESTERS" = "true" ]; then
+            args+=(--notify)
+          fi
+
+          if [ "$INPUT_SUBMIT_BETA_REVIEW" = "true" ]; then
+            args+=(--submit --confirm)
+          fi
+
+          BBAGENT_NIX_SHELL_QUIET=1 nix develop --command asc "${args[@]}"
