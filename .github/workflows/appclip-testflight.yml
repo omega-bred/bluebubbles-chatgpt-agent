@@ -150,7 +150,14 @@ jobs:
             exit 1
           fi
 
+          version_number="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' appclip/BlueChat/Info.plist)"
+          if [ -z "$version_number" ]; then
+            echo "Could not resolve a version number" >&2
+            exit 1
+          fi
+
           echo "BUILD_NUMBER=$build_number" >> "$GITHUB_ENV"
+          echo "VERSION_NUMBER=$version_number" >> "$GITHUB_ENV"
           BBAGENT_NIX_SHELL_QUIET=1 nix develop --command asc xcode version edit \
             --project appclip/BlueChat.xcodeproj \
             --build-number "$build_number" \
@@ -182,6 +189,7 @@ jobs:
             --archive-path appclip/.asc/artifacts/BlueChat.xcarchive
             --export-options appclip/ExportOptions.plist
             --ipa-path appclip/.asc/artifacts/BlueChat.ipa
+            --version "$VERSION_NUMBER"
             --build-number "$BUILD_NUMBER"
             --test-notes "$test_notes"
             --locale en-US
