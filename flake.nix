@@ -1,6 +1,13 @@
 {
   description = "Development environment for bluebubbles-chatgpt-agent";
 
+  nixConfig = {
+    extra-substituters = [ "https://bluebubbles-chatgpt-agent.cachix.org" ];
+    extra-trusted-public-keys = [
+      "bluebubbles-chatgpt-agent.cachix.org-1:+tLEA7ftEhOdiF5pMGTY46sx+auf6Wd/JQcbRsQUsuw="
+    ];
+  };
+
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-25.11";
   };

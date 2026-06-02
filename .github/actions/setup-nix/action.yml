@@ -1,0 +1,53 @@
+name: Set up Nix
+description: Install Nix and configure the project Cachix cache.
+
+inputs:
+  github-token:
+    description: GitHub token used by Nix for authenticated GitHub fetches.
+    required: true
+  cachix-auth-token:
+    description: Cachix auth token. When present and enabled, CI can push store paths.
+    required: false
+    default: ''
+  enable-cachix-push:
+    description: Whether this job is allowed to push store paths to Cachix.
+    required: false
+    default: 'false'
+
+runs:
+  using: composite
+  steps:
+    - name: Install Nix
+      uses: cachix/install-nix-action@8aa03977d8d733052d78f4e008a241fd1dbf36b3
+      with:
+        extra_nix_config: |
+          experimental-features = nix-command flakes
+          accept-flake-config = true
+          access-tokens = github.com=${{ inputs['github-token'] }}
+
+    - name: Configure Cachix cache
+      uses: cachix/cachix-action@02b16339eddcf6ea27126a830c7f1992855cae13
+      with:
+        name: bluebubbles-chatgpt-agent
+        skipPush: true
+
+    - name: Check Cachix write token
+      id: cachix_token
+      if: ${{ inputs['enable-cachix-push'] == 'true' }}
+      shell: bash
+      env:
+        CACHIX_AUTH_TOKEN: ${{ inputs['cachix-auth-token'] }}
+      run: |
+        if [ -n "$CACHIX_AUTH_TOKEN" ]; then
+          echo "enabled=true" >> "$GITHUB_OUTPUT"
+        else
+          echo "enabled=false" >> "$GITHUB_OUTPUT"
+          echo "CACHIX_AUTH_TOKEN is not set; Cachix push disabled."
+        fi
+
+    - name: Enable Cachix push
+      if: ${{ steps.cachix_token.outputs.enabled == 'true' }}
+      uses: cachix/cachix-action@02b16339eddcf6ea27126a830c7f1992855cae13
+      with:
+        name: bluebubbles-chatgpt-agent
+        authToken: ${{ inputs['cachix-auth-token'] }}
