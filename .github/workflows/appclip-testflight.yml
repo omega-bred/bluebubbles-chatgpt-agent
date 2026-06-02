@@ -315,7 +315,8 @@ jobs:
               "clip_profile_name[text]=${CLIP_PROFILE_NAME}" \
               "distribution_certificate_p12[file]=${bootstrap_dir}/distribution.p12" \
               "main_app_store_profile[file]=${bootstrap_dir}/main-app-store.mobileprovision" \
-              "clip_app_store_profile[file]=${bootstrap_dir}/clip-app-store.mobileprovision" >/dev/null
+              "clip_app_store_profile[file]=${bootstrap_dir}/clip-app-store.mobileprovision" \
+              >/dev/null </dev/null
 
             unset p12_password
             op item get "$SIGNING_ITEM_TITLE" --vault "$ASC_VAULT_ID" --format json > "$signing_item_json"
