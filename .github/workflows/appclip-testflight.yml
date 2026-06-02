@@ -62,25 +62,35 @@ jobs:
         with:
           service-account-token: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
 
-      - name: Load App Store Connect secrets
-        uses: 1password/load-secrets-action@581a835fb51b8e7ec56b71cf2ffddd7e68bb25e0
-        with:
-          export-env: true
-        env:
-          ASC_KEY_ID: "op://GH Actions (omega-bred)/App Store Connect Team API Key/key_id"
-          ASC_ISSUER_ID: "op://GH Actions (omega-bred)/App Store Connect Team API Key/issuer_id"
-          ASC_PRIVATE_KEY: "op://GH Actions (omega-bred)/App Store Connect Team API Key/password"
-          ASC_APP_ID: "op://GH Actions (omega-bred)/App Store Connect Team API Key/app_id"
-
-      - name: Prepare App Store Connect API key for Xcode
+      - name: Load App Store Connect API key
         run: |
           set -euo pipefail
+
+          read_op() {
+            BBAGENT_NIX_SHELL_QUIET=1 nix develop --command op read "$1"
+          }
+
+          ASC_KEY_ID="$(read_op 'op://tyum5kfqny2dlv7mufamoiavyi/gen33eow25m5fcsy2ocispkwyy/key_id')"
+          ASC_ISSUER_ID="$(read_op 'op://tyum5kfqny2dlv7mufamoiavyi/gen33eow25m5fcsy2ocispkwyy/issuer_id')"
+          ASC_PRIVATE_KEY="$(read_op 'op://tyum5kfqny2dlv7mufamoiavyi/gen33eow25m5fcsy2ocispkwyy/password')"
+          ASC_APP_ID="$(read_op 'op://tyum5kfqny2dlv7mufamoiavyi/gen33eow25m5fcsy2ocispkwyy/app_id')"
+
+          if [ -z "$ASC_KEY_ID" ] || [ -z "$ASC_ISSUER_ID" ] || [ -z "$ASC_PRIVATE_KEY" ] || [ -z "$ASC_APP_ID" ]; then
+            echo "Missing one or more App Store Connect fields from 1Password" >&2
+            exit 1
+          fi
+
           auth_key_path="${RUNNER_TEMP}/AuthKey_${ASC_KEY_ID}.p8"
           mkdir -p "$(dirname "$auth_key_path")"
           printf '%s\n' "$ASC_PRIVATE_KEY" > "$auth_key_path"
           chmod 600 "$auth_key_path"
-          echo "ASC_AUTH_KEY_PATH=$auth_key_path" >> "$GITHUB_ENV"
-          echo "ASC_PRIVATE_KEY_PATH=$auth_key_path" >> "$GITHUB_ENV"
+          {
+            echo "ASC_KEY_ID=$ASC_KEY_ID"
+            echo "ASC_ISSUER_ID=$ASC_ISSUER_ID"
+            echo "ASC_APP_ID=$ASC_APP_ID"
+            echo "ASC_AUTH_KEY_PATH=$auth_key_path"
+            echo "ASC_PRIVATE_KEY_PATH=$auth_key_path"
+          } >> "$GITHUB_ENV"
 
       - name: Validate App Store Connect auth
         run: |
