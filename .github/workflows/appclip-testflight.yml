@@ -106,8 +106,8 @@ jobs:
         env:
           ASC_VAULT_ID: tyum5kfqny2dlv7mufamoiavyi
           SIGNING_ITEM_TITLE: BlueChat App Clip CI Signing Assets
-          MAIN_BUNDLE_RESOURCE_ID: SRKX6DJQPJ
-          CLIP_BUNDLE_RESOURCE_ID: 9657HFRZMD
+          MAIN_BUNDLE_IDENTIFIER: land.bre.bluechat.ios
+          CLIP_BUNDLE_IDENTIFIER: land.bre.bluechat.ios.Clip
           MAIN_PROFILE_NAME: BlueChatAI GitHub Actions App Store Main
           CLIP_PROFILE_NAME: BlueChatAI GitHub Actions App Store Clip
           KNOWN_VALID_DISTRIBUTION_CERTIFICATE_ID: QUU8C54UCP
@@ -130,6 +130,27 @@ jobs:
             echo "Creating App Clip CI signing assets in 1Password"
             bootstrap_dir="${signing_dir}/bootstrap"
             mkdir -p "$bootstrap_dir"
+
+            bundle_resource_id() {
+              local bundle_identifier="$1"
+              local bundle_json="${bootstrap_dir}/${bundle_identifier//[^A-Za-z0-9_.-]/_}-bundle.json"
+              local resource_id
+
+              asc_nix bundle-ids list --paginate --output json > "$bundle_json"
+              resource_id="$(
+                jq_nix -r --arg identifier "$bundle_identifier" '
+                  .data[]? |
+                  select((.attributes.identifier // .identifier // "") == $identifier) |
+                  .id
+                ' "$bundle_json" | head -n 1
+              )"
+              if [ -z "$resource_id" ]; then
+                echo "Could not resolve App Store Connect bundle ID resource for ${bundle_identifier}" >&2
+                exit 1
+              fi
+
+              printf '%s' "$resource_id"
+            }
 
             p12_password="$(openssl rand -base64 32)"
             certificate_json="${bootstrap_dir}/certificate.json"
@@ -235,6 +256,25 @@ jobs:
               -passout "pass:${p12_password}" \
               -name "BlueChat CI iOS Distribution"
 
+            delete_existing_ci_profiles() {
+              local profiles_json="${bootstrap_dir}/profiles.json"
+
+              asc_nix profiles list --profile-type IOS_APP_STORE --paginate --output json > "$profiles_json"
+              jq_nix -r --arg main "$MAIN_PROFILE_NAME" --arg clip "$CLIP_PROFILE_NAME" '
+                .data[]? |
+                select(
+                  (.attributes.name // .name // "") == $main or
+                  (.attributes.name // .name // "") == $clip
+                ) |
+                .id
+              ' "$profiles_json" | while IFS= read -r profile_id; do
+                if [ -n "$profile_id" ]; then
+                  echo "Deleting stale CI provisioning profile ${profile_id}"
+                  asc_nix profiles delete --id "$profile_id" --confirm >/dev/null
+                fi
+              done
+            }
+
             create_profile() {
               local profile_name="$1"
               local bundle_resource_id="$2"
@@ -257,8 +297,13 @@ jobs:
               asc_nix profiles download --id "$profile_id" --output "$output_path"
             }
 
-            create_profile "$MAIN_PROFILE_NAME" "$MAIN_BUNDLE_RESOURCE_ID" "${bootstrap_dir}/main-app-store.mobileprovision"
-            create_profile "$CLIP_PROFILE_NAME" "$CLIP_BUNDLE_RESOURCE_ID" "${bootstrap_dir}/clip-app-store.mobileprovision"
+            delete_existing_ci_profiles
+
+            main_bundle_resource_id="$(bundle_resource_id "$MAIN_BUNDLE_IDENTIFIER")"
+            clip_bundle_resource_id="$(bundle_resource_id "$CLIP_BUNDLE_IDENTIFIER")"
+
+            create_profile "$MAIN_PROFILE_NAME" "$main_bundle_resource_id" "${bootstrap_dir}/main-app-store.mobileprovision"
+            create_profile "$CLIP_PROFILE_NAME" "$clip_bundle_resource_id" "${bootstrap_dir}/clip-app-store.mobileprovision"
 
             op item create \
               --category secure-note \
