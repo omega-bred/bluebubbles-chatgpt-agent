@@ -91,8 +91,7 @@ call:send_text{message:Clone repos, cherry-pick commit, and push to GitHub.,thre
   @Test
   void blockedToolCallOutputTellsModelNotToRepeatTool() throws Exception {
     String outputJson =
-        new ObjectMapper()
-            .writeValueAsString(AgentResponseHelper.blockedToolCallOutput("call-1", "send_text"));
+        new ObjectMapper().writeValueAsString(AgentResponseHelper.blockedToolCallOutput("call-1"));
 
     assertTrue(outputJson.contains("prevent repeated loops"));
     assertTrue(outputJson.contains("without calling this tool again"));

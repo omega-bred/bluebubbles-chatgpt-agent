@@ -14,10 +14,12 @@ Nix/dev dependencies:
   `nix develop --command ./gradlew spotlessApply`.
 - The flake provides OpenJDK 25, Gradle, Node 20/npm, Python 3.13 with LXMF/RNS, Postgres,
   Docker/Kubernetes helpers, Keycloak admin tooling, OpenAPI/Flyway CLIs, 1Password CLI, and
-  Darwin-only App Clip helpers (`swiftformat`, `xcbeautify`).
+  Darwin-only App Clip helpers (`swiftformat`, `xcbeautify`) plus the real upstream App Store
+  Connect CLI (`asc`).
 - App Clip iOS builds still require local Xcode command line tools (`xcodebuild`, `xcrun`,
-  `codesign`, `security`) outside Nix. App Store Connect distribution uses the real `asc` CLI
-  installed on the machine; do not add nixpkgs `asc`, which is not the App Store Connect CLI.
+  `codesign`, `security`) outside Nix. App Store Connect distribution uses the flake-provided
+  `asc` built from `rorkai/App-Store-Connect-CLI`; do not add nixpkgs `asc`, which is not the App
+  Store Connect CLI.
 - Use `./gradlew` for backend tasks; the shell sets `JAVA_HOME` for the project JDK.
 - Use the generated TypeScript client workflow through Gradle (`./gradlew openApiGenerate` and the
   frontend copy/build tasks). For direct frontend work, run npm through the shell, e.g.

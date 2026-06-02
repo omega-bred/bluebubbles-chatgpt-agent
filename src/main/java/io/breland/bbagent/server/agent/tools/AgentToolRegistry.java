@@ -170,37 +170,6 @@ public final class AgentToolRegistry {
       @Nullable MessageResponseRateLimitService messageResponseRateLimitService,
       CadenceWorkflowLauncher cadenceWorkflowLauncher,
       Function<IncomingMessage, Optional<String>> accountIdResolver,
-      @Nullable OperationalMetricsService operationalMetricsService) {
-    this(
-        bbHttpClientWrapper,
-        mem0Client,
-        gcalClient,
-        websiteAccountService,
-        giphyClient,
-        transportRegistry,
-        objectMapper,
-        openAiSupplier,
-        feedbackService,
-        messageResponseRateLimitService,
-        cadenceWorkflowLauncher,
-        accountIdResolver,
-        operationalMetricsService,
-        null);
-  }
-
-  public AgentToolRegistry(
-      BBHttpClientWrapper bbHttpClientWrapper,
-      Mem0Client mem0Client,
-      GcalClient gcalClient,
-      @Nullable WebsiteAccountService websiteAccountService,
-      GiphyClient giphyClient,
-      MessageTransportRegistry transportRegistry,
-      ObjectMapper objectMapper,
-      Supplier<OpenAIClient> openAiSupplier,
-      @Nullable FeedbackService feedbackService,
-      @Nullable MessageResponseRateLimitService messageResponseRateLimitService,
-      CadenceWorkflowLauncher cadenceWorkflowLauncher,
-      Function<IncomingMessage, Optional<String>> accountIdResolver,
       @Nullable OperationalMetricsService operationalMetricsService,
       @Nullable ModelAccessService modelAccessService) {
     this.transportRegistry = transportRegistry;

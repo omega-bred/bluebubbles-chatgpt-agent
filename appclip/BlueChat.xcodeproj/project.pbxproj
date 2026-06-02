@@ -20,6 +20,20 @@
 		AA00000100000000000000E2 /* AnyCodable in Frameworks */ = {isa = PBXBuildFile; productRef = AA00001000000000000000E3 /* AnyCodable */; };
 /* End PBXBuildFile section */
 
+/* Begin PBXAggregateTarget section */
+		AA0000110000000000000001 /* Generate Swift OpenAPI Client */ = {
+			isa = PBXAggregateTarget;
+			buildConfigurationList = AA0000080000000000000031 /* Build configuration list for PBXAggregateTarget "Generate Swift OpenAPI Client" */;
+			buildPhases = (
+				AA0000120000000000000001 /* Generate Swift OpenAPI Client */,
+			);
+			dependencies = (
+			);
+			name = "Generate Swift OpenAPI Client";
+			productName = "Generate Swift OpenAPI Client";
+		};
+/* End PBXAggregateTarget section */
+
 /* Begin PBXContainerItemProxy section */
 		AA00000C00000000000000C2 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
@@ -196,6 +210,7 @@
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
+				AA0000110000000000000001 /* Generate Swift OpenAPI Client */,
 				AA0000050000000000000001 /* BlueChat */,
 				AA0000050000000000000011 /* BlueChatClip */,
 			);
@@ -243,6 +258,32 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXSourcesBuildPhase section */
+
+/* Begin PBXShellScriptBuildPhase section */
+		AA0000120000000000000001 /* Generate Swift OpenAPI Client */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+				"$(SRCROOT)/../src/main/resources/openapi.yaml",
+				"$(SRCROOT)/../build.gradle",
+			);
+			name = "Generate Swift OpenAPI Client";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+				"$(SRCROOT)/Generated/BlueChatAgentClient/Package.swift",
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "\"${SRCROOT}/Scripts/generate-swift-client.sh\"\n";
+			showEnvVarsInLog = 0;
+		};
+/* End PBXShellScriptBuildPhase section */
 
 /* Begin PBXTargetDependency section */
 		AA00000E00000000000000C4 /* PBXTargetDependency */ = {
@@ -405,6 +446,22 @@
 			};
 			name = Release;
 		};
+		AA0000090000000000000031 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				DISABLE_MANUAL_TARGET_ORDER_BUILD_WARNING = YES;
+				PRODUCT_NAME = "Generate Swift OpenAPI Client";
+			};
+			name = Debug;
+		};
+		AA0000090000000000000032 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				DISABLE_MANUAL_TARGET_ORDER_BUILD_WARNING = YES;
+				PRODUCT_NAME = "Generate Swift OpenAPI Client";
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -431,6 +488,15 @@
 			buildConfigurations = (
 				AA0000090000000000000021 /* Debug */,
 				AA0000090000000000000022 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		AA0000080000000000000031 /* Build configuration list for PBXAggregateTarget "Generate Swift OpenAPI Client" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				AA0000090000000000000031 /* Debug */,
+				AA0000090000000000000032 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

@@ -18,17 +18,17 @@ jobs:
     if: ${{ !(github.event_name == 'push' && contains(github.event.head_commit.message, '[skip ci]')) }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
 
       - name: Set up Java
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@c1e323688fd81a25caa38c78aa6df2d33d3e20d9
         with:
           distribution: 'temurin'
           java-version: '25'
           cache: 'gradle'
 
       - name: Run tests
-        uses: gradle/gradle-build-action@v3
+        uses: gradle/gradle-build-action@ac2d340dc04d9e1113182899e983b5400c17cda1
         with:
           arguments: test
         env: {}
@@ -39,18 +39,32 @@ jobs:
     if: ${{ !(github.event_name == 'push' && contains(github.event.head_commit.message, '[skip ci]')) }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
 
       - name: Select Xcode
         run: |
           sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
           xcodebuild -version
 
+      - name: Set up Java
+        uses: actions/setup-java@c1e323688fd81a25caa38c78aa6df2d33d3e20d9
+        with:
+          distribution: 'temurin'
+          java-version: '25'
+          cache: 'gradle'
+
+      - name: Generate Swift OpenAPI client
+        run: CI=true ./gradlew copySwiftClientToAppClip
+
+      - name: Verify Swift OpenAPI client is current
+        run: git diff --exit-code -- appclip/Generated/BlueChatAgentClient
+
       - name: Build App Clip
         run: |
           xcodebuild \
             -project appclip/BlueChat.xcodeproj \
             -scheme BlueChatClip \
+            -hideShellScriptEnvironment \
             -destination 'generic/platform=iOS Simulator' \
             -derivedDataPath appclip/.derivedData \
             CODE_SIGNING_ALLOWED=NO \
@@ -61,6 +75,7 @@ jobs:
           xcodebuild \
             -project appclip/BlueChat.xcodeproj \
             -scheme BlueChat \
+            -hideShellScriptEnvironment \
             -destination 'generic/platform=iOS Simulator' \
             -derivedDataPath appclip/.derivedData \
             CODE_SIGNING_ALLOWED=NO \
@@ -80,16 +95,16 @@ jobs:
       LXMF_BRIDGE_IMAGE_NAME: ${{ github.repository }}-lxmf-bridge
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
 
       - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
+        uses: docker/setup-qemu-action@c7c53464625b32c7a7e944ae62b3e17d2b600130
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f
 
       - name: Log in to container registry
-        uses: docker/login-action@v3
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
@@ -97,7 +112,7 @@ jobs:
 
       - name: Extract app metadata (tags, labels)
         id: app_meta
-        uses: docker/metadata-action@v5
+        uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051
         with:
           images: ${{ env.REGISTRY }}/${{ env.APP_IMAGE_NAME }}
           tags: |
@@ -106,7 +121,7 @@ jobs:
             type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
 
       - name: Build and push app image
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8
         with:
           context: .
           push: true
@@ -116,7 +131,7 @@ jobs:
 
       - name: Extract LXMF bridge metadata (tags, labels)
         id: lxmf_bridge_meta
-        uses: docker/metadata-action@v5
+        uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051
         with:
           images: ${{ env.REGISTRY }}/${{ env.LXMF_BRIDGE_IMAGE_NAME }}
           tags: |
@@ -125,7 +140,7 @@ jobs:
             type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
 
       - name: Build and push LXMF bridge image
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8
         with:
           context: ./lxmf-bridge
           push: true
@@ -141,12 +156,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository (main)
-        uses: actions/checkout@v4
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
         with:
           ref: main
 
       - name: Set up kustomize
-        uses: imranismail/setup-kustomize@v2
+        uses: imranismail/setup-kustomize@2ba527d4d055ab63514ba50a99456fc35684947f
 
       - name: Configure Git user
         run: |
@@ -206,12 +221,12 @@ jobs:
       contents: read
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
         with:
           fetch-depth: 0
 
       - name: Sync Linear release
-        uses: linear/linear-release-action@v0
+        uses: linear/linear-release-action@ad7da502eec3a93dd17e2e249e6c1cd84e3ee588
         with:
           access_key: ${{ secrets.LINEAR_ACCESS_KEY }}
           version: ${{ github.sha }}-${{ github.run_number }}

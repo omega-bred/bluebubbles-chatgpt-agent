@@ -98,25 +98,29 @@ def resolveAllSecrets = {
 
 // Inject into all Test tasks
 tasks.withType(Test).configureEach {
-    def secrets = resolveAllSecrets()
-    if (!secrets.isEmpty()) {
-        secrets.each { propName, value ->
-            // make available to Spring via both system properties and env var
-            systemProperty propName, value
-            environment propName, value
-            println "🔑 ${propName} injected into test task ${name}"
+    doFirst {
+        def secrets = resolveAllSecrets()
+        if (!secrets.isEmpty()) {
+            secrets.each { propName, value ->
+                // make available to Spring via both system properties and env var
+                systemProperty propName, value
+                environment propName, value
+                println "🔑 ${propName} injected into test task ${name}"
+            }
         }
     }
 }
 
 // Also inject into bootRun (local app run)
 tasks.matching { it.name == 'bootRun' }.configureEach {
-    def secrets = resolveAllSecrets()
-    if (!secrets.isEmpty()) {
-        secrets.each { propName, value ->
-            systemProperty propName, value
-            environment propName, value
-            println "🔑 ${propName} injected into bootRun"
+    doFirst {
+        def secrets = resolveAllSecrets()
+        if (!secrets.isEmpty()) {
+            secrets.each { propName, value ->
+                systemProperty propName, value
+                environment propName, value
+                println "🔑 ${propName} injected into bootRun"
+            }
         }
     }
 }
@@ -364,8 +368,19 @@ tasks.register('openApiGenerateSwiftClient', GenerateTask) {
 
 tasks.register('copySwiftClientToAppClip', Sync) {
 	dependsOn tasks.openApiGenerateSwiftClient
-	from("$buildDir/swift-client-generated")
+	from("$buildDir/swift-client-generated") {
+		include 'Package.swift'
+		include 'Sources/**'
+	}
 	into("$projectDir/appclip/Generated/BlueChatAgentClient")
+
+	doFirst {
+		delete(
+				"$projectDir/appclip/Generated/BlueChatAgentClient/.build",
+				"$projectDir/appclip/Generated/BlueChatAgentClient/.swiftpm",
+				"$projectDir/appclip/Generated/BlueChatAgentClient/Package.resolved"
+		)
+	}
 
 	doLast {
 		def generatedRoot = file("$projectDir/appclip/Generated/BlueChatAgentClient")
@@ -505,15 +520,6 @@ public struct AnyCodable: Codable, Hashable {
 
 		fileTree(generatedRoot).matching {
 			include '**/*.swift'
-			include '**/*.md'
-			include '**/*.podspec'
-			include '**/*.yml'
-			include '**/*.yaml'
-			include '**/*.sh'
-			include '**/*.swiftformat'
-			include '**/.openapi-generator-ignore'
-			include '**/.openapi-generator/FILES'
-			include '**/.openapi-generator/VERSION'
 			exclude '**/.build/**'
 			exclude '**/.swiftpm/**'
 		}.each { generatedFile ->
@@ -561,6 +567,13 @@ tasks.register('npmBuildClient', Exec) {
 	commandLine npmPath, "run", "build"
 
 	// declare what this produces
+	inputs.files(fileTree("$buildDir/typescript-client-generated") {
+		include '*.ts'
+		include 'package.json'
+		include 'tsconfig.json'
+		exclude 'dist/**'
+		exclude 'node_modules/**'
+	})
 	outputs.dir("$buildDir/typescript-client-generated/dist/esm")
 }
 

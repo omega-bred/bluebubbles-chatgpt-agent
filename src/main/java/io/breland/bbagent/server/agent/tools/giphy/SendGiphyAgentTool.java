@@ -47,13 +47,6 @@ public class SendGiphyAgentTool implements ToolProvider {
   public SendGiphyAgentTool(
       BBHttpClientWrapper bbHttpClientWrapper,
       GiphyClient giphyClient,
-      Supplier<OpenAIClient> openAiSupplier) {
-    this(bbHttpClientWrapper, giphyClient, openAiSupplier, null);
-  }
-
-  public SendGiphyAgentTool(
-      BBHttpClientWrapper bbHttpClientWrapper,
-      GiphyClient giphyClient,
       Supplier<OpenAIClient> openAiSupplier,
       OperationalMetricsService operationalMetricsService) {
     this.bbHttpClientWrapper = bbHttpClientWrapper;
@@ -276,7 +269,7 @@ public class SendGiphyAgentTool implements ToolProvider {
   }
 
   private static String extractResponseText(Response response) {
-    if (response == null || response.output() == null) {
+    if (response == null) {
       return "";
     }
     StringBuilder builder = new StringBuilder();
@@ -287,7 +280,7 @@ public class SendGiphyAgentTool implements ToolProvider {
       var message = item.message().get();
       for (var content : message.content()) {
         if (content.isOutputText()) {
-          if (builder.length() > 0) {
+          if (!builder.isEmpty()) {
             builder.append(' ');
           }
           builder.append(content.asOutputText().text());

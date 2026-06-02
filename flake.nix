@@ -32,6 +32,46 @@
           jdk = pkgs.jdk25;
           postgresql = pkgs.postgresql;
           stripeCli = pkgs.stripe-cli;
+          ascCli =
+            let
+              buildGo126Module = pkgs.buildGoModule.override { go = pkgs.go_1_26; };
+            in
+            buildGo126Module rec {
+              pname = "asc";
+              version = "1.9.0";
+
+              src = pkgs.fetchFromGitHub {
+                owner = "rorkai";
+                repo = "App-Store-Connect-CLI";
+                rev = version;
+                sha256 = "0bcbv6ylzn7c9nbs0fg0m6p44i09w701x9j4ampzh0wqbjarwl29";
+              };
+
+              vendorHash = "sha256-XBEDMUGwSh8P+dVKMebN3zD83e1odAN+Wy15yys0+2M=";
+
+              subPackages = [ "." ];
+
+              ldflags = [
+                "-s"
+                "-w"
+                "-X main.version=${version}"
+                "-X main.commit=bf56bf36b6389a031779d7594e49e8a1e70179b4"
+                "-X main.date=1970-01-01T00:00:00Z"
+              ];
+
+              doCheck = false;
+
+              postInstall = ''
+                mv "$out/bin/App-Store-Connect-CLI" "$out/bin/asc"
+              '';
+
+              meta = {
+                description = "Unofficial App Store Connect CLI";
+                homepage = "https://github.com/rorkai/App-Store-Connect-CLI";
+                license = pkgs.lib.licenses.mit;
+                mainProgram = "asc";
+              };
+            };
 
           python = pkgs.python313.withPackages (
             ps:
@@ -134,9 +174,16 @@
           ];
         in
         {
-          inherit darwinAppleTools jdk linuxNativeLibs python;
+          inherit
+            ascCli
+            darwinAppleTools
+            jdk
+            linuxNativeLibs
+            python
+            ;
 
           tools = [
+            ascCli
             bbagentPostgresStart
             bbagentPostgresStop
             bbagentStripeListen
@@ -210,18 +257,21 @@
             ''
             + ''
 
-              echo "bluebubbles-chatgpt-agent dev shell"
-              echo "  Java:  $(java -version 2>&1 | head -n 1)"
-              echo "  Node:  $(node --version) / npm $(npm --version)"
-              echo "  Python: $(python --version)"
+              if [ "''${BBAGENT_NIX_SHELL_QUIET:-}" != "1" ]; then
+                echo "bluebubbles-chatgpt-agent dev shell"
+                echo "  Java:  $(java -version 2>&1 | head -n 1)"
+                echo "  Node:  $(node --version) / npm $(npm --version)"
+                echo "  Python: $(python --version)"
             ''
             + pkgs.lib.optionalString pkgs.stdenv.isDarwin ''
               echo "  App Clip helpers: swiftformat, xcbeautify"
-              echo "  App Clip external deps: Xcode and App Store Connect CLI (asc)"
+              echo "  App Clip external deps: Xcode"
+              echo "  App Store Connect CLI: asc ${devTools.ascCli.version}"
               echo "  LXMF/RNS: omitted on Darwin because nixpkgs packages pull Linux Bluetooth deps"
             ''
             + ''
-              echo "  Try:   ./gradlew test"
+                echo "  Try:   ./gradlew test"
+              fi
             '';
           };
         }

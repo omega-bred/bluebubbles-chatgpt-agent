@@ -214,7 +214,7 @@ public class BBHttpClientWrapper {
     }
   }
 
-  private boolean measuredBooleanOperation(String operation, OperationBooleanSupplier supplier) {
+  private boolean measuredRenameConversation(OperationBooleanSupplier supplier) {
     long startedNanos = System.nanoTime();
     boolean success = false;
     String failureType = null;
@@ -226,7 +226,7 @@ public class BBHttpClientWrapper {
       failureType = OperationalMetricsService.failureType(e);
       throw e;
     } finally {
-      recordOperationMetric(operation, success, failureType, startedNanos);
+      recordOperationMetric("rename_conversation", success, failureType, startedNanos);
     }
   }
 
@@ -311,9 +311,7 @@ public class BBHttpClientWrapper {
       return true;
     }
     String normalizedCandidatePhone = normalizePhoneIdentifier(candidate);
-    return normalizedCandidatePhone != null
-        && normalizedUserPhone != null
-        && normalizedCandidatePhone.equals(normalizedUserPhone);
+    return normalizedCandidatePhone != null && normalizedCandidatePhone.equals(normalizedUserPhone);
   }
 
   private static String normalizeFindMyIdentifier(String value) {
@@ -681,8 +679,7 @@ public class BBHttpClientWrapper {
     if (StringUtils.isBlank(chatGuid)) {
       return false;
     }
-    return measuredBooleanOperation(
-        "rename_conversation",
+    return measuredRenameConversation(
         () -> {
           ApiResponseUpdateChat result =
               chatApi

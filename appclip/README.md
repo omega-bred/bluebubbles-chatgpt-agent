@@ -18,6 +18,20 @@ The App Clip expects an invocation URL containing `token=...`, exchanges it with
 `/api/v1/appClip/createSession.appClipSessions`, then authenticates existing website/subscription
 APIs using the returned `X-App-Clip-Session` token.
 
+The App Clip uses the generated OpenAPI Swift client as a local SwiftPM package at
+`appclip/Generated/BlueChatAgentClient`. The shared Xcode schemes build the
+`Generate Swift OpenAPI Client` target first, so normal Xcode and `xcodebuild` builds refresh the
+package before compiling. You can also refresh it directly with:
+
+```sh
+./gradlew copySwiftClientToAppClip
+```
+
+Keep the generated package committed. Xcode resolves local Swift packages before project targets can
+create missing package files, so a clean checkout still needs the minimal package bootstrap in git.
+GitHub Actions runs the sync task before App Clip builds and fails if the committed generated client
+is stale.
+
 App Store Connect setup already done through `asc`:
 
 - Created both bundle IDs.

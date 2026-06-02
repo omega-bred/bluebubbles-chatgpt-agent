@@ -163,8 +163,7 @@ public class CadenceAgentActivitiesImpl implements CadenceAgentActivities {
       List<ResponseInputItem> outputs = new ArrayList<>();
       if (toolCalls != null) {
         for (CadenceToolCall toolCall : toolCalls) {
-          outputs.add(
-              AgentResponseHelper.blockedToolCallOutput(toolCall.callId(), toolCall.name()));
+          outputs.add(AgentResponseHelper.blockedToolCallOutput(toolCall.callId()));
         }
       }
       return toJson(outputs);

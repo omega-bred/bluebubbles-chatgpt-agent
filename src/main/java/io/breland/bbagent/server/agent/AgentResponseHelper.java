@@ -40,11 +40,9 @@ public final class AgentResponseHelper {
       return List.of();
     }
     List<ResponseFunctionToolCall> calls = new ArrayList<>();
-    if (response.output() != null) {
-      for (ResponseOutputItem item : response.output()) {
-        if (item.functionCall().isPresent()) {
-          calls.add(item.functionCall().get());
-        }
+    for (ResponseOutputItem item : response.output()) {
+      if (item.functionCall().isPresent()) {
+        calls.add(item.functionCall().get());
       }
     }
     if (!calls.isEmpty()) {
@@ -64,15 +62,13 @@ public final class AgentResponseHelper {
     }
     List<ResponseInputItem> items = new ArrayList<>();
     boolean addedFunctionCall = false;
-    if (response.output() != null) {
-      for (ResponseOutputItem item : response.output()) {
-        if (item.reasoning().isPresent()) {
-          items.add(ResponseInputItem.ofReasoning(item.reasoning().get()));
-        }
-        if (item.functionCall().isPresent()) {
-          items.add(ResponseInputItem.ofFunctionCall(item.functionCall().get()));
-          addedFunctionCall = true;
-        }
+    for (ResponseOutputItem item : response.output()) {
+      if (item.reasoning().isPresent()) {
+        items.add(ResponseInputItem.ofReasoning(item.reasoning().get()));
+      }
+      if (item.functionCall().isPresent()) {
+        items.add(ResponseInputItem.ofFunctionCall(item.functionCall().get()));
+        addedFunctionCall = true;
       }
     }
     if (!addedFunctionCall && toolCalls != null && !toolCalls.isEmpty()) {
@@ -84,7 +80,7 @@ public final class AgentResponseHelper {
   }
 
   public static String extractResponseText(Response response) {
-    if (response == null || response.output() == null) {
+    if (response == null) {
       return "";
     }
     StringBuilder builder = new StringBuilder();
@@ -95,7 +91,7 @@ public final class AgentResponseHelper {
       ResponseOutputMessage message = item.message().get();
       for (ResponseOutputMessage.Content content : message.content()) {
         if (content.isOutputText() && content.asOutputText().isValid()) {
-          if (builder.length() > 0) {
+          if (!builder.isEmpty()) {
             builder.append(' ');
           }
           builder.append(content.asOutputText().text());
@@ -134,7 +130,7 @@ public final class AgentResponseHelper {
       if (TEXT_TOOL_CALL_PATTERN.matcher(line).matches()) {
         continue;
       }
-      if (builder.length() > 0) {
+      if (!builder.isEmpty()) {
         builder.append(System.lineSeparator());
       }
       builder.append(line);
@@ -161,7 +157,7 @@ public final class AgentResponseHelper {
     return Optional.of(reaction);
   }
 
-  public static ResponseInputItem blockedToolCallOutput(String callId, String toolName) {
+  public static ResponseInputItem blockedToolCallOutput(String callId) {
     ResponseInputItem.FunctionCallOutput toolOutput =
         ResponseInputItem.FunctionCallOutput.builder()
             .callId(callId)
