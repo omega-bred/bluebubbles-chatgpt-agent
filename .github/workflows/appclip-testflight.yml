@@ -62,18 +62,19 @@ jobs:
         with:
           service-account-token: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
 
-      - name: Load App Store Connect API key
+      - name: Load App Store Connect secrets
+        uses: 1password/load-secrets-action@581a835fb51b8e7ec56b71cf2ffddd7e68bb25e0
+        with:
+          export-env: true
+        env:
+          ASC_KEY_ID: "op://tyum5kfqny2dlv7mufamoiavyi/gen33eow25m5fcsy2ocispkwyy/key_id"
+          ASC_ISSUER_ID: "op://tyum5kfqny2dlv7mufamoiavyi/gen33eow25m5fcsy2ocispkwyy/issuer_id"
+          ASC_PRIVATE_KEY: "op://tyum5kfqny2dlv7mufamoiavyi/gen33eow25m5fcsy2ocispkwyy/password"
+          ASC_APP_ID: "op://tyum5kfqny2dlv7mufamoiavyi/gen33eow25m5fcsy2ocispkwyy/app_id"
+
+      - name: Prepare App Store Connect API key for Xcode
         run: |
           set -euo pipefail
-
-          read_op() {
-            BBAGENT_NIX_SHELL_QUIET=1 nix develop --command op read "$1"
-          }
-
-          ASC_KEY_ID="$(read_op 'op://tyum5kfqny2dlv7mufamoiavyi/gen33eow25m5fcsy2ocispkwyy/key_id')"
-          ASC_ISSUER_ID="$(read_op 'op://tyum5kfqny2dlv7mufamoiavyi/gen33eow25m5fcsy2ocispkwyy/issuer_id')"
-          ASC_PRIVATE_KEY="$(read_op 'op://tyum5kfqny2dlv7mufamoiavyi/gen33eow25m5fcsy2ocispkwyy/password')"
-          ASC_APP_ID="$(read_op 'op://tyum5kfqny2dlv7mufamoiavyi/gen33eow25m5fcsy2ocispkwyy/app_id')"
 
           if [ -z "$ASC_KEY_ID" ] || [ -z "$ASC_ISSUER_ID" ] || [ -z "$ASC_PRIVATE_KEY" ] || [ -z "$ASC_APP_ID" ]; then
             echo "Missing one or more App Store Connect fields from 1Password" >&2
