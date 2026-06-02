@@ -529,7 +529,24 @@ jobs:
             args+=(--submit --confirm)
           fi
 
-          BBAGENT_NIX_SHELL_QUIET=1 nix develop --command asc "${args[@]}"
+          BBAGENT_NIX_SHELL_QUIET=1 nix develop --command env \
+            -u CC \
+            -u CXX \
+            -u LD \
+            -u AR \
+            -u AS \
+            -u NM \
+            -u RANLIB \
+            -u STRIP \
+            -u CFLAGS \
+            -u CPPFLAGS \
+            -u CXXFLAGS \
+            -u LDFLAGS \
+            -u NIX_CFLAGS_COMPILE \
+            -u NIX_LDFLAGS \
+            -u MACOSX_DEPLOYMENT_TARGET \
+            -u SDKROOT \
+            asc "${args[@]}"
 
       - name: Clean up ephemeral App Clip signing assets
         if: always()
