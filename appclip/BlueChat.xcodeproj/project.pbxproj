@@ -393,7 +393,7 @@
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = land.bre.bluechat.ios;
 				PRODUCT_NAME = BlueChat;
-				PROVISIONING_PROFILE_SPECIFIER = "BlueChatAI App Store Main AppClip";
+				PROVISIONING_PROFILE_SPECIFIER = "BlueChatAI GitHub Actions App Store Main";
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = 1;
@@ -439,7 +439,7 @@
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = land.bre.bluechat.ios.Clip;
 				PRODUCT_NAME = BlueChatClip;
-				PROVISIONING_PROFILE_SPECIFIER = "BlueChatAI App Store Clip";
+				PROVISIONING_PROFILE_SPECIFIER = "BlueChatAI GitHub Actions App Store Clip";
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = 1;

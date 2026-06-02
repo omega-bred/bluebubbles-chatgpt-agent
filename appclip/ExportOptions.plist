@@ -9,9 +9,9 @@
 	<key>provisioningProfiles</key>
 	<dict>
 		<key>land.bre.bluechat.ios</key>
-		<string>BlueChatAI App Store Main AppClip</string>
+		<string>BlueChatAI GitHub Actions App Store Main</string>
 		<key>land.bre.bluechat.ios.Clip</key>
-		<string>BlueChatAI App Store Clip</string>
+		<string>BlueChatAI GitHub Actions App Store Clip</string>
 	</dict>
 	<key>signingStyle</key>
 	<string>manual</string>

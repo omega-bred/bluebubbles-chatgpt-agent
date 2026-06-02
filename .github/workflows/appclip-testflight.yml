@@ -108,8 +108,9 @@ jobs:
           SIGNING_ITEM_TITLE: BlueChat App Clip CI Signing Assets
           MAIN_BUNDLE_RESOURCE_ID: SRKX6DJQPJ
           CLIP_BUNDLE_RESOURCE_ID: 9657HFRZMD
-          MAIN_PROFILE_NAME: BlueChatAI App Store Main AppClip
-          CLIP_PROFILE_NAME: BlueChatAI App Store Clip
+          MAIN_PROFILE_NAME: BlueChatAI GitHub Actions App Store Main
+          CLIP_PROFILE_NAME: BlueChatAI GitHub Actions App Store Clip
+          KNOWN_VALID_DISTRIBUTION_CERTIFICATE_ID: QUU8C54UCP
         run: |
           set -euo pipefail
 
@@ -170,6 +171,16 @@ jobs:
                       .id == "XZF2PJ8696" and
                       ((.attributes.expirationDate // "") | startswith("2027-06-02T07:53:35"))
                     ) |
+                    .id
+                  ' "$certificates_json"
+                )"
+              fi
+
+              if [ -z "$orphan_certificate_ids" ]; then
+                orphan_certificate_ids="$(
+                  jq_nix -r --arg keep_id "$KNOWN_VALID_DISTRIBUTION_CERTIFICATE_ID" '
+                    .data[]? |
+                    select(.id != $keep_id) |
                     .id
                   ' "$certificates_json"
                 )"
