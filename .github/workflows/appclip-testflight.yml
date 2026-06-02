@@ -125,6 +125,7 @@ jobs:
           signing_dir="${RUNNER_TEMP}/appclip-signing"
           mkdir -p "$signing_dir"
           signing_item_json="${signing_dir}/signing-item.json"
+          use_ephemeral_signing_assets=false
 
           if ! op item get "$SIGNING_ITEM_TITLE" --vault "$ASC_VAULT_ID" --format json > "$signing_item_json" 2>/dev/null; then
             echo "Creating App Clip CI signing assets in 1Password"
@@ -200,9 +201,12 @@ jobs:
               if [ -z "$orphan_certificate_ids" ]; then
                 orphan_certificate_ids="$(
                   jq_nix -r --arg keep_id "$KNOWN_VALID_DISTRIBUTION_CERTIFICATE_ID" '
-                    .data[]? |
-                    select(.id != $keep_id) |
-                    .id
+                    [
+                      .data[]? |
+                      select(.id != $keep_id) |
+                      .id
+                    ] |
+                    if length == 1 then .[] else empty end
                   ' "$certificates_json"
                 )"
               fi
@@ -279,6 +283,7 @@ jobs:
               local profile_name="$1"
               local bundle_resource_id="$2"
               local output_path="$3"
+              local profile_id_var="$4"
               local profile_json="${bootstrap_dir}/${profile_name// /-}.json"
               local profile_id
 
@@ -295,6 +300,7 @@ jobs:
               fi
 
               asc_nix profiles download --id "$profile_id" --output "$output_path"
+              printf -v "$profile_id_var" '%s' "$profile_id"
             }
 
             delete_existing_ci_profiles
@@ -302,10 +308,21 @@ jobs:
             main_bundle_resource_id="$(bundle_resource_id "$MAIN_BUNDLE_IDENTIFIER")"
             clip_bundle_resource_id="$(bundle_resource_id "$CLIP_BUNDLE_IDENTIFIER")"
 
-            create_profile "$MAIN_PROFILE_NAME" "$main_bundle_resource_id" "${bootstrap_dir}/main-app-store.mobileprovision"
-            create_profile "$CLIP_PROFILE_NAME" "$clip_bundle_resource_id" "${bootstrap_dir}/clip-app-store.mobileprovision"
+            create_profile "$MAIN_PROFILE_NAME" "$main_bundle_resource_id" "${bootstrap_dir}/main-app-store.mobileprovision" main_profile_id
+            create_profile "$CLIP_PROFILE_NAME" "$clip_bundle_resource_id" "${bootstrap_dir}/clip-app-store.mobileprovision" clip_profile_id
 
-            op item create \
+            p12_path="${signing_dir}/distribution.p12"
+            main_profile_path="${signing_dir}/main-app-store.mobileprovision"
+            clip_profile_path="${signing_dir}/clip-app-store.mobileprovision"
+            p12_password_path="${signing_dir}/p12-password"
+
+            cp "${bootstrap_dir}/distribution.p12" "$p12_path"
+            cp "${bootstrap_dir}/main-app-store.mobileprovision" "$main_profile_path"
+            cp "${bootstrap_dir}/clip-app-store.mobileprovision" "$clip_profile_path"
+            printf '%s' "$p12_password" > "$p12_password_path"
+            chmod 600 "$p12_password_path"
+
+            if op item create \
               --category "Secure Note" \
               --vault "$ASC_VAULT_ID" \
               --title "$SIGNING_ITEM_TITLE" \
@@ -316,10 +333,19 @@ jobs:
               "distribution_certificate_p12[file]=${bootstrap_dir}/distribution.p12" \
               "main_app_store_profile[file]=${bootstrap_dir}/main-app-store.mobileprovision" \
               "clip_app_store_profile[file]=${bootstrap_dir}/clip-app-store.mobileprovision" \
-              >/dev/null </dev/null
+              >/dev/null </dev/null; then
+              op item get "$SIGNING_ITEM_TITLE" --vault "$ASC_VAULT_ID" --format json > "$signing_item_json"
+            else
+              use_ephemeral_signing_assets=true
+              echo "1Password service account could not create the signing item; using ephemeral signing assets for this run."
+              {
+                echo "CI_SIGNING_CERTIFICATE_ID=$certificate_id"
+                echo "CI_MAIN_PROFILE_ID=$main_profile_id"
+                echo "CI_CLIP_PROFILE_ID=$clip_profile_id"
+              } >> "$GITHUB_ENV"
+            fi
 
             unset p12_password
-            op item get "$SIGNING_ITEM_TITLE" --vault "$ASC_VAULT_ID" --format json > "$signing_item_json"
           fi
 
           field_reference() {
@@ -336,11 +362,16 @@ jobs:
           p12_path="${signing_dir}/distribution.p12"
           main_profile_path="${signing_dir}/main-app-store.mobileprovision"
           clip_profile_path="${signing_dir}/clip-app-store.mobileprovision"
+          p12_password_path="${signing_dir}/p12-password"
 
-          op read "$(field_reference distribution_certificate_p12)" > "$p12_path"
-          op read "$(field_reference main_app_store_profile)" > "$main_profile_path"
-          op read "$(field_reference clip_app_store_profile)" > "$clip_profile_path"
-          p12_password="$(op read "$(field_reference p12_password)")"
+          if [ "$use_ephemeral_signing_assets" = false ]; then
+            op read "$(field_reference distribution_certificate_p12)" > "$p12_path"
+            op read "$(field_reference main_app_store_profile)" > "$main_profile_path"
+            op read "$(field_reference clip_app_store_profile)" > "$clip_profile_path"
+            p12_password="$(op read "$(field_reference p12_password)")"
+          else
+            p12_password="$(<"$p12_password_path")"
+          fi
 
           install_profile() {
             local profile_path="$1"
@@ -499,3 +530,30 @@ jobs:
           fi
 
           BBAGENT_NIX_SHELL_QUIET=1 nix develop --command asc "${args[@]}"
+
+      - name: Clean up ephemeral App Clip signing assets
+        if: always()
+        run: |
+          set -euo pipefail
+
+          asc_nix() {
+            BBAGENT_NIX_SHELL_QUIET=1 nix develop --command asc "$@"
+          }
+
+          delete_profile() {
+            local profile_id="$1"
+            local profile_name="$2"
+
+            if [ -n "$profile_id" ]; then
+              echo "Deleting ephemeral ${profile_name} provisioning profile ${profile_id}"
+              asc_nix profiles delete --id "$profile_id" --confirm || true
+            fi
+          }
+
+          delete_profile "${CI_MAIN_PROFILE_ID:-}" "main app"
+          delete_profile "${CI_CLIP_PROFILE_ID:-}" "App Clip"
+
+          if [ -n "${CI_SIGNING_CERTIFICATE_ID:-}" ]; then
+            echo "Revoking ephemeral iOS distribution certificate ${CI_SIGNING_CERTIFICATE_ID}"
+            asc_nix certificates revoke --id "$CI_SIGNING_CERTIFICATE_ID" --confirm || true
+          fi
