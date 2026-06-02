@@ -64,6 +64,8 @@ jobs:
 
       - name: Load App Store Connect secrets
         uses: 1password/load-secrets-action@581a835fb51b8e7ec56b71cf2ffddd7e68bb25e0
+        with:
+          export-env: true
         env:
           ASC_KEY_ID: "op://GH Actions (omega-bred)/App Store Connect Team API Key/key_id"
           ASC_ISSUER_ID: "op://GH Actions (omega-bred)/App Store Connect Team API Key/issuer_id"
