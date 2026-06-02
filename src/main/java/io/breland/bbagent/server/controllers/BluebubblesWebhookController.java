@@ -47,7 +47,6 @@ public class BluebubblesWebhookController extends BluebubblesApiController {
   @Override
   public ResponseEntity<Object> bluebubblesMessageReceived(
       @Valid @RequestBody BlueBubblesMessageReceivedRequest requestBody) {
-    log.info("Incoming Message {}", requestBody);
     if (requestBody == null || requestBody.getType() == null) {
       return ResponseEntity.badRequest().build();
     }
@@ -56,6 +55,7 @@ public class BluebubblesWebhookController extends BluebubblesApiController {
     }
     IncomingMessage message = parseWebhookMessage(requestBody.getData());
     if (message != null) {
+      log.info("Incoming BlueBubbles message {}", message.logSummary());
       messageAgent.handleIncomingMessage(message);
     }
     return ResponseEntity.ok(Map.of("status", "ok"));

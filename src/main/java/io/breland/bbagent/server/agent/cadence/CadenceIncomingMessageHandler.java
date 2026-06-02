@@ -85,10 +85,10 @@ public final class CadenceIncomingMessageHandler {
 
   private @Nullable PreparedIncomingMessage prepare(IncomingMessage rawMessage) {
     if (!shouldProcess(rawMessage)) {
-      log.debug("Dropping message {}", rawMessage);
+      log.debug("Dropping message {}", IncomingMessage.logSummary(rawMessage));
       return null;
     }
-    log.info("Processing Message {}", rawMessage);
+    log.info("Processing message {}", rawMessage.logSummary());
     profileService.recordMessageIdentities(rawMessage);
     if (profileService.isProcessingBlocked(rawMessage)) {
       return null;
@@ -104,7 +104,7 @@ public final class CadenceIncomingMessageHandler {
             "Dropping already-seen incoming message chat={} guid={} fingerprint={} ts={} lastSeenGuid={} latestSeenTs={}",
             message.chatGuid(),
             message.messageGuid(),
-            message.computeMessageFingerprint(),
+            message.logFingerprintHash(),
             message.timestamp(),
             state.getLastProcessedMessageGuid(),
             state.getLatestProcessedMessageTimestamp());
@@ -158,7 +158,7 @@ public final class CadenceIncomingMessageHandler {
     try {
       agentMetricsService.recordAcceptedMessage(message);
     } catch (RuntimeException e) {
-      log.warn("Failed to record message metric for {}", message, e);
+      log.warn("Failed to record message metric for {}", message.logSummary(), e);
     }
   }
 
@@ -234,7 +234,7 @@ public final class CadenceIncomingMessageHandler {
       }
       resolved = resolvedAccount.get();
     } catch (RuntimeException e) {
-      log.warn("Failed to resolve account for terms gate {}", message, e);
+      log.warn("Failed to resolve account for terms gate {}", message.logSummary(), e);
       return false;
     }
     if (resolved.account().getTermsAcceptedAt() != null) {
@@ -245,7 +245,7 @@ public final class CadenceIncomingMessageHandler {
       try {
         profileService.acceptTerms(message);
       } catch (RuntimeException e) {
-        log.warn("Failed to accept terms for {}", message, e);
+        log.warn("Failed to accept terms for {}", message.logSummary(), e);
         reply =
             "I couldn't save your Terms agreement just now. Please try replying YES again in a moment.";
         sendAndRecordTermsGateReply(state, message, reply);
