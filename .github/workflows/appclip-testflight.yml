@@ -359,6 +359,9 @@ jobs:
             local label="$1"
             local reference
             reference="$(jq_nix -r --arg label "$label" '.fields[]? | select(.label == $label) | .reference // empty' "$signing_item_json" | head -n 1)"
+            if [ -z "$reference" ] && jq_nix -e --arg label "$label" '.files[]? | select(.name == $label)' "$signing_item_json" >/dev/null; then
+              reference="op://${ASC_VAULT_ID}/${SIGNING_ITEM_TITLE}/${label}"
+            fi
             if [ -z "$reference" ]; then
               echo "Missing ${label} in 1Password signing item" >&2
               exit 1
@@ -372,9 +375,9 @@ jobs:
           p12_password_path="${signing_dir}/p12-password"
 
           if [ "$use_ephemeral_signing_assets" = false ]; then
-            op read "$(field_reference distribution_certificate_p12)" > "$p12_path"
-            op read "$(field_reference main_app_store_profile)" > "$main_profile_path"
-            op read "$(field_reference clip_app_store_profile)" > "$clip_profile_path"
+            op read --force --out-file "$p12_path" "$(field_reference distribution_certificate_p12)"
+            op read --force --out-file "$main_profile_path" "$(field_reference main_app_store_profile)"
+            op read --force --out-file "$clip_profile_path" "$(field_reference clip_app_store_profile)"
             p12_password="$(op read "$(field_reference p12_password)")"
           else
             p12_password="$(<"$p12_password_path")"
