@@ -102,6 +102,157 @@ jobs:
           BBAGENT_NIX_SHELL_QUIET=1 nix develop --command asc auth status --validate
           BBAGENT_NIX_SHELL_QUIET=1 nix develop --command asc apps view --id "$ASC_APP_ID" --output json >/dev/null
 
+      - name: Ensure App Clip signing assets
+        env:
+          ASC_VAULT_ID: tyum5kfqny2dlv7mufamoiavyi
+          SIGNING_ITEM_TITLE: BlueChat App Clip CI Signing Assets
+          MAIN_BUNDLE_RESOURCE_ID: SRKX6DJQPJ
+          CLIP_BUNDLE_RESOURCE_ID: 9657HFRZMD
+          MAIN_PROFILE_NAME: BlueChatAI App Store Main AppClip
+          CLIP_PROFILE_NAME: BlueChatAI App Store Clip
+        run: |
+          set -euo pipefail
+
+          jq_nix() {
+            BBAGENT_NIX_SHELL_QUIET=1 nix develop --command jq "$@"
+          }
+
+          asc_nix() {
+            BBAGENT_NIX_SHELL_QUIET=1 nix develop --command asc "$@"
+          }
+
+          signing_dir="${RUNNER_TEMP}/appclip-signing"
+          mkdir -p "$signing_dir"
+          signing_item_json="${signing_dir}/signing-item.json"
+
+          if ! op item get "$SIGNING_ITEM_TITLE" --vault "$ASC_VAULT_ID" --format json > "$signing_item_json" 2>/dev/null; then
+            echo "Creating App Clip CI signing assets in 1Password"
+            bootstrap_dir="${signing_dir}/bootstrap"
+            mkdir -p "$bootstrap_dir"
+
+            p12_password="$(openssl rand -base64 32)"
+            certificate_json="${bootstrap_dir}/certificate.json"
+            asc_nix certificates create \
+              --certificate-type IOS_DISTRIBUTION \
+              --generate-csr \
+              --common-name "BlueChat GitHub Actions" \
+              --key-out "${bootstrap_dir}/distribution.key" \
+              --csr-out "${bootstrap_dir}/distribution.csr" \
+              --output json > "$certificate_json"
+
+            certificate_id="$(jq_nix -r '.data.id // .id // empty' "$certificate_json")"
+            certificate_content="$(
+              jq_nix -r '
+                .data.attributes.certificateContent //
+                .attributes.certificateContent //
+                .certificateContent //
+                empty
+              ' "$certificate_json"
+            )"
+            if [ -z "$certificate_id" ] || [ -z "$certificate_content" ]; then
+              echo "Could not resolve created distribution certificate details" >&2
+              exit 1
+            fi
+
+            printf '%s' "$certificate_content" | base64 -D > "${bootstrap_dir}/distribution.cer"
+            openssl pkcs12 -export \
+              -inkey "${bootstrap_dir}/distribution.key" \
+              -in "${bootstrap_dir}/distribution.cer" \
+              -out "${bootstrap_dir}/distribution.p12" \
+              -passout "pass:${p12_password}" \
+              -name "BlueChat CI iOS Distribution"
+
+            create_profile() {
+              local profile_name="$1"
+              local bundle_resource_id="$2"
+              local output_path="$3"
+              local profile_json="${bootstrap_dir}/${profile_name// /-}.json"
+              local profile_id
+
+              asc_nix profiles create \
+                --name "$profile_name" \
+                --profile-type IOS_APP_STORE \
+                --bundle "$bundle_resource_id" \
+                --certificate "$certificate_id" \
+                --output json > "$profile_json"
+              profile_id="$(jq_nix -r '.data.id // .id // empty' "$profile_json")"
+              if [ -z "$profile_id" ]; then
+                echo "Could not resolve created provisioning profile id for ${profile_name}" >&2
+                exit 1
+              fi
+
+              asc_nix profiles download --id "$profile_id" --output "$output_path"
+            }
+
+            create_profile "$MAIN_PROFILE_NAME" "$MAIN_BUNDLE_RESOURCE_ID" "${bootstrap_dir}/main-app-store.mobileprovision"
+            create_profile "$CLIP_PROFILE_NAME" "$CLIP_BUNDLE_RESOURCE_ID" "${bootstrap_dir}/clip-app-store.mobileprovision"
+
+            op item create \
+              --category secure-note \
+              --vault "$ASC_VAULT_ID" \
+              --title "$SIGNING_ITEM_TITLE" \
+              "p12_password[password]=${p12_password}" \
+              "certificate_id[text]=${certificate_id}" \
+              "main_profile_name[text]=${MAIN_PROFILE_NAME}" \
+              "clip_profile_name[text]=${CLIP_PROFILE_NAME}" \
+              "distribution_certificate_p12[file]=${bootstrap_dir}/distribution.p12" \
+              "main_app_store_profile[file]=${bootstrap_dir}/main-app-store.mobileprovision" \
+              "clip_app_store_profile[file]=${bootstrap_dir}/clip-app-store.mobileprovision" >/dev/null
+
+            unset p12_password
+            op item get "$SIGNING_ITEM_TITLE" --vault "$ASC_VAULT_ID" --format json > "$signing_item_json"
+          fi
+
+          field_reference() {
+            local label="$1"
+            local reference
+            reference="$(jq_nix -r --arg label "$label" '.fields[]? | select(.label == $label) | .reference // empty' "$signing_item_json" | head -n 1)"
+            if [ -z "$reference" ]; then
+              echo "Missing ${label} in 1Password signing item" >&2
+              exit 1
+            fi
+            printf '%s' "$reference"
+          }
+
+          p12_path="${signing_dir}/distribution.p12"
+          main_profile_path="${signing_dir}/main-app-store.mobileprovision"
+          clip_profile_path="${signing_dir}/clip-app-store.mobileprovision"
+
+          op read "$(field_reference distribution_certificate_p12)" > "$p12_path"
+          op read "$(field_reference main_app_store_profile)" > "$main_profile_path"
+          op read "$(field_reference clip_app_store_profile)" > "$clip_profile_path"
+          p12_password="$(op read "$(field_reference p12_password)")"
+
+          install_profile() {
+            local profile_path="$1"
+            local plist_path="${profile_path}.plist"
+            local profile_uuid
+
+            security cms -D -i "$profile_path" > "$plist_path"
+            profile_uuid="$(/usr/libexec/PlistBuddy -c 'Print :UUID' "$plist_path")"
+            mkdir -p "$HOME/Library/MobileDevice/Provisioning Profiles"
+            cp "$profile_path" "$HOME/Library/MobileDevice/Provisioning Profiles/${profile_uuid}.mobileprovision"
+          }
+
+          install_profile "$main_profile_path"
+          install_profile "$clip_profile_path"
+
+          keychain_path="${RUNNER_TEMP}/appclip-signing.keychain-db"
+          keychain_password="$(openssl rand -base64 32)"
+          security create-keychain -p "$keychain_password" "$keychain_path"
+          security set-keychain-settings -lut 21600 "$keychain_path"
+          security unlock-keychain -p "$keychain_password" "$keychain_path"
+          existing_keychains="$(security list-keychains -d user | tr -d '"' | tr '\n' ' ')"
+          security list-keychains -d user -s "$keychain_path" $existing_keychains
+          security import "$p12_path" \
+            -k "$keychain_path" \
+            -P "$p12_password" \
+            -T /usr/bin/codesign \
+            -T /usr/bin/security
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$keychain_password" "$keychain_path"
+          security find-identity -v -p codesigning "$keychain_path"
+          unset p12_password keychain_password
+
       - name: Generate Swift OpenAPI client
         run: CI=true BBAGENT_NIX_SHELL_QUIET=1 nix develop --command ./gradlew copySwiftClientToAppClip
 
