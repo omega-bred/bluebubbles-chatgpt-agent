@@ -255,11 +255,16 @@ jobs:
             fi
 
             openssl pkcs12 -export \
+              -legacy \
+              -macalg SHA1 \
+              -keypbe PBE-SHA1-3DES \
+              -certpbe PBE-SHA1-3DES \
               -inkey "${bootstrap_dir}/distribution.key" \
               -in "$certificate_pem" \
               -out "${bootstrap_dir}/distribution.p12" \
               -passout "pass:${p12_password}" \
               -name "BlueChat CI iOS Distribution"
+            openssl pkcs12 -legacy -in "${bootstrap_dir}/distribution.p12" -noout -passin "pass:${p12_password}"
 
             delete_existing_ci_profiles() {
               local profiles_json="${bootstrap_dir}/profiles.json"
