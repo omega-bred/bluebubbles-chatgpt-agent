@@ -154,10 +154,17 @@ jobs:
               exit 1
             fi
 
-            printf '%s' "$certificate_content" | base64 -D > "${bootstrap_dir}/distribution.cer"
+            certificate_pem="${bootstrap_dir}/distribution.pem"
+            if printf '%s' "$certificate_content" | grep -q -- '-----BEGIN CERTIFICATE-----'; then
+              printf '%s\n' "$certificate_content" > "$certificate_pem"
+            else
+              printf '%s' "$certificate_content" | base64 -D > "${bootstrap_dir}/distribution.der"
+              openssl x509 -inform DER -in "${bootstrap_dir}/distribution.der" -out "$certificate_pem"
+            fi
+
             openssl pkcs12 -export \
               -inkey "${bootstrap_dir}/distribution.key" \
-              -in "${bootstrap_dir}/distribution.cer" \
+              -in "$certificate_pem" \
               -out "${bootstrap_dir}/distribution.p12" \
               -passout "pass:${p12_password}" \
               -name "BlueChat CI iOS Distribution"
