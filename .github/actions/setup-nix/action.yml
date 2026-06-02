@@ -9,6 +9,10 @@ inputs:
     description: Cachix auth token. When present and enabled, CI can push store paths.
     required: false
     default: ''
+  op-service-account-token:
+    description: 1Password service account token used to read the Cachix auth token.
+    required: false
+    default: ''
   enable-cachix-push:
     description: Whether this job is allowed to push store paths to Cachix.
     required: false
@@ -31,18 +35,35 @@ runs:
         name: bluebubbles-chatgpt-agent
         skipPush: true
 
+    - name: Configure 1Password service account
+      if: ${{ inputs['enable-cachix-push'] == 'true' && inputs['op-service-account-token'] != '' }}
+      uses: 1password/load-secrets-action/configure@581a835fb51b8e7ec56b71cf2ffddd7e68bb25e0
+      with:
+        service-account-token: ${{ inputs['op-service-account-token'] }}
+
+    - name: Load Cachix auth token
+      if: ${{ inputs['enable-cachix-push'] == 'true' && inputs['op-service-account-token'] != '' }}
+      uses: 1password/load-secrets-action@581a835fb51b8e7ec56b71cf2ffddd7e68bb25e0
+      with:
+        export-env: true
+      env:
+        CACHIX_AUTH_TOKEN: op://tyum5kfqny2dlv7mufamoiavyi/t66tea5yye2s4wsray4de7fhxa/password
+
     - name: Check Cachix write token
       id: cachix_token
       if: ${{ inputs['enable-cachix-push'] == 'true' }}
       shell: bash
       env:
-        CACHIX_AUTH_TOKEN: ${{ inputs['cachix-auth-token'] }}
+        INPUT_CACHIX_AUTH_TOKEN: ${{ inputs['cachix-auth-token'] }}
       run: |
-        if [ -n "$CACHIX_AUTH_TOKEN" ]; then
+        cachix_auth_token="${INPUT_CACHIX_AUTH_TOKEN:-${CACHIX_AUTH_TOKEN:-}}"
+        if [ -n "$cachix_auth_token" ]; then
+          echo "::add-mask::$cachix_auth_token"
           echo "enabled=true" >> "$GITHUB_OUTPUT"
+          echo "auth-token=$cachix_auth_token" >> "$GITHUB_OUTPUT"
         else
           echo "enabled=false" >> "$GITHUB_OUTPUT"
-          echo "CACHIX_AUTH_TOKEN is not set; Cachix push disabled."
+          echo "CACHIX_AUTH_TOKEN was not provided directly or loaded from 1Password; Cachix push disabled."
         fi
 
     - name: Enable Cachix push
@@ -50,4 +71,4 @@ runs:
       uses: cachix/cachix-action@02b16339eddcf6ea27126a830c7f1992855cae13
       with:
         name: bluebubbles-chatgpt-agent
-        authToken: ${{ inputs['cachix-auth-token'] }}
+        authToken: ${{ steps.cachix_token.outputs.auth-token }}
