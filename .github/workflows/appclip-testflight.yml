@@ -32,7 +32,7 @@ permissions:
 jobs:
   testflight:
     name: Build and Upload TestFlight
-    runs-on: macos-latest
+    runs-on: macos-26
     environment: app-store-connect
     timeout-minutes: 90
     steps:
@@ -50,6 +50,7 @@ jobs:
         run: |
           sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
           xcodebuild -version
+          xcrun --sdk iphoneos --show-sdk-version
 
       - name: Show Nix toolchain
         run: |
