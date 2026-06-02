@@ -306,7 +306,7 @@ jobs:
             create_profile "$CLIP_PROFILE_NAME" "$clip_bundle_resource_id" "${bootstrap_dir}/clip-app-store.mobileprovision"
 
             op item create \
-              --category secure-note \
+              --category "Secure Note" \
               --vault "$ASC_VAULT_ID" \
               --title "$SIGNING_ITEM_TITLE" \
               "p12_password[password]=${p12_password}" \
