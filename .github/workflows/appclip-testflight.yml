@@ -479,6 +479,27 @@ jobs:
         run: |
           set -euo pipefail
 
+          asc_clean_env() {
+            BBAGENT_NIX_SHELL_QUIET=1 nix develop --command env \
+              -u CC \
+              -u CXX \
+              -u LD \
+              -u AR \
+              -u AS \
+              -u NM \
+              -u RANLIB \
+              -u STRIP \
+              -u CFLAGS \
+              -u CPPFLAGS \
+              -u CXXFLAGS \
+              -u LDFLAGS \
+              -u NIX_CFLAGS_COMPILE \
+              -u NIX_LDFLAGS \
+              -u MACOSX_DEPLOYMENT_TARGET \
+              -u SDKROOT \
+              asc "$@"
+          }
+
           mkdir -p appclip/.asc/artifacts
 
           test_notes="$INPUT_TEST_NOTES"
@@ -522,37 +543,68 @@ jobs:
             --export-xcodebuild-flag "$ASC_ISSUER_ID"
           )
 
+          asc_clean_env "${args[@]}"
+
+          build_json="$(
+            asc_clean_env builds wait \
+              --app "$ASC_APP_ID" \
+              --build-number "$BUILD_NUMBER" \
+              --version "$VERSION_NUMBER" \
+              --platform IOS \
+              --timeout 60m \
+              --poll-interval 30s \
+              --output json
+          )"
+          build_id="$(
+            printf '%s' "$build_json" |
+              BBAGENT_NIX_SHELL_QUIET=1 nix develop --command jq -r '.data.id // .id // empty'
+          )"
+          if [ -z "$build_id" ]; then
+            echo "Could not resolve processed build ID for ${VERSION_NUMBER} (${BUILD_NUMBER})" >&2
+            exit 1
+          fi
+
+          asc_clean_env builds update \
+            --build-id "$build_id" \
+            --uses-non-exempt-encryption=false \
+            --output json >/dev/null
+
           beta_groups="$INPUT_BETA_GROUPS"
           if [ -n "$beta_groups" ]; then
-            args+=(--group "$beta_groups")
+            group_args=(
+              builds add-groups
+              --build-id "$build_id"
+              --group "$beta_groups"
+              --output json
+            )
+            if [ "$INPUT_SUBMIT_BETA_REVIEW" = "true" ]; then
+              group_args+=(--submit --confirm)
+            fi
+
+            group_assigned=false
+            for ((attempt = 1; attempt <= 20; attempt++)); do
+              if asc_clean_env "${group_args[@]}"; then
+                group_assigned=true
+                break
+              fi
+
+              if [ "$attempt" -eq 20 ]; then
+                break
+              fi
+
+              echo "Build is not assignable to TestFlight groups yet; retrying in 30s (${attempt}/20)."
+              sleep 30
+            done
+
+            if [ "$group_assigned" != true ]; then
+              echo "Could not assign build ${build_id} to TestFlight group(s): ${beta_groups}" >&2
+              exit 1
+            fi
           fi
 
           if [ "$INPUT_NOTIFY_TESTERS" = "true" ]; then
-            args+=(--notify)
+            asc_clean_env testflight notifications send --build-id "$build_id" --output json
           fi
-
-          if [ "$INPUT_SUBMIT_BETA_REVIEW" = "true" ]; then
-            args+=(--submit --confirm)
-          fi
-
-          BBAGENT_NIX_SHELL_QUIET=1 nix develop --command env \
-            -u CC \
-            -u CXX \
-            -u LD \
-            -u AR \
-            -u AS \
-            -u NM \
-            -u RANLIB \
-            -u STRIP \
-            -u CFLAGS \
-            -u CPPFLAGS \
-            -u CXXFLAGS \
-            -u LDFLAGS \
-            -u NIX_CFLAGS_COMPILE \
-            -u NIX_LDFLAGS \
-            -u MACOSX_DEPLOYMENT_TARGET \
-            -u SDKROOT \
-            asc "${args[@]}"
 
       - name: Clean up ephemeral App Clip signing assets
         if: always()
