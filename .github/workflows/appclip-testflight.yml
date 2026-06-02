@@ -76,7 +76,11 @@ jobs:
         run: |
           set -euo pipefail
 
-          if [ -z "$ASC_KEY_ID" ] || [ -z "$ASC_ISSUER_ID" ] || [ -z "$ASC_PRIVATE_KEY" ] || [ -z "$ASC_APP_ID" ]; then
+          if [ -z "${ASC_PRIVATE_KEY:-}" ]; then
+            ASC_PRIVATE_KEY="$(op read 'op://tyum5kfqny2dlv7mufamoiavyi/gen33eow25m5fcsy2ocispkwyy/password')"
+          fi
+
+          if [ -z "${ASC_KEY_ID:-}" ] || [ -z "${ASC_ISSUER_ID:-}" ] || [ -z "${ASC_PRIVATE_KEY:-}" ] || [ -z "${ASC_APP_ID:-}" ]; then
             echo "Missing one or more App Store Connect fields from 1Password" >&2
             exit 1
           fi
