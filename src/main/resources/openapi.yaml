@@ -12,6 +12,8 @@ tags:
     description: BlueBubbles webhook endpoints
   - name: lxmf
     description: LXMF bridge webhook endpoints
+  - name: twilioRcs
+    description: Twilio RCS Messaging webhook endpoints
   - name: gcal
     description: Google Calendar OAuth endpoints
   - name: websiteAccount
@@ -77,6 +79,45 @@ paths:
                 type: object
         '401':
           description: Missing or invalid bridge secret
+          content:
+            application/json:
+              schema:
+                type: object
+  /api/v1/twilioRcs/receive.messages:
+    post:
+      operationId: twilioRcsReceiveMessages
+      tags:
+        - twilioRcs
+      summary: Twilio RCS incoming message webhook
+      description: Receives form-encoded inbound RCS messages from Twilio Programmable Messaging.
+      parameters:
+        - name: X-Twilio-Signature
+          in: header
+          description: Twilio request signature used to authenticate webhook calls.
+          required: false
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/TwilioRcsMessageReceivedRequest'
+      responses:
+        '200':
+          description: Message processed
+          content:
+            application/xml:
+              schema:
+                type: string
+        '400':
+          description: Missing required Twilio message fields
+          content:
+            application/json:
+              schema:
+                type: object
+        '401':
+          description: Missing or invalid Twilio signature
           content:
             application/json:
               schema:
@@ -1079,6 +1120,7 @@ components:
             - imessage_email
             - imessage_phone
             - lxmf_address
+            - twilio_rcs_phone
         identifier:
           type: string
         normalized_identifier:
@@ -1868,6 +1910,7 @@ components:
         - imessage_email
         - imessage_phone
         - lxmf_address
+        - twilio_rcs_phone
         - website_subject
         - website_email
     AdminAccountBlockRequest:
@@ -2402,6 +2445,45 @@ components:
           type: boolean
           nullable: true
       additionalProperties: true
+    TwilioRcsMessageReceivedRequest:
+      type: object
+      required:
+        - MessageSid
+        - From
+        - To
+      properties:
+        MessageSid:
+          type: string
+          description: Twilio message SID for the inbound message.
+        SmsMessageSid:
+          type: string
+          nullable: true
+          description: Legacy alias for the Twilio message SID.
+        AccountSid:
+          type: string
+          nullable: true
+        MessagingServiceSid:
+          type: string
+          nullable: true
+        From:
+          type: string
+          description: "User endpoint that sent the message. RCS webhooks may include an rcs: channel prefix."
+        To:
+          type: string
+          description: Twilio RCS sender or fallback endpoint that received the message.
+        Body:
+          type: string
+          nullable: true
+        NumMedia:
+          type: string
+          nullable: true
+          description: Count of inbound media attachments. MediaUrlN and MediaContentTypeN fields may accompany this form body.
+        ChannelPrefix:
+          type: string
+          nullable: true
+        ProfileName:
+          type: string
+          nullable: true
     BlueBubblesMessageReceivedRequest:
       type: object
       required:

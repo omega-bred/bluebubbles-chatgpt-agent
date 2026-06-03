@@ -98,7 +98,8 @@ public class AccountModerationService {
                   () -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Account not found"));
       case AgentAccountIdentifiers.IMESSAGE_EMAIL,
           AgentAccountIdentifiers.IMESSAGE_PHONE,
-          AgentAccountIdentifiers.LXMF_ADDRESS ->
+          AgentAccountIdentifiers.LXMF_ADDRESS,
+          AgentAccountIdentifiers.TWILIO_RCS_PHONE ->
           resolveTransportIdentity(targetType, target, createIdentity);
       default ->
           throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Unsupported target type");

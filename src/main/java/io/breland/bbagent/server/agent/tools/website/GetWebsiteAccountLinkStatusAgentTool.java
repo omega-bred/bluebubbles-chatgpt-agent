@@ -35,8 +35,8 @@ public class GetWebsiteAccountLinkStatusAgentTool implements ToolProvider {
           String chatGuid,
       @Schema(
               description =
-                  "Optional transport to check, such as bluebubbles or lxmf. Defaults to the"
-                      + " current incoming message transport.")
+                  "Optional transport to check, such as bluebubbles, lxmf, or twilio_rcs."
+                      + " Defaults to the current incoming message transport.")
           @JsonProperty("transport")
           String transport) {}
 

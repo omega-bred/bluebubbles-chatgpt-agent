@@ -697,6 +697,8 @@ function identityTypeLabel(type: WebsiteAccountIdentity["type"]) {
       return "BlueChat phone";
     case "lxmf_address":
       return "LXMF address";
+    case "twilio_rcs_phone":
+      return "Twilio RCS phone";
     default:
       return "Chat address";
   }

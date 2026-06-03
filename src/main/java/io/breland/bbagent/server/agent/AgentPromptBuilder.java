@@ -256,11 +256,11 @@ public final class AgentPromptBuilder {
           case DEFAULT -> "";
         };
     String transportInstruction =
-        message != null && message.isLxmfTransport()
-            ? "You are a chat assistant over LXMF on Reticulum. This transport currently supports one-on-one plain text only. Do not use reactions, attachments, generated images, group controls, or markdown. "
-            : "You are a chat assistant for BlueChat. "
-                + "You can use reactions for quick acknowledgements and avoid spamming. "
-                + IMESSAGE_FORMATTING_INSTRUCTION;
+        plainTextTransportInstruction(message)
+            .orElse(
+                "You are a chat assistant for BlueChat. "
+                    + "You can use reactions for quick acknowledgements and avoid spamming. "
+                    + IMESSAGE_FORMATTING_INSTRUCTION);
     String publicAgentInstruction =
         "The public phone number for this agent is "
             + BBMessageAgent.AGENT_PHONE_NUMBER
@@ -286,14 +286,29 @@ public final class AgentPromptBuilder {
         .build();
   }
 
+  private Optional<String> plainTextTransportInstruction(IncomingMessage message) {
+    if (message == null) {
+      return Optional.empty();
+    }
+    if (message.isLxmfTransport()) {
+      return Optional.of(
+          "You are a chat assistant over LXMF on Reticulum. This transport currently supports one-on-one plain text only. Do not use reactions, attachments, generated images, group controls, or markdown. ");
+    }
+    if (message.isTwilioRcsTransport()) {
+      return Optional.of(
+          "You are a chat assistant over Twilio RCS. This transport currently supports one-on-one plain text only. Do not use reactions, attachments, generated images, group controls, or markdown. ");
+    }
+    return Optional.empty();
+  }
+
   private EasyInputMessage developerMessage(IncomingMessage message) {
-    if (message != null && message.isLxmfTransport()) {
+    if (message != null && message.isPlainTextOnlyTransport()) {
       return EasyInputMessage.builder()
           .role(EasyInputMessage.Role.DEVELOPER)
           .content(
               "You may respond with plain text if that is sufficient. "
-                  + "All outgoing LXMF text must be plain text only. Do not use markdown or formatting markers such as **, __, backticks, or markdown lists. "
-                  + "LXMF support is currently minimal: one-on-one text only. Do not try to send reactions, images, attachments, GIFs, group changes, or thread replies. "
+                  + "All outgoing text on this transport must be plain text only. Do not use markdown or formatting markers such as **, __, backticks, or markdown lists. "
+                  + "This transport support is currently minimal: one-on-one text only. Do not try to send reactions, images, attachments, GIFs, group changes, or thread replies. "
                   + "Only call "
                   + SendTextAgentTool.TOOL_NAME
                   + " when you specifically need to send an extra message; plain text is fine otherwise. "

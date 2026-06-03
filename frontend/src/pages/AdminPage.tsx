@@ -59,6 +59,7 @@ const accountBlockTargetTypes: Array<{ value: AdminAccountBlockTargetType; label
   { value: "imessage_email", label: "BlueChat email" },
   { value: "imessage_phone", label: "BlueChat phone" },
   { value: "lxmf_address", label: "LXMF address" },
+  { value: "twilio_rcs_phone", label: "Twilio RCS phone" },
   { value: "website_subject", label: "Website subject" },
   { value: "website_email", label: "Website email" },
 ];

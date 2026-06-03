@@ -40,4 +40,15 @@ class AgentAccountIdentifiersTest {
     assertEquals("abc123", normalized.value());
     assertTrue(AgentAccountIdentifiers.equivalent("+1 555 123 4567", "5551234567"));
   }
+
+  @Test
+  void normalizesTwilioRcsPhoneSeparatelyFromImessagePhones() {
+    var normalized =
+        AgentAccountIdentifiers.normalizeMessageIdentity(
+                IncomingMessage.TRANSPORT_TWILIO_RCS, "rcs:+1 (555) 123-4567")
+            .orElseThrow();
+
+    assertEquals(AgentAccountIdentifiers.TWILIO_RCS_PHONE, normalized.type());
+    assertEquals("+15551234567", normalized.value());
+  }
 }

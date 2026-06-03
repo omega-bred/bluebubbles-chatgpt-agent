@@ -309,6 +309,9 @@ public class WebsiteAccountService {
     if (IncomingMessage.TRANSPORT_LXMF.equalsIgnoreCase(transport)) {
       return IncomingMessage.stripTransportPrefix(chatGuid);
     }
+    if (IncomingMessage.TRANSPORT_TWILIO_RCS.equalsIgnoreCase(transport)) {
+      return IncomingMessage.stripTransportPrefix(chatGuid);
+    }
     return sender;
   }
 

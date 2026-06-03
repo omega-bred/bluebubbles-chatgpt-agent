@@ -16,6 +16,14 @@ spec:
 apiVersion: onepassword.com/v1
 kind: OnePasswordItem
 metadata:
+  name: twilio-rcs-bbagent #this name will also be used for naming the generated kubernetes secret
+  namespace: bluebubbles-chatgpt-agent
+spec:
+  itemPath: "vaults/Kubernetes/items/twilio-rcs-bbagent"
+---
+apiVersion: onepassword.com/v1
+kind: OnePasswordItem
+metadata:
   name: giphy-api-key #this name will also be used for naming the generated kubernetes secret
   namespace: bluebubbles-chatgpt-agent
 spec:
@@ -210,6 +218,42 @@ spec:
                   name: lxmf-bridge-webhook-secret
             - name: LXMF_BRIDGE_BASE_URL
               value: "http://lxmf-bridge.bluebubbles-chatgpt-agent.svc.cluster.local:8091"
+            - name: TWILIO_RCS_ACCOUNT_SID
+              valueFrom:
+                secretKeyRef:
+                  key: "account-sid"
+                  name: twilio-rcs-bbagent
+                  optional: true
+            - name: TWILIO_RCS_AUTH_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  key: "auth-token"
+                  name: twilio-rcs-bbagent
+                  optional: true
+            - name: TWILIO_RCS_MESSAGING_SERVICE_SID
+              valueFrom:
+                secretKeyRef:
+                  key: "messaging-service-sid"
+                  name: twilio-rcs-bbagent
+                  optional: true
+            - name: TWILIO_RCS_FROM
+              valueFrom:
+                secretKeyRef:
+                  key: "from"
+                  name: twilio-rcs-bbagent
+                  optional: true
+            - name: TWILIO_RCS_FALLBACK_FROM
+              valueFrom:
+                secretKeyRef:
+                  key: "fallback-from"
+                  name: twilio-rcs-bbagent
+                  optional: true
+            - name: TWILIO_RCS_WEBHOOK_URL
+              value: "https://bluechat.bre.land/api/v1/twilioRcs/receive.messages"
+            - name: TWILIO_RCS_VALIDATE_WEBHOOK_SIGNATURES
+              value: "true"
+            - name: TWILIO_RCS_ONLY
+              value: "false"
             - name: BBAGENT_CANARY_MARKER
               value: "BBAGENT_LXMF_CANARY_V1"
             - name: BBAGENT_CANARY_LABEL

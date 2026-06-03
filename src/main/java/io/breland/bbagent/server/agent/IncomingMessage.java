@@ -25,6 +25,7 @@ public record IncomingMessage(
 
   public static final String TRANSPORT_BLUEBUBBLES = "bluebubbles";
   public static final String TRANSPORT_LXMF = "lxmf";
+  public static final String TRANSPORT_TWILIO_RCS = "twilio_rcs";
   public static final String METRIC_TRANSPORT_IMESSAGE = "imessage";
 
   public IncomingMessage(
@@ -153,9 +154,20 @@ public record IncomingMessage(
     return TRANSPORT_LXMF.equalsIgnoreCase(transportOrDefault());
   }
 
+  public boolean isTwilioRcsTransport() {
+    return TRANSPORT_TWILIO_RCS.equalsIgnoreCase(transportOrDefault());
+  }
+
+  public boolean isPlainTextOnlyTransport() {
+    return isLxmfTransport() || isTwilioRcsTransport();
+  }
+
   public String metricTransport() {
     if (isLxmfTransport()) {
       return TRANSPORT_LXMF;
+    }
+    if (isTwilioRcsTransport()) {
+      return TRANSPORT_TWILIO_RCS;
     }
     if (isBlueBubblesTransport()) {
       return METRIC_TRANSPORT_IMESSAGE;

@@ -48,7 +48,12 @@ def opSecretMappings = [
     "op://Kubernetes/cap-bbagent-contact/site-key": "CAP_CONTACT_SITE_KEY",
     "op://Kubernetes/cap-bbagent-contact/secret-key": "CAP_CONTACT_SECRET_KEY",
     "op://Kubernetes/linear-bbagent/api-key": "LINEAR_API_KEY",
-    "op://Kubernetes/linear-bbagent/team-id": "LINEAR_TEAM_ID"
+    "op://Kubernetes/linear-bbagent/team-id": "LINEAR_TEAM_ID",
+    "op://Kubernetes/twilio-rcs-bbagent/account-sid": "TWILIO_RCS_ACCOUNT_SID",
+    "op://Kubernetes/twilio-rcs-bbagent/auth-token": "TWILIO_RCS_AUTH_TOKEN",
+    "op://Kubernetes/twilio-rcs-bbagent/messaging-service-sid": "TWILIO_RCS_MESSAGING_SERVICE_SID",
+    "op://Kubernetes/twilio-rcs-bbagent/from": "TWILIO_RCS_FROM",
+    "op://Kubernetes/twilio-rcs-bbagent/fallback-from": "TWILIO_RCS_FALLBACK_FROM"
 ]
 
 def resolveSecret = { String propName, String opRef ->
@@ -240,6 +245,7 @@ dependencies {
     implementation 'com.auth0:java-jwt:4.5.0'
     implementation 'com.stripe:stripe-java:32.1.0'
     implementation 'com.apple.itunes.storekit:app-store-server-library:5.2.0'
+    implementation 'com.twilio.sdk:twilio:12.1.1'
 
     // MCP
     implementation 'io.modelcontextprotocol.sdk:mcp-core:1.1.1'

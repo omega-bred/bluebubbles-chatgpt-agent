@@ -68,7 +68,7 @@ class IncomingMessageTest {
   }
 
   @Test
-  void metricTransportMapsBlueBubblesToImessageAndPreservesLxmf() {
+  void metricTransportMapsBlueBubblesToImessageAndPreservesOtherTransports() {
     IncomingMessage imessage =
         new IncomingMessage(
             IncomingMessage.TRANSPORT_BLUEBUBBLES,
@@ -97,8 +97,23 @@ class IncomingMessageTest {
             Instant.now(),
             List.of(),
             false);
+    IncomingMessage twilioRcs =
+        new IncomingMessage(
+            IncomingMessage.TRANSPORT_TWILIO_RCS,
+            "twilio_rcs:+15551234567",
+            "SM123",
+            null,
+            "hello",
+            false,
+            "Twilio RCS",
+            "+15551234567",
+            false,
+            Instant.now(),
+            List.of(),
+            false);
 
     assertEquals(IncomingMessage.METRIC_TRANSPORT_IMESSAGE, imessage.metricTransport());
     assertEquals(IncomingMessage.TRANSPORT_LXMF, lxmf.metricTransport());
+    assertEquals(IncomingMessage.TRANSPORT_TWILIO_RCS, twilioRcs.metricTransport());
   }
 }

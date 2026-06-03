@@ -9,6 +9,7 @@ public final class AgentAccountIdentifiers {
   public static final String IMESSAGE_EMAIL = "imessage_email";
   public static final String IMESSAGE_PHONE = "imessage_phone";
   public static final String LXMF_ADDRESS = "lxmf_address";
+  public static final String TWILIO_RCS_PHONE = "twilio_rcs_phone";
 
   private static final Pattern NON_DIGITS = Pattern.compile("\\D+");
   private static final Pattern WHITESPACE = Pattern.compile("\\s+");
@@ -32,6 +33,15 @@ public final class AgentAccountIdentifiers {
       String value = compact(clean);
       return Optional.of(new NormalizedIdentifier(LXMF_ADDRESS, value, value));
     }
+    if (IncomingMessage.TRANSPORT_TWILIO_RCS.equalsIgnoreCase(transportKey)) {
+      return normalizePhone(clean)
+          .map(value -> new NormalizedIdentifier(TWILIO_RCS_PHONE, value, value))
+          .or(
+              () -> {
+                String value = compact(clean);
+                return Optional.of(new NormalizedIdentifier(TWILIO_RCS_PHONE, value, value));
+              });
+    }
     return normalizeIMessage(clean);
   }
 
@@ -54,6 +64,14 @@ public final class AgentAccountIdentifiers {
           normalizePhone(clean).map(value -> new NormalizedIdentifier(type, value, value));
       case LXMF_ADDRESS ->
           Optional.of(new NormalizedIdentifier(type, compact(clean), compact(clean)));
+      case TWILIO_RCS_PHONE ->
+          normalizePhone(clean)
+              .map(value -> new NormalizedIdentifier(type, value, value))
+              .or(
+                  () -> {
+                    String value = compact(clean);
+                    return Optional.of(new NormalizedIdentifier(type, value, value));
+                  });
       default -> Optional.empty();
     };
   }
@@ -93,6 +111,9 @@ public final class AgentAccountIdentifiers {
     }
     if (lower.startsWith("tel:")) {
       return clean.substring("tel:".length());
+    }
+    if (lower.startsWith("rcs:")) {
+      return clean.substring("rcs:".length());
     }
     return clean;
   }
