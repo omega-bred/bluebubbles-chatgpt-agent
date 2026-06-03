@@ -63,6 +63,15 @@ public class BBMessageAgent {
   private static final int MAX_TOOL_OUTPUT_CHARS = 24_000;
   private static final int TOOL_OUTPUT_EDGE_CHARS = 12_000;
   public static final String IMESSAGE_SERVICE = "iMessage";
+  private static final String DEFAULT_TERMS_ACCEPTANCE_RESPONSES_MODEL = "openai/gpt-4.1-mini";
+  private static final double TERMS_ACCEPTANCE_MIN_CONFIDENCE = 0.85;
+  private static final String TERMS_ACCEPTANCE_VALIDATOR_PROMPT =
+      "You validate whether a user has accepted Terms of Use after being asked to agree. "
+          + "Return only compact JSON with fields agreement and confidence. "
+          + "agreement must be true only when the message clearly and affirmatively accepts or "
+          + "consents to the terms, such as yes, yep, sure, agreed, I accept, sounds good, or "
+          + "similar. Do not mark questions, jokes, refusals, uncertainty, conditions, or unrelated "
+          + "messages as agreement. confidence must be a number from 0 to 1.";
 
   @Getter private final ObjectMapper objectMapper;
   @Getter private final Map<String, ConversationState> conversations = new ConcurrentHashMap<>();
@@ -91,6 +100,12 @@ public class BBMessageAgent {
 
   @Value("${website.base-url:http://localhost:8080}")
   private String websiteBaseUrl = "http://localhost:8080";
+
+  @Value(
+      "${bbagent.terms.acceptance.responses-model:"
+          + DEFAULT_TERMS_ACCEPTANCE_RESPONSES_MODEL
+          + "}")
+  private String termsAcceptanceResponsesModel = DEFAULT_TERMS_ACCEPTANCE_RESPONSES_MODEL;
 
   @Autowired
   public BBMessageAgent(
@@ -312,6 +327,13 @@ public class BBMessageAgent {
     return transport.sendText(message, new OutgoingTextMessage(text, replyTarget, null, null));
   }
 
+  public boolean sendTextUnmetered(IncomingMessage message, OutgoingTextMessage outgoingMessage) {
+    if (message == null || outgoingMessage == null || outgoingMessage.text() == null) {
+      return false;
+    }
+    return transportRegistry.resolve(message).sendText(message, outgoingMessage);
+  }
+
   public boolean sendTextFromTool(
       IncomingMessage message,
       OutgoingTextMessage outgoingMessage,
@@ -508,6 +530,71 @@ public class BBMessageAgent {
       return null;
     }
   }
+
+  public boolean isHighConfidenceTermsAgreement(String text) {
+    if (text == null || text.isBlank()) {
+      return false;
+    }
+    String cleanModel =
+        StringUtils.defaultIfBlank(
+            termsAcceptanceResponsesModel, DEFAULT_TERMS_ACCEPTANCE_RESPONSES_MODEL);
+    ResponseCreateParams params =
+        ResponseCreateParams.builder()
+            .model(cleanModel)
+            .maxOutputTokens(80)
+            .temperature(0.0)
+            .inputOfResponse(
+                List.of(
+                    ResponseInputItem.ofEasyInputMessage(
+                        EasyInputMessage.builder()
+                            .role(EasyInputMessage.Role.DEVELOPER)
+                            .content(TERMS_ACCEPTANCE_VALIDATOR_PROMPT)
+                            .build()),
+                    ResponseInputItem.ofEasyInputMessage(
+                        EasyInputMessage.builder()
+                            .role(EasyInputMessage.Role.USER)
+                            .content("User message: " + text.trim())
+                            .build())))
+            .build();
+    try {
+      Response response = openAiSupplier.get().responses().create(params);
+      TermsAgreementDecision decision =
+          parseTermsAgreementDecision(AgentResponseHelper.extractResponseText(response));
+      boolean accepted =
+          decision.agreement() && decision.confidence() >= TERMS_ACCEPTANCE_MIN_CONFIDENCE;
+      log.info(
+          "Terms agreement validator result accepted={} confidence={} model={}",
+          accepted,
+          decision.confidence(),
+          cleanModel);
+      return accepted;
+    } catch (RuntimeException e) {
+      log.warn("Terms agreement validation failed", e);
+      return false;
+    }
+  }
+
+  private TermsAgreementDecision parseTermsAgreementDecision(String text) {
+    if (text == null || text.isBlank()) {
+      return new TermsAgreementDecision(false, 0.0);
+    }
+    String trimmed = text.trim();
+    int objectStart = trimmed.indexOf('{');
+    int objectEnd = trimmed.lastIndexOf('}');
+    if (objectStart >= 0 && objectEnd > objectStart) {
+      trimmed = trimmed.substring(objectStart, objectEnd + 1);
+    }
+    try {
+      JsonNode node = objectMapper.readTree(trimmed);
+      return new TermsAgreementDecision(
+          node.path("agreement").asBoolean(false), node.path("confidence").asDouble(0.0));
+    } catch (Exception e) {
+      log.warn("Failed to parse terms agreement validator response: {}", text, e);
+      return new TermsAgreementDecision(false, 0.0);
+    }
+  }
+
+  private record TermsAgreementDecision(boolean agreement, double confidence) {}
 
   private void recordLlmCallMetric(
       IncomingMessage message,

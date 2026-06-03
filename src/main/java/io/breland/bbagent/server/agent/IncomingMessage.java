@@ -182,6 +182,25 @@ public record IncomingMessage(
         isSystemMessage);
   }
 
+  public IncomingMessage withThreadOriginatorGuid(String newThreadOriginatorGuid) {
+    return new IncomingMessage(
+        transport,
+        chatGuid,
+        messageGuid,
+        newThreadOriginatorGuid,
+        text,
+        fromMe,
+        service,
+        sender,
+        isGroup,
+        timestamp,
+        attachments,
+        balloonBundleId,
+        associatedMessageGuid,
+        replyToGuid,
+        isSystemMessage);
+  }
+
   private static Instant parseTimestamp(Long value) {
     if (value == null) {
       return Instant.now();

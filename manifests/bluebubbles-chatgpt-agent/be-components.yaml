@@ -191,6 +191,8 @@ spec:
               value: "anthropic/claude-sonnet-4-6"
             - name: BBAGENT_GEMINI_RESPONSES_MODEL
               value: "gemini/gemini-3.5-flash"
+            - name: BBAGENT_TERMS_ACCEPTANCE_RESPONSES_MODEL
+              value: "openai/gpt-4.1-mini"
             - name: "BLUEBUBBLES_PATH"
               valueFrom:
                 secretKeyRef:

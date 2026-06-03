@@ -13,6 +13,7 @@ import io.breland.bbagent.server.agent.profile.AssistantResponsiveness;
 import io.breland.bbagent.server.agent.reactions.MessageReactionSupport;
 import io.breland.bbagent.server.agent.transport.MessageTransport;
 import io.breland.bbagent.server.agent.transport.MessageTransportRegistry;
+import io.breland.bbagent.server.agent.transport.OutgoingTextMessage;
 import io.breland.bbagent.server.agent.transport.bb.BBHttpClientWrapper;
 import io.breland.bbagent.server.agent.transport.bb.BlueBubblesPollSupport;
 import io.breland.bbagent.server.metrics.AgentMetricsService;
@@ -21,7 +22,6 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
-import java.util.Set;
 import java.util.UUID;
 import java.util.function.Supplier;
 import lombok.extern.slf4j.Slf4j;
@@ -240,40 +240,169 @@ public final class CadenceIncomingMessageHandler {
     if (resolved.account().getTermsAcceptedAt() != null) {
       return false;
     }
-    String reply;
-    if (isTermsAgreementText(message.text())) {
+    ConversationState.PendingTermsAcceptance pending = findPendingTermsAcceptance(state, message);
+    if (shouldValidateTermsAgreement(message, pending)
+        && messageAgent.isHighConfidenceTermsAgreement(message.text())) {
       try {
         profileService.acceptTerms(message);
       } catch (RuntimeException e) {
         log.warn("Failed to accept terms for {}", message, e);
-        reply =
-            "I couldn't save your Terms agreement just now. Please try replying YES again in a moment.";
-        sendAndRecordTermsGateReply(state, message, reply);
+        sendTermsGateReply(
+            message,
+            "I couldn't save your Terms agreement just now. Please try replying YES again in a moment.",
+            termsPromptReplyTarget(message, pending));
         return true;
       }
-      reply = BBMessageAgent.TERMS_ACCEPTED_REPLY;
-    } else {
-      reply = BBMessageAgent.TERMS_ACCEPTANCE_REPLY.formatted(termsUrl.get());
+      state.clearPendingTermsAcceptance(pending);
+      IncomingMessage messageToProcess = messageToProcessAfterTermsAccepted(message, pending);
+      processAcceptedMessage(state, messageToProcess);
+      return true;
     }
-    sendAndRecordTermsGateReply(state, message, reply);
+    ConversationState.PendingTermsAcceptance promptPending =
+        pending != null ? pending : recordPendingTermsAcceptance(state, message);
+    sendTermsGateReply(
+        message,
+        BBMessageAgent.TERMS_ACCEPTANCE_REPLY.formatted(termsUrl.get()),
+        termsPromptReplyTarget(message, promptPending));
     return true;
   }
 
-  private void sendAndRecordTermsGateReply(
-      ConversationState state, IncomingMessage message, String reply) {
-    if (messageAgent.sendThreadAwareTextUnmetered(message, reply) && state != null) {
-      messageAgent.recordAssistantTurnForCurrentMessage(message, reply, null);
-      messageAgent.updateThreadContext(state, message);
+  private ConversationState.PendingTermsAcceptance findPendingTermsAcceptance(
+      ConversationState state, IncomingMessage message) {
+    if (state == null || message == null) {
+      return null;
     }
+    String threadRootGuid = message.isGroup() ? termsAgreementThreadRootGuid(message) : null;
+    if (message.isGroup() && isBlank(threadRootGuid)) {
+      return null;
+    }
+    return state.getPendingTermsAcceptance(message.sender(), threadRootGuid);
   }
 
-  private static boolean isTermsAgreementText(String text) {
-    if (text == null) {
+  private ConversationState.PendingTermsAcceptance recordPendingTermsAcceptance(
+      ConversationState state, IncomingMessage message) {
+    if (state == null || message == null) {
+      return null;
+    }
+    String threadRootGuid = message.isGroup() ? termsPromptThreadRootGuid(message) : null;
+    return state.recordPendingTermsAcceptance(message, threadRootGuid);
+  }
+
+  private boolean shouldValidateTermsAgreement(
+      IncomingMessage message, ConversationState.PendingTermsAcceptance pending) {
+    if (message == null || message.text() == null || message.text().isBlank()) {
+      return false;
+    }
+    if (!message.isGroup()) {
+      return pending != null || mightBeTermsAgreement(message.text());
+    }
+    String threadRootGuid = termsAgreementThreadRootGuid(message);
+    return pending != null
+        && !isBlank(threadRootGuid)
+        && threadRootGuid.equals(pending.threadRootGuid());
+  }
+
+  private static boolean mightBeTermsAgreement(String text) {
+    if (text == null || text.isBlank()) {
       return false;
     }
     String normalized =
         text.trim().toLowerCase(Locale.ROOT).replaceAll("[\\p{Punct}\\s]+", " ").trim();
-    return Set.of("yes", "y", "agree", "i agree").contains(normalized);
+    if (normalized.isBlank()) {
+      return false;
+    }
+    return normalized.equals("y")
+        || normalized.equals("yes")
+        || normalized.equals("yeah")
+        || normalized.equals("yep")
+        || normalized.equals("sure")
+        || normalized.equals("ok")
+        || normalized.equals("okay")
+        || normalized.equals("agreed")
+        || normalized.equals("affirmative")
+        || normalized.contains("i agree")
+        || normalized.contains("i accept")
+        || normalized.contains("sounds good")
+        || normalized.startsWith("yes ")
+        || normalized.startsWith("yeah ")
+        || normalized.startsWith("yep ")
+        || normalized.startsWith("sure ")
+        || normalized.startsWith("ok ")
+        || normalized.startsWith("okay ");
+  }
+
+  private IncomingMessage messageToProcessAfterTermsAccepted(
+      IncomingMessage agreementMessage, ConversationState.PendingTermsAcceptance pending) {
+    if (pending == null || pending.originalMessage() == null) {
+      return agreementMessage;
+    }
+    IncomingMessage original = pending.originalMessage();
+    if (!isBlank(pending.threadRootGuid())) {
+      return original.withThreadOriginatorGuid(pending.threadRootGuid());
+    }
+    return original;
+  }
+
+  private void processAcceptedMessage(ConversationState state, IncomingMessage message) {
+    if (state == null || message == null) {
+      return;
+    }
+    synchronized (state) {
+      state.recordPendingIncomingTurn(message);
+      state.setLatestWorkflowMessageGuid(message.messageGuid());
+      state.setLatestWorkflowRunId(null);
+    }
+    recordAcceptedMessageMetric(message);
+    startCadenceWorkflow(state, message);
+  }
+
+  private void sendTermsGateReply(
+      IncomingMessage message, String reply, @Nullable String selectedMessageGuid) {
+    if (isBlank(selectedMessageGuid)) {
+      messageAgent.sendThreadAwareTextUnmetered(message, reply);
+      return;
+    }
+    messageAgent.sendTextUnmetered(
+        message, new OutgoingTextMessage(reply, selectedMessageGuid, null, null));
+  }
+
+  private String termsPromptReplyTarget(
+      IncomingMessage message, ConversationState.PendingTermsAcceptance pending) {
+    if (message == null || !message.isGroup()) {
+      return null;
+    }
+    if (pending != null && !isBlank(pending.threadRootGuid())) {
+      return pending.threadRootGuid();
+    }
+    return termsPromptThreadRootGuid(message);
+  }
+
+  private static String termsPromptThreadRootGuid(IncomingMessage message) {
+    if (message == null) {
+      return null;
+    }
+    String existingThreadRootGuid = termsAgreementThreadRootGuid(message);
+    if (!isBlank(existingThreadRootGuid)) {
+      return existingThreadRootGuid;
+    }
+    return message.messageGuid();
+  }
+
+  private static String termsAgreementThreadRootGuid(IncomingMessage message) {
+    if (message == null) {
+      return null;
+    }
+    if (!isBlank(message.threadOriginatorGuid())) {
+      return message.threadOriginatorGuid();
+    }
+    if (!isBlank(message.replyToGuid())) {
+      return message.replyToGuid();
+    }
+    return null;
+  }
+
+  private static boolean isBlank(String value) {
+    return value == null || value.isBlank();
   }
 
   private static boolean isSilentInvocation(String text) {

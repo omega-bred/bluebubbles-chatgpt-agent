@@ -6,6 +6,7 @@ import java.util.ArrayList;
 import java.util.Deque;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
@@ -28,6 +29,8 @@ public class ConversationState {
   private final Set<String> pendingIncomingMessageGuids = new HashSet<>();
   private final Set<String> pendingIncomingMessageFingerprints = new HashSet<>();
   private final Map<String, ThreadContext> threadContexts = new ConcurrentHashMap<>();
+  private final Map<String, PendingTermsAcceptance> pendingTermsAcceptances =
+      new ConcurrentHashMap<>();
 
   @Getter @Setter private String lastProcessedMessageGuid;
   @Getter @Setter private String lastProcessedMessageFingerprint;
@@ -183,11 +186,49 @@ public class ConversationState {
     return threadContexts.get(threadRootGuid);
   }
 
+  public synchronized PendingTermsAcceptance recordPendingTermsAcceptance(
+      IncomingMessage originalMessage, String threadRootGuid) {
+    if (originalMessage == null) {
+      return null;
+    }
+    PendingTermsAcceptance pending =
+        new PendingTermsAcceptance(
+            originalMessage,
+            normalize(threadRootGuid),
+            normalize(originalMessage.sender()),
+            Instant.now());
+    pendingTermsAcceptances.put(
+        termsAcceptanceKey(pending.sender(), pending.threadRootGuid()), pending);
+    return pending;
+  }
+
+  public synchronized PendingTermsAcceptance getPendingTermsAcceptance(
+      String sender, String threadRootGuid) {
+    return pendingTermsAcceptances.get(
+        termsAcceptanceKey(normalize(sender), normalize(threadRootGuid)));
+  }
+
+  public synchronized void clearPendingTermsAcceptance(PendingTermsAcceptance pending) {
+    if (pending == null) {
+      return;
+    }
+    pendingTermsAcceptances.remove(
+        termsAcceptanceKey(pending.sender(), pending.threadRootGuid()), pending);
+  }
+
   private static String normalize(String value) {
     if (value == null || value.isBlank()) {
       return null;
     }
     return value;
+  }
+
+  private static String termsAcceptanceKey(String sender, String threadRootGuid) {
+    String cleanSender = normalize(sender);
+    String cleanThreadRootGuid = normalize(threadRootGuid);
+    return (cleanSender == null ? "" : cleanSender.toLowerCase(Locale.ROOT))
+        + "|"
+        + (cleanThreadRootGuid == null ? "" : cleanThreadRootGuid);
   }
 
   private static void remember(Deque<String> order, Set<String> values, String value) {
@@ -223,4 +264,7 @@ public class ConversationState {
       return fingerprint != null && fingerprint.equals(currentFingerprint);
     }
   }
+
+  public record PendingTermsAcceptance(
+      IncomingMessage originalMessage, String threadRootGuid, String sender, Instant createdAt) {}
 }
