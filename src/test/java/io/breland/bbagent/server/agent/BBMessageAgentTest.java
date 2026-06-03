@@ -249,7 +249,7 @@ class BBMessageAgentTest {
         groupIncomingMessage(
             "iMessage;+;chat-group", "msg-group-unthreaded-yes", null, "yes", "Alice", 1_001L);
     IncomingMessage otherSenderThreadedAgreement =
-        groupIncomingMessage(
+        groupIncomingReplyMessage(
             "iMessage;+;chat-group",
             "msg-group-other-threaded-yes",
             "msg-group-original",
@@ -257,7 +257,7 @@ class BBMessageAgentTest {
             "Bob",
             1_002L);
     IncomingMessage threadedAgreement =
-        groupIncomingMessage(
+        groupIncomingReplyMessage(
             "iMessage;+;chat-group",
             "msg-group-threaded-yes",
             "msg-group-original",
@@ -1577,6 +1577,31 @@ class BBMessageAgentTest {
         true,
         Instant.ofEpochSecond(epochSecond),
         List.of(),
+        false);
+  }
+
+  private static IncomingMessage groupIncomingReplyMessage(
+      String chatGuid,
+      String messageGuid,
+      String replyToGuid,
+      String text,
+      String sender,
+      long epochSecond) {
+    return new IncomingMessage(
+        IncomingMessage.TRANSPORT_BLUEBUBBLES,
+        chatGuid,
+        messageGuid,
+        null,
+        text,
+        false,
+        "iMessage",
+        sender,
+        true,
+        Instant.ofEpochSecond(epochSecond),
+        List.of(),
+        null,
+        null,
+        replyToGuid,
         false);
   }
 

@@ -296,9 +296,10 @@ public final class CadenceIncomingMessageHandler {
     if (!message.isGroup()) {
       return pending != null || mightBeTermsAgreement(message.text());
     }
+    String threadRootGuid = termsAgreementThreadRootGuid(message);
     return pending != null
-        && !isBlank(message.threadOriginatorGuid())
-        && message.threadOriginatorGuid().equals(pending.threadRootGuid());
+        && !isBlank(threadRootGuid)
+        && threadRootGuid.equals(pending.threadRootGuid());
   }
 
   private static boolean mightBeTermsAgreement(String text) {
