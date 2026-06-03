@@ -22,6 +22,7 @@ def env(name, default=""):
 
 RUN_ID = env("CANARY_RUN_ID", str(uuid.uuid4()))
 MARKER = env("CANARY_MARKER", "BBAGENT_LXMF_CANARY_V1")
+INFERENCE_PROMPT = f"Reply exactly with: CANARY_OK {RUN_ID}"
 DISPLAY_NAME = env("CANARY_DISPLAY_NAME", "BlueChat Canary")
 BRIDGE_BASE_URL = env(
     "LXMF_BRIDGE_BASE_URL",
@@ -246,7 +247,7 @@ def run_canary(stage_durations):
 
     def terms_prompt():
         ensure_time_remaining("terms_prompt")
-        send_lxmf(bridge_hash, f"{MARKER} run_id={RUN_ID}", "terms_prompt")
+        send_lxmf(bridge_hash, f"{MARKER} run_id={RUN_ID}\n{INFERENCE_PROMPT}", "terms_prompt")
         return wait_for_reply(
             "terms_prompt",
             lambda content: "Terms of Use" in content and "Reply YES" in content,
@@ -257,20 +258,28 @@ def run_canary(stage_durations):
         send_lxmf(bridge_hash, "YES", "terms_acceptance")
         return wait_for_reply(
             "terms_acceptance",
-            lambda content: "all set" in content.lower() or "send your request" in content.lower(),
+            terms_acceptance_reply_matches,
         )
 
     def inference():
         ensure_time_remaining("inference")
-        prompt = f"Reply exactly with: CANARY_OK {RUN_ID}"
-        send_lxmf(bridge_hash, prompt, "inference")
+        send_lxmf(bridge_hash, INFERENCE_PROMPT, "inference")
         return wait_for_reply("inference", inference_reply_matches)
 
     run_stage("terms_prompt", terms_prompt, stage_durations)
-    run_stage("terms_acceptance", terms_acceptance, stage_durations)
-    inference_reply = run_stage("inference", inference, stage_durations)
+    terms_acceptance_reply = run_stage("terms_acceptance", terms_acceptance, stage_durations)
+    if inference_reply_matches(terms_acceptance_reply.get("content", "")):
+        inference_reply = terms_acceptance_reply
+        log("LXMF canary terms acceptance replay produced inference reply; skipping inference stage")
+    else:
+        inference_reply = run_stage("inference", inference, stage_durations)
     log(f"LXMF canary succeeded run_id={RUN_ID} reply={inference_reply.get('content', '')!r}")
     return time.time() - started
+
+
+def terms_acceptance_reply_matches(content):
+    text = (content or "").lower()
+    return "all set" in text or "send your request" in text or inference_reply_matches(content)
 
 
 def inference_reply_matches(content):

@@ -7,9 +7,9 @@ The bridge listens for LXMF deliveries, forwards normalized inbound messages to
 agent replies.
 
 The same image also includes `canary.py`, a one-shot LXMF free-tier canary. It
-creates a fresh identity, sends the configured canary marker, accepts Terms,
-runs a nonce inference prompt, and writes `bbagent_lxmf_canary_*` measurements
-directly to InfluxDB.
+creates a fresh identity, sends the configured canary marker with a nonce
+inference prompt, accepts Terms, handles either replayed or follow-up inference,
+and writes `bbagent_lxmf_canary_*` measurements directly to InfluxDB.
 
 Important environment variables:
 
