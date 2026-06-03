@@ -332,7 +332,6 @@
 
           nativeLibs = [
             pkgs.gfortran.cc.lib
-            pkgs.stdenv.cc.cc.lib
           ];
 
           nativeLibraryPath = lib.makeLibraryPath nativeLibs;
