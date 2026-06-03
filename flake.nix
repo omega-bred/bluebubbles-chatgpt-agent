@@ -489,6 +489,8 @@
             contents = lxmfBridgeImageRoot;
             extraCommands = ''
               mkdir -p app tmp var/tmp
+              ln -s ${lxmfBridge}/lib/lxmf-bridge/app.py app/app.py
+              ln -s ${lxmfBridge}/lib/lxmf-bridge/canary.py app/canary.py
               chmod 1777 tmp var/tmp
             '';
             config = {
