@@ -462,10 +462,51 @@
             '';
           };
 
-          lxmfBridgePython = pkgs.python313.withPackages (ps: [
-            ps.lxmf
-            ps.rns
-          ]);
+          lxmfBridgePython =
+            let
+              pythonPackages = pkgs.python313Packages;
+
+              rns = pythonPackages.buildPythonPackage rec {
+                pname = "rns";
+                version = "1.3.5";
+                pyproject = true;
+
+                src = pythonPackages.fetchPypi {
+                  inherit pname version;
+                  sha256 = "1qyfk28x4jfhb02qp4bmk1qmk6r7h952r9y02iwnllpsq2hmw533";
+                };
+
+                build-system = [ pythonPackages.setuptools ];
+
+                dependencies = [
+                  pythonPackages.cryptography
+                  pythonPackages.pyserial
+                ];
+
+                pythonImportsCheck = [ "RNS" ];
+              };
+
+              lxmf = pythonPackages.buildPythonPackage rec {
+                pname = "lxmf";
+                version = "1.0.1";
+                pyproject = true;
+
+                src = pythonPackages.fetchPypi {
+                  inherit pname version;
+                  sha256 = "1sh7ls1x8w596fqrfhcb2vpp3sr6db4qsba60f9d1jwnh92asbni";
+                };
+
+                build-system = [ pythonPackages.setuptools ];
+
+                dependencies = [ rns ];
+
+                pythonImportsCheck = [ "LXMF" ];
+              };
+            in
+            pkgs.python313.withPackages (_ps: [
+              lxmf
+              rns
+            ]);
 
           lxmfBridgeImageRoot = pkgs.buildEnv {
             name = "bluebubbles-chatgpt-agent-lxmf-bridge-image-root";
