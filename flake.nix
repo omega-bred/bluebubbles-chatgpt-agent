@@ -226,6 +226,301 @@
           ++ linuxNativeLibs;
         };
 
+      projectSourceFor =
+        pkgs:
+        let
+          inherit (pkgs) lib;
+          root = toString ./.;
+
+          relativePath =
+            path:
+            let
+              pathString = toString path;
+            in
+            if pathString == root then "" else lib.removePrefix "${root}/" pathString;
+
+          excluded =
+            rel:
+            rel == ".dev"
+            || lib.hasPrefix ".dev/" rel
+            || rel == ".git"
+            || lib.hasPrefix ".git/" rel
+            || rel == ".gradle"
+            || lib.hasPrefix ".gradle/" rel
+            || rel == ".idea"
+            || lib.hasPrefix ".idea/" rel
+            || rel == "build"
+            || lib.hasPrefix "build/" rel
+            || rel == "frontend/node_modules"
+            || lib.hasPrefix "frontend/node_modules/" rel
+            || rel == "frontend/dist"
+            || lib.hasPrefix "frontend/dist/" rel
+            || rel == "frontend/src/client"
+            || lib.hasPrefix "frontend/src/client/" rel
+            || rel == "nix/typescript-client/node_modules"
+            || lib.hasPrefix "nix/typescript-client/node_modules/" rel
+            || rel == "src/main/resources/static/client"
+            || lib.hasPrefix "src/main/resources/static/client/" rel
+            || rel == "src/main/resources/static/assets"
+            || lib.hasPrefix "src/main/resources/static/assets/" rel
+            || rel == "src/main/resources/static/index.html"
+            || rel == "src/main/resources/static/apple-touch-icon.png"
+            || rel == "src/main/resources/static/bluechat-icon.png"
+            || rel == "src/main/resources/static/favicon-32x32.png"
+            || rel == "src/main/resources/static/site.webmanifest"
+            || lib.hasPrefix "src/main/resources/static/icon-" rel
+            || lib.hasInfix "/__pycache__/" rel
+            || lib.hasSuffix ".pyc" rel
+            || lib.hasSuffix ".pyo" rel
+            || lib.hasSuffix ".class" rel
+            || lib.hasSuffix ".log" rel
+            || lib.hasSuffix ".DS_Store" rel;
+        in
+        lib.cleanSourceWith {
+          src = ./.;
+          filter = path: _type: !excluded (relativePath path);
+        };
+
+      lxmfBridgeSourceFor =
+        pkgs:
+        let
+          inherit (pkgs) lib;
+          root = toString ./lxmf-bridge;
+
+          relativePath =
+            path:
+            let
+              pathString = toString path;
+            in
+            if pathString == root then "" else lib.removePrefix "${root}/" pathString;
+        in
+        lib.cleanSourceWith {
+          src = ./lxmf-bridge;
+          filter =
+            path: _type:
+            let
+              rel = relativePath path;
+            in
+            !(lib.hasInfix "/__pycache__/" rel || lib.hasSuffix ".pyc" rel || lib.hasSuffix ".pyo" rel);
+        };
+
+      buildPackagesFor =
+        system:
+        let
+          pkgs = pkgsFor system;
+          inherit (pkgs) lib;
+
+          devTools = devToolsFor pkgs;
+          jdk = devTools.jdk;
+          nodejs = pkgs.nodejs_20;
+          gradle = pkgs.gradle_9.override {
+            java = jdk;
+            javaToolchains = [ jdk ];
+          };
+
+          projectSource = projectSourceFor pkgs;
+
+          frontendNodeModules = pkgs.importNpmLock.buildNodeModules {
+            npmRoot = ./frontend;
+            inherit nodejs;
+          };
+
+          typescriptClientNodeModules = pkgs.importNpmLock.buildNodeModules {
+            npmRoot = ./nix/typescript-client;
+            inherit nodejs;
+          };
+
+          nativeLibs = [
+            pkgs.gfortran.cc.lib
+          ];
+
+          nativeLibraryPath = lib.makeLibraryPath nativeLibs;
+
+          app = pkgs.stdenv.mkDerivation (finalAttrs: {
+            pname = "bluebubbles-chatgpt-agent";
+            version = "0.0.1-SNAPSHOT";
+
+            src = projectSource;
+
+            nativeBuildInputs = [
+              gradle
+              nodejs
+            ];
+
+            mitmCache = gradle.fetchDeps {
+              pkg = finalAttrs.finalPackage;
+              data = ./nix/gradle-deps.json;
+            };
+
+            __darwinAllowLocalNetworking = true;
+
+            gradleBuildTask = "build bootJar -x test";
+            gradleUpdateTask = "build bootJar -x test";
+            gradleFlags = [
+              "-Dfile.encoding=UTF-8"
+              "-Dorg.gradle.java.home=${jdk}"
+            ];
+
+            doCheck = false;
+
+            preBuild = ''
+              export BBAGENT_USE_NIX_NODE_MODULES=true
+              export JAVA_HOME=${jdk}
+              export NPM_PATH=${nodejs}/bin/npm
+
+              rm -rf frontend/node_modules
+              ln -s ${frontendNodeModules}/node_modules frontend/node_modules
+
+              gradle openApiGenerateTypescriptClient
+
+              rm -rf build/typescript-client-generated/node_modules
+              ln -s ${typescriptClientNodeModules}/node_modules build/typescript-client-generated/node_modules
+            '';
+
+            installPhase = ''
+              runHook preInstall
+
+              install -Dm644 \
+                build/libs/bluebubbles-chatgpt-agent-${finalAttrs.version}.jar \
+                "$out/share/bluebubbles-chatgpt-agent/bluebubbles-chatgpt-agent.jar"
+
+              runHook postInstall
+            '';
+
+            meta = {
+              description = "Spring Boot service for the BlueChat messaging agent";
+              license = lib.licenses.mit;
+              sourceProvenance = with lib.sourceTypes; [
+                fromSource
+                binaryBytecode
+              ];
+            };
+          });
+
+          appImageRoot = pkgs.buildEnv {
+            name = "bluebubbles-chatgpt-agent-image-root";
+            paths = [
+              app
+              jdk
+              pkgs.dockerTools.caCertificates
+              pkgs.findutils
+            ]
+            ++ nativeLibs;
+            pathsToLink = [
+              "/bin"
+              "/etc"
+              "/lib"
+              "/share"
+            ];
+          };
+
+          appImage = pkgs.dockerTools.buildLayeredImage {
+            name = "bluebubbles-chatgpt-agent";
+            tag = "nix";
+            created = "1970-01-01T00:00:01Z";
+            maxLayers = 120;
+            contents = appImageRoot;
+            config = {
+              Cmd = [
+                "${jdk}/bin/java"
+                "--add-opens=java.base/java.lang=ALL-UNNAMED"
+                "--add-opens=java.base/java.nio.charset=ALL-UNNAMED"
+                "-jar"
+                "${app}/share/bluebubbles-chatgpt-agent/bluebubbles-chatgpt-agent.jar"
+              ];
+              Env = [
+                "JAVA_HOME=${jdk}"
+                "LD_LIBRARY_PATH=${nativeLibraryPath}"
+                "PATH=${jdk}/bin:${pkgs.findutils}/bin"
+                "SSL_CERT_FILE=/etc/ssl/certs/ca-bundle.crt"
+              ];
+              ExposedPorts = {
+                "8080/tcp" = { };
+              };
+              WorkingDir = "/app";
+            };
+          };
+
+          lxmfBridge = pkgs.stdenvNoCC.mkDerivation {
+            pname = "bluebubbles-chatgpt-agent-lxmf-bridge";
+            version = "0.0.1";
+            src = lxmfBridgeSourceFor pkgs;
+
+            dontBuild = true;
+
+            installPhase = ''
+              runHook preInstall
+
+              install -Dm755 app.py "$out/lib/lxmf-bridge/app.py"
+              install -Dm755 canary.py "$out/lib/lxmf-bridge/canary.py"
+
+              runHook postInstall
+            '';
+          };
+
+          lxmfBridgePython = pkgs.python313.withPackages (ps: [
+            ps.lxmf
+            ps.rns
+          ]);
+
+          lxmfBridgeImageRoot = pkgs.buildEnv {
+            name = "bluebubbles-chatgpt-agent-lxmf-bridge-image-root";
+            paths = [
+              lxmfBridge
+              lxmfBridgePython
+              pkgs.dockerTools.caCertificates
+            ];
+            pathsToLink = [
+              "/bin"
+              "/etc"
+              "/lib"
+            ];
+          };
+
+          lxmfBridgeImage = pkgs.dockerTools.buildLayeredImage {
+            name = "bluebubbles-chatgpt-agent-lxmf-bridge";
+            tag = "nix";
+            created = "1970-01-01T00:00:01Z";
+            maxLayers = 120;
+            contents = lxmfBridgeImageRoot;
+            config = {
+              Cmd = [
+                "${lxmfBridgePython}/bin/python"
+                "${lxmfBridge}/lib/lxmf-bridge/app.py"
+              ];
+              Env = [
+                "PYTHONUNBUFFERED=1"
+                "SSL_CERT_FILE=/etc/ssl/certs/ca-bundle.crt"
+              ];
+              ExposedPorts = {
+                "8091/tcp" = { };
+              };
+              WorkingDir = "/app";
+            };
+          };
+        in
+        {
+          inherit
+            app
+            frontendNodeModules
+            typescriptClientNodeModules
+            ;
+
+          frontend-node-modules = frontendNodeModules;
+          typescript-client-node-modules = typescriptClientNodeModules;
+        }
+        // lib.optionalAttrs pkgs.stdenv.isLinux {
+          inherit
+            appImage
+            lxmfBridge
+            lxmfBridgeImage
+            ;
+
+          app-image = appImage;
+          lxmf-bridge = lxmfBridge;
+          lxmf-bridge-image = lxmfBridgeImage;
+        };
+
       formatterFor =
         pkgs:
         pkgs.writeShellApplication {
@@ -289,15 +584,16 @@
         let
           pkgs = pkgsFor system;
           devTools = devToolsFor pkgs;
-        in
-        {
-          dev-tools = pkgs.buildEnv {
+          devToolsPackage = pkgs.buildEnv {
             name = "bluebubbles-chatgpt-agent-dev-tools";
             paths = devTools.tools;
           };
-
-          default = self.packages.${system}.dev-tools;
+        in
+        {
+          dev-tools = devToolsPackage;
+          default = devToolsPackage;
         }
+        // buildPackagesFor system
       );
 
       formatter = forAllSystems (system: formatterFor (pkgsFor system));

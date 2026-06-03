@@ -72,6 +72,43 @@ nix develop --command npm --prefix frontend run dev
 The Vite dev server runs on `http://localhost:5174` and proxies `/api` to the Spring Boot app on
 `localhost:8080`.
 
+## Nix builds
+
+The production build is Nix-first. The app JAR, frontend Node modules, generated-client Node
+modules, and container image tarballs are all flake outputs.
+
+```bash
+nix build .#app
+```
+
+Linux image outputs are built by CI on Ubuntu:
+
+```bash
+nix build .#app-image -o result-app-image
+nix build .#lxmf-bridge-image -o result-lxmf-bridge-image
+docker load --input result-app-image
+docker load --input result-lxmf-bridge-image
+```
+
+From macOS, use the explicit Linux package paths with a configured Linux builder:
+
+```bash
+nix build .#packages.x86_64-linux.app-image
+nix build .#packages.x86_64-linux.lxmf-bridge-image
+```
+
+Gradle dependencies are recorded in `nix/gradle-deps.json` through nixpkgs' Gradle MITM cache.
+Regenerate that cache after Gradle dependency changes:
+
+```bash
+script="$(nix build .#app.mitmCache.updateScript --print-out-paths --no-link)"
+"$script"
+```
+
+Frontend dependencies remain locked by `frontend/package-lock.json`. The generated OpenAPI
+TypeScript client uses `nix/typescript-client/package-lock.json`, mirroring the package manifest
+emitted by OpenAPI Generator so Nix can prebuild its `node_modules`.
+
 ## Configuration
 
 BlueChat currently uses a BlueBubbles relay for messaging. Add a webhook pointing to this server.
