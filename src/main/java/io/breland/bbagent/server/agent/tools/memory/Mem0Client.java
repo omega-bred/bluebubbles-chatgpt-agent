@@ -2,21 +2,16 @@ package io.breland.bbagent.server.agent.tools.memory;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import io.netty.handler.logging.LogLevel;
 import java.time.Duration;
 import java.util.*;
 import lombok.Getter;
-import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
-import org.springframework.http.client.reactive.ReactorClientHttpConnector;
 import org.springframework.stereotype.Component;
 import org.springframework.web.reactive.function.client.WebClient;
 import org.springframework.web.reactive.function.client.WebClientResponseException;
-import reactor.netty.http.client.HttpClient;
-import reactor.netty.transport.logging.AdvancedByteBufFormat;
 
 @Slf4j
 @Component
@@ -40,33 +35,11 @@ public class Mem0Client {
     this.projectId = projectId;
     this.objectMapper = objectMapper;
     this.configured = apiKey != null && !apiKey.isBlank() && !"fake_key".equals(apiKey);
-    HttpClient httpClient =
-        HttpClient.create()
-            .wiretap(
-                "reactor.netty.http.client.HttpClient",
-                LogLevel.DEBUG,
-                AdvancedByteBufFormat.TEXTUAL);
     this.webClient =
         WebClient.builder()
             .baseUrl(baseUrl)
             .defaultHeader(HttpHeaders.AUTHORIZATION, "Token " + apiKey)
             .defaultHeader(HttpHeaders.ACCEPT, MediaType.APPLICATION_JSON_VALUE)
-            .clientConnector(new ReactorClientHttpConnector(httpClient))
-            .filter(
-                (request, next) -> {
-                  log.info(
-                      "Mem0 request {} {} headers={}",
-                      request.method(),
-                      request.url(),
-                      request.headers());
-                  return next.exchange(request)
-                      .doOnNext(
-                          response ->
-                              log.info(
-                                  "Mem0 response {} headers={}",
-                                  response.statusCode(),
-                                  response.headers().asHttpHeaders()));
-                })
             .build();
     if (!configured) {
       log.warn("Mem0 client not configured; set mem0.api-key to enable memory");
@@ -113,7 +86,6 @@ public class Mem0Client {
     }
   }
 
-  @SneakyThrows
   public List<StoredMemory> searchMemories(String userId, String query) {
     if (!configured) {
       return List.of();
@@ -127,7 +99,6 @@ public class Mem0Client {
     body.put("version", "v2");
     body.put("top_k", 5);
     applyWorkspace(body);
-    log.info("Mem0 search: " + objectMapper.writeValueAsString(body));
     log.info("Mem0 searchMemories POST /v2/memories/search/ payload={}", body);
     try {
       JsonNode response =
