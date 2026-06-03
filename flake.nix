@@ -420,6 +420,10 @@
             created = "1970-01-01T00:00:01Z";
             maxLayers = 120;
             contents = appImageRoot;
+            extraCommands = ''
+              mkdir -p app tmp var/tmp
+              chmod 1777 tmp var/tmp
+            '';
             config = {
               Cmd = [
                 "${jdk}/bin/java"
@@ -483,6 +487,10 @@
             created = "1970-01-01T00:00:01Z";
             maxLayers = 120;
             contents = lxmfBridgeImageRoot;
+            extraCommands = ''
+              mkdir -p app tmp var/tmp
+              chmod 1777 tmp var/tmp
+            '';
             config = {
               Cmd = [
                 "${lxmfBridgePython}/bin/python"
