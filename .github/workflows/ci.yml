@@ -96,11 +96,13 @@ jobs:
       - name: Checkout
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
 
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@c7c53464625b32c7a7e944ae62b3e17d2b600130
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f
+      - name: Set up Nix
+        uses: ./.github/actions/setup-nix
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          cachix-auth-token: ${{ secrets.CACHIX_AUTH_TOKEN }}
+          op-service-account-token: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
+          enable-cachix-push: ${{ github.ref == 'refs/heads/main' }}
 
       - name: Log in to container registry
         uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9
@@ -119,14 +121,21 @@ jobs:
             type=raw,value=${{ github.sha }}-${{ github.run_number }}
             type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
 
-      - name: Build and push app image
-        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8
-        with:
-          context: .
-          push: true
-          platforms: linux/amd64
-          tags: ${{ steps.app_meta.outputs.tags }}
-          labels: ${{ steps.app_meta.outputs.labels }}
+      - name: Build app image with Nix
+        run: CI=true BBAGENT_NIX_SHELL_QUIET=1 nix build .#app-image -o result-app-image
+
+      - name: Load, tag, and push app image
+        run: |
+          set -euo pipefail
+          docker load --input result-app-image
+          while IFS= read -r tag; do
+            if [ -n "$tag" ]; then
+              docker tag bluebubbles-chatgpt-agent:nix "$tag"
+              docker push "$tag"
+            fi
+          done <<'EOF'
+          ${{ steps.app_meta.outputs.tags }}
+          EOF
 
       - name: Extract LXMF bridge metadata (tags, labels)
         id: lxmf_bridge_meta
@@ -138,14 +147,21 @@ jobs:
             type=raw,value=${{ github.sha }}-${{ github.run_number }}
             type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
 
-      - name: Build and push LXMF bridge image
-        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8
-        with:
-          context: ./lxmf-bridge
-          push: true
-          platforms: linux/amd64
-          tags: ${{ steps.lxmf_bridge_meta.outputs.tags }}
-          labels: ${{ steps.lxmf_bridge_meta.outputs.labels }}
+      - name: Build LXMF bridge image with Nix
+        run: CI=true BBAGENT_NIX_SHELL_QUIET=1 nix build .#lxmf-bridge-image -o result-lxmf-bridge-image
+
+      - name: Load, tag, and push LXMF bridge image
+        run: |
+          set -euo pipefail
+          docker load --input result-lxmf-bridge-image
+          while IFS= read -r tag; do
+            if [ -n "$tag" ]; then
+              docker tag bluebubbles-chatgpt-agent-lxmf-bridge:nix "$tag"
+              docker push "$tag"
+            fi
+          done <<'EOF'
+          ${{ steps.lxmf_bridge_meta.outputs.tags }}
+          EOF
 
   update_manifest:
     name: Update Kube Manifest

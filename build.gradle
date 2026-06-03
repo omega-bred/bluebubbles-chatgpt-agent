@@ -1,6 +1,7 @@
 import org.openapitools.generator.gradle.plugin.tasks.GenerateTask
 
 import java.nio.file.Files
+import java.util.Locale
 
 plugins {
 	id 'java'
@@ -147,7 +148,7 @@ springBoot {
 	mainClass = grp + ".server.BBChatGptAgentApplication"
 }
 
-def npmPath = ['bash', 'zsh']
+def npmPath = System.getenv('NPM_PATH') ?: ['bash', 'zsh']
         .collect { shell ->
             try {
                 def proc = ["${shell}", "-c", "which npm"].execute()
@@ -159,6 +160,19 @@ def npmPath = ['bash', 'zsh']
             }
         }
         .find { it } ?: "${System.getProperty('user.home')}/.nvm/versions/node/v24.6.0/bin/npm"
+
+def isTruthy = { value ->
+    value != null && ['1', 'true', 'yes', 'on'].contains(value.toString().toLowerCase(Locale.ROOT))
+}
+
+def useNixNodeModules = isTruthy(System.getenv('BBAGENT_USE_NIX_NODE_MODULES')) ||
+        isTruthy(findProperty('bbagent.useNixNodeModules'))
+
+def requireNodeModules = { String path ->
+    if (useNixNodeModules && !file(path).exists()) {
+        throw new GradleException("BBAGENT_USE_NIX_NODE_MODULES is enabled but ${path} does not exist")
+    }
+}
 
 java {
 	toolchain {
@@ -560,6 +574,7 @@ tasks.register('npmInstallClient', Exec) {
 	dependsOn tasks.openApiGenerateTypescriptClient
 	workingDir "$buildDir/typescript-client-generated"
 	commandLine npmPath, "install"
+	onlyIf { !useNixNodeModules }
 
 	// give Gradle something to track
 	inputs.file("$buildDir/typescript-client-generated/package.json")
@@ -571,6 +586,9 @@ tasks.register('npmBuildClient', Exec) {
 	dependsOn tasks.npmInstallClient
 	workingDir "$buildDir/typescript-client-generated"
 	commandLine npmPath, "run", "build"
+	doFirst {
+		requireNodeModules("$buildDir/typescript-client-generated/node_modules")
+	}
 
 	// declare what this produces
 	inputs.files(fileTree("$buildDir/typescript-client-generated") {
@@ -607,6 +625,7 @@ tasks.register('copyClientToFrontend', Copy) {
 tasks.register('npmInstallFrontend', Exec) {
         workingDir "${projectDir}/frontend"
         commandLine npmPath, "install"
+        onlyIf { !useNixNodeModules }
         inputs.file("${projectDir}/frontend/package.json")
         outputs.dir("${projectDir}/frontend/node_modules")
 }
@@ -616,6 +635,9 @@ tasks.register('npmBuildFrontend', Exec) {
         dependsOn tasks.copyClientToFrontend
         workingDir "${projectDir}/frontend"
         commandLine npmPath, "run", "build"
+        doFirst {
+                requireNodeModules("${projectDir}/frontend/node_modules")
+        }
         inputs.dir("${projectDir}/frontend/src")
         inputs.dir("${projectDir}/frontend/plugins")
         inputs.file("${projectDir}/frontend/index.html")
