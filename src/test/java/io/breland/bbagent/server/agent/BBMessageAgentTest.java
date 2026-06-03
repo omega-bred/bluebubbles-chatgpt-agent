@@ -12,6 +12,7 @@ import static org.mockito.Mockito.when;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.openai.client.OpenAIClient;
 import com.openai.core.JsonValue;
 import com.openai.models.ChatModel;
@@ -137,10 +138,12 @@ class BBMessageAgentTest {
   }
 
   @Test
-  void acceptsTermsWhenUserRepliesYes() {
+  void acceptsTermsWhenMiniModelSeesAffirmativeAndReplaysPendingRequest() {
     OpenAIClient openAIClient = Mockito.mock(OpenAIClient.class);
     var responseService = Mockito.mock(com.openai.services.blocking.ResponseService.class);
     when(openAIClient.responses()).thenReturn(responseService);
+    when(responseService.create(any(ResponseCreateParams.class)))
+        .thenReturn(responseWithText("{\"agreement\":true,\"confidence\":0.96}"));
     AgentAccountResolver accountResolver = Mockito.mock(AgentAccountResolver.class);
     AgentAccountEntity pendingAccount = account("account-terms", null);
     AgentAccountEntity acceptedAccount = account("account-terms", Instant.now());
@@ -151,15 +154,140 @@ class BBMessageAgentTest {
         .thenReturn(
             Optional.of(new AgentAccountResolver.ResolvedAccount(acceptedAccount, List.of())));
     StubBBHttpClientWrapper bbHttpClientWrapper = new StubBBHttpClientWrapper();
-    BBMessageAgent agent = newAgent(openAIClient, bbHttpClientWrapper, accountResolver);
-    IncomingMessage incoming =
-        incomingMessage("iMessage;+;chat-terms", "msg-terms-yes", "YES", 1_000L);
+    CadenceWorkflowLauncher cadenceWorkflowLauncher = Mockito.mock(CadenceWorkflowLauncher.class);
+    WorkflowExecution execution = new WorkflowExecution();
+    execution.setRunId("run-terms");
+    when(cadenceWorkflowLauncher.startWorkflow(any(CadenceMessageWorkflowRequest.class)))
+        .thenReturn(execution);
+    BBMessageAgent agent =
+        newAgent(openAIClient, bbHttpClientWrapper, accountResolver, cadenceWorkflowLauncher);
+    IncomingMessage original =
+        incomingMessage("iMessage;+;chat-terms", "msg-terms-1", "what can you do?", 1_000L);
+    IncomingMessage agreement =
+        incomingMessage(
+            "iMessage;+;chat-terms",
+            "msg-terms-agree",
+            "Absolutely, I agree to those terms.",
+            1_001L);
 
-    agent.handleIncomingMessage(incoming);
+    agent.handleIncomingMessage(original);
+    agent.handleIncomingMessage(agreement);
 
-    verify(accountResolver).acceptTerms(incoming);
-    verify(responseService, never()).create(any(ResponseCreateParams.class));
-    assertEquals(List.of(BBMessageAgent.TERMS_ACCEPTED_REPLY), bbHttpClientWrapper.sentTexts);
+    verify(accountResolver).acceptTerms(agreement);
+    verify(responseService).create(any(ResponseCreateParams.class));
+    ArgumentCaptor<CadenceMessageWorkflowRequest> requestCaptor =
+        ArgumentCaptor.forClass(CadenceMessageWorkflowRequest.class);
+    verify(cadenceWorkflowLauncher).startWorkflow(requestCaptor.capture());
+    assertEquals("msg-terms-1", requestCaptor.getValue().message().messageGuid());
+    assertEquals("what can you do?", requestCaptor.getValue().message().text());
+    assertEquals(1, bbHttpClientWrapper.sentTexts.size());
+    assertTrue(bbHttpClientWrapper.sentTexts.getFirst().contains("Terms of Use"));
+  }
+
+  @Test
+  void doesNotAcceptTermsWhenMiniModelConfidenceIsLow() {
+    OpenAIClient openAIClient = Mockito.mock(OpenAIClient.class);
+    var responseService = Mockito.mock(com.openai.services.blocking.ResponseService.class);
+    when(openAIClient.responses()).thenReturn(responseService);
+    when(responseService.create(any(ResponseCreateParams.class)))
+        .thenReturn(responseWithText("{\"agreement\":true,\"confidence\":0.42}"));
+    AgentAccountResolver accountResolver = Mockito.mock(AgentAccountResolver.class);
+    AgentAccountEntity pendingAccount = account("account-terms", null);
+    when(accountResolver.resolveOrCreate(any(IncomingMessage.class)))
+        .thenReturn(
+            Optional.of(new AgentAccountResolver.ResolvedAccount(pendingAccount, List.of())));
+    StubBBHttpClientWrapper bbHttpClientWrapper = new StubBBHttpClientWrapper();
+    CadenceWorkflowLauncher cadenceWorkflowLauncher = Mockito.mock(CadenceWorkflowLauncher.class);
+    BBMessageAgent agent =
+        newAgent(openAIClient, bbHttpClientWrapper, accountResolver, cadenceWorkflowLauncher);
+
+    agent.handleIncomingMessage(
+        incomingMessage("iMessage;+;chat-terms", "msg-terms-1", "what can you do?", 1_000L));
+    agent.handleIncomingMessage(
+        incomingMessage("iMessage;+;chat-terms", "msg-terms-maybe", "Yeah probably", 1_001L));
+
+    verify(accountResolver, never()).acceptTerms(any(IncomingMessage.class));
+    verify(cadenceWorkflowLauncher, never())
+        .startWorkflow(any(CadenceMessageWorkflowRequest.class));
+    assertEquals(2, bbHttpClientWrapper.sentTexts.size());
+    assertTrue(bbHttpClientWrapper.sentTexts.getLast().contains("Terms of Use"));
+  }
+
+  @Test
+  void groupTermsGateRequiresSameSenderThreadReplyAndReplaysOriginalInThread() {
+    OpenAIClient openAIClient = Mockito.mock(OpenAIClient.class);
+    var responseService = Mockito.mock(com.openai.services.blocking.ResponseService.class);
+    when(openAIClient.responses()).thenReturn(responseService);
+    when(responseService.create(any(ResponseCreateParams.class)))
+        .thenReturn(responseWithText("{\"agreement\":true,\"confidence\":0.97}"));
+    AgentAccountResolver accountResolver = Mockito.mock(AgentAccountResolver.class);
+    AgentAccountEntity pendingAccount = account("account-terms", null);
+    AgentAccountEntity acceptedAccount = account("account-terms", Instant.now());
+    when(accountResolver.resolveOrCreate(any(IncomingMessage.class)))
+        .thenReturn(
+            Optional.of(new AgentAccountResolver.ResolvedAccount(pendingAccount, List.of())));
+    when(accountResolver.acceptTerms(any(IncomingMessage.class)))
+        .thenReturn(
+            Optional.of(new AgentAccountResolver.ResolvedAccount(acceptedAccount, List.of())));
+    StubBBHttpClientWrapper bbHttpClientWrapper = new StubBBHttpClientWrapper();
+    CadenceWorkflowLauncher cadenceWorkflowLauncher = Mockito.mock(CadenceWorkflowLauncher.class);
+    WorkflowExecution execution = new WorkflowExecution();
+    execution.setRunId("run-group-terms");
+    when(cadenceWorkflowLauncher.startWorkflow(any(CadenceMessageWorkflowRequest.class)))
+        .thenReturn(execution);
+    BBMessageAgent agent =
+        newAgent(openAIClient, bbHttpClientWrapper, accountResolver, cadenceWorkflowLauncher);
+    IncomingMessage original =
+        groupIncomingMessage(
+            "iMessage;+;chat-group",
+            "msg-group-original",
+            null,
+            "can you summarize this?",
+            "Alice",
+            1_000L);
+    IncomingMessage unthreadedAgreement =
+        groupIncomingMessage(
+            "iMessage;+;chat-group", "msg-group-unthreaded-yes", null, "yes", "Alice", 1_001L);
+    IncomingMessage otherSenderThreadedAgreement =
+        groupIncomingMessage(
+            "iMessage;+;chat-group",
+            "msg-group-other-threaded-yes",
+            "msg-group-original",
+            "I accept too.",
+            "Bob",
+            1_002L);
+    IncomingMessage threadedAgreement =
+        groupIncomingMessage(
+            "iMessage;+;chat-group",
+            "msg-group-threaded-yes",
+            "msg-group-original",
+            "Sure, I accept.",
+            "Alice",
+            1_003L);
+
+    agent.handleIncomingMessage(original);
+    agent.handleIncomingMessage(unthreadedAgreement);
+    agent.handleIncomingMessage(otherSenderThreadedAgreement);
+    agent.handleIncomingMessage(threadedAgreement);
+
+    verify(responseService, times(1)).create(any(ResponseCreateParams.class));
+    verify(accountResolver, times(1)).acceptTerms(any(IncomingMessage.class));
+    verify(accountResolver).acceptTerms(threadedAgreement);
+    ArgumentCaptor<CadenceMessageWorkflowRequest> requestCaptor =
+        ArgumentCaptor.forClass(CadenceMessageWorkflowRequest.class);
+    verify(cadenceWorkflowLauncher).startWorkflow(requestCaptor.capture());
+    IncomingMessage replayed = requestCaptor.getValue().message();
+    assertEquals("msg-group-original", replayed.messageGuid());
+    assertEquals("msg-group-original", replayed.threadOriginatorGuid());
+    assertEquals("can you summarize this?", replayed.text());
+    assertEquals(3, bbHttpClientWrapper.sentTextRequests.size());
+    assertEquals(
+        "msg-group-original", bbHttpClientWrapper.sentTextRequests.get(0).getSelectedMessageGuid());
+    assertEquals(
+        "msg-group-unthreaded-yes",
+        bbHttpClientWrapper.sentTextRequests.get(1).getSelectedMessageGuid());
+    assertEquals(
+        "msg-group-original", bbHttpClientWrapper.sentTextRequests.get(2).getSelectedMessageGuid());
   }
 
   @Test
@@ -1235,6 +1363,18 @@ class BBMessageAgentTest {
       OpenAIClient openAIClient,
       BBHttpClientWrapper bbHttpClientWrapper,
       AgentAccountResolver accountResolver) {
+    return newAgent(
+        openAIClient,
+        bbHttpClientWrapper,
+        accountResolver,
+        Mockito.mock(CadenceWorkflowLauncher.class));
+  }
+
+  private static BBMessageAgent newAgent(
+      OpenAIClient openAIClient,
+      BBHttpClientWrapper bbHttpClientWrapper,
+      AgentAccountResolver accountResolver,
+      CadenceWorkflowLauncher cadenceWorkflowLauncher) {
     return new BBMessageAgent(
         openAIClient,
         bbHttpClientWrapper,
@@ -1246,7 +1386,7 @@ class BBMessageAgentTest {
         attachmentInputBuilder(bbHttpClientWrapper),
         null,
         null,
-        Mockito.mock(CadenceWorkflowLauncher.class),
+        cadenceWorkflowLauncher,
         null,
         null,
         null,
@@ -1329,6 +1469,7 @@ class BBMessageAgentTest {
     private List<String> lastFindMyUserIds = List.of();
     private int readPollCalls;
     private final List<String> sentTexts = new ArrayList<>();
+    private final List<ApiV1MessageTextPostRequest> sentTextRequests = new ArrayList<>();
 
     StubBBHttpClientWrapper() {
       super("pw", Mockito.mock(V1MessageApi.class), Mockito.mock(V1ContactApi.class));
@@ -1378,6 +1519,7 @@ class BBMessageAgentTest {
     @Override
     public boolean sendTextDirect(ApiV1MessageTextPostRequest request) {
       sentTexts.add(request.getMessage());
+      sentTextRequests.add(request);
       return true;
     }
 
@@ -1412,6 +1554,27 @@ class BBMessageAgentTest {
         "iMessage",
         "Alice",
         false,
+        Instant.ofEpochSecond(epochSecond),
+        List.of(),
+        false);
+  }
+
+  private static IncomingMessage groupIncomingMessage(
+      String chatGuid,
+      String messageGuid,
+      String threadOriginatorGuid,
+      String text,
+      String sender,
+      long epochSecond) {
+    return new IncomingMessage(
+        chatGuid,
+        messageGuid,
+        threadOriginatorGuid,
+        text,
+        false,
+        "iMessage",
+        sender,
+        true,
         Instant.ofEpochSecond(epochSecond),
         List.of(),
         false);
@@ -1496,6 +1659,42 @@ class BBMessageAgentTest {
 
   private static Response responseWithNoToolCalls() {
     return baseResponse(List.of());
+  }
+
+  private static Response responseWithText(String text) {
+    try {
+      String responseJson =
+          """
+          {
+            "id": "resp-1",
+            "created_at": 0,
+            "model": "gpt-5-chat-latest",
+            "output": [
+              {
+                "type": "message",
+                "id": "msg-1",
+                "role": "assistant",
+                "status": "completed",
+                "content": [
+                  {
+                    "type": "output_text",
+                    "text": %s,
+                    "annotations": []
+                  }
+                ]
+              }
+            ],
+            "parallel_tool_calls": false,
+            "temperature": 0.2,
+            "tools": [],
+            "top_p": 1.0
+          }
+          """
+              .formatted(new ObjectMapper().writeValueAsString(text));
+      return new ObjectMapper().readValue(responseJson, Response.class);
+    } catch (Exception e) {
+      throw new RuntimeException("Failed to build test response payload", e);
+    }
   }
 
   private static Response baseResponse(List<ResponseOutputItem> outputItems) {
