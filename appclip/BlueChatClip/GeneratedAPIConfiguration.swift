@@ -71,20 +71,17 @@ enum GeneratedAPIConfiguration {
 
 extension AppClipSessionResponse {
     func replacing(subscription: SubscriptionSummaryResponse) -> AppClipSessionResponse {
-        AppClipSessionResponse(
-            sessionToken: sessionToken,
-            purpose: purpose,
-            expiresAt: expiresAt,
-            account: account,
-            linkedAccounts: linkedAccounts,
-            subscription: subscription,
-            conversationSettings: conversationSettings,
-            appAccountToken: appAccountToken,
-            storekitProductIds: storekitProductIds
-        )
+        replacing(subscription: subscription, conversationSettings: conversationSettings)
     }
 
     func replacing(conversationSettings: ConversationSettingsResponse) -> AppClipSessionResponse {
+        replacing(subscription: subscription, conversationSettings: conversationSettings)
+    }
+
+    private func replacing(
+        subscription: SubscriptionSummaryResponse,
+        conversationSettings: ConversationSettingsResponse?
+    ) -> AppClipSessionResponse {
         AppClipSessionResponse(
             sessionToken: sessionToken,
             purpose: purpose,

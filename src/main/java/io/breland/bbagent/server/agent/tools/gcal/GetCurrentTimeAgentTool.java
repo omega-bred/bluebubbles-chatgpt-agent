@@ -3,6 +3,7 @@ package io.breland.bbagent.server.agent.tools.gcal;
 import static io.breland.bbagent.server.agent.tools.JsonSchemaUtilities.jsonSchema;
 
 import io.breland.bbagent.server.agent.tools.AgentTool;
+import io.breland.bbagent.server.agent.tools.ToolJson;
 import io.breland.bbagent.server.agent.tools.ToolProvider;
 import io.swagger.v3.oas.annotations.media.Schema;
 import java.time.ZonedDateTime;
@@ -34,11 +35,7 @@ public class GetCurrentTimeAgentTool extends GcalToolSupport implements ToolProv
           Map<String, Object> response = new LinkedHashMap<>();
           response.put("timezone", zone.getId());
           response.put("current_time", now.toString());
-          try {
-            return toJson(response);
-          } catch (Exception e) {
-            return response.toString();
-          }
+          return ToolJson.stringify(gcalClient.mapper(), response, response.toString());
         });
   }
 }

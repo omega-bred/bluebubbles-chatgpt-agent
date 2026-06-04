@@ -7,6 +7,7 @@ import com.google.api.services.calendar.model.EventAttendee;
 import com.google.api.services.calendar.model.EventDateTime;
 import com.google.api.services.calendar.model.Events;
 import io.breland.bbagent.server.agent.tools.ToolContext;
+import java.time.DateTimeException;
 import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -78,7 +79,7 @@ public class GcalToolSupport {
     }
     try {
       return ZoneId.of(timezone);
-    } catch (Exception e) {
+    } catch (DateTimeException e) {
       return ZoneId.systemDefault();
     }
   }

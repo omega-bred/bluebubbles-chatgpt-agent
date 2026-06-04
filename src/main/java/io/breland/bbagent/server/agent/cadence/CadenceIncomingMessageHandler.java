@@ -1,27 +1,24 @@
 package io.breland.bbagent.server.agent.cadence;
 
-import com.fasterxml.jackson.databind.JsonNode;
 import com.uber.cadence.WorkflowExecution;
 import io.breland.bbagent.server.agent.AgentWorkflowContext;
 import io.breland.bbagent.server.agent.BBMessageAgent;
 import io.breland.bbagent.server.agent.ConversationState;
 import io.breland.bbagent.server.agent.IncomingMessage;
-import io.breland.bbagent.server.agent.account.AgentAccountResolver;
 import io.breland.bbagent.server.agent.cadence.models.CadenceMessageWorkflowRequest;
 import io.breland.bbagent.server.agent.profile.AgentProfileService;
 import io.breland.bbagent.server.agent.profile.AssistantResponsiveness;
 import io.breland.bbagent.server.agent.reactions.MessageReactionSupport;
+import io.breland.bbagent.server.agent.terms.TermsAgreementValidator;
+import io.breland.bbagent.server.agent.terms.TermsGate;
 import io.breland.bbagent.server.agent.transport.MessageTransport;
 import io.breland.bbagent.server.agent.transport.MessageTransportRegistry;
-import io.breland.bbagent.server.agent.transport.OutgoingTextMessage;
 import io.breland.bbagent.server.agent.transport.bb.BBHttpClientWrapper;
 import io.breland.bbagent.server.agent.transport.bb.BlueBubblesPollSupport;
 import io.breland.bbagent.server.metrics.AgentMetricsService;
 import java.time.Instant;
-import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
-import java.util.Optional;
 import java.util.UUID;
 import java.util.function.Supplier;
 import lombok.extern.slf4j.Slf4j;
@@ -29,14 +26,13 @@ import org.springframework.lang.Nullable;
 
 @Slf4j
 public final class CadenceIncomingMessageHandler {
-  private final BBMessageAgent messageAgent;
   private final Map<String, ConversationState> conversations;
   private final AgentProfileService profileService;
   private final MessageTransportRegistry transportRegistry;
-  private final BBHttpClientWrapper bbHttpClientWrapper;
   private final CadenceWorkflowLauncher cadenceWorkflowLauncher;
   private final @Nullable AgentMetricsService agentMetricsService;
-  private final Supplier<String> termsUrl;
+  private final TermsGate termsGate;
+  private final PollNotificationEnricher pollNotificationEnricher;
 
   public CadenceIncomingMessageHandler(
       BBMessageAgent messageAgent,
@@ -46,15 +42,21 @@ public final class CadenceIncomingMessageHandler {
       BBHttpClientWrapper bbHttpClientWrapper,
       CadenceWorkflowLauncher cadenceWorkflowLauncher,
       @Nullable AgentMetricsService agentMetricsService,
-      Supplier<String> termsUrl) {
-    this.messageAgent = messageAgent;
+      Supplier<String> termsUrl,
+      TermsAgreementValidator termsAgreementValidator) {
     this.conversations = conversations;
     this.profileService = profileService;
     this.transportRegistry = transportRegistry;
-    this.bbHttpClientWrapper = bbHttpClientWrapper;
+    this.pollNotificationEnricher = new PollNotificationEnricher(bbHttpClientWrapper);
     this.cadenceWorkflowLauncher = cadenceWorkflowLauncher;
     this.agentMetricsService = agentMetricsService;
-    this.termsUrl = termsUrl;
+    this.termsGate =
+        new TermsGate(
+            messageAgent,
+            profileService,
+            termsAgreementValidator,
+            termsUrl,
+            this::processAcceptedMessage);
   }
 
   public void handleIncomingMessage(IncomingMessage rawMessage) {
@@ -93,7 +95,7 @@ public final class CadenceIncomingMessageHandler {
     if (profileService.isProcessingBlocked(rawMessage)) {
       return null;
     }
-    IncomingMessage message = enrichPollNotification(rawMessage);
+    IncomingMessage message = pollNotificationEnricher.enrich(rawMessage);
     ConversationState state =
         conversations.computeIfAbsent(
             message.chatGuid(), key -> this.computeConversationState(key, message));
@@ -122,7 +124,7 @@ public final class CadenceIncomingMessageHandler {
       }
       state.markIncomingMessageSeen(message);
     }
-    if (handleTermsGate(state, message)) {
+    if (termsGate.handle(state, message)) {
       return null;
     }
     synchronized (state) {
@@ -169,7 +171,7 @@ public final class CadenceIncomingMessageHandler {
     if (Boolean.TRUE.equals(message.fromMe())) {
       return false;
     }
-    if (message.chatGuid() == null || message.chatGuid().isBlank()) {
+    if (IncomingMessage.chatGuidOrNull(message) == null) {
       return false;
     }
     if (message.isBlueBubblesTransport()
@@ -196,153 +198,6 @@ public final class CadenceIncomingMessageHandler {
     return true;
   }
 
-  private IncomingMessage enrichPollNotification(IncomingMessage message) {
-    if (message == null
-        || !message.isBlueBubblesTransport()
-        || !BlueBubblesPollSupport.isPollBundle(message.balloonBundleId())) {
-      return message;
-    }
-    String pollMessageGuid = BlueBubblesPollSupport.pollMessageGuid(message);
-    if (pollMessageGuid == null || pollMessageGuid.isBlank()) {
-      return message.withText(BlueBubblesPollSupport.fallbackPollNotification(message, null));
-    }
-    try {
-      JsonNode poll = bbHttpClientWrapper.readPollJson(pollMessageGuid);
-      return message.withText(
-          BlueBubblesPollSupport.formatPollNotification(message, pollMessageGuid, poll));
-    } catch (RuntimeException e) {
-      log.warn(
-          "Failed to read poll update for triggerGuid={} pollGuid={}",
-          message.messageGuid(),
-          pollMessageGuid,
-          e);
-      return message.withText(
-          BlueBubblesPollSupport.fallbackPollNotification(message, pollMessageGuid));
-    }
-  }
-
-  private boolean handleTermsGate(ConversationState state, IncomingMessage message) {
-    if (message == null) {
-      return false;
-    }
-    AgentAccountResolver.ResolvedAccount resolved;
-    try {
-      Optional<AgentAccountResolver.ResolvedAccount> resolvedAccount =
-          profileService.resolveOrCreateAccount(message);
-      if (resolvedAccount.isEmpty()) {
-        return false;
-      }
-      resolved = resolvedAccount.get();
-    } catch (RuntimeException e) {
-      log.warn("Failed to resolve account for terms gate {}", message, e);
-      return false;
-    }
-    if (resolved.account().getTermsAcceptedAt() != null) {
-      return false;
-    }
-    ConversationState.PendingTermsAcceptance pending = findPendingTermsAcceptance(state, message);
-    if (shouldValidateTermsAgreement(message, pending)
-        && messageAgent.isHighConfidenceTermsAgreement(message.text())) {
-      try {
-        profileService.acceptTerms(message);
-      } catch (RuntimeException e) {
-        log.warn("Failed to accept terms for {}", message, e);
-        sendTermsGateReply(
-            message,
-            "I couldn't save your Terms agreement just now. Please try replying YES again in a moment.",
-            termsPromptReplyTarget(message, pending));
-        return true;
-      }
-      state.clearPendingTermsAcceptance(pending);
-      IncomingMessage messageToProcess = messageToProcessAfterTermsAccepted(message, pending);
-      processAcceptedMessage(state, messageToProcess);
-      return true;
-    }
-    ConversationState.PendingTermsAcceptance promptPending =
-        pending != null ? pending : recordPendingTermsAcceptance(state, message);
-    sendTermsGateReply(
-        message,
-        BBMessageAgent.TERMS_ACCEPTANCE_REPLY.formatted(termsUrl.get()),
-        termsPromptReplyTarget(message, promptPending));
-    return true;
-  }
-
-  private ConversationState.PendingTermsAcceptance findPendingTermsAcceptance(
-      ConversationState state, IncomingMessage message) {
-    if (state == null || message == null) {
-      return null;
-    }
-    String threadRootGuid = message.isGroup() ? termsAgreementThreadRootGuid(message) : null;
-    if (message.isGroup() && isBlank(threadRootGuid)) {
-      return null;
-    }
-    return state.getPendingTermsAcceptance(message.sender(), threadRootGuid);
-  }
-
-  private ConversationState.PendingTermsAcceptance recordPendingTermsAcceptance(
-      ConversationState state, IncomingMessage message) {
-    if (state == null || message == null) {
-      return null;
-    }
-    String threadRootGuid = message.isGroup() ? termsPromptThreadRootGuid(message) : null;
-    return state.recordPendingTermsAcceptance(message, threadRootGuid);
-  }
-
-  private boolean shouldValidateTermsAgreement(
-      IncomingMessage message, ConversationState.PendingTermsAcceptance pending) {
-    if (message == null || message.text() == null || message.text().isBlank()) {
-      return false;
-    }
-    if (!message.isGroup()) {
-      return pending != null || mightBeTermsAgreement(message.text());
-    }
-    String threadRootGuid = termsAgreementThreadRootGuid(message);
-    return pending != null
-        && !isBlank(threadRootGuid)
-        && threadRootGuid.equals(pending.threadRootGuid());
-  }
-
-  private static boolean mightBeTermsAgreement(String text) {
-    if (text == null || text.isBlank()) {
-      return false;
-    }
-    String normalized =
-        text.trim().toLowerCase(Locale.ROOT).replaceAll("[\\p{Punct}\\s]+", " ").trim();
-    if (normalized.isBlank()) {
-      return false;
-    }
-    return normalized.equals("y")
-        || normalized.equals("yes")
-        || normalized.equals("yeah")
-        || normalized.equals("yep")
-        || normalized.equals("sure")
-        || normalized.equals("ok")
-        || normalized.equals("okay")
-        || normalized.equals("agreed")
-        || normalized.equals("affirmative")
-        || normalized.contains("i agree")
-        || normalized.contains("i accept")
-        || normalized.contains("sounds good")
-        || normalized.startsWith("yes ")
-        || normalized.startsWith("yeah ")
-        || normalized.startsWith("yep ")
-        || normalized.startsWith("sure ")
-        || normalized.startsWith("ok ")
-        || normalized.startsWith("okay ");
-  }
-
-  private IncomingMessage messageToProcessAfterTermsAccepted(
-      IncomingMessage agreementMessage, ConversationState.PendingTermsAcceptance pending) {
-    if (pending == null || pending.originalMessage() == null) {
-      return agreementMessage;
-    }
-    IncomingMessage original = pending.originalMessage();
-    if (!isBlank(pending.threadRootGuid())) {
-      return original.withThreadOriginatorGuid(pending.threadRootGuid());
-    }
-    return original;
-  }
-
   private void processAcceptedMessage(ConversationState state, IncomingMessage message) {
     if (state == null || message == null) {
       return;
@@ -354,55 +209,6 @@ public final class CadenceIncomingMessageHandler {
     }
     recordAcceptedMessageMetric(message);
     startCadenceWorkflow(state, message);
-  }
-
-  private void sendTermsGateReply(
-      IncomingMessage message, String reply, @Nullable String selectedMessageGuid) {
-    if (isBlank(selectedMessageGuid)) {
-      messageAgent.sendThreadAwareTextUnmetered(message, reply);
-      return;
-    }
-    messageAgent.sendTextUnmetered(
-        message, new OutgoingTextMessage(reply, selectedMessageGuid, null, null));
-  }
-
-  private String termsPromptReplyTarget(
-      IncomingMessage message, ConversationState.PendingTermsAcceptance pending) {
-    if (message == null || !message.isGroup()) {
-      return null;
-    }
-    if (pending != null && !isBlank(pending.threadRootGuid())) {
-      return pending.threadRootGuid();
-    }
-    return termsPromptThreadRootGuid(message);
-  }
-
-  private static String termsPromptThreadRootGuid(IncomingMessage message) {
-    if (message == null) {
-      return null;
-    }
-    String existingThreadRootGuid = termsAgreementThreadRootGuid(message);
-    if (!isBlank(existingThreadRootGuid)) {
-      return existingThreadRootGuid;
-    }
-    return message.messageGuid();
-  }
-
-  private static String termsAgreementThreadRootGuid(IncomingMessage message) {
-    if (message == null) {
-      return null;
-    }
-    if (!isBlank(message.threadOriginatorGuid())) {
-      return message.threadOriginatorGuid();
-    }
-    if (!isBlank(message.replyToGuid())) {
-      return message.replyToGuid();
-    }
-    return null;
-  }
-
-  private static boolean isBlank(String value) {
-    return value == null || value.isBlank();
   }
 
   private static boolean isSilentInvocation(String text) {
@@ -417,8 +223,9 @@ public final class CadenceIncomingMessageHandler {
     if (message == null) {
       return null;
     }
-    if (message.chatGuid() != null && !message.chatGuid().isBlank()) {
-      return message.chatGuid();
+    String chatGuid = IncomingMessage.chatGuidOrNull(message);
+    if (chatGuid != null) {
+      return chatGuid;
     }
     log.warn("Message did not have a chat guid - this is unexpected");
     return UUID.randomUUID().toString();

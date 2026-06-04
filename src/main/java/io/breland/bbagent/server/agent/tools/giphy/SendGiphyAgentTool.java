@@ -66,7 +66,8 @@ public class SendGiphyAgentTool implements ToolProvider {
 
   private String sendGif(ToolContext context, com.fasterxml.jackson.databind.JsonNode args) {
     IncomingMessage message = context.message();
-    if (message == null || message.chatGuid() == null || message.chatGuid().isBlank()) {
+    String chatGuid = IncomingMessage.chatGuidOrNull(message);
+    if (chatGuid == null) {
       return "no chat";
     }
     SendGiphyRequest request = context.getMapper().convertValue(args, SendGiphyRequest.class);
@@ -101,7 +102,7 @@ public class SendGiphyAgentTool implements ToolProvider {
     }
     boolean sent =
         bbHttpClientWrapper.sendMultipartMessage(
-            message.chatGuid(),
+            chatGuid,
             caption,
             List.of(new BBHttpClientWrapper.AttachmentData(filename, bytes.get())));
     if (sent) {

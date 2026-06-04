@@ -141,6 +141,13 @@ public record IncomingMessage(
     return id.substring(index + 1);
   }
 
+  public static String chatGuidOrNull(IncomingMessage message) {
+    if (message == null || message.chatGuid() == null || message.chatGuid().isBlank()) {
+      return null;
+    }
+    return message.chatGuid();
+  }
+
   public String transportOrDefault() {
     return transport != null && !transport.isBlank() ? transport : TRANSPORT_BLUEBUBBLES;
   }

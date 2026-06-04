@@ -31,7 +31,8 @@ public class RenameConversationAgentTool implements ToolProvider {
         false,
         (context, args) -> {
           IncomingMessage message = context.message();
-          if (message == null || message.chatGuid() == null || message.chatGuid().isBlank()) {
+          String chatGuid = IncomingMessage.chatGuidOrNull(message);
+          if (chatGuid == null) {
             return "no chat";
           }
           if (!message.isGroup()) {
@@ -43,7 +44,7 @@ public class RenameConversationAgentTool implements ToolProvider {
           if (displayName == null || displayName.isBlank()) {
             return "missing name";
           }
-          boolean success = bbHttpClientWrapper.renameConversation(message.chatGuid(), displayName);
+          boolean success = bbHttpClientWrapper.renameConversation(chatGuid, displayName);
           return success ? "renamed" : "failed";
         });
   }

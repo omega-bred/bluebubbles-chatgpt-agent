@@ -32,11 +32,11 @@ public class CurrentConversationInfoAgentTool implements ToolProvider {
         jsonSchema(CurrentConversationInfoRequest.class),
         false,
         (context, args) -> {
-          IncomingMessage message = context.message();
-          if (message == null || message.chatGuid() == null || message.chatGuid().isBlank()) {
+          String chatGuid = IncomingMessage.chatGuidOrNull(context.message());
+          if (chatGuid == null) {
             return "no chat";
           }
-          JsonNode response = bbHttpClientWrapper.getConversationInfoJson(message.chatGuid());
+          JsonNode response = bbHttpClientWrapper.getConversationInfoJson(chatGuid);
           if (response == null) {
             return "not found";
           }
@@ -52,8 +52,8 @@ public class CurrentConversationInfoAgentTool implements ToolProvider {
             participantNodes.forEach(
                 participant -> {
                   Map<String, String> entry = new LinkedHashMap<>();
-                  putParticipantText(entry, "handle", participant.get("address"));
-                  putParticipantText(entry, "country", participant.get("country"));
+                  putText(entry, "handle", participant.get("address"));
+                  putText(entry, "country", participant.get("country"));
                   participants.add(entry);
                 });
           }
@@ -64,13 +64,7 @@ public class CurrentConversationInfoAgentTool implements ToolProvider {
         });
   }
 
-  private static void putParticipantText(Map<String, String> result, String key, JsonNode value) {
-    if (value != null && !value.isNull()) {
-      result.put(key, value.asText());
-    }
-  }
-
-  private static void putText(Map<String, Object> result, String key, JsonNode value) {
+  private static void putText(Map<String, ? super String> result, String key, JsonNode value) {
     if (value != null && !value.isNull()) {
       result.put(key, value.asText());
     }

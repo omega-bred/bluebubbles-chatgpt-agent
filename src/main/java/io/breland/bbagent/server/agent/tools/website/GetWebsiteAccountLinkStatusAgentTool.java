@@ -3,20 +3,19 @@ package io.breland.bbagent.server.agent.tools.website;
 import static io.breland.bbagent.server.agent.tools.JsonSchemaUtilities.jsonSchema;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
+import com.fasterxml.jackson.databind.PropertyNamingStrategies;
+import com.fasterxml.jackson.databind.annotation.JsonNaming;
+import io.breland.bbagent.generated.model.WebsiteModelAccessSummary;
 import io.breland.bbagent.server.agent.IncomingMessage;
 import io.breland.bbagent.server.agent.tools.AgentTool;
 import io.breland.bbagent.server.agent.tools.ToolJson;
 import io.breland.bbagent.server.agent.tools.ToolProvider;
 import io.breland.bbagent.server.website.WebsiteAccountService;
 import io.swagger.v3.oas.annotations.media.Schema;
-import java.time.format.DateTimeFormatter;
-import java.util.LinkedHashMap;
-import java.util.Map;
 import org.apache.commons.lang3.StringUtils;
 
 public class GetWebsiteAccountLinkStatusAgentTool implements ToolProvider {
   public static final String TOOL_NAME = "get_website_account_link_status";
-  private static final DateTimeFormatter INSTANT_FORMATTER = DateTimeFormatter.ISO_INSTANT;
 
   private final WebsiteAccountService accountService;
 
@@ -86,19 +85,27 @@ public class GetWebsiteAccountLinkStatusAgentTool implements ToolProvider {
     return accountService.getLinkStatus(transport, sender, chatGuid);
   }
 
-  private Map<String, Object> toResponse(WebsiteAccountService.SenderLinkStatus status) {
-    Map<String, Object> response = new LinkedHashMap<>();
-    response.put("linked", status.linked());
-    response.put("exact_chat_linked", status.exactChatLinked());
-    response.put("account_id", status.accountId());
-    response.put("link_count", status.linkCount());
-    response.put("exact_chat_link_count", status.exactChatLinkCount());
-    response.put("model_access", status.modelAccess());
-    response.put(
-        "linked_at",
-        status.linkedAt() == null ? null : INSTANT_FORMATTER.format(status.linkedAt()));
-    response.put("user_facing_text", userFacingText(status));
-    return response;
+  @JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)
+  private record LinkStatusResponse(
+      boolean linked,
+      boolean exactChatLinked,
+      String accountId,
+      int linkCount,
+      int exactChatLinkCount,
+      WebsiteModelAccessSummary modelAccess,
+      String linkedAt,
+      String userFacingText) {}
+
+  private LinkStatusResponse toResponse(WebsiteAccountService.SenderLinkStatus status) {
+    return new LinkStatusResponse(
+        status.linked(),
+        status.exactChatLinked(),
+        status.accountId(),
+        status.linkCount(),
+        status.exactChatLinkCount(),
+        status.modelAccess(),
+        status.linkedAt() == null ? null : status.linkedAt().toString(),
+        userFacingText(status));
   }
 
   private String userFacingText(WebsiteAccountService.SenderLinkStatus status) {

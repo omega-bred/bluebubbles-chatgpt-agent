@@ -507,6 +507,7 @@ function LinkedIdentity({
     return null;
   }
   const calendars = integration.gcal_accounts || [];
+  const identities = link.identities || [];
   const linkedAccounts = integration.linked_accounts || [];
   const modelAccess = integration.model_access;
   const modelLabel = modelAccess ? displayModelLabel(modelAccess.current_model_label) : "";
@@ -564,9 +565,9 @@ function LinkedIdentity({
         />
       ) : null}
       {modelError ? <p className="error-text">{modelError}</p> : null}
-      {linkedAccounts.length > 0 ? (
+      {identities.length > 0 || linkedAccounts.length > 0 ? (
         <div className="linked-account-list">
-          {(link.identities || []).map((identity) => (
+          {identities.map((identity) => (
             <IdentityRow
               key={`${identity.type}:${identity.normalized_identifier}`}
               identity={identity}
@@ -591,16 +592,6 @@ function LinkedIdentity({
                   setUnlinkingAccountKey(null);
                 }
               }}
-            />
-          ))}
-        </div>
-      ) : null}
-      {linkedAccounts.length === 0 && (link.identities || []).length > 0 ? (
-        <div className="linked-account-list">
-          {(link.identities || []).map((identity) => (
-            <IdentityRow
-              key={`${identity.type}:${identity.normalized_identifier}`}
-              identity={identity}
             />
           ))}
         </div>

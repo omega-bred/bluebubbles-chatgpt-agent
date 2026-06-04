@@ -37,8 +37,8 @@ public class SearchConvoHistoryAgentTool implements ToolProvider {
         jsonSchema(SearchConversationHistoryRequest.class),
         false,
         (context, args) -> {
-          IncomingMessage message = context.message();
-          if (message == null || message.chatGuid() == null || message.chatGuid().isBlank()) {
+          String chatGuid = IncomingMessage.chatGuidOrNull(context.message());
+          if (chatGuid == null) {
             return "no chat";
           }
           SearchConversationHistoryRequest request =
@@ -47,8 +47,7 @@ public class SearchConvoHistoryAgentTool implements ToolProvider {
           Integer limit = request.limit();
           Integer offset = request.offset();
           List<Message> bbMessages =
-              bbHttpClientWrapper.searchConversationHistory(
-                  message.chatGuid(), query, limit, offset);
+              bbHttpClientWrapper.searchConversationHistory(chatGuid, query, limit, offset);
           if (bbMessages == null) {
             return "not found";
           }

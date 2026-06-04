@@ -23,6 +23,8 @@ public class MessageResponseRateLimitService {
   public static final String LIMIT_KEY = "message_responses_per_month";
   public static final String LIMIT_LABEL = "Monthly assistant responses";
   public static final String SCOPE_TYPE_ACCOUNT = "account";
+  public static final long DEFAULT_PREMIUM_MONTHLY_LIMIT = 5_000L;
+  public static final String DEFAULT_PREMIUM_MONTHLY_LIMIT_DISPLAY = "5,000";
 
   private static final int ACCOUNT_BUCKET_PREFIX_LENGTH = 12;
 
@@ -37,7 +39,10 @@ public class MessageResponseRateLimitService {
       ModelAccessService modelAccessService,
       @Value("${bbagent.rate-limit.message-responses.standard-monthly-limit:200}")
           long standardMonthlyLimit,
-      @Value("${bbagent.rate-limit.message-responses.premium-monthly-limit:5000}")
+      @Value(
+              "${bbagent.rate-limit.message-responses.premium-monthly-limit:"
+                  + DEFAULT_PREMIUM_MONTHLY_LIMIT
+                  + "}")
           long premiumMonthlyLimit,
       @Nullable Clock clock) {
     this.rateLimitService = rateLimitService;

@@ -10,11 +10,9 @@ import io.breland.bbagent.server.agent.tools.ToolJson;
 import io.breland.bbagent.server.agent.tools.ToolProvider;
 import io.breland.bbagent.server.feedback.FeedbackService;
 import io.swagger.v3.oas.annotations.media.Schema;
-import java.time.format.DateTimeFormatter;
 
 public class FeedbackAgentTool implements ToolProvider {
   public static final String TOOL_NAME = "record_feedback";
-  private static final DateTimeFormatter INSTANT_FORMATTER = DateTimeFormatter.ISO_INSTANT;
 
   private final FeedbackService feedbackService;
 
@@ -67,7 +65,7 @@ public class FeedbackAgentTool implements ToolProvider {
   private FeedbackResponse toResponse(FeedbackService.RecordedFeedback feedback) {
     return new FeedbackResponse(
         feedback.feedbackId(),
-        INSTANT_FORMATTER.format(feedback.submittedAt()),
+        feedback.submittedAt().toString(),
         true,
         "Feedback recorded. Thanks for saying it directly.");
   }

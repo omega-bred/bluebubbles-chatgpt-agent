@@ -75,15 +75,16 @@ public class ScheduledEventTool implements ToolProvider {
             return "invalid repeat interval";
           }
           IncomingMessage source = context.message();
-          if (source == null || source.chatGuid() == null || source.chatGuid().isBlank()) {
+          String chatGuid = IncomingMessage.chatGuidOrNull(source);
+          if (chatGuid == null) {
             return "missing chat";
           }
-          String workflowId = buildWorkflowId(source.chatGuid());
+          String workflowId = buildWorkflowId(chatGuid);
           String messageGuid = "scheduled-" + UUID.randomUUID();
           String text = buildScheduledText(request.task(), scheduledAt, repeatInterval);
           IncomingMessage scheduledMessage =
               new IncomingMessage(
-                  source.chatGuid(),
+                  chatGuid,
                   messageGuid,
                   source.threadOriginatorGuid(),
                   text,
