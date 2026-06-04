@@ -22,6 +22,8 @@ import { getAccessToken, login } from "../auth/keycloak";
 import { trackEvent } from "./analytics";
 
 const axiosInstance = axios.create();
+const apiBasePath = import.meta.env.VITE_API_URL || "";
+const appClipSessionHeader = "X-App-Clip-Session";
 
 axiosInstance.interceptors.response.use(
   (response) => response,
@@ -76,7 +78,7 @@ async function authenticatedContactClient(): Promise<ContactApi> {
 async function authenticatedConfiguration(): Promise<Configuration> {
   const token = await getAccessToken();
   return new Configuration({
-    basePath: import.meta.env.VITE_API_URL || "",
+    basePath: apiBasePath,
     baseOptions: {
       headers: {
         Authorization: `Bearer ${token}`,
@@ -87,16 +89,16 @@ async function authenticatedConfiguration(): Promise<Configuration> {
 
 function publicConfiguration(): Configuration {
   return new Configuration({
-    basePath: import.meta.env.VITE_API_URL || "",
+    basePath: apiBasePath,
   });
 }
 
 function appClipSessionConfiguration(sessionToken: string): Configuration {
   return new Configuration({
-    basePath: import.meta.env.VITE_API_URL || "",
+    basePath: apiBasePath,
     baseOptions: {
       headers: {
-        "X-App-Clip-Session": sessionToken,
+        [appClipSessionHeader]: sessionToken,
       },
     },
   });
@@ -297,5 +299,5 @@ function hasAppClipSessionHeader(headers: unknown): boolean {
     return false;
   }
   const record = headers as Record<string, unknown>;
-  return Boolean(record["X-App-Clip-Session"] || record["x-app-clip-session"]);
+  return Boolean(record[appClipSessionHeader] || record[appClipSessionHeader.toLowerCase()]);
 }

@@ -47,7 +47,8 @@ public class SetGroupIconAgentTool implements ToolProvider {
         false,
         (context, args) -> {
           IncomingMessage message = context.message();
-          if (message == null || message.chatGuid() == null || message.chatGuid().isBlank()) {
+          String chatGuid = IncomingMessage.chatGuidOrNull(message);
+          if (chatGuid == null) {
             return "no chat";
           }
           if (!message.isGroup()) {
@@ -67,7 +68,7 @@ public class SetGroupIconAgentTool implements ToolProvider {
           try {
             tempPath = Files.createTempFile("bb-group-icon-", ".png");
             Files.write(tempPath, imageBytes.get());
-            boolean success = bbHttpClientWrapper.setConversationIcon(message.chatGuid(), tempPath);
+            boolean success = bbHttpClientWrapper.setConversationIcon(chatGuid, tempPath);
             return success ? "updated" : "failed";
           } catch (Exception e) {
             return "failed";

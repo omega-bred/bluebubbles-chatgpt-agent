@@ -468,20 +468,19 @@ public final class AgentPromptBuilder {
     List<ResponseInputContent> content = new ArrayList<>();
     StringBuilder text = new StringBuilder();
     text.append("Incoming message");
-    if (message.sender() != null && !message.sender().isBlank()) {
+    if (StringUtils.isNotBlank(message.sender())) {
       text.append(" from ").append(message.sender());
-    }
-    if (message.sender() != null && !message.sender().isBlank()) {
       String knownName = profileService.getGlobalNameForMessage(message);
-      if (knownName != null && !knownName.isBlank()) {
+      if (StringUtils.isNotBlank(knownName)) {
         text.append(" [sender name=").append(knownName).append("]");
       }
     }
     if (message.isGroup()) {
       text.append(" (group chat)");
     }
-    if (message.chatGuid() != null && !message.chatGuid().isBlank()) {
-      text.append(" [chatGuid=").append(message.chatGuid()).append("]");
+    String chatGuid = IncomingMessage.chatGuidOrNull(message);
+    if (chatGuid != null) {
+      text.append(" [chatGuid=").append(chatGuid).append("]");
     }
     appendWebsiteAccountLinkContext(text, message);
     if (message.messageGuid() != null && !message.messageGuid().isBlank()) {

@@ -103,10 +103,7 @@ struct ClipRootView: View {
                     .foregroundStyle(.red)
             }
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding()
-        .background(.thinMaterial)
-        .clipShape(RoundedRectangle(cornerRadius: 8))
+        .appClipPanel()
     }
 
     @ViewBuilder
@@ -161,10 +158,7 @@ struct ClipRootView: View {
                 .buttonStyle(.bordered)
             }
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding()
-        .background(.thinMaterial)
-        .clipShape(RoundedRectangle(cornerRadius: 8))
+        .appClipPanel()
     }
 
     @ViewBuilder
@@ -178,10 +172,7 @@ struct ClipRootView: View {
                     InfoRow(label: "Email", value: email)
                 }
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding()
-            .background(.thinMaterial)
-            .clipShape(RoundedRectangle(cornerRadius: 8))
+            .appClipPanel()
         }
     }
 
@@ -239,10 +230,7 @@ struct ClipRootView: View {
                         .foregroundStyle(.red)
                 }
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding()
-            .background(.thinMaterial)
-            .clipShape(RoundedRectangle(cornerRadius: 8))
+            .appClipPanel()
         }
     }
 
@@ -310,10 +298,7 @@ struct ClipRootView: View {
                         .foregroundStyle(.red)
                 }
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding()
-            .background(.thinMaterial)
-            .clipShape(RoundedRectangle(cornerRadius: 8))
+            .appClipPanel()
 
             VStack(alignment: .leading, spacing: 12) {
                 Text("Conversation")
@@ -337,10 +322,7 @@ struct ClipRootView: View {
                     }
                 }
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding()
-            .background(.thinMaterial)
-            .clipShape(RoundedRectangle(cornerRadius: 8))
+            .appClipPanel()
         }
     }
 
@@ -362,10 +344,7 @@ struct ClipRootView: View {
                     }
                 }
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding()
-            .background(.thinMaterial)
-            .clipShape(RoundedRectangle(cornerRadius: 8))
+            .appClipPanel()
         }
     }
 
@@ -384,11 +363,17 @@ struct ClipRootView: View {
                     }
                 }
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
+            .appClipPanel()
+        }
+    }
+}
+
+private extension View {
+    func appClipPanel() -> some View {
+        frame(maxWidth: .infinity, alignment: .leading)
             .padding()
             .background(.thinMaterial)
             .clipShape(RoundedRectangle(cornerRadius: 8))
-        }
     }
 }
 

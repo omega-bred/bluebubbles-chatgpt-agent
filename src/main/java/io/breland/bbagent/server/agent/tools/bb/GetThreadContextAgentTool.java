@@ -3,18 +3,16 @@ package io.breland.bbagent.server.agent.tools.bb;
 import static io.breland.bbagent.server.agent.tools.JsonSchemaUtilities.jsonSchema;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
-import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import io.breland.bbagent.server.agent.ConversationState;
 import io.breland.bbagent.server.agent.cadence.models.IncomingAttachment;
 import io.breland.bbagent.server.agent.tools.AgentTool;
 import io.breland.bbagent.server.agent.tools.ToolContext;
+import io.breland.bbagent.server.agent.tools.ToolJson;
 import io.breland.bbagent.server.agent.tools.ToolProvider;
 import io.breland.bbagent.server.agent.transport.bb.BBHttpClientWrapper;
 import io.swagger.v3.oas.annotations.media.Schema;
-import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.Optional;
 import java.util.stream.Collectors;
 import lombok.extern.slf4j.Slf4j;
@@ -35,6 +33,14 @@ public class GetThreadContextAgentTool implements ToolProvider {
       @Schema(description = "Thread root message GUID to fetch context for.")
           @JsonProperty("thread_root_guid")
           String threadRootGuid) {}
+
+  public record GetThreadContextResponse(
+      @JsonProperty("thread_root_guid") String threadRootGuid,
+      @JsonProperty("last_message_guid") String lastMessageGuid,
+      @JsonProperty("last_message_text") String lastMessageText,
+      @JsonProperty("last_message_sender") String lastMessageSender,
+      @JsonProperty("last_message_timestamp") String lastMessageTimestamp,
+      @JsonProperty("last_image_urls") List<String> lastImageUrls) {}
 
   @Override
   public AgentTool getTool() {
@@ -68,20 +74,17 @@ public class GetThreadContextAgentTool implements ToolProvider {
               return "no context";
             }
           }
-          Map<String, Object> response = new LinkedHashMap<>();
-          response.put("thread_root_guid", threadContext.threadRootGuid());
-          response.put("last_message_guid", threadContext.lastMessageGuid());
-          response.put("last_message_text", threadContext.lastMessageText());
-          response.put("last_message_sender", threadContext.lastMessageSender());
-          response.put("last_message_timestamp", threadContext.lastMessageTimestamp());
-          response.put("last_image_urls", threadContext.lastImageUrls());
-          try {
-            String modelResponse = context.getMapper().writeValueAsString(response);
-            log.info("modelResponse: {}", modelResponse);
-            return modelResponse;
-          } catch (JsonProcessingException e) {
-            throw new RuntimeException(e);
-          }
+          GetThreadContextResponse response =
+              new GetThreadContextResponse(
+                  threadContext.threadRootGuid(),
+                  threadContext.lastMessageGuid(),
+                  threadContext.lastMessageText(),
+                  threadContext.lastMessageSender(),
+                  threadContext.lastMessageTimestamp(),
+                  threadContext.lastImageUrls());
+          String modelResponse = ToolJson.stringify(context.getMapper(), response, "no context");
+          log.info("modelResponse: {}", modelResponse);
+          return modelResponse;
         });
   }
 

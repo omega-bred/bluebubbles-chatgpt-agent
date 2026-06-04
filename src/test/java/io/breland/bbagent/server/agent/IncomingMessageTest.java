@@ -2,6 +2,7 @@ package io.breland.bbagent.server.agent;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.time.Instant;
@@ -100,5 +101,29 @@ class IncomingMessageTest {
 
     assertEquals(IncomingMessage.METRIC_TRANSPORT_IMESSAGE, imessage.metricTransport());
     assertEquals(IncomingMessage.TRANSPORT_LXMF, lxmf.metricTransport());
+  }
+
+  @Test
+  void chatGuidOrNullRequiresNonBlankChatGuid() {
+    IncomingMessage message = messageWithChatGuid(" chat-guid ");
+
+    assertEquals(" chat-guid ", IncomingMessage.chatGuidOrNull(message));
+    assertNull(IncomingMessage.chatGuidOrNull(null));
+    assertNull(IncomingMessage.chatGuidOrNull(messageWithChatGuid(" ")));
+  }
+
+  private static IncomingMessage messageWithChatGuid(String chatGuid) {
+    return new IncomingMessage(
+        chatGuid,
+        "msg-1",
+        null,
+        "hello",
+        false,
+        "iMessage",
+        "Alice",
+        false,
+        Instant.now(),
+        List.of(),
+        false);
   }
 }

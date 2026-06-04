@@ -58,16 +58,17 @@ public class CadenceAgentActivitiesImpl implements CadenceAgentActivities {
 
   @Override
   public List<ConversationTurn> getConversationHistory(IncomingMessage message) {
-    if (message == null || message.chatGuid() == null || message.chatGuid().isBlank()) {
+    String chatGuid = IncomingMessage.chatGuidOrNull(message);
+    if (chatGuid == null) {
       return List.of();
     }
-    ConversationState state = messageAgent.getConversations().get(message.chatGuid());
+    ConversationState state = messageAgent.getConversations().get(chatGuid);
     if (state == null) {
       state =
           messageAgent
               .getConversations()
               .computeIfAbsent(
-                  message.chatGuid(), key -> messageAgent.computeConversationState(key, message));
+                  chatGuid, key -> messageAgent.computeConversationState(key, message));
     }
     synchronized (state) {
       return state.history();
@@ -277,10 +278,11 @@ public class CadenceAgentActivitiesImpl implements CadenceAgentActivities {
 
   private List<ConversationState.PendingIncomingTurn> pendingIncomingTurns(
       IncomingMessage message) {
-    if (message == null || message.chatGuid() == null || message.chatGuid().isBlank()) {
+    String chatGuid = IncomingMessage.chatGuidOrNull(message);
+    if (chatGuid == null) {
       return List.of();
     }
-    ConversationState state = messageAgent.getConversations().get(message.chatGuid());
+    ConversationState state = messageAgent.getConversations().get(chatGuid);
     if (state == null) {
       return List.of();
     }

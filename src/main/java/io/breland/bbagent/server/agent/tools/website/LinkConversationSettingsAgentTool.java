@@ -3,18 +3,16 @@ package io.breland.bbagent.server.agent.tools.website;
 import static io.breland.bbagent.server.agent.tools.JsonSchemaUtilities.jsonSchema;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
+import com.fasterxml.jackson.databind.PropertyNamingStrategies;
+import com.fasterxml.jackson.databind.annotation.JsonNaming;
 import io.breland.bbagent.server.agent.tools.AgentTool;
 import io.breland.bbagent.server.agent.tools.ToolJson;
 import io.breland.bbagent.server.agent.tools.ToolProvider;
 import io.breland.bbagent.server.website.WebsiteAccountService;
 import io.swagger.v3.oas.annotations.media.Schema;
-import java.time.format.DateTimeFormatter;
-import java.util.LinkedHashMap;
-import java.util.Map;
 
 public class LinkConversationSettingsAgentTool implements ToolProvider {
   public static final String TOOL_NAME = "link_conversation_settings";
-  private static final DateTimeFormatter INSTANT_FORMATTER = DateTimeFormatter.ISO_INSTANT;
 
   private final WebsiteAccountService accountService;
 
@@ -53,20 +51,19 @@ public class LinkConversationSettingsAgentTool implements ToolProvider {
         });
   }
 
-  private Map<String, Object> toResponse(WebsiteAccountService.CreatedLinkToken link) {
-    String expiresAt = INSTANT_FORMATTER.format(link.expiresAt());
+  @JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)
+  private record LinkConversationSettingsResponse(
+      String linkUrl, String expiresAt, String accountId, String chatGuid, String userFacingText) {}
+
+  private LinkConversationSettingsResponse toResponse(WebsiteAccountService.CreatedLinkToken link) {
+    String expiresAt = link.expiresAt().toString();
     String text =
         "Open this link to manage BlueChatAI responsiveness for this conversation: "
             + link.url()
             + "\nThis link expires at "
             + expiresAt
             + ".";
-    Map<String, Object> response = new LinkedHashMap<>();
-    response.put("link_url", link.url());
-    response.put("expires_at", expiresAt);
-    response.put("account_id", link.accountId());
-    response.put("chat_guid", link.chatGuid());
-    response.put("user_facing_text", text);
-    return response;
+    return new LinkConversationSettingsResponse(
+        link.url(), expiresAt, link.accountId(), link.chatGuid(), text);
   }
 }

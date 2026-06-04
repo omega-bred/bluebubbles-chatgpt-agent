@@ -442,11 +442,7 @@ public class WebsiteAccountService {
   }
 
   public record CreatedLinkToken(
-      String url, Instant expiresAt, String accountId, String purpose, String chatGuid) {
-    public CreatedLinkToken(String url, Instant expiresAt, String accountId) {
-      this(url, expiresAt, accountId, LINK_PURPOSE_ACCOUNT_LINK, null);
-    }
-  }
+      String url, Instant expiresAt, String accountId, String purpose, String chatGuid) {}
 
   public record SenderLinkStatus(
       String accountId,

@@ -58,8 +58,9 @@ public class MemorySaveAgentTool implements ToolProvider {
     if (message == null) {
       return metadata;
     }
-    if (message.chatGuid() != null && !message.chatGuid().isBlank()) {
-      metadata.put("chat_guid", message.chatGuid());
+    String chatGuid = IncomingMessage.chatGuidOrNull(message);
+    if (chatGuid != null) {
+      metadata.put("chat_guid", chatGuid);
     }
     if (message.messageGuid() != null && !message.messageGuid().isBlank()) {
       metadata.put("message_guid", message.messageGuid());

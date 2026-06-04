@@ -23,7 +23,9 @@ class LinkWebsiteAccountAgentToolTest {
             new WebsiteAccountService.CreatedLinkToken(
                 "https://chatagent.example/account/link?token=abc",
                 Instant.parse("2026-04-14T00:00:00Z"),
-                "Alice"));
+                "Alice",
+                WebsiteAccountService.LINK_PURPOSE_ACCOUNT_LINK,
+                null));
     LinkWebsiteAccountAgentTool tool = new LinkWebsiteAccountAgentTool(service);
     BBMessageAgent agent = Mockito.mock(BBMessageAgent.class);
     when(agent.getObjectMapper()).thenReturn(new ObjectMapper());
