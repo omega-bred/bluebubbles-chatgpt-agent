@@ -445,7 +445,7 @@ public class SubscriptionService {
 
   @Transactional(readOnly = true)
   public AdminSubscriptionListResponse adminListSubscriptions(int limit) {
-    int resolvedLimit = Math.max(1, Math.min(limit, 500));
+    int resolvedLimit = Math.clamp(limit, 1, 500);
     List<PaymentSubscriptionEntity> subscriptions =
         subscriptionRepository.findByOrderByUpdatedAtDesc(PageRequest.of(0, resolvedLimit));
     List<PaymentSubscriptionEntity> all = subscriptionRepository.findAll();
