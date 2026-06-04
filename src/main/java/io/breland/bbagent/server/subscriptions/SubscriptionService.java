@@ -20,6 +20,7 @@ import io.breland.bbagent.server.agent.account.AgentAccountIdentifiers;
 import io.breland.bbagent.server.agent.account.AgentAccountResolver;
 import io.breland.bbagent.server.agent.persistence.account.AgentAccountEntity;
 import io.breland.bbagent.server.agent.persistence.account.AgentAccountRepository;
+import io.breland.bbagent.server.agent.persistence.nativeapp.NativeAppSessionRepository;
 import io.breland.bbagent.server.agent.persistence.subscription.PaymentCheckoutSessionEntity;
 import io.breland.bbagent.server.agent.persistence.subscription.PaymentCheckoutSessionRepository;
 import io.breland.bbagent.server.agent.persistence.subscription.PaymentProviderEventEntity;
@@ -28,6 +29,7 @@ import io.breland.bbagent.server.agent.persistence.subscription.PaymentSubscript
 import io.breland.bbagent.server.agent.persistence.subscription.PaymentSubscriptionRepository;
 import io.breland.bbagent.server.analytics.UmamiAnalyticsService;
 import io.breland.bbagent.server.appclip.AppAccountTokens;
+import io.breland.bbagent.server.appclip.AppClipSessionService;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.Instant;
@@ -70,6 +72,7 @@ public class SubscriptionService {
   private final PaymentSubscriptionRepository subscriptionRepository;
   private final PaymentProviderEventRepository eventRepository;
   private final UmamiAnalyticsService umamiAnalyticsService;
+  private final NativeAppSessionRepository nativeAppSessionRepository;
 
   public SubscriptionService(
       SubscriptionProperties properties,
@@ -79,7 +82,8 @@ public class SubscriptionService {
       PaymentCheckoutSessionRepository checkoutRepository,
       PaymentSubscriptionRepository subscriptionRepository,
       PaymentProviderEventRepository eventRepository,
-      @Nullable UmamiAnalyticsService umamiAnalyticsService) {
+      @Nullable UmamiAnalyticsService umamiAnalyticsService,
+      @Nullable NativeAppSessionRepository nativeAppSessionRepository) {
     this.properties = properties;
     this.providerRegistry = providerRegistry;
     this.accountResolver = accountResolver;
@@ -88,6 +92,7 @@ public class SubscriptionService {
     this.subscriptionRepository = subscriptionRepository;
     this.eventRepository = eventRepository;
     this.umamiAnalyticsService = umamiAnalyticsService;
+    this.nativeAppSessionRepository = nativeAppSessionRepository;
   }
 
   public SubscriptionPlansResponse listPlans() {
@@ -235,6 +240,12 @@ public class SubscriptionService {
   @Transactional
   public SubscriptionSummaryResponse validateStoreKitTransaction(
       Jwt jwt, SubscriptionStoreKitTransactionRequest request) {
+    if (jwt != null
+        && StringUtils.isNotBlank(
+            jwt.getClaimAsString(AppClipSessionService.APP_CLIP_ACCOUNT_ID_CLAIM))) {
+      throw new ResponseStatusException(
+          HttpStatus.FORBIDDEN, "StoreKit purchases are not available in App Clips");
+    }
     AgentAccountEntity account = accountResolver.upsertWebsiteAccount(jwt);
     return validateStoreKitTransaction(account.getAccountId(), request);
   }
@@ -649,6 +660,15 @@ public class SubscriptionService {
               .map(PaymentSubscriptionEntity::getAccountId)
               .orElse(null);
     }
+    if (StringUtils.isBlank(accountId)
+        && AppleStoreKitSubscriptionProvider.PROVIDER_KEY.equals(providerKey)
+        && nativeAppSessionRepository != null) {
+      accountId =
+          nativeAppSessionRepository
+              .findByAppAccountToken(StringUtils.trimToEmpty(webhookEvent.customerSelector()))
+              .map(session -> session.getAccountId())
+              .orElse(null);
+    }
     if (StringUtils.isBlank(accountId)) {
       return new ProcessedWebhook(
           false, null, null, null, "Webhook did not include a known account");
@@ -659,9 +679,8 @@ public class SubscriptionService {
     SubscriptionProvider provider = requireProvider(providerKey);
     String selector = provider.customerSelector(accountId, webhookEvent.customerSelector());
     SubscriptionProvider.ProviderSubscription providerSubscription =
-        provider.fetchSubscription(
-            new SubscriptionProvider.SubscriptionLookup(
-                accountId, plan, providerPlan, selector, webhookEvent.providerSubscriptionId()));
+        providerSubscriptionFromWebhook(
+            provider, accountId, plan, providerPlan, selector, webhookEvent);
     PaymentSubscriptionEntity subscription =
         upsertProviderSubscription(
             accountId, providerKey, plan, providerPlan, checkout, providerSubscription);
@@ -677,6 +696,21 @@ public class SubscriptionService {
         checkout == null ? null : checkout.getCheckoutSessionId(),
         subscription.getSubscriptionId(),
         "Webhook processed");
+  }
+
+  private SubscriptionProvider.ProviderSubscription providerSubscriptionFromWebhook(
+      SubscriptionProvider provider,
+      String accountId,
+      SubscriptionProperties.Plan plan,
+      SubscriptionProperties.ProviderPlan providerPlan,
+      String selector,
+      SubscriptionProvider.ProviderWebhookEvent webhookEvent) {
+    if (provider instanceof AppleStoreKitSubscriptionProvider appleProvider) {
+      return appleProvider.subscriptionFromWebhookEvent(accountId, webhookEvent);
+    }
+    return provider.fetchSubscription(
+        new SubscriptionProvider.SubscriptionLookup(
+            accountId, plan, providerPlan, selector, webhookEvent.providerSubscriptionId()));
   }
 
   private Optional<PaymentCheckoutSessionEntity> findCheckout(

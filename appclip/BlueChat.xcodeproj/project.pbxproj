@@ -11,11 +11,12 @@
 		AA0000010000000000000002 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000020000000000000002 /* ContentView.swift */; };
 		AA0000010000000000000011 /* BlueChatClipApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000020000000000000011 /* BlueChatClipApp.swift */; };
 		AA0000010000000000000012 /* ClipRootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000020000000000000012 /* ClipRootView.swift */; };
-		AA0000010000000000000015 /* StoreKitManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000020000000000000015 /* StoreKitManager.swift */; };
 		AA0000010000000000000016 /* GeneratedAPIConfiguration.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000020000000000000018 /* GeneratedAPIConfiguration.swift */; };
 		AA00000100000000000000C1 /* BlueChatClip.app in Embed App Clips */ = {isa = PBXBuildFile; fileRef = AA00000200000000000000A2 /* BlueChatClip.app */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 		AA00000100000000000000D1 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = AA00000200000000000000D1 /* Assets.xcassets */; };
 		AA00000100000000000000D2 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = AA00000200000000000000D2 /* Assets.xcassets */; };
+		AA00000100000000000000E3 /* BlueChatAgentClient in Frameworks */ = {isa = PBXBuildFile; productRef = AA00001000000000000000E2 /* BlueChatAgentClient */; };
+		AA00000100000000000000E4 /* AnyCodable in Frameworks */ = {isa = PBXBuildFile; productRef = AA00001000000000000000E3 /* AnyCodable */; };
 		AA00000100000000000000E1 /* BlueChatAgentClient in Frameworks */ = {isa = PBXBuildFile; productRef = AA00001000000000000000E2 /* BlueChatAgentClient */; };
 		AA00000100000000000000E2 /* AnyCodable in Frameworks */ = {isa = PBXBuildFile; productRef = AA00001000000000000000E3 /* AnyCodable */; };
 /* End PBXBuildFile section */
@@ -65,7 +66,6 @@
 		AA0000020000000000000004 /* BlueChat.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = BlueChat.entitlements; sourceTree = "<group>"; };
 		AA0000020000000000000011 /* BlueChatClipApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BlueChatClipApp.swift; sourceTree = "<group>"; };
 		AA0000020000000000000012 /* ClipRootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClipRootView.swift; sourceTree = "<group>"; };
-		AA0000020000000000000015 /* StoreKitManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StoreKitManager.swift; sourceTree = "<group>"; };
 		AA0000020000000000000016 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		AA0000020000000000000017 /* BlueChatClip.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = BlueChatClip.entitlements; sourceTree = "<group>"; };
 		AA0000020000000000000018 /* GeneratedAPIConfiguration.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GeneratedAPIConfiguration.swift; sourceTree = "<group>"; };
@@ -76,7 +76,15 @@
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
-		AA0000030000000000000001 /* Frameworks */ = {isa = PBXFrameworksBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
+		AA0000030000000000000001 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				AA00000100000000000000E3 /* BlueChatAgentClient in Frameworks */,
+				AA00000100000000000000E4 /* AnyCodable in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		AA0000030000000000000011 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
@@ -116,7 +124,6 @@
 				AA0000020000000000000011 /* BlueChatClipApp.swift */,
 				AA0000020000000000000012 /* ClipRootView.swift */,
 				AA0000020000000000000018 /* GeneratedAPIConfiguration.swift */,
-				AA0000020000000000000015 /* StoreKitManager.swift */,
 				AA00000200000000000000D2 /* Assets.xcassets */,
 				AA0000020000000000000016 /* Info.plist */,
 				AA0000020000000000000017 /* BlueChatClip.entitlements */,
@@ -151,6 +158,10 @@
 				AA00000E00000000000000C4 /* PBXTargetDependency */,
 			);
 			name = BlueChat;
+			packageProductDependencies = (
+				AA00001000000000000000E2 /* BlueChatAgentClient */,
+				AA00001000000000000000E3 /* AnyCodable */,
+			);
 			productName = BlueChat;
 			productReference = AA00000200000000000000A1 /* BlueChat.app */;
 			productType = "com.apple.product-type.application";
@@ -252,7 +263,6 @@
 			files = (
 				AA0000010000000000000011 /* BlueChatClipApp.swift in Sources */,
 				AA0000010000000000000012 /* ClipRootView.swift in Sources */,
-				AA0000010000000000000015 /* StoreKitManager.swift in Sources */,
 				AA0000010000000000000016 /* GeneratedAPIConfiguration.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;

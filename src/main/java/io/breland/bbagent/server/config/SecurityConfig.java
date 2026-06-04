@@ -2,6 +2,8 @@ package io.breland.bbagent.server.config;
 
 import io.breland.bbagent.server.appclip.AppClipSessionAuthenticationFilter;
 import io.breland.bbagent.server.appclip.AppClipSessionService;
+import io.breland.bbagent.server.nativeapp.NativeAppSessionAuthenticationFilter;
+import io.breland.bbagent.server.nativeapp.NativeAppSessionService;
 import java.util.Collection;
 import java.util.LinkedHashSet;
 import java.util.Map;
@@ -38,12 +40,22 @@ public class SecurityConfig {
   }
 
   @Bean
+  @ConditionalOnBean(NativeAppSessionService.class)
+  NativeAppSessionAuthenticationFilter nativeAppSessionAuthenticationFilter(
+      NativeAppSessionService sessionService) {
+    return new NativeAppSessionAuthenticationFilter(sessionService);
+  }
+
+  @Bean
   SecurityFilterChain securityFilterChain(
       HttpSecurity http,
       Converter<Jwt, AbstractAuthenticationToken> jwtAuthenticationConverter,
-      ObjectProvider<AppClipSessionAuthenticationFilter> appClipSessionAuthenticationFilter)
+      ObjectProvider<AppClipSessionAuthenticationFilter> appClipSessionAuthenticationFilter,
+      ObjectProvider<NativeAppSessionAuthenticationFilter> nativeAppSessionAuthenticationFilter)
       throws Exception {
     appClipSessionAuthenticationFilter.ifAvailable(
+        filter -> http.addFilterBefore(filter, BearerTokenAuthenticationFilter.class));
+    nativeAppSessionAuthenticationFilter.ifAvailable(
         filter -> http.addFilterBefore(filter, BearerTokenAuthenticationFilter.class));
     return http.csrf(AbstractHttpConfigurer::disable)
         .sessionManagement(
@@ -59,6 +71,12 @@ public class SecurityConfig {
                     .permitAll()
                     .requestMatchers("/api/v1/appClip/**")
                     .authenticated()
+                    .requestMatchers("/api/v1/nativeApp/createSession.nativeAppSessions")
+                    .permitAll()
+                    .requestMatchers("/api/v1/nativeApp/**")
+                    .authenticated()
+                    .requestMatchers("/api/v1/texting/get.textingNumber")
+                    .permitAll()
                     .requestMatchers("/api/v1/contact/**")
                     .permitAll()
                     .requestMatchers("/api/v1/conversationSettings/**")

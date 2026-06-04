@@ -1,16 +1,46 @@
+import { useEffect, useState } from "react";
+
+import type { TextingNumberResponse } from "../client";
 import type { AuthState } from "../auth/useKeycloak";
 import { SiteNav } from "../components/SiteNav";
 import { trackEvent } from "../services/analytics";
+import { textingApi } from "../services/api-client";
 
 const screenOne = new URL("../../../images/screen1.png", import.meta.url).href;
 const screenTwo = new URL("../../../images/screen2.png", import.meta.url).href;
 const screenThree = new URL("../../../images/screen3.jpg", import.meta.url).href;
-const agentPhoneDisplay = "+1 (415) 867-4956";
-const agentSmsHref = "sms:+14158674956";
+const fallbackTextingNumber: TextingNumberResponse = {
+  phone_number_e164: "+14158674956",
+  display_number: "+1 (415) 867-4956",
+  default_message: "Hi BlueChatAI, let's start.",
+  sms_url: "sms:+14158674956",
+};
 const standardMonthlyMessageLimit = "200";
 const premiumMonthlyMessageLimit = "5,000";
 
 export function LandingPage({ auth }: { auth: AuthState }) {
+  const [textingNumber, setTextingNumber] =
+    useState<TextingNumberResponse>(fallbackTextingNumber);
+
+  useEffect(() => {
+    let cancelled = false;
+    textingApi
+      .getNumber()
+      .then((number) => {
+        if (!cancelled) {
+          setTextingNumber(number);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setTextingNumber(fallbackTextingNumber);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   return (
     <div className="site-shell">
       <SiteNav auth={auth} />
@@ -24,16 +54,16 @@ export function LandingPage({ auth }: { auth: AuthState }) {
           <p className="eyebrow">AI where the conversation already is</p>
           <h1>AI is in your messages.</h1>
           <p className="hero-lede">
-            Text {agentPhoneDisplay} to try BlueChat with ChatGPT, Gemini, Claude,
+            Text {textingNumber.display_number} to try BlueChat with ChatGPT, Gemini, Claude,
             or any other configured model.
           </p>
           <div className="hero-actions">
             <a
               className="button button-primary button-cta"
-              href={agentSmsHref}
+              href={textingNumber.sms_url}
               onClick={() => trackEvent("web_landing_sms_click", { source: "hero" })}
             >
-              Text {agentPhoneDisplay}
+              Text {textingNumber.display_number}
             </a>
             <a
               className="button button-secondary"
@@ -52,8 +82,8 @@ export function LandingPage({ auth }: { auth: AuthState }) {
           <p className="eyebrow">Text naturally</p>
           <h2>No app to open. No dashboard to babysit.</h2>
           <p>
-            Text {agentPhoneDisplay} and ask for plans, recipes, reminders, coding help, images,
-            GIFs, or calendar changes from the same thread your people are already using.
+            Text {textingNumber.display_number} and ask for plans, recipes, reminders, coding help,
+            images, GIFs, or calendar changes from the same thread your people are already using.
           </p>
         </div>
         <div className="image-strip">

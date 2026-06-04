@@ -141,10 +141,24 @@ Website account linking:
   those OAuth credentials. The dashboard should not unlink chat identities themselves unless the
   account model is intentionally redesigned.
 
-App Clip:
+Native iOS app and App Clip:
 - The native App Clip project lives in `appclip/BlueChat.xcodeproj`. The containing app bundle id is
   `land.bre.bluechat.ios`, the App Clip bundle id is `land.bre.bluechat.ios.Clip`, the Apple team id
   is `U2Q8X6GTU9`, and the App Clip domain is `bluechat.bre.land`.
+- The containing `BlueChat` app owns Apple StoreKit subscription purchase/restore. It creates or
+  restores a native session through `/api/v1/nativeApp/createSession.nativeAppSessions` and
+  `/api/v1/nativeApp/get.nativeAppSession`, sends `X-BlueChat-App-Session` on native-authenticated
+  APIs, and validates StoreKit transactions through
+  `/api/v1/subscription/validateStoreKit.subscriptionProviderEvents`.
+- The native app's large "Text BlueChatAI" action uses the backend-provided texting payload from the
+  native session. Public website entry points should fetch the current number from
+  `/api/v1/texting/get.textingNumber`; do not hard-code the SMS number in frontend code. The public
+  texting endpoint is authless and IP rate-limited by `bluechat.texting.public-rate-limit-rps`
+  (default 5 requests per second).
+- Native app sessions store a deterministic StoreKit `appAccountToken` and a one-time starter code
+  in the SMS body. When the starter text arrives, `NativeAppSessionService` claims the code, links the
+  incoming BlueChat sender identity to the native app's canonical `agent_accounts.account_id`, and
+  then lets normal agent processing continue with the code stripped from the message text.
 - App Clip entry links use one-time website tokens for either `/account/link?token=...` or
   `/conversation/settings?token=...`. The App Clip calls
   `/api/v1/appClip/createSession.appClipSessions` with the token, receives a session `purpose`
@@ -164,13 +178,13 @@ App Clip:
   `/api/v1/conversationSettings/get.conversationSettings` and
   `/api/v1/conversationSettings/updateResponsiveness.conversationSettings` with
   `X-App-Clip-Session`; those endpoints must reject account-link sessions.
+- The App Clip must not implement StoreKit purchase, restore, or subscription-management workflows.
+  It may display billing status, but subscription purchase/restore belongs in the containing app or
+  website. StoreKit validation must use `X-BlueChat-App-Session`, not `X-App-Clip-Session`.
 - Premium users can change the selected model through the shared website account model API. Standard
   accounts should remain on the local model surface. Premium accounts that did not come from Apple
   StoreKit should render billing as externally managed, for example `Managed on Website`, instead of
   showing Apple subscription management controls.
-- StoreKit purchases validate through
-  `/api/v1/subscription/validateStoreKit.subscriptionProviderEvents` with `X-App-Clip-Session`.
-  Preserve `apple` as the subscription provider key for App Store / StoreKit premium state.
 - Keep `apple-app-site-association` valid on `bluechat.bre.land` for both app links and App Clip
   invocation. The default App Clip experience in App Store Connect should target the account link and
   conversation settings URL patterns on that domain.
@@ -208,6 +222,12 @@ Subscription billing:
 - Stripe subscription checkout uses Checkout Sessions, Customer Portal for manage/cancel, and
   signed webhooks. Preserve metadata keys `bbagent_account_id`, `bbagent_checkout_id`,
   `bbagent_plan_key`, and `bbagent_provider` for reconciliation.
+- Apple StoreKit server notifications should point App Store Connect at
+  `https://bluechat.bre.land/api/v1/subscription/receiveWebhook.subscriptionProviderEvents?provider=apple`.
+  App Store Server Notifications v2 use Apple's signed payload verification rather than a shared
+  secret; configure Apple root certificates and environment through the existing
+  `APPLE_ROOT_CERTIFICATES_PEM`, `APPLE_STOREKIT_ENVIRONMENT`, and `APPLE_SUBSCRIPTIONS_ENABLED`
+  properties. Preserve `apple` as the provider key for App Store / StoreKit premium state.
 - Production currently uses Stripe test mode by default. `build.gradle` pulls the test-mode
   1Password item `stripe-bbagent-subscriptions-test` for local boot/test, while the Kubernetes
   manifest leaves the live item wiring in place for future promotion.

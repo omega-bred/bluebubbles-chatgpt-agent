@@ -14,6 +14,7 @@ import io.breland.bbagent.generated.model.AdminPremiumGrantTargetType;
 import io.breland.bbagent.generated.model.AdminSubscriptionActionResponse;
 import io.breland.bbagent.generated.model.SubscriptionPlan;
 import io.breland.bbagent.generated.model.SubscriptionProviderWebhookResponse;
+import io.breland.bbagent.generated.model.SubscriptionStoreKitTransactionRequest;
 import io.breland.bbagent.server.agent.account.AgentAccountIdentifiers;
 import io.breland.bbagent.server.agent.account.AgentAccountResolver;
 import io.breland.bbagent.server.agent.persistence.account.AgentAccountEntity;
@@ -23,6 +24,7 @@ import io.breland.bbagent.server.agent.persistence.subscription.PaymentProviderE
 import io.breland.bbagent.server.agent.persistence.subscription.PaymentProviderEventRepository;
 import io.breland.bbagent.server.agent.persistence.subscription.PaymentSubscriptionEntity;
 import io.breland.bbagent.server.agent.persistence.subscription.PaymentSubscriptionRepository;
+import io.breland.bbagent.server.appclip.AppClipSessionService;
 import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
@@ -32,6 +34,7 @@ import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
+import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.server.ResponseStatusException;
 
 class SubscriptionServiceTest {
@@ -118,6 +121,7 @@ class SubscriptionServiceTest {
                 mock(PaymentCheckoutSessionRepository.class),
                 subscriptionRepository,
                 mock(PaymentProviderEventRepository.class),
+                null,
                 null)
             .adminListSubscriptions(100)
             .getStats()
@@ -197,6 +201,29 @@ class SubscriptionServiceTest {
         .isEqualTo(HttpStatus.CONFLICT);
   }
 
+  @Test
+  void validateStoreKitTransactionRejectsAppClipSessionJwt() {
+    Jwt jwt =
+        Jwt.withTokenValue("app-clip-session")
+            .header("alg", "none")
+            .subject("appclip:account-1")
+            .claim(AppClipSessionService.APP_CLIP_ACCOUNT_ID_CLAIM, "account-1")
+            .build();
+
+    assertThatThrownBy(
+            () ->
+                service(
+                        mock(SubscriptionProviderRegistry.class),
+                        mock(PaymentProviderEventRepository.class))
+                    .validateStoreKitTransaction(
+                        jwt,
+                        new SubscriptionStoreKitTransactionRequest()
+                            .signedTransactionInfo("signed-transaction")))
+        .isInstanceOf(ResponseStatusException.class)
+        .extracting(error -> ((ResponseStatusException) error).getStatusCode())
+        .isEqualTo(HttpStatus.FORBIDDEN);
+  }
+
   private SubscriptionService service(
       SubscriptionProviderRegistry registry, PaymentProviderEventRepository eventRepository) {
     return service(properties(), registry, eventRepository);
@@ -214,6 +241,7 @@ class SubscriptionServiceTest {
         mock(PaymentCheckoutSessionRepository.class),
         mock(PaymentSubscriptionRepository.class),
         eventRepository,
+        null,
         null);
   }
 
@@ -227,6 +255,7 @@ class SubscriptionServiceTest {
         mock(PaymentCheckoutSessionRepository.class),
         mock(PaymentSubscriptionRepository.class),
         mock(PaymentProviderEventRepository.class),
+        null,
         null);
   }
 

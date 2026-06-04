@@ -19,7 +19,6 @@ import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.Base64;
-import java.util.List;
 import java.util.Optional;
 import org.apache.commons.codec.digest.DigestUtils;
 import org.apache.commons.lang3.StringUtils;
@@ -144,10 +143,6 @@ public class AppClipSessionService {
         session.getExpiresAt());
   }
 
-  public List<String> storeKitProductIds() {
-    return subscriptionService.storeKitProductIds();
-  }
-
   private AppClipSessionResponse response(
       String sessionToken, String accountId, String purpose, String chatGuid, Instant expiresAt) {
     WebsiteLinkedAccountsResponse linkedAccounts =
@@ -166,9 +161,7 @@ public class AppClipSessionService {
         .account(linkedAccounts.getAccount())
         .linkedAccounts(linkedAccounts)
         .subscription(subscription)
-        .conversationSettings(conversationSettings)
-        .appAccountToken(AppAccountTokens.forAccountId(accountId))
-        .storekitProductIds(storeKitProductIds());
+        .conversationSettings(conversationSettings);
   }
 
   private void markLinkTokenClaimed(

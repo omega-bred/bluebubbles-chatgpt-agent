@@ -7,6 +7,7 @@ import io.breland.bbagent.server.agent.persistence.account.AgentAccountIdentityR
 import io.breland.bbagent.server.agent.persistence.account.AgentAccountRepository;
 import io.breland.bbagent.server.agent.transport.bb.BBHttpClientWrapper;
 import io.breland.bbagent.server.appclip.AppClipSessionService;
+import io.breland.bbagent.server.nativeapp.NativeAppSessionService;
 import java.time.Instant;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -152,6 +153,18 @@ public class AgentAccountResolver {
   @Transactional
   public void recordMessageIdentities(IncomingMessage message) {
     resolveOrCreate(message);
+  }
+
+  @Transactional
+  public void linkIncomingMessageToAccount(String accountId, IncomingMessage message) {
+    if (StringUtils.isBlank(accountId) || message == null) {
+      return;
+    }
+    if (accountRepository.findById(accountId).isEmpty()) {
+      throw new IllegalArgumentException("unknown account id");
+    }
+    identityFrom(message).ifPresent(identity -> attachIdentityToAccount(accountId, identity));
+    recordMessageIdentities(message, accountId);
   }
 
   @Transactional
@@ -324,6 +337,7 @@ public class AgentAccountResolver {
     updateAccountColumn(
         "website_account_link_tokens", "redeemed_account_id", targetAccountId, sourceAccountId);
     updateAccountColumn("app_clip_sessions", "account_id", targetAccountId, sourceAccountId);
+    updateAccountColumn("native_app_sessions", "account_id", targetAccountId, sourceAccountId);
     updateAccountColumn(
         "payment_checkout_sessions", "account_id", targetAccountId, sourceAccountId);
     updateAccountColumn("payment_subscriptions", "account_id", targetAccountId, sourceAccountId);
@@ -439,6 +453,9 @@ public class AgentAccountResolver {
   private Optional<AgentAccountEntity> accountFromAppClipJwt(Jwt jwt) {
     String accountId =
         jwt == null ? null : jwt.getClaimAsString(AppClipSessionService.APP_CLIP_ACCOUNT_ID_CLAIM);
+    if (StringUtils.isBlank(accountId) && jwt != null) {
+      accountId = jwt.getClaimAsString(NativeAppSessionService.NATIVE_APP_ACCOUNT_ID_CLAIM);
+    }
     if (StringUtils.isBlank(accountId)) {
       return Optional.empty();
     }

@@ -94,9 +94,6 @@ class AppClipSessionServiceTest {
     assertThat(response.getSessionToken()).isNotBlank();
     assertThat(response.getPurpose()).isEqualTo(AppClipSessionResponse.PurposeEnum.ACCOUNT_LINK);
     assertThat(response.getAccount().getAccountId()).isEqualTo(accountId);
-    assertThat(response.getAppAccountToken()).isEqualTo(AppAccountTokens.forAccountId(accountId));
-    assertThat(response.getStorekitProductIds())
-        .containsExactly("land.bre.bluechat.premium.monthly");
     assertThat(savedSession.getValue().getAccountId()).isEqualTo(accountId);
     assertThat(savedSession.getValue().getPurpose())
         .isEqualTo(WebsiteAccountService.LINK_PURPOSE_ACCOUNT_LINK);

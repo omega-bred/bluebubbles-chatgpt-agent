@@ -24,6 +24,7 @@ import io.breland.bbagent.server.agent.transport.bb.BBHttpClientWrapper;
 import io.breland.bbagent.server.feedback.FeedbackService;
 import io.breland.bbagent.server.metrics.AgentMetricsService;
 import io.breland.bbagent.server.metrics.OperationalMetricsService;
+import io.breland.bbagent.server.nativeapp.NativeAppSessionService;
 import io.breland.bbagent.server.ratelimit.MessageResponseRateLimitService;
 import io.breland.bbagent.server.ratelimit.RateLimitDecision;
 import io.breland.bbagent.server.website.WebsiteAccountService;
@@ -71,6 +72,7 @@ public class BBMessageAgent {
 
   private final MessageResponseRateLimitService messageResponseRateLimitService;
   private final MessageResponseLimitNoticeFactory messageResponseLimitNoticeFactory;
+  private final NativeAppSessionService nativeAppSessionService;
 
   @Value("${website.base-url:http://localhost:8080}")
   private String websiteBaseUrl = "http://localhost:8080";
@@ -98,6 +100,7 @@ public class BBMessageAgent {
       @Nullable FeedbackService feedbackService,
       @Nullable MessageResponseRateLimitService messageResponseRateLimitService,
       @Nullable OperationalMetricsService operationalMetricsService,
+      @Nullable NativeAppSessionService nativeAppSessionService,
       ModelPicker modelPicker) {
     if (openAiClient != null) {
       this.openAIClient = openAiClient;
@@ -114,6 +117,7 @@ public class BBMessageAgent {
             openAiSupplier, this.objectMapper, () -> termsAcceptanceResponsesModel);
     this.profileService = profileService;
     this.messageResponseRateLimitService = messageResponseRateLimitService;
+    this.nativeAppSessionService = nativeAppSessionService;
     this.workflowResponseGate = new WorkflowResponseGate(conversations);
     this.threadContextRecorder = new ConversationThreadContextRecorder(attachmentInputBuilder);
     LlmProvider llmProvider = new OpenAiResponsesLlmProvider(openAiSupplier, modelPicker);
@@ -186,6 +190,7 @@ public class BBMessageAgent {
         feedbackService,
         messageResponseRateLimitService,
         null,
+        null,
         modelPicker);
   }
 
@@ -195,7 +200,19 @@ public class BBMessageAgent {
 
   // main invocation point from webhook
   public void handleIncomingMessage(IncomingMessage message) {
-    incomingMessageHandler.handleIncomingMessage(message);
+    incomingMessageHandler.handleIncomingMessage(claimNativeAppStartToken(message));
+  }
+
+  private IncomingMessage claimNativeAppStartToken(IncomingMessage message) {
+    if (nativeAppSessionService == null) {
+      return message;
+    }
+    try {
+      return nativeAppSessionService.claimStartToken(message);
+    } catch (Exception e) {
+      log.warn("native_app_start_token_claim_failed", e);
+      return message;
+    }
   }
 
   private String termsUrl() {

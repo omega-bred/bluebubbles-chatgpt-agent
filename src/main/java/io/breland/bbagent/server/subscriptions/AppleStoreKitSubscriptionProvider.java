@@ -2,6 +2,7 @@ package io.breland.bbagent.server.subscriptions;
 
 import static io.breland.bbagent.server.subscriptions.SubscriptionJson.firstNonBlank;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.breland.bbagent.generated.model.SubscriptionStoreKitTransactionRequest;
 import java.nio.charset.StandardCharsets;
@@ -104,6 +105,25 @@ public class AppleStoreKitSubscriptionProvider implements SubscriptionProvider {
     return toProviderSubscription(accountId, transaction);
   }
 
+  public ProviderSubscription subscriptionFromWebhookEvent(
+      String accountId, ProviderWebhookEvent webhookEvent) {
+    try {
+      JsonNode raw = objectMapper.readTree(webhookEvent.rawPayload());
+      String signedTransactionInfo = text(raw.get("signed_transaction_info"));
+      String signedRenewalInfo = text(raw.get("signed_renewal_info"));
+      if (StringUtils.isBlank(signedTransactionInfo)) {
+        throw new IllegalArgumentException("Apple notification did not include a transaction");
+      }
+      AppleStoreKitVerification.VerifiedTransaction transaction =
+          verification.verifyTransaction(signedTransactionInfo, signedRenewalInfo);
+      return toProviderSubscription(accountId, transaction);
+    } catch (IllegalArgumentException e) {
+      throw e;
+    } catch (Exception e) {
+      throw new IllegalArgumentException("Invalid Apple notification payload", e);
+    }
+  }
+
   private ProviderSubscription toProviderSubscription(
       String accountId, AppleStoreKitVerification.VerifiedTransaction transaction) {
     Instant now = Instant.now();
@@ -147,5 +167,12 @@ public class AppleStoreKitSubscriptionProvider implements SubscriptionProvider {
 
   private String originalTransactionId(AppleStoreKitVerification.VerifiedTransaction transaction) {
     return firstNonBlank(transaction.originalTransactionId(), transaction.transactionId());
+  }
+
+  private String text(JsonNode node) {
+    if (node == null || node.isNull()) {
+      return null;
+    }
+    return StringUtils.trimToNull(node.asText());
   }
 }

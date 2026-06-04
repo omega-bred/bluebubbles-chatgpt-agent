@@ -1,5 +1,4 @@
 import BlueChatAgentClient
-import StoreKit
 import SwiftUI
 
 struct ClipRootView: View {
@@ -113,50 +112,13 @@ struct ClipRootView: View {
                 .font(.headline)
             Text(model.billingSummary)
                 .foregroundStyle(.secondary)
-            if let error = model.billingErrorMessage {
-                Text(error)
-                    .font(.callout)
-                    .foregroundStyle(.red)
-            }
-            Button {
-                Task {
-                    await model.purchasePremium()
-                }
-            } label: {
-                HStack {
-                    if model.purchaseInProgress {
-                        ProgressView()
-                    }
-                    Text(model.purchaseButtonTitle)
-                }
+            Text(model.billingManagementTitle)
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
                 .frame(maxWidth: .infinity)
-            }
-            .buttonStyle(.borderedProminent)
-            .disabled(!model.canPurchase)
-            if model.canRestorePurchases {
-                Button {
-                    Task {
-                        await model.restoreApplePurchases()
-                    }
-                } label: {
-                    HStack {
-                        if model.restoreInProgress {
-                            ProgressView()
-                        }
-                        Text(model.restoreButtonTitle)
-                    }
-                    .frame(maxWidth: .infinity)
-                }
-                .buttonStyle(.bordered)
-                .disabled(model.restoreInProgress)
-            }
-            if let managementURL = model.appleSubscriptionManagementURL {
-                Link(destination: managementURL) {
-                    Text("Manage Apple Subscription")
-                        .frame(maxWidth: .infinity)
-                }
-                .buttonStyle(.bordered)
-            }
+                .padding(.vertical, 10)
+                .background(Color.secondary.opacity(0.12))
+                .clipShape(Capsule())
         }
         .appClipPanel()
     }
@@ -474,19 +436,13 @@ private struct UsageMetric: View {
 @MainActor
 final class ClipViewModel: ObservableObject {
     @Published private(set) var session: AppClipSessionResponse?
-    @Published private(set) var product: Product?
     @Published var isLoading = false
-    @Published var purchaseInProgress = false
-    @Published var restoreInProgress = false
     @Published var modelSelectionInProgress = false
     @Published var responsivenessSelectionInProgress: String?
     @Published var errorMessage: String?
-    @Published var billingErrorMessage: String?
     @Published var modelErrorMessage: String?
 
-    private let storeKit = StoreKitManager()
     private let sessionTokenKey = "bluechat.appclip.session-token"
-    private var transactionUpdatesTask: Task<Void, Never>?
 
     private enum BootstrapSource: String {
         case link
@@ -495,7 +451,6 @@ final class ClipViewModel: ObservableObject {
 
     init() {
         GeneratedAPIConfiguration.configure()
-        observeStoreKitTransactionUpdates()
     }
 
     var title: String {
@@ -629,49 +584,25 @@ final class ClipViewModel: ObservableObject {
 
     var billingSummary: String {
         guard let session else {
-            return "Premium is available through Apple."
+            return "Premium can be managed from the BlueChatAI app or website."
         }
         if session.subscription.isPremium {
             if isPremiumManagedOutsideApple {
                 return "Premium is active. Billing is managed on the website."
             }
-            return "Premium model access is enabled through Apple."
+            if hasAppleSubscription {
+                return "Premium is active through Apple in the BlueChatAI app."
+            }
+            return "Premium model access is enabled."
         }
-        if let product {
-            return product.displayPrice + " per month"
+        return "Premium upgrades are available in the BlueChatAI app or website."
+    }
+
+    var billingManagementTitle: String {
+        if session?.subscription.isPremium == true {
+            return isPremiumManagedOutsideApple ? "Managed on Website" : "Premium active"
         }
-        return "Premium is available through Apple."
-    }
-
-    var purchaseButtonTitle: String {
-        if purchaseInProgress {
-            return "Purchasing"
-        }
-        if isPremiumManagedOutsideApple {
-            return "Managed on Website"
-        }
-        return session?.subscription.isPremium == true ? "Premium active" : "Upgrade"
-    }
-
-    var restoreButtonTitle: String {
-        restoreInProgress ? "Checking Apple Purchases" : "Restore Apple Purchase"
-    }
-
-    var canPurchase: Bool {
-        session?.purpose == .accountLink
-            && product != nil
-            && !purchaseInProgress
-            && session?.subscription.isPremium != true
-    }
-
-    var canRestorePurchases: Bool {
-        session?.purpose == .accountLink
-            && session?.subscription.isPremium != true
-            && session?.storekitProductIds.isEmpty == false
-    }
-
-    var appleSubscriptionManagementURL: URL? {
-        hasAppleSubscription ? URL(string: "https://apps.apple.com/account/subscriptions") : nil
+        return "Open the app or website to upgrade"
     }
 
     private var primaryIdentity: WebsiteAccountIdentity? {
@@ -709,73 +640,6 @@ final class ClipViewModel: ObservableObject {
             return
         }
         await loadSession(sessionToken: token)
-    }
-
-    func purchasePremium() async {
-        guard let session, let product else {
-            return
-        }
-        guard session.purpose == .accountLink else {
-            return
-        }
-        purchaseInProgress = true
-        billingErrorMessage = nil
-        defer {
-            purchaseInProgress = false
-        }
-        do {
-            trackAppClipEvent("appclip_purchase_started", properties: eventContext(for: session))
-            let purchase = try await storeKit.purchase(product: product, appAccountToken: session.appAccountToken)
-            let updated = try await validateStoreKitPurchase(purchase, session: session, productId: product.id)
-            await purchase.transaction.finish()
-            self.session = session.replacing(subscription: updated)
-            trackAppClipEvent(
-                "appclip_purchase_completed",
-                properties: eventContext(for: self.session ?? session)
-            )
-        } catch {
-            trackAppClipEvent(
-                "appclip_purchase_failed",
-                properties: eventContext(for: session)
-            )
-            billingErrorMessage = error.localizedDescription
-        }
-    }
-
-    func restoreApplePurchases() async {
-        guard let session else {
-            return
-        }
-        guard session.purpose == .accountLink else {
-            return
-        }
-        restoreInProgress = true
-        billingErrorMessage = nil
-        defer {
-            restoreInProgress = false
-        }
-        do {
-            trackAppClipEvent("appclip_purchase_restore_started", properties: eventContext(for: session))
-            let restored = try await syncCurrentAppleEntitlements(for: session)
-            if restored {
-                trackAppClipEvent(
-                    "appclip_purchase_restore_completed",
-                    properties: eventContext(for: self.session ?? session)
-                )
-            } else {
-                billingErrorMessage = "No active Apple subscription was found for this account."
-                trackAppClipEvent(
-                    "appclip_purchase_restore_empty",
-                    properties: eventContext(for: session)
-                )
-            }
-        } catch {
-            trackAppClipEvent(
-                "appclip_purchase_restore_failed",
-                properties: eventContext(for: session)
-            )
-            billingErrorMessage = error.localizedDescription
-        }
     }
 
     func identityLabel(_ identity: WebsiteAccountIdentity) -> String {
@@ -863,7 +727,6 @@ final class ClipViewModel: ObservableObject {
                 AppClipAPI.appClipGetSessionWithRequestBuilder()
             }
             self.session = refreshed
-            await prepareAccountSessionIfNeeded(for: refreshed)
             trackAppClipEvent(
                 "appclip_model_selection_updated",
                 properties: eventContext(for: refreshed).merging(["model": modelKey]) { _, new in new }
@@ -930,7 +793,6 @@ final class ClipViewModel: ObservableObject {
     private func createSession(linkToken: String) async {
         isLoading = true
         errorMessage = nil
-        billingErrorMessage = nil
         modelErrorMessage = nil
         defer {
             isLoading = false
@@ -943,7 +805,6 @@ final class ClipViewModel: ObservableObject {
             UserDefaults.standard.set(session.sessionToken, forKey: sessionTokenKey)
             self.session = session
             errorMessage = nil
-            await prepareAccountSessionIfNeeded(for: session)
             trackAppClipEvent(
                 "appclip_session_created",
                 properties: eventContext(for: session).merging(["launch_source": "link"]) { _, new in new },
@@ -957,7 +818,6 @@ final class ClipViewModel: ObservableObject {
     private func loadSession(sessionToken: String) async {
         isLoading = true
         errorMessage = nil
-        billingErrorMessage = nil
         modelErrorMessage = nil
         defer {
             isLoading = false
@@ -968,7 +828,6 @@ final class ClipViewModel: ObservableObject {
             }
             self.session = session
             errorMessage = nil
-            await prepareAccountSessionIfNeeded(for: session)
             trackAppClipEvent(
                 "appclip_session_restored",
                 properties: eventContext(for: session).merging(["launch_source": "stored"]) { _, new in new },
@@ -988,146 +847,6 @@ final class ClipViewModel: ObservableObject {
             errorMessage = bootstrapErrorMessage(for: error, source: source)
         } else {
             errorMessage = nil
-        }
-    }
-
-    private func prepareAccountSessionIfNeeded(for session: AppClipSessionResponse) async {
-        guard session.purpose == .accountLink else {
-            product = nil
-            billingErrorMessage = nil
-            return
-        }
-        await loadProductIfNeeded(for: session)
-        await syncCurrentAppleEntitlementsSilently(for: self.session ?? session)
-    }
-
-    private func loadProductIfNeeded(for session: AppClipSessionResponse) async {
-        guard !session.subscription.isPremium else {
-            product = nil
-            return
-        }
-        await loadProduct(productIds: session.storekitProductIds)
-    }
-
-    private func loadProduct(productIds: [String]) async {
-        guard !productIds.isEmpty else {
-            product = nil
-            billingErrorMessage = "Premium purchases are not configured yet."
-            return
-        }
-        do {
-            product = try await storeKit.loadProducts(productIds: productIds).first
-            if product == nil {
-                billingErrorMessage = "Premium purchases are not available in App Store Connect yet."
-            }
-        } catch {
-            billingErrorMessage = error.localizedDescription
-        }
-    }
-
-    private func validateStoreKitPurchase(
-        _ purchase: StoreKitManager.VerifiedPurchase,
-        session: AppClipSessionResponse,
-        productId: String? = nil
-    ) async throws -> SubscriptionSummaryResponse {
-        try await GeneratedAPIConfiguration.executeWithSession(session.sessionToken) {
-            SubscriptionAPI.subscriptionValidateStoreKitWithRequestBuilder(
-                subscriptionStoreKitTransactionRequest: SubscriptionStoreKitTransactionRequest(
-                    signedTransactionInfo: purchase.jwsRepresentation,
-                    productId: productId ?? purchase.transaction.productID,
-                    transactionId: String(purchase.transaction.id)
-                )
-            )
-        }
-    }
-
-    private func syncCurrentAppleEntitlementsSilently(for session: AppClipSessionResponse) async {
-        guard session.purpose == .accountLink else {
-            return
-        }
-        guard session.subscription.isPremium != true else {
-            return
-        }
-        do {
-            let restored = try await syncCurrentAppleEntitlements(for: session)
-            if restored {
-                trackAppClipEvent(
-                    "appclip_purchase_auto_restored",
-                    properties: eventContext(for: self.session ?? session)
-                )
-            }
-        } catch {
-            trackAppClipEvent(
-                "appclip_purchase_auto_restore_failed",
-                properties: eventContext(for: session)
-            )
-        }
-    }
-
-    private func syncCurrentAppleEntitlements(for session: AppClipSessionResponse) async throws -> Bool {
-        guard session.purpose == .accountLink else {
-            return false
-        }
-        let purchases = try await storeKit.currentEntitlements(productIds: session.storekitProductIds)
-        guard
-            let purchase = purchases.sorted(by: { $0.transaction.purchaseDate > $1.transaction.purchaseDate }).first
-        else {
-            return false
-        }
-        let updated = try await validateStoreKitPurchase(purchase, session: session)
-        let refreshed = (self.session ?? session).replacing(subscription: updated)
-        self.session = refreshed
-        await prepareAccountSessionIfNeeded(for: refreshed)
-        return true
-    }
-
-    private func observeStoreKitTransactionUpdates() {
-        guard transactionUpdatesTask == nil else {
-            return
-        }
-        transactionUpdatesTask = Task { [weak self] in
-            for await verification in StoreKit.Transaction.updates {
-                guard !Task.isCancelled else {
-                    return
-                }
-                await self?.handleStoreKitTransactionUpdate(verification)
-            }
-        }
-    }
-
-    private func handleStoreKitTransactionUpdate(
-        _ verification: VerificationResult<StoreKit.Transaction>
-    ) async {
-        guard let session else {
-            return
-        }
-        guard session.purpose == .accountLink else {
-            return
-        }
-        do {
-            let purchase = try storeKit.verifiedPurchase(from: verification)
-            guard session.storekitProductIds.contains(purchase.transaction.productID) else {
-                return
-            }
-            trackAppClipEvent(
-                "appclip_purchase_transaction_update_started",
-                properties: eventContext(for: session)
-            )
-            let updated = try await validateStoreKitPurchase(purchase, session: session)
-            await purchase.transaction.finish()
-            let refreshed = (self.session ?? session).replacing(subscription: updated)
-            self.session = refreshed
-            await prepareAccountSessionIfNeeded(for: refreshed)
-            trackAppClipEvent(
-                "appclip_purchase_transaction_update_completed",
-                properties: eventContext(for: refreshed)
-            )
-        } catch {
-            billingErrorMessage = error.localizedDescription
-            trackAppClipEvent(
-                "appclip_purchase_transaction_update_failed",
-                properties: eventContext(for: session)
-            )
         }
     }
 

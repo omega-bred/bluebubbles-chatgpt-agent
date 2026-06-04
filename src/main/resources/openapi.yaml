@@ -20,6 +20,10 @@ tags:
     description: Public help and contact endpoints
   - name: subscription
     description: Payment subscription and billing endpoints
+  - name: texting
+    description: Public BlueChat texting discovery endpoints
+  - name: nativeApp
+    description: Native iOS app session and launch endpoints
   - name: appClip
     description: iOS App Clip session and bootstrap endpoints
   - name: conversationSettings
@@ -95,6 +99,22 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/PingResponse"
+  /api/v1/texting/get.textingNumber:
+    get:
+      operationId: textingGetNumber
+      tags:
+        - texting
+      summary: Gets the public BlueChat texting number
+      description: Returns the current phone number and default message users should text to start BlueChat.
+      responses:
+        '200':
+          description: Current texting number
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TextingNumberResponse'
+        '429':
+          description: Too many requests
   /api/v1/gcal/completeOauth.gcal:
     get:
       operationId: gcalCompleteOauth
@@ -268,7 +288,7 @@ paths:
       tags:
         - appClip
       summary: Gets App Clip bootstrap data
-      description: Returns account, subscription, and StoreKit bootstrap data for a valid App Clip session.
+      description: Returns account, subscription summary, and conversation settings data for a valid App Clip session.
       security:
         - appClipSessionAuth: []
       responses:
@@ -328,6 +348,44 @@ paths:
                 $ref: '#/components/schemas/AppClipEventResponse'
         '400':
           description: Missing or invalid event
+  /api/v1/nativeApp/createSession.nativeAppSessions:
+    post:
+      operationId: nativeAppCreateSession
+      tags:
+        - nativeApp
+      summary: Creates a native iOS app session
+      description: Creates an anonymous native app account session, StoreKit appAccountToken, and prefilled starter text.
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NativeAppSessionCreateRequest'
+      responses:
+        '200':
+          description: Native app session created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NativeAppSessionResponse'
+  /api/v1/nativeApp/get.nativeAppSession:
+    get:
+      operationId: nativeAppGetSession
+      tags:
+        - nativeApp
+      summary: Gets native iOS app session data
+      description: Returns subscription state, StoreKit product IDs, and a fresh prefilled starter text for a valid native app session.
+      security:
+        - nativeAppSessionAuth: []
+      responses:
+        '200':
+          description: Current native app session
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NativeAppSessionResponse'
+        '401':
+          description: Missing or invalid native app session
   /api/v1/conversationSettings/get.conversationSettings:
     get:
       operationId: conversationSettingsGet
@@ -538,7 +596,7 @@ paths:
       description: Validates a StoreKit 2 signed transaction for the authenticated account and updates subscription entitlements.
       security:
         - bearerAuth: []
-        - appClipSessionAuth: []
+        - nativeAppSessionAuth: []
       requestBody:
         required: true
         content:
@@ -1040,6 +1098,10 @@ components:
       type: apiKey
       in: header
       name: X-App-Clip-Session
+    nativeAppSessionAuth:
+      type: apiKey
+      in: header
+      name: X-BlueChat-App-Session
   schemas:
     WebsiteAccountProfile:
       type: object
@@ -1444,6 +1506,66 @@ components:
           $ref: '#/components/schemas/ConversationSettingsResponse'
         message:
           type: string
+    TextingNumberResponse:
+      type: object
+      required:
+        - phone_number_e164
+        - display_number
+        - default_message
+        - sms_url
+      properties:
+        phone_number_e164:
+          type: string
+          description: E.164 phone number users should text.
+        display_number:
+          type: string
+          description: Human-readable phone number.
+        default_message:
+          type: string
+          description: Suggested message body for starting a BlueChat conversation.
+        sms_url:
+          type: string
+          description: SMS URL with the current phone number and default message.
+    NativeAppSessionCreateRequest:
+      type: object
+      properties:
+        source:
+          type: string
+          nullable: true
+          description: Optional launch source label for diagnostics.
+    NativeAppSessionResponse:
+      type: object
+      required:
+        - session_token
+        - expires_at
+        - account_id
+        - app_account_token
+        - subscription
+        - storekit_product_ids
+        - texting
+      properties:
+        session_token:
+          type: string
+          description: Opaque native app session token. Send as X-BlueChat-App-Session.
+        expires_at:
+          type: string
+          format: date-time
+        account_id:
+          type: string
+          description: Canonical agent account id for this native app session.
+        app_account_token:
+          type: string
+          format: uuid
+          description: Deterministic StoreKit appAccountToken for purchases by this account.
+        subscription:
+          $ref: '#/components/schemas/SubscriptionSummaryResponse'
+        storekit_product_ids:
+          type: array
+          items:
+            type: string
+          description: StoreKit product IDs the native app should load.
+        texting:
+          $ref: '#/components/schemas/TextingNumberResponse'
     AppClipCreateSessionRequest:
       type: object
       required:
@@ -1461,8 +1583,6 @@ components:
         - account
         - linked_accounts
         - subscription
-        - app_account_token
-        - storekit_product_ids
       properties:
         session_token:
           type: string
@@ -1484,15 +1604,6 @@ components:
         conversation_settings:
           nullable: true
           $ref: '#/components/schemas/ConversationSettingsResponse'
-        app_account_token:
-          type: string
-          format: uuid
-          description: Deterministic StoreKit appAccountToken for purchases by this account.
-        storekit_product_ids:
-          type: array
-          items:
-            type: string
-          description: StoreKit product IDs the App Clip should load.
     AppClipEventRequest:
       type: object
       required:

@@ -219,8 +219,8 @@ open class SubscriptionAPI {
      - POST /api/v1/subscription/validateStoreKit.subscriptionProviderEvents
      - Validates a StoreKit 2 signed transaction for the authenticated account and updates subscription entitlements.
      - API Key:
-       - type: apiKey X-App-Clip-Session (HEADER)
-       - name: appClipSessionAuth
+       - type: apiKey X-BlueChat-App-Session (HEADER)
+       - name: nativeAppSessionAuth
      - Bearer Token:
        - type: http
        - name: bearerAuth

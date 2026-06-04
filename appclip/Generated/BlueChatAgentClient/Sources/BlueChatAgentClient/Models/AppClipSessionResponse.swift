@@ -24,12 +24,8 @@ public struct AppClipSessionResponse: Codable, JSONEncodable, Hashable {
     public var linkedAccounts: WebsiteLinkedAccountsResponse
     public var subscription: SubscriptionSummaryResponse
     public var conversationSettings: ConversationSettingsResponse?
-    /** Deterministic StoreKit appAccountToken for purchases by this account. */
-    public var appAccountToken: UUID
-    /** StoreKit product IDs the App Clip should load. */
-    public var storekitProductIds: [String]
 
-    public init(sessionToken: String, purpose: Purpose, expiresAt: Date, account: WebsiteAccountProfile, linkedAccounts: WebsiteLinkedAccountsResponse, subscription: SubscriptionSummaryResponse, conversationSettings: ConversationSettingsResponse? = nil, appAccountToken: UUID, storekitProductIds: [String]) {
+    public init(sessionToken: String, purpose: Purpose, expiresAt: Date, account: WebsiteAccountProfile, linkedAccounts: WebsiteLinkedAccountsResponse, subscription: SubscriptionSummaryResponse, conversationSettings: ConversationSettingsResponse? = nil) {
         self.sessionToken = sessionToken
         self.purpose = purpose
         self.expiresAt = expiresAt
@@ -37,8 +33,6 @@ public struct AppClipSessionResponse: Codable, JSONEncodable, Hashable {
         self.linkedAccounts = linkedAccounts
         self.subscription = subscription
         self.conversationSettings = conversationSettings
-        self.appAccountToken = appAccountToken
-        self.storekitProductIds = storekitProductIds
     }
 
     public enum CodingKeys: String, CodingKey, CaseIterable {
@@ -49,8 +43,6 @@ public struct AppClipSessionResponse: Codable, JSONEncodable, Hashable {
         case linkedAccounts = "linked_accounts"
         case subscription
         case conversationSettings = "conversation_settings"
-        case appAccountToken = "app_account_token"
-        case storekitProductIds = "storekit_product_ids"
     }
 
     // Encodable protocol methods
@@ -64,7 +56,5 @@ public struct AppClipSessionResponse: Codable, JSONEncodable, Hashable {
         try container.encode(linkedAccounts, forKey: .linkedAccounts)
         try container.encode(subscription, forKey: .subscription)
         try container.encodeIfPresent(conversationSettings, forKey: .conversationSettings)
-        try container.encode(appAccountToken, forKey: .appAccountToken)
-        try container.encode(storekitProductIds, forKey: .storekitProductIds)
     }
 }

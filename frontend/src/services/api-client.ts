@@ -7,6 +7,7 @@ import {
   ContactApi,
   ConversationSettingsApi,
   SubscriptionApi,
+  TextingApi,
   WebsiteAccountApi,
   type AdminAccountBlockRequest,
   type AdminAccountBlockTargetType,
@@ -68,6 +69,11 @@ function conversationSettingsClient(sessionToken: string): ConversationSettingsA
 function contactClient(): ContactApi {
   const config = publicConfiguration();
   return new ContactApi(config, config.basePath, axiosInstance);
+}
+
+function textingClient(): TextingApi {
+  const config = publicConfiguration();
+  return new TextingApi(config, config.basePath, axiosInstance);
 }
 
 async function authenticatedContactClient(): Promise<ContactApi> {
@@ -179,6 +185,13 @@ export const contactApi = {
   createMessage: async (request: ContactMessageRequest, authenticated = false) => {
     const client = authenticated ? await authenticatedContactClient() : contactClient();
     return (await client.contactCreateMessage(request)).data;
+  },
+};
+
+export const textingApi = {
+  getNumber: async () => {
+    const client = textingClient();
+    return (await client.textingGetNumber()).data;
   },
 };
 

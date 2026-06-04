@@ -89,9 +89,7 @@ extension AppClipSessionResponse {
             account: account,
             linkedAccounts: linkedAccounts,
             subscription: subscription,
-            conversationSettings: conversationSettings,
-            appAccountToken: appAccountToken,
-            storekitProductIds: storekitProductIds
+            conversationSettings: conversationSettings
         )
     }
 }

@@ -637,6 +637,7 @@ class BBMessageAgentTest {
             null,
             null,
             operationalMetricsService,
+            null,
             new ModelPicker());
     IncomingMessage incoming =
         incomingMessage("iMessage;+;chat-llm-metric", "msg-llm-metric", "hello", 1_000L);
@@ -1413,6 +1414,7 @@ class BBMessageAgentTest {
         null,
         null,
         messageResponseRateLimitService,
+        null,
         null,
         new ModelPicker());
   }

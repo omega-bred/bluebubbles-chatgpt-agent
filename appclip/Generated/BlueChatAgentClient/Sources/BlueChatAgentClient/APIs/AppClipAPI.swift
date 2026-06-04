@@ -136,7 +136,7 @@ open class AppClipAPI {
     /**
      Gets App Clip bootstrap data
      - GET /api/v1/appClip/get.appClipSession
-     - Returns account, subscription, and StoreKit bootstrap data for a valid App Clip session.
+     - Returns account, subscription summary, and conversation settings data for a valid App Clip session.
      - API Key:
        - type: apiKey X-App-Clip-Session (HEADER)
        - name: appClipSessionAuth
