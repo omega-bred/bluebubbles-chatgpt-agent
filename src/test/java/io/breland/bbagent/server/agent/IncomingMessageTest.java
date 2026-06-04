@@ -112,6 +112,56 @@ class IncomingMessageTest {
     assertNull(IncomingMessage.chatGuidOrNull(messageWithChatGuid(" ")));
   }
 
+  @Test
+  void logSummaryOmitsSenderAndText() {
+    IncomingMessage message =
+        new IncomingMessage(
+            IncomingMessage.TRANSPORT_BLUEBUBBLES,
+            "iMessage;+;chat123",
+            "msg-1",
+            null,
+            "secret message",
+            false,
+            "iMessage",
+            "+14025550100",
+            false,
+            Instant.parse("2026-06-04T15:00:00Z"),
+            List.of(),
+            false);
+
+    String summary = message.logSummary();
+
+    assertFalse(summary.contains("secret message"));
+    assertFalse(summary.contains("+14025550100"));
+    assertTrue(summary.contains("senderPresent=true"));
+    assertTrue(summary.contains("hasText=true"));
+    assertTrue(summary.contains("textLength=14"));
+  }
+
+  @Test
+  void logFingerprintHashOmitsSenderAndTextFallbackParts() {
+    IncomingMessage message =
+        new IncomingMessage(
+            IncomingMessage.TRANSPORT_LXMF,
+            "lxmf:abc",
+            null,
+            null,
+            "secret message",
+            false,
+            "LXMF",
+            "sender-secret",
+            false,
+            Instant.parse("2026-06-04T15:00:00Z"),
+            List.of(),
+            false);
+
+    String hash = message.logFingerprintHash();
+
+    assertEquals(12, hash.length());
+    assertFalse(hash.contains("secret message"));
+    assertFalse(hash.contains("sender-secret"));
+  }
+
   private static IncomingMessage messageWithChatGuid(String chatGuid) {
     return new IncomingMessage(
         chatGuid,

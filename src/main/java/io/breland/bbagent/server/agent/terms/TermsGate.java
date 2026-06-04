@@ -50,7 +50,8 @@ public final class TermsGate {
       }
       resolved = resolvedAccount.get();
     } catch (RuntimeException e) {
-      log.warn("Failed to resolve account for terms gate {}", message, e);
+      log.warn(
+          "Failed to resolve account for terms gate {}", IncomingMessage.logSummary(message), e);
       return false;
     }
     if (resolved.account().getTermsAcceptedAt() != null) {
@@ -62,7 +63,7 @@ public final class TermsGate {
       try {
         profileService.acceptTerms(message);
       } catch (RuntimeException e) {
-        log.warn("Failed to accept terms for {}", message, e);
+        log.warn("Failed to accept terms for {}", IncomingMessage.logSummary(message), e);
         sendReply(
             message,
             "I couldn't save your Terms agreement just now. Please try replying YES again in a moment.",
