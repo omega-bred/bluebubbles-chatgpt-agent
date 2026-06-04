@@ -2,21 +2,16 @@ package io.breland.bbagent.server.agent.tools.memory;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import io.netty.handler.logging.LogLevel;
 import java.time.Duration;
 import java.util.*;
 import lombok.Getter;
-import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
-import org.springframework.http.client.reactive.ReactorClientHttpConnector;
 import org.springframework.stereotype.Component;
 import org.springframework.web.reactive.function.client.WebClient;
 import org.springframework.web.reactive.function.client.WebClientResponseException;
-import reactor.netty.http.client.HttpClient;
-import reactor.netty.transport.logging.AdvancedByteBufFormat;
 
 @Slf4j
 @Component
@@ -40,32 +35,16 @@ public class Mem0Client {
     this.projectId = projectId;
     this.objectMapper = objectMapper;
     this.configured = apiKey != null && !apiKey.isBlank() && !"fake_key".equals(apiKey);
-    HttpClient httpClient =
-        HttpClient.create()
-            .wiretap(
-                "reactor.netty.http.client.HttpClient",
-                LogLevel.DEBUG,
-                AdvancedByteBufFormat.TEXTUAL);
     this.webClient =
         WebClient.builder()
             .baseUrl(baseUrl)
             .defaultHeader(HttpHeaders.AUTHORIZATION, "Token " + apiKey)
             .defaultHeader(HttpHeaders.ACCEPT, MediaType.APPLICATION_JSON_VALUE)
-            .clientConnector(new ReactorClientHttpConnector(httpClient))
             .filter(
                 (request, next) -> {
-                  log.info(
-                      "Mem0 request {} {} headers={}",
-                      request.method(),
-                      request.url(),
-                      request.headers());
+                  log.debug("Mem0 request {} {}", request.method(), request.url());
                   return next.exchange(request)
-                      .doOnNext(
-                          response ->
-                              log.info(
-                                  "Mem0 response {} headers={}",
-                                  response.statusCode(),
-                                  response.headers().asHttpHeaders()));
+                      .doOnNext(response -> log.debug("Mem0 response {}", response.statusCode()));
                 })
             .build();
     if (!configured) {
@@ -90,7 +69,6 @@ public class Mem0Client {
       body.put("metadata", metadata);
     }
     applyWorkspace(body);
-    log.info("Mem0 addMemory POST /v1/memories/ payload={}", body);
     try {
       webClient
           .post()
@@ -102,10 +80,7 @@ public class Mem0Client {
           .block(API_TIMEOUT);
       return true;
     } catch (WebClientResponseException e) {
-      log.warn(
-          "Mem0 add memory failed: status={} body={}",
-          e.getStatusCode(),
-          e.getResponseBodyAsString());
+      log.warn("Mem0 add memory failed: status={}", e.getStatusCode());
       return false;
     } catch (Exception e) {
       log.warn("Mem0 add memory failed", e);
@@ -113,7 +88,6 @@ public class Mem0Client {
     }
   }
 
-  @SneakyThrows
   public List<StoredMemory> searchMemories(String userId, String query) {
     if (!configured) {
       return List.of();
@@ -127,8 +101,6 @@ public class Mem0Client {
     body.put("version", "v2");
     body.put("top_k", 5);
     applyWorkspace(body);
-    log.info("Mem0 search: " + objectMapper.writeValueAsString(body));
-    log.info("Mem0 searchMemories POST /v2/memories/search/ payload={}", body);
     try {
       JsonNode response =
           webClient
@@ -181,10 +153,7 @@ public class Mem0Client {
       }
       return memories;
     } catch (WebClientResponseException e) {
-      log.warn(
-          "Mem0 search memories failed: status={} body={}",
-          e.getStatusCode(),
-          e.getResponseBodyAsString());
+      log.warn("Mem0 search memories failed: status={}", e.getStatusCode());
       return List.of();
     } catch (Exception e) {
       log.warn("Mem0 search memories failed", e);
@@ -214,7 +183,6 @@ public class Mem0Client {
       body.put("metadata", metadata);
     }
     applyWorkspace(body);
-    log.info("Mem0 updateMemory PUT /v1/memories/{}/ payload={}", memoryId, body);
     try {
       webClient
           .put()
@@ -226,10 +194,7 @@ public class Mem0Client {
           .block(API_TIMEOUT);
       return true;
     } catch (WebClientResponseException e) {
-      log.warn(
-          "Mem0 update memory failed: status={} body={}",
-          e.getStatusCode(),
-          e.getResponseBodyAsString());
+      log.warn("Mem0 update memory failed: status={}", e.getStatusCode());
       return false;
     } catch (Exception e) {
       log.warn("Mem0 update memory failed", e);
@@ -254,10 +219,7 @@ public class Mem0Client {
           .block(API_TIMEOUT);
       return true;
     } catch (WebClientResponseException e) {
-      log.warn(
-          "Mem0 delete memory failed: status={} body={}",
-          e.getStatusCode(),
-          e.getResponseBodyAsString());
+      log.warn("Mem0 delete memory failed: status={}", e.getStatusCode());
       return false;
     } catch (Exception e) {
       log.warn("Mem0 delete memory failed", e);
