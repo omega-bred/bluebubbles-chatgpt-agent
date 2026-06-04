@@ -9,11 +9,16 @@
   };
 
   inputs = {
+    apple-cli.url = "github:omega-bred/Apple-CLI/codex-private-notes-helper";
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-25.11";
   };
 
   outputs =
-    { self, nixpkgs }:
+    {
+      self,
+      apple-cli,
+      nixpkgs,
+    }:
     let
       systems = [
         "x86_64-linux"
@@ -32,7 +37,7 @@
         };
 
       devToolsFor =
-        pkgs:
+        system: pkgs:
         let
           inherit (pkgs) lib stdenv;
 
@@ -176,6 +181,7 @@
           ];
 
           darwinAppleTools = lib.optionals stdenv.isDarwin [
+            apple-cli.packages.${system}.default
             pkgs.swiftformat
             pkgs.xcbeautify
           ];
@@ -310,7 +316,7 @@
           pkgs = pkgsFor system;
           inherit (pkgs) lib;
 
-          devTools = devToolsFor pkgs;
+          devTools = devToolsFor system pkgs;
           jdk = devTools.jdk;
           nodejs = pkgs.nodejs_20;
           gradle = pkgs.gradle_9.override {
@@ -591,7 +597,7 @@
         system:
         let
           pkgs = pkgsFor system;
-          devTools = devToolsFor pkgs;
+          devTools = devToolsFor system pkgs;
         in
         {
           default = pkgs.mkShell {
@@ -634,7 +640,7 @@
         system:
         let
           pkgs = pkgsFor system;
-          devTools = devToolsFor pkgs;
+          devTools = devToolsFor system pkgs;
           devToolsPackage = pkgs.buildEnv {
             name = "bluebubbles-chatgpt-agent-dev-tools";
             paths = devTools.tools;

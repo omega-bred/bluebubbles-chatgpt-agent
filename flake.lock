@@ -1,6 +1,41 @@
 {
   "nodes": {
+    "apple-cli": {
+      "inputs": {
+        "nixpkgs": "nixpkgs"
+      },
+      "locked": {
+        "lastModified": 1780539428,
+        "narHash": "sha256-wdvgl7f740X9ScvF2sq3J5OwE36s2J06wlOtfgr6f4k=",
+        "owner": "omega-bred",
+        "repo": "Apple-CLI",
+        "rev": "9da687fd677be3f83d63ce60dd88c5f7508827de",
+        "type": "github"
+      },
+      "original": {
+        "owner": "omega-bred",
+        "ref": "codex-private-notes-helper",
+        "repo": "Apple-CLI",
+        "type": "github"
+      }
+    },
     "nixpkgs": {
+      "locked": {
+        "lastModified": 1780243769,
+        "narHash": "sha256-x5UQuRsH3MqI0U9afaXSNqzTPSeZlRLvFAav2Ux1pNw=",
+        "owner": "NixOS",
+        "repo": "nixpkgs",
+        "rev": "331800de5053fcebacf6813adb5db9c9dca22a0c",
+        "type": "github"
+      },
+      "original": {
+        "owner": "NixOS",
+        "ref": "nixos-unstable",
+        "repo": "nixpkgs",
+        "type": "github"
+      }
+    },
+    "nixpkgs_2": {
       "locked": {
         "lastModified": 1778737229,
         "narHash": "sha256-6xWoytx8jFW4PF1GjRm/i/53trbpKGfz6zjzQGBr4cI=",
@@ -18,7 +53,8 @@
     },
     "root": {
       "inputs": {
-        "nixpkgs": "nixpkgs"
+        "apple-cli": "apple-cli",
+        "nixpkgs": "nixpkgs_2"
       }
     }
   },
