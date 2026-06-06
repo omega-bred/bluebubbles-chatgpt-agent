@@ -7,6 +7,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.StringJoiner;
+import org.apache.commons.lang3.StringUtils;
 
 public final class BlueBubblesPollSupport {
 
@@ -26,7 +27,7 @@ public final class BlueBubblesPollSupport {
       return null;
     }
     return normalizeMessageGuid(
-        firstNonBlank(
+        StringUtils.firstNonBlank(
             message.associatedMessageGuid(),
             message.replyToGuid(),
             message.threadOriginatorGuid(),
@@ -63,7 +64,8 @@ public final class BlueBubblesPollSupport {
         trigger != null
             && pollMessageGuid != null
             && !pollMessageGuid.equals(trigger.messageGuid())
-            && firstNonBlank(trigger.associatedMessageGuid(), trigger.replyToGuid()) != null;
+            && StringUtils.firstNonBlank(trigger.associatedMessageGuid(), trigger.replyToGuid())
+                != null;
     text.append("Poll update: ").append(userVisiblePollNotification(poll)).append('\n');
     text.append(
         associatedUpdate
@@ -336,17 +338,5 @@ public final class BlueBubblesPollSupport {
     }
     String text = value.asText(null);
     return text == null || text.isBlank() ? null : text;
-  }
-
-  private static String firstNonBlank(String... values) {
-    if (values == null) {
-      return null;
-    }
-    for (String value : values) {
-      if (value != null && !value.isBlank()) {
-        return value;
-      }
-    }
-    return null;
   }
 }
