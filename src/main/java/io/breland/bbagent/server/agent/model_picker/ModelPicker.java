@@ -43,14 +43,18 @@ public class ModelPicker {
       ModelAccessService.ModelAccess modelAccess,
       IncomingMessage incomingMessage,
       AgentWorkflowContext agentWorkflowContext) {
-    if (modelAccess.premium()) {
-      log.info(
-          "User {} is a premium user using model {}",
-          incomingMessage.sender(),
-          modelAccess.currentModelKey());
-      builder.maxOutputTokens(2500);
-      builder.reasoning(Reasoning.builder().effort(ReasoningEffort.MEDIUM).build());
-      builder.model(modelAccess.responsesModel());
+    boolean premium = modelAccess.premium();
+    log.info(
+        "Applying {} model access using model {}",
+        premium ? "premium" : "standard",
+        modelAccess.currentModelKey());
+    builder.maxOutputTokens(premium ? 2500 : 1500);
+    builder.reasoning(
+        Reasoning.builder()
+            .effort(premium ? ReasoningEffort.MEDIUM : ReasoningEffort.HIGH)
+            .build());
+    builder.model(modelAccess.responsesModel());
+    if (premium) {
       if (modelAccess.supportsImageGeneration()) {
         builder.addTool(
             Tool.ImageGeneration.builder()
@@ -69,11 +73,6 @@ public class ModelPicker {
                 .searchContextSize(WebSearchTool.SearchContextSize.MEDIUM)
                 .build());
       }
-    } else {
-      log.info("User {} is a standard user", incomingMessage.sender());
-      builder.maxOutputTokens(1500);
-      builder.reasoning(Reasoning.builder().effort(ReasoningEffort.HIGH).build());
-      builder.model(modelAccess.responsesModel());
     }
     return builder;
   }
