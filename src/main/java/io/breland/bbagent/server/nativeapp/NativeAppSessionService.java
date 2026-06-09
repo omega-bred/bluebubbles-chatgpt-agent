@@ -10,6 +10,7 @@ import io.breland.bbagent.server.agent.persistence.account.AgentAccountRepositor
 import io.breland.bbagent.server.agent.persistence.nativeapp.NativeAppSessionEntity;
 import io.breland.bbagent.server.agent.persistence.nativeapp.NativeAppSessionRepository;
 import io.breland.bbagent.server.appclip.AppAccountTokens;
+import io.breland.bbagent.server.sessions.SessionTokens;
 import io.breland.bbagent.server.subscriptions.SubscriptionService;
 import io.breland.bbagent.server.texting.TextingNumberService;
 import java.security.SecureRandom;
@@ -17,12 +18,10 @@ import java.time.Duration;
 import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
-import java.util.Base64;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
-import org.apache.commons.codec.digest.DigestUtils;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
@@ -72,15 +71,15 @@ public class NativeAppSessionService {
     Instant now = Instant.now();
     AgentAccountEntity account =
         accountRepository.save(new AgentAccountEntity(UUID.randomUUID().toString(), now, now));
-    String sessionToken = newToken(SESSION_TOKEN_BYTES);
+    String sessionToken = SessionTokens.randomUrlToken(secureRandom, SESSION_TOKEN_BYTES);
     String startToken = newStartToken();
     String appAccountToken = AppAccountTokens.forAccountId(account.getAccountId()).toString();
     NativeAppSessionEntity session =
         new NativeAppSessionEntity(
-            hash(sessionToken),
+            SessionTokens.sha256Hash(sessionToken),
             account.getAccountId(),
             appAccountToken,
-            hash(startToken),
+            SessionTokens.sha256Hash(startToken),
             now.plus(startTokenTtl),
             now.plus(sessionTtl),
             now,
@@ -96,7 +95,7 @@ public class NativeAppSessionService {
     }
     Instant now = Instant.now();
     return sessionRepository
-        .findById(hash(sessionToken))
+        .findById(SessionTokens.sha256Hash(sessionToken))
         .filter(session -> session.getRevokedAt() == null)
         .filter(session -> session.getExpiresAt().isAfter(now))
         .flatMap(
@@ -117,7 +116,7 @@ public class NativeAppSessionService {
   public NativeAppSessionResponse getSession(String sessionToken, String accountId) {
     NativeAppSessionEntity session =
         sessionRepository
-            .findById(hash(sessionToken))
+            .findById(SessionTokens.sha256Hash(sessionToken))
             .filter(candidate -> candidate.getAccountId().equals(accountId))
             .filter(candidate -> candidate.getRevokedAt() == null)
             .filter(candidate -> candidate.getExpiresAt().isAfter(Instant.now()))
@@ -142,7 +141,7 @@ public class NativeAppSessionService {
     Instant now = Instant.now();
     Optional<NativeAppSessionEntity> claimedSession =
         sessionRepository
-            .findByStartTokenHash(hash(startToken))
+            .findByStartTokenHash(SessionTokens.sha256Hash(startToken))
             .filter(session -> session.getRevokedAt() == null)
             .filter(session -> session.getStartTokenExpiresAt().isAfter(now));
     if (claimedSession.isEmpty()) {
@@ -185,7 +184,7 @@ public class NativeAppSessionService {
   private String rotateStartToken(NativeAppSessionEntity session) {
     Instant now = Instant.now();
     String startToken = newStartToken();
-    session.setStartTokenHash(hash(startToken));
+    session.setStartTokenHash(SessionTokens.sha256Hash(startToken));
     session.setStartTokenExpiresAt(now.plus(startTokenTtl));
     session.setUpdatedAt(now);
     sessionRepository.save(session);
@@ -208,16 +207,6 @@ public class NativeAppSessionService {
       value.append(START_TOKEN_ALPHABET[secureRandom.nextInt(START_TOKEN_ALPHABET.length)]);
     }
     return value.toString();
-  }
-
-  private String newToken(int bytesLength) {
-    byte[] bytes = new byte[bytesLength];
-    secureRandom.nextBytes(bytes);
-    return Base64.getUrlEncoder().withoutPadding().encodeToString(bytes);
-  }
-
-  private String hash(String token) {
-    return DigestUtils.sha256Hex(token);
   }
 
   private OffsetDateTime offset(Instant instant) {
