@@ -24,6 +24,7 @@ import com.openai.models.responses.ResponseError;
 import com.openai.models.responses.ResponseFunctionToolCall;
 import com.openai.models.responses.ResponseInputItem;
 import com.openai.models.responses.ResponseOutputItem;
+import com.openai.models.responses.Tool;
 import com.openai.models.responses.ToolChoiceOptions;
 import com.uber.cadence.WorkflowExecution;
 import io.breland.bbagent.generated.bluebubblesclient.api.V1ContactApi;
@@ -54,6 +55,7 @@ import io.breland.bbagent.server.agent.tools.bb.RenameConversationAgentTool;
 import io.breland.bbagent.server.agent.tools.gcal.GcalClient;
 import io.breland.bbagent.server.agent.tools.giphy.GiphyClient;
 import io.breland.bbagent.server.agent.tools.memory.Mem0Client;
+import io.breland.bbagent.server.agent.tools.search.ToolSearchAgentTool;
 import io.breland.bbagent.server.agent.transport.bb.BBHttpClientWrapper;
 import io.breland.bbagent.server.metrics.AgentMetricsService;
 import io.breland.bbagent.server.metrics.AgentToolMetricEvent;
@@ -995,7 +997,33 @@ class BBMessageAgentTest {
   }
 
   @Test
-  void includesRenameConversationToolForGroupChats() {
+  void sendsOnlyToolSearchToolBeforeDiscovery() {
+    OpenAIClient openAIClient = Mockito.mock(OpenAIClient.class);
+    var responseService = Mockito.mock(com.openai.services.blocking.ResponseService.class);
+    StubBBHttpClientWrapper bbHttpClientWrapper = new StubBBHttpClientWrapper();
+
+    when(openAIClient.responses()).thenReturn(responseService);
+    when(responseService.create(any(ResponseCreateParams.class)))
+        .thenReturn(responseWithNoToolCalls());
+
+    BBMessageAgent agent = newAgent(openAIClient, bbHttpClientWrapper);
+    IncomingMessage incoming =
+        incomingMessage("iMessage;+;chat-tool-search", "msg-tool-search", "hello", 1_000L);
+
+    agent.createResponse(
+        promptBuilder(bbHttpClientWrapper).buildConversationInput(List.of(), List.of(), incoming),
+        incoming,
+        null);
+
+    ArgumentCaptor<ResponseCreateParams> paramsCaptor =
+        ArgumentCaptor.forClass(ResponseCreateParams.class);
+    verify(responseService).create(paramsCaptor.capture());
+
+    assertEquals(List.of(ToolSearchAgentTool.TOOL_NAME), toolNames(paramsCaptor.getValue()));
+  }
+
+  @Test
+  void includesRenameConversationToolForGroupChatsAfterToolSearch() {
     OpenAIClient openAIClient = Mockito.mock(OpenAIClient.class);
     var responseService = Mockito.mock(com.openai.services.blocking.ResponseService.class);
     V1MessageApi messageApi = Mockito.mock(V1MessageApi.class);
@@ -1041,10 +1069,26 @@ class BBMessageAgentTest {
             Instant.now(),
             List.of(),
             false);
+    List<ResponseInputItem> inputItems = new ArrayList<>();
+    inputItems.addAll(
+        promptBuilder(new StubBBHttpClientWrapper())
+            .buildConversationInput(List.of(), List.of(), incoming));
+    inputItems.add(
+        ResponseInputItem.ofFunctionCall(
+            ResponseFunctionToolCall.builder()
+                .name(ToolSearchAgentTool.TOOL_NAME)
+                .arguments("{\"query\":\"rename group chat\"}")
+                .callId("tool-search-call-1")
+                .build()));
+    inputItems.add(
+        ResponseInputItem.ofFunctionCallOutput(
+            ResponseInputItem.FunctionCallOutput.builder()
+                .callId("tool-search-call-1")
+                .output("[\"" + RenameConversationAgentTool.TOOL_NAME + "\"]")
+                .build()));
 
     agent.createResponse(
-        promptBuilder(new StubBBHttpClientWrapper())
-            .buildConversationInput(List.of(), List.of(), incoming),
+        inputItems,
         incoming,
         new AgentWorkflowContext(
             incoming.chatGuid(), incoming.chatGuid(), incoming.messageGuid(), Instant.now()));
@@ -1052,7 +1096,9 @@ class BBMessageAgentTest {
     ArgumentCaptor<ResponseCreateParams> paramsCaptor =
         ArgumentCaptor.forClass(ResponseCreateParams.class);
     verify(responseService).create(paramsCaptor.capture());
-    assertTrue(paramsCaptor.getValue().toString().contains(RenameConversationAgentTool.TOOL_NAME));
+    List<String> toolNames = toolNames(paramsCaptor.getValue());
+    assertTrue(toolNames.contains(ToolSearchAgentTool.TOOL_NAME));
+    assertTrue(toolNames.contains(RenameConversationAgentTool.TOOL_NAME));
   }
 
   @Test
@@ -1301,6 +1347,13 @@ class BBMessageAgentTest {
       return item.asMessage().content().toString();
     }
     return item.toString();
+  }
+
+  private static List<String> toolNames(ResponseCreateParams params) {
+    return params.tools().orElse(List.of()).stream()
+        .filter(Tool::isFunction)
+        .map(tool -> tool.asFunction().name())
+        .toList();
   }
 
   private static BBMessageAgent newAgent(
