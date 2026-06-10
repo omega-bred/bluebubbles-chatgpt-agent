@@ -34,7 +34,7 @@ public class NominatimReverseLocationLookup implements ReverseLocationLookup {
       String baseUrl, long timeoutSeconds, int zoom, WebClient webClient) {
     this.baseUrl = baseUrl == null ? "" : baseUrl.trim();
     this.timeout = Duration.ofSeconds(Math.max(2, timeoutSeconds));
-    this.zoom = Math.max(0, Math.min(18, zoom));
+    this.zoom = Math.clamp(zoom, 0, 18);
     this.webClient = webClient;
   }
 
@@ -83,10 +83,8 @@ public class NominatimReverseLocationLookup implements ReverseLocationLookup {
   }
 
   private static boolean isValidCoordinate(double latitude, double longitude) {
-    return !Double.isNaN(latitude)
-        && !Double.isInfinite(latitude)
-        && !Double.isNaN(longitude)
-        && !Double.isInfinite(longitude)
+    return Double.isFinite(latitude)
+        && Double.isFinite(longitude)
         && latitude >= -90
         && latitude <= 90
         && longitude >= -180
@@ -113,8 +111,8 @@ public class NominatimReverseLocationLookup implements ReverseLocationLookup {
       return address;
     }
     addressNode
-        .fields()
-        .forEachRemaining(
+        .properties()
+        .forEach(
             entry -> {
               if (entry.getValue() != null && entry.getValue().isTextual()) {
                 String value = entry.getValue().asText();
