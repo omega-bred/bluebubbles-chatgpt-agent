@@ -11,6 +11,7 @@ import io.breland.bbagent.server.agent.persistence.appclip.AppClipSessionReposit
 import io.breland.bbagent.server.agent.persistence.website.WebsiteAccountLinkTokenEntity;
 import io.breland.bbagent.server.agent.persistence.website.WebsiteAccountLinkTokenRepository;
 import io.breland.bbagent.server.conversation.ConversationSettingsService;
+import io.breland.bbagent.server.sessions.SessionTokens;
 import io.breland.bbagent.server.subscriptions.SubscriptionService;
 import io.breland.bbagent.server.website.WebsiteAccountService;
 import java.security.SecureRandom;
@@ -18,9 +19,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
-import java.util.Base64;
 import java.util.Optional;
-import org.apache.commons.codec.digest.DigestUtils;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
@@ -66,7 +65,7 @@ public class AppClipSessionService {
     if (StringUtils.isBlank(linkToken)) {
       throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Missing link token");
     }
-    String linkTokenHash = hash(linkToken);
+    String linkTokenHash = SessionTokens.sha256Hash(linkToken);
     WebsiteAccountLinkTokenEntity linkTokenEntity =
         linkTokenRepository
             .findById(linkTokenHash)
@@ -80,13 +79,13 @@ public class AppClipSessionService {
             .findById(linkTokenEntity.getAccountId())
             .orElseThrow(
                 () -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Account not found"));
-    String sessionToken = newToken();
+    String sessionToken = SessionTokens.randomUrlToken(secureRandom, SESSION_TOKEN_BYTES);
     Instant expiresAt = now.plus(sessionTtl);
     String purpose = normalizedPurpose(linkTokenEntity.getPurpose());
     String chatGuid = linkTokenEntity.getChatGuid();
     sessionRepository.save(
         new AppClipSessionEntity(
-            hash(sessionToken),
+            SessionTokens.sha256Hash(sessionToken),
             account.getAccountId(),
             purpose,
             chatGuid,
@@ -104,7 +103,7 @@ public class AppClipSessionService {
     }
     Instant now = Instant.now();
     return sessionRepository
-        .findById(hash(sessionToken))
+        .findById(SessionTokens.sha256Hash(sessionToken))
         .filter(session -> session.getRevokedAt() == null)
         .filter(session -> session.getExpiresAt().isAfter(now))
         .flatMap(
@@ -127,7 +126,7 @@ public class AppClipSessionService {
   public AppClipSessionResponse getSession(String sessionToken, String accountId) {
     AppClipSessionEntity session =
         sessionRepository
-            .findById(hash(sessionToken))
+            .findById(SessionTokens.sha256Hash(sessionToken))
             .filter(candidate -> candidate.getAccountId().equals(accountId))
             .filter(candidate -> candidate.getRevokedAt() == null)
             .filter(candidate -> candidate.getExpiresAt().isAfter(Instant.now()))
@@ -174,16 +173,6 @@ public class AppClipSessionService {
     }
     linkTokenEntity.setUpdatedAt(now);
     linkTokenRepository.save(linkTokenEntity);
-  }
-
-  private String newToken() {
-    byte[] bytes = new byte[SESSION_TOKEN_BYTES];
-    secureRandom.nextBytes(bytes);
-    return Base64.getUrlEncoder().withoutPadding().encodeToString(bytes);
-  }
-
-  private String hash(String token) {
-    return DigestUtils.sha256Hex(token);
   }
 
   private String normalizedPurpose(String purpose) {

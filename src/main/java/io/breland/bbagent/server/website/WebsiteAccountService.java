@@ -23,18 +23,17 @@ import io.breland.bbagent.server.agent.tools.gcal.AccountKeyParts;
 import io.breland.bbagent.server.agent.tools.gcal.GcalClient;
 import io.breland.bbagent.server.analytics.UmamiAnalyticsService;
 import io.breland.bbagent.server.ratelimit.MessageResponseRateLimitService;
+import io.breland.bbagent.server.sessions.SessionTokens;
 import java.net.URI;
 import java.security.SecureRandom;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
-import java.util.Base64;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
-import org.apache.commons.codec.digest.DigestUtils;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
@@ -141,8 +140,8 @@ public class WebsiteAccountService {
             .resolveOrCreate(message)
             .map(AgentAccountResolver.ResolvedAccount::account)
             .orElseThrow(() -> new IllegalArgumentException("missing message identity"));
-    String token = newToken();
-    String tokenHash = hashToken(token);
+    String token = SessionTokens.randomUrlToken(secureRandom, LINK_TOKEN_BYTES);
+    String tokenHash = SessionTokens.sha256Hash(token);
     Instant now = Instant.now();
     Instant expiresAt = now.plus(linkTokenTtl);
     tokenRepository.save(
@@ -216,7 +215,7 @@ public class WebsiteAccountService {
     AgentAccountEntity websiteAccount = accountResolver.upsertWebsiteAccount(jwt);
     WebsiteAccountLinkTokenEntity tokenEntity =
         tokenRepository
-            .findById(hashToken(token))
+            .findById(SessionTokens.sha256Hash(token))
             .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Link not found"));
     Instant now = Instant.now();
     if (!LINK_PURPOSE_ACCOUNT_LINK.equals(tokenEntity.getPurpose())) {
@@ -396,16 +395,6 @@ public class WebsiteAccountService {
 
   private OffsetDateTime offset(Instant instant) {
     return instant == null ? null : OffsetDateTime.ofInstant(instant, ZoneOffset.UTC);
-  }
-
-  private String newToken() {
-    byte[] bytes = new byte[LINK_TOKEN_BYTES];
-    secureRandom.nextBytes(bytes);
-    return Base64.getUrlEncoder().withoutPadding().encodeToString(bytes);
-  }
-
-  private String hashToken(String token) {
-    return DigestUtils.sha256Hex(token);
   }
 
   private String buildLinkUrl(String token, String purpose) {
