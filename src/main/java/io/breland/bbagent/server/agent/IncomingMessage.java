@@ -5,6 +5,7 @@ import io.breland.bbagent.server.agent.cadence.models.IncomingAttachment;
 import io.breland.bbagent.server.controllers.BluebubblesWebhookController;
 import java.time.Instant;
 import java.util.List;
+import org.apache.commons.codec.digest.DigestUtils;
 
 public record IncomingMessage(
     String transport,
@@ -26,6 +27,7 @@ public record IncomingMessage(
   public static final String TRANSPORT_BLUEBUBBLES = "bluebubbles";
   public static final String TRANSPORT_LXMF = "lxmf";
   public static final String METRIC_TRANSPORT_IMESSAGE = "imessage";
+  private static final int LOG_FINGERPRINT_HASH_LENGTH = 12;
 
   public IncomingMessage(
       String transport,
@@ -148,6 +150,10 @@ public record IncomingMessage(
     return message.chatGuid();
   }
 
+  public static String logSummary(IncomingMessage message) {
+    return message == null ? "IncomingMessage[null]" : message.logSummary();
+  }
+
   public String transportOrDefault() {
     return transport != null && !transport.isBlank() ? transport : TRANSPORT_BLUEBUBBLES;
   }
@@ -206,6 +212,34 @@ public record IncomingMessage(
         associatedMessageGuid,
         replyToGuid,
         isSystemMessage);
+  }
+
+  public String logSummary() {
+    int attachmentCount = attachments == null ? 0 : attachments.size();
+    String textValue = text == null ? "" : text;
+    return "IncomingMessage[transport=%s, chatGuid=%s, messageGuid=%s, threadOriginatorGuid=%s, fromMe=%s, service=%s, senderPresent=%s, isGroup=%s, timestamp=%s, attachmentCount=%d, hasText=%s, textLength=%d, balloonBundleId=%s, associatedMessageGuid=%s, replyToGuid=%s, isSystemMessage=%s]"
+        .formatted(
+            transportOrDefault(),
+            chatGuid,
+            messageGuid,
+            threadOriginatorGuid,
+            fromMe,
+            service,
+            sender != null && !sender.isBlank(),
+            isGroup,
+            timestamp,
+            attachmentCount,
+            !textValue.isBlank(),
+            textValue.length(),
+            balloonBundleId,
+            associatedMessageGuid,
+            replyToGuid,
+            isSystemMessage);
+  }
+
+  public String logFingerprintHash() {
+    return DigestUtils.sha256Hex(computeMessageFingerprint())
+        .substring(0, LOG_FINGERPRINT_HASH_LENGTH);
   }
 
   private static Instant parseTimestamp(Long value) {
