@@ -219,12 +219,7 @@ public class ConversationSettingsService {
   }
 
   private String firstNonBlank(String... values) {
-    for (String value : values) {
-      if (StringUtils.isNotBlank(value)) {
-        return value.trim();
-      }
-    }
-    return null;
+    return StringUtils.trimToNull(StringUtils.firstNonBlank(values));
   }
 
   private record ResponsivenessOption(
