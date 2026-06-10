@@ -46,7 +46,7 @@ final class AgentResponseCreator {
             ? ResponseInputMessages.squashDeveloperMessagesIntoSystem(inputItems)
             : inputItems;
     ModelAccessService.ModelAccess modelAccess = modelPicker.resolveModelAccess(message);
-    List<AgentTool> tools = toolRegistry.availableTools(message);
+    List<AgentTool> tools = toolRegistry.toolsForModel(message, requestInputItems);
     LlmRequest request =
         new LlmRequest(modelAccess, requestInputItems, tools, message, workflowContext);
     long startedNanos = 0L;
