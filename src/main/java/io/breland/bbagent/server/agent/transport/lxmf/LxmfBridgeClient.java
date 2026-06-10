@@ -1,7 +1,6 @@
 package io.breland.bbagent.server.agent.transport.lxmf;
 
-import java.util.LinkedHashMap;
-import java.util.Map;
+import com.fasterxml.jackson.annotation.JsonProperty;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.MediaType;
@@ -23,7 +22,6 @@ public class LxmfBridgeClient {
   }
 
   public boolean sendText(String destinationHash, String content) {
-    log.info("Sending message to Lxmf bridge {}: {}", destinationHash, content);
     if (destinationHash == null || destinationHash.isBlank()) {
       log.warn("Cannot send LXMF message without destination hash");
       return false;
@@ -32,22 +30,23 @@ public class LxmfBridgeClient {
       log.warn("Cannot send blank LXMF message");
       return false;
     }
-    Map<String, Object> request = new LinkedHashMap<>();
-    request.put("destination_hash", destinationHash);
-    request.put("content", content);
+    log.info("Sending LXMF bridge message contentLength={}", content.length());
     try {
       restClient
           .post()
           .uri("/api/v1/messages/send")
           .contentType(MediaType.APPLICATION_JSON)
           .headers(headers -> headers.setBearerAuth(bridgeSecret))
-          .body(request)
+          .body(new SendTextRequest(destinationHash, content))
           .retrieve()
           .toBodilessEntity();
       return true;
     } catch (Exception e) {
-      log.warn("Failed to send LXMF message to {}", destinationHash, e);
+      log.warn("Failed to send LXMF message", e);
       return false;
     }
   }
+
+  private record SendTextRequest(
+      @JsonProperty("destination_hash") String destinationHash, String content) {}
 }
