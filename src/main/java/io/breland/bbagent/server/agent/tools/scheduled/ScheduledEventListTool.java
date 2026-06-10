@@ -1,25 +1,18 @@
 package io.breland.bbagent.server.agent.tools.scheduled;
 
-import static io.breland.bbagent.server.agent.tools.JsonSchemaUtilities.jsonSchema;
-
 import io.breland.bbagent.server.agent.cadence.CadenceWorkflowLauncher;
 import io.breland.bbagent.server.agent.tools.AgentTool;
+import io.breland.bbagent.server.agent.tools.JsonSchemaUtilities;
 import io.breland.bbagent.server.agent.tools.ToolJson;
 import io.breland.bbagent.server.agent.tools.ToolProvider;
-import io.swagger.v3.oas.annotations.media.Schema;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 
 public class ScheduledEventListTool implements ToolProvider {
   public static final String TOOL_NAME = "scheduled_event_list";
   private final CadenceWorkflowLauncher cadenceWorkflowLauncher;
-
-  @Schema(description = "List scheduled tasks for a chat.")
-  public record ScheduledEventListRequest(
-      @Schema(
-              description =
-                  "Chat GUID to list scheduled events for. Defaults to the current conversation.")
-          String chatGuid) {}
 
   public ScheduledEventListTool(CadenceWorkflowLauncher cadenceWorkflowLauncher) {
     this.cadenceWorkflowLauncher =
@@ -30,17 +23,11 @@ public class ScheduledEventListTool implements ToolProvider {
     return new AgentTool(
         TOOL_NAME,
         "List scheduled events for the current conversation.",
-        jsonSchema(ScheduledEventListRequest.class),
+        JsonSchemaUtilities.functionParameters(
+            Map.of("type", "object", "properties", Map.of(), "additionalProperties", false)),
         false,
         (context, args) -> {
-          ScheduledEventListRequest request =
-              context.getMapper().convertValue(args, ScheduledEventListRequest.class);
-          String chatGuid = request.chatGuid();
-          if (chatGuid == null || chatGuid.isBlank()) {
-            if (context.message() != null) {
-              chatGuid = context.message().chatGuid();
-            }
-          }
+          String chatGuid = context.message() == null ? null : context.message().chatGuid();
           if (chatGuid == null || chatGuid.isBlank()) {
             return "missing chat";
           }
@@ -48,7 +35,49 @@ public class ScheduledEventListTool implements ToolProvider {
           List<CadenceWorkflowLauncher.ScheduledWorkflowSummary> summaries =
               cadenceWorkflowLauncher.listScheduledWorkflows(prefix);
           return ToolJson.stringify(
-              context.getMapper(), summaries, "failed to serialize scheduled events");
+              context.getMapper(),
+              sanitizeSummaries(chatGuid, summaries),
+              "failed to serialize scheduled events");
         });
+  }
+
+  private static List<Map<String, Object>> sanitizeSummaries(
+      String chatGuid, List<CadenceWorkflowLauncher.ScheduledWorkflowSummary> summaries) {
+    if (summaries == null || summaries.isEmpty()) {
+      return List.of();
+    }
+    return summaries.stream()
+        .map(summary -> sanitizeSummary(chatGuid, summary))
+        .filter(Objects::nonNull)
+        .toList();
+  }
+
+  private static Map<String, Object> sanitizeSummary(
+      String chatGuid, CadenceWorkflowLauncher.ScheduledWorkflowSummary summary) {
+    if (summary == null) {
+      return null;
+    }
+    String scheduledEventId = ScheduledEventTool.scheduledEventId(chatGuid, summary.workflowId());
+    if (scheduledEventId == null) {
+      return null;
+    }
+    Map<String, Object> sanitized = new LinkedHashMap<>();
+    sanitized.put("scheduled_event_id", scheduledEventId);
+    sanitized.put("run_id", summary.runId());
+    sanitized.put("workflow_type", summary.workflowType());
+    sanitized.put("status", summary.status());
+    sanitized.put("start_time_millis", summary.startTimeMillis());
+    sanitized.put("execution_time_millis", summary.executionTimeMillis());
+    sanitized.put("memo", sanitizeMemo(summary.memo()));
+    return sanitized;
+  }
+
+  private static Map<String, Object> sanitizeMemo(Map<String, Object> memo) {
+    if (memo == null || memo.isEmpty()) {
+      return Map.of();
+    }
+    Map<String, Object> sanitized = new LinkedHashMap<>(memo);
+    sanitized.remove("chatGuid");
+    return sanitized;
   }
 }
