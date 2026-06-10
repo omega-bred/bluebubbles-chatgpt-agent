@@ -33,7 +33,7 @@ public class AccountModerationService {
 
   @Transactional(readOnly = true)
   public AdminAccountBlockListResponse listBlocked(Integer limit) {
-    int resolvedLimit = Math.max(1, Math.min(limit == null ? 100 : limit, 500));
+    int resolvedLimit = Math.clamp(limit == null ? 100 : limit, 1, 500);
     return new AdminAccountBlockListResponse()
         .accounts(
             accountRepository

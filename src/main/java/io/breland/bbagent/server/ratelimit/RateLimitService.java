@@ -54,7 +54,7 @@ public class RateLimitService {
   @Transactional(readOnly = true)
   public List<AppRateLimitUsageEntity> findUsageForWindow(
       String limitKey, String scopeType, Instant windowStart, int maxRows) {
-    int size = Math.max(1, Math.min(maxRows, 500));
+    int size = Math.clamp(maxRows, 1, 500);
     return repository.findUsageForWindow(limitKey, scopeType, windowStart, PageRequest.of(0, size));
   }
 
