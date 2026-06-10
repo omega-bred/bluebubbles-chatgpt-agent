@@ -225,8 +225,10 @@ dependencies {
     // lombok
 	compileOnly 'org.projectlombok:lombok:1.18.46'
 	annotationProcessor 'org.projectlombok:lombok:1.18.46'
-	implementation platform('org.apache.logging.log4j:log4j-bom:2.25.4')
+    implementation platform('org.apache.logging.log4j:log4j-bom:2.25.4')
     implementation platform("org.springframework.ai:spring-ai-bom:1.1.4")
+    implementation("org.springaicommunity:tool-search-tool:1.0.1")
+    implementation("org.springaicommunity:tool-searcher-lucene:1.0.1")
 
     runtimeOnly 'org.apache.logging.log4j:log4j-slf4j2-impl'
 

@@ -55,21 +55,21 @@ class GetWebsiteAccountLinkStatusAgentToolTest {
   }
 
   @Test
-  void explicitLookupDefaultsToCurrentTransport() {
+  void ignoresExplicitLookupArgsAndUsesCurrentMessage() {
     WebsiteAccountService service = Mockito.mock(WebsiteAccountService.class);
-    when(service.getLinkStatus("lxmf", "ccdd", "lxmf:aabb"))
-        .thenReturn(status("account-lxmf-ccdd"));
+    IncomingMessage message = lxmfMessage();
+    when(service.getLinkStatus(message)).thenReturn(status("account-lxmf"));
     GetWebsiteAccountLinkStatusAgentTool tool = new GetWebsiteAccountLinkStatusAgentTool(service);
     BBMessageAgent agent = Mockito.mock(BBMessageAgent.class);
     ObjectMapper mapper = new ObjectMapper();
     when(agent.getObjectMapper()).thenReturn(mapper);
-    ToolContext context = new ToolContext(agent, lxmfMessage(), null);
+    ToolContext context = new ToolContext(agent, message, null);
     var args = mapper.createObjectNode().put("sender", "ccdd");
 
     String output = tool.getTool().handler().apply(context, args);
 
-    assertTrue(output.contains("\"account_id\":\"account-lxmf-ccdd\""));
-    Mockito.verify(service).getLinkStatus("lxmf", "ccdd", "lxmf:aabb");
+    assertTrue(output.contains("\"account_id\":\"account-lxmf\""));
+    Mockito.verify(service).getLinkStatus(message);
   }
 
   private IncomingMessage message() {
