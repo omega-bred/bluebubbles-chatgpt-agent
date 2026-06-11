@@ -9,10 +9,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.time.Instant;
-import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.Map;
-import java.util.Map.Entry;
 import org.apache.commons.codec.digest.DigestUtils;
 import org.apache.commons.codec.digest.HmacUtils;
 import org.apache.commons.lang3.StringUtils;
@@ -281,9 +279,7 @@ public class BtcpaySubscriptionProvider implements SubscriptionProvider {
       if (StringUtils.isNotBlank(email)) {
         return "Email:" + email;
       }
-      Iterator<Entry<String, JsonNode>> fields = identities.fields();
-      while (fields.hasNext()) {
-        Entry<String, JsonNode> field = fields.next();
+      for (var field : identities.properties()) {
         String value = field.getValue().asText(null);
         if (StringUtils.isNoneBlank(field.getKey(), value)) {
           return field.getKey() + ":" + value;
@@ -368,17 +364,9 @@ public class BtcpaySubscriptionProvider implements SubscriptionProvider {
     if (direct != null && !direct.isNull() && StringUtils.isNotBlank(direct.asText(null))) {
       return direct.asText();
     }
-    if (node.isObject()) {
-      Iterator<JsonNode> values = node.elements();
-      while (values.hasNext()) {
-        String found = findText(values.next(), fieldName);
-        if (StringUtils.isNotBlank(found)) {
-          return found;
-        }
-      }
-    } else if (node.isArray()) {
-      for (JsonNode item : node) {
-        String found = findText(item, fieldName);
+    if (node.isContainerNode()) {
+      for (JsonNode child : node) {
+        String found = findText(child, fieldName);
         if (StringUtils.isNotBlank(found)) {
           return found;
         }
