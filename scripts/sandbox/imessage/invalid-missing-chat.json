@@ -1,0 +1,11 @@
+{
+  "type": "new-message",
+  "data": {
+    "originalROWID": 12,
+    "guid": "A1B2C3",
+    "handle": {
+      "address": "+15551234567",
+      "service": "iMessage"
+    }
+  }
+}

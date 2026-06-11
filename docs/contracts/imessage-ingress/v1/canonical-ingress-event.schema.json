@@ -1,0 +1,156 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bluebubbles-chatgpt-agent/contracts/imessage-ingress/v1/canonical-ingress-event.schema.json",
+  "title": "Canonical iMessage ingress event v1",
+  "type": "object",
+  "required": [
+    "schemaVersion",
+    "eventType",
+    "message",
+    "sender",
+    "chat",
+    "media",
+    "ingressReceivedAt"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "type": "string",
+      "const": "imessage.ingress.v1"
+    },
+    "eventType": {
+      "type": "string",
+      "enum": [
+        "new-message",
+        "updated-message",
+        "typing-indicator"
+      ]
+    },
+    "ingressReceivedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "message": {
+      "type": "object",
+      "required": [
+        "guid",
+        "service"
+      ],
+      "properties": {
+        "guid": {
+          "type": "string",
+          "minLength": 1
+        },
+        "threadOriginatorGuid": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "text": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "fromMe": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "service": {
+          "type": "string",
+          "minLength": 1
+        },
+        "timestampEpochMillis": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "isSystemMessage": {
+          "type": "boolean",
+          "default": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "sender": {
+      "type": "object",
+      "required": [
+        "address"
+      ],
+      "properties": {
+        "address": {
+          "type": "string",
+          "minLength": 1
+        },
+        "service": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "chat": {
+      "type": "object",
+      "required": [
+        "guid",
+        "isGroup"
+      ],
+      "properties": {
+        "guid": {
+          "type": "string",
+          "minLength": 1
+        },
+        "isGroup": {
+          "type": "boolean"
+        },
+        "displayName": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "media": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "attachmentGuid"
+        ],
+        "properties": {
+          "attachmentGuid": {
+            "type": "string",
+            "minLength": 1
+          },
+          "mimeType": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "filename": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "placeholderUri": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "additionalProperties": false
+}

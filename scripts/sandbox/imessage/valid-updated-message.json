@@ -1,0 +1,33 @@
+{
+  "type": "updated-message",
+  "data": {
+    "originalROWID": 13,
+    "guid": "A1B2C3-updated",
+    "text": "hello updated",
+    "isFromMe": false,
+    "dateCreated": 1730001000,
+    "threadOriginatorGuid": "thread-root-guid",
+    "handle": {
+      "address": "+15551234567",
+      "service": "iMessage"
+    },
+    "attachments": [
+      {
+        "originalROWID": 1,
+        "guid": "att-1",
+        "mimeType": "image/jpeg",
+        "transferName": "photo.jpg"
+      }
+    ],
+    "chats": [
+      {
+        "originalROWID": 100,
+        "guid": "iMessage;+;chat-123",
+        "style": 43,
+        "chatIdentifier": "+15551234567",
+        "isArchived": false,
+        "displayName": "Alice"
+      }
+    ]
+  }
+}
