@@ -1,5 +1,7 @@
 package io.breland.bbagent.server.ratelimit;
 
+import static io.breland.bbagent.server.TimeSupport.offset;
+
 import io.breland.bbagent.generated.model.AdminRateLimitUsage;
 import io.breland.bbagent.generated.model.AdminRateLimitUsageResponse;
 import io.breland.bbagent.generated.model.WebsiteUsageLimitSummary;
@@ -8,7 +10,6 @@ import io.breland.bbagent.server.agent.model_picker.ModelAccessService;
 import io.breland.bbagent.server.agent.persistence.ratelimit.AppRateLimitUsageEntity;
 import java.time.Clock;
 import java.time.Instant;
-import java.time.OffsetDateTime;
 import java.time.YearMonth;
 import java.time.ZoneOffset;
 import java.util.List;
@@ -161,10 +162,6 @@ public class MessageResponseRateLimitService {
     Instant start = currentMonth.atDay(1).atStartOfDay().toInstant(ZoneOffset.UTC);
     Instant end = currentMonth.plusMonths(1).atDay(1).atStartOfDay().toInstant(ZoneOffset.UTC);
     return new RateLimitWindow(start, end);
-  }
-
-  private OffsetDateTime offset(Instant instant) {
-    return instant == null ? null : OffsetDateTime.ofInstant(instant, ZoneOffset.UTC);
   }
 
   private String accountBucket(String accountId) {

@@ -1,5 +1,7 @@
 package io.breland.bbagent.server.appclip;
 
+import static io.breland.bbagent.server.TimeSupport.offset;
+
 import io.breland.bbagent.generated.model.AppClipSessionResponse;
 import io.breland.bbagent.generated.model.ConversationSettingsResponse;
 import io.breland.bbagent.generated.model.SubscriptionSummaryResponse;
@@ -17,8 +19,6 @@ import io.breland.bbagent.server.website.WebsiteAccountService;
 import java.security.SecureRandom;
 import java.time.Duration;
 import java.time.Instant;
-import java.time.OffsetDateTime;
-import java.time.ZoneOffset;
 import java.util.Optional;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.beans.factory.annotation.Value;
@@ -180,10 +180,6 @@ public class AppClipSessionService {
       return WebsiteAccountService.LINK_PURPOSE_CONVERSATION_SETTINGS;
     }
     return WebsiteAccountService.LINK_PURPOSE_ACCOUNT_LINK;
-  }
-
-  private OffsetDateTime offset(Instant instant) {
-    return instant == null ? null : OffsetDateTime.ofInstant(instant, ZoneOffset.UTC);
   }
 
   public record AuthenticatedAppClipSession(

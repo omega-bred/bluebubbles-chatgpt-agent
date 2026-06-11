@@ -1,5 +1,7 @@
 package io.breland.bbagent.server.admin;
 
+import static io.breland.bbagent.server.TimeSupport.offset;
+
 import io.breland.bbagent.generated.model.AdminAccountBlockListResponse;
 import io.breland.bbagent.generated.model.AdminAccountBlockRequest;
 import io.breland.bbagent.generated.model.AdminAccountBlockResponse;
@@ -10,8 +12,6 @@ import io.breland.bbagent.server.agent.account.AgentAccountResolver;
 import io.breland.bbagent.server.agent.persistence.account.AgentAccountEntity;
 import io.breland.bbagent.server.agent.persistence.account.AgentAccountRepository;
 import java.time.Instant;
-import java.time.OffsetDateTime;
-import java.time.ZoneOffset;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.http.HttpStatus;
@@ -142,10 +142,6 @@ public class AccountModerationService {
         jwt == null ? null : jwt.getClaimAsString("email"),
         jwt == null ? null : jwt.getSubject(),
         "admin");
-  }
-
-  private OffsetDateTime offset(Instant instant) {
-    return instant == null ? null : OffsetDateTime.ofInstant(instant, ZoneOffset.UTC);
   }
 
   private String accountBucket(String accountId) {
