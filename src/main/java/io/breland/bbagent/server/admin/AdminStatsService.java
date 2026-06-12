@@ -1,5 +1,7 @@
 package io.breland.bbagent.server.admin;
 
+import static io.breland.bbagent.server.TimeSupport.offset;
+
 import io.breland.bbagent.generated.model.AdminBucketModelStats;
 import io.breland.bbagent.generated.model.AdminModelStats;
 import io.breland.bbagent.generated.model.AdminSenderStats;
@@ -23,7 +25,6 @@ import io.breland.bbagent.server.metrics.OperationalMetricsService;
 import io.breland.bbagent.server.metrics.ToolMetricTotals;
 import java.time.Duration;
 import java.time.Instant;
-import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.time.temporal.ChronoUnit;
 import java.util.Comparator;
@@ -331,10 +332,6 @@ public class AdminStatsService implements AgentMetricsService {
         : start.plus(1, ChronoUnit.DAYS);
   }
 
-  private OffsetDateTime offset(Instant instant) {
-    return OffsetDateTime.ofInstant(instant, ZoneOffset.UTC);
-  }
-
   private String hashNullable(String value) {
     String trimmed = StringUtils.trimToNull(value);
     return trimmed == null ? null : hash(trimmed);
@@ -434,7 +431,7 @@ public class AdminStatsService implements AgentMetricsService {
           .accountBucket(accountBucket(accountKeyHash))
           .messageCount(messageCount)
           .percentage(totalMessages == 0 ? 0.0 : (double) messageCount / totalMessages)
-          .lastSeenAt(OffsetDateTime.ofInstant(lastSeenAt, ZoneOffset.UTC))
+          .lastSeenAt(offset(lastSeenAt))
           .models(models);
     }
 
@@ -470,8 +467,8 @@ public class AdminStatsService implements AgentMetricsService {
                           .messageCount(entry.getValue()))
               .toList();
       return new AdminStatsBucket()
-          .bucketStart(OffsetDateTime.ofInstant(start, ZoneOffset.UTC))
-          .bucketEnd(OffsetDateTime.ofInstant(end, ZoneOffset.UTC))
+          .bucketStart(offset(start))
+          .bucketEnd(offset(end))
           .messageCount(messageCount)
           .activeUsers((long) users.size())
           .models(models);

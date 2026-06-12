@@ -1,5 +1,6 @@
 package io.breland.bbagent.server.subscriptions;
 
+import static io.breland.bbagent.server.TimeSupport.offset;
 import static io.breland.bbagent.server.subscriptions.SubscriptionJson.firstNonBlank;
 
 import io.breland.bbagent.generated.model.AdminPremiumGrantRequest;
@@ -33,8 +34,6 @@ import io.breland.bbagent.server.appclip.AppClipSessionService;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.Instant;
-import java.time.OffsetDateTime;
-import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -1184,10 +1183,6 @@ public class SubscriptionService {
       }
     }
     return null;
-  }
-
-  private OffsetDateTime offset(Instant instant) {
-    return instant == null ? null : OffsetDateTime.ofInstant(instant, ZoneOffset.UTC);
   }
 
   private record ProcessedWebhook(

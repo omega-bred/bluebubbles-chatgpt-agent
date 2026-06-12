@@ -1,5 +1,7 @@
 package io.breland.bbagent.server.nativeapp;
 
+import static io.breland.bbagent.server.TimeSupport.offset;
+
 import io.breland.bbagent.generated.model.NativeAppSessionCreateRequest;
 import io.breland.bbagent.generated.model.NativeAppSessionResponse;
 import io.breland.bbagent.generated.model.TextingNumberResponse;
@@ -16,8 +18,6 @@ import io.breland.bbagent.server.texting.TextingNumberService;
 import java.security.SecureRandom;
 import java.time.Duration;
 import java.time.Instant;
-import java.time.OffsetDateTime;
-import java.time.ZoneOffset;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.regex.Matcher;
@@ -207,10 +207,6 @@ public class NativeAppSessionService {
       value.append(START_TOKEN_ALPHABET[secureRandom.nextInt(START_TOKEN_ALPHABET.length)]);
     }
     return value.toString();
-  }
-
-  private OffsetDateTime offset(Instant instant) {
-    return instant == null ? null : OffsetDateTime.ofInstant(instant, ZoneOffset.UTC);
   }
 
   public record AuthenticatedNativeAppSession(String accountId, Instant expiresAt) {}

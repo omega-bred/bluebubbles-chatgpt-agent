@@ -1,5 +1,7 @@
 package io.breland.bbagent.server.website;
 
+import static io.breland.bbagent.server.TimeSupport.offset;
+
 import io.breland.bbagent.generated.model.WebsiteAccountIdentity;
 import io.breland.bbagent.generated.model.WebsiteAccountLink;
 import io.breland.bbagent.generated.model.WebsiteAccountProfile;
@@ -28,8 +30,6 @@ import java.net.URI;
 import java.security.SecureRandom;
 import java.time.Duration;
 import java.time.Instant;
-import java.time.OffsetDateTime;
-import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -391,10 +391,6 @@ public class WebsiteAccountService {
         .type(WebsiteAccountIdentity.TypeEnum.fromValue(identity.getIdentityType()))
         .identifier(identity.getIdentifier())
         .normalizedIdentifier(identity.getNormalizedIdentifier());
-  }
-
-  private OffsetDateTime offset(Instant instant) {
-    return instant == null ? null : OffsetDateTime.ofInstant(instant, ZoneOffset.UTC);
   }
 
   private String buildLinkUrl(String token, String purpose) {
