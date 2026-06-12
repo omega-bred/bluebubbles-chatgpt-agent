@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+import hashlib
 import json
 import os
 import signal
@@ -109,6 +110,14 @@ def message_id(message):
     return hex_bytes(value)
 
 
+def log_fingerprint(value):
+    text = hex_bytes(value)
+    if not text:
+        return "unknown"
+    digest = hashlib.sha256(text.encode("utf-8")).hexdigest()
+    return f"sha256:{digest[:12]}"
+
+
 def fields_for_json(fields):
     if fields is None:
         return {}
@@ -152,7 +161,7 @@ def post_to_agent(message):
 def delivery_callback(message):
     log(
         "Inbound LXMF message "
-        f"id={message_id(message)} source={hex_bytes(message.source_hash)}"
+        f"id={message_id(message)} source_fingerprint={log_fingerprint(message.source_hash)}"
     )
     threading.Thread(target=post_to_agent, args=(message,), daemon=True).start()
 
