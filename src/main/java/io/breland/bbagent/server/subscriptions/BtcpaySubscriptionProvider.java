@@ -13,6 +13,7 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 import org.apache.commons.codec.digest.DigestUtils;
 import org.apache.commons.codec.digest.HmacUtils;
+import org.apache.commons.lang3.ObjectUtils;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.http.HttpHeaders;
 import org.springframework.stereotype.Component;
@@ -273,7 +274,8 @@ public class BtcpaySubscriptionProvider implements SubscriptionProvider {
       return explicit;
     }
     JsonNode identities =
-        firstNonNull(findObject(payload, "identities"), findObject(payload, "Identities"));
+        ObjectUtils.firstNonNull(
+            findObject(payload, "identities"), findObject(payload, "Identities"));
     if (identities != null && identities.isObject()) {
       String email = firstText(identities, "Email", "email");
       if (StringUtils.isNotBlank(email)) {
@@ -287,7 +289,7 @@ public class BtcpaySubscriptionProvider implements SubscriptionProvider {
       }
     }
     JsonNode customer =
-        firstNonNull(findObject(payload, "customer"), findObject(payload, "Customer"));
+        ObjectUtils.firstNonNull(findObject(payload, "customer"), findObject(payload, "Customer"));
     return firstText(customer, "id", "Id");
   }
 
@@ -414,14 +416,5 @@ public class BtcpaySubscriptionProvider implements SubscriptionProvider {
                 properties.providerSettings(PROVIDER_KEY).getBaseUrl(), "https://btcpay.bre.land")
             .trim(),
         "/");
-  }
-
-  private JsonNode firstNonNull(JsonNode... nodes) {
-    for (JsonNode node : nodes) {
-      if (node != null && !node.isNull()) {
-        return node;
-      }
-    }
-    return null;
   }
 }

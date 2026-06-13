@@ -41,6 +41,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import org.apache.commons.codec.digest.DigestUtils;
+import org.apache.commons.lang3.ObjectUtils;
 import org.apache.commons.lang3.StringUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -864,15 +865,17 @@ public class SubscriptionService {
 
   private Instant accessUntil(PaymentSubscriptionEntity subscription) {
     if (SubscriptionStatuses.SUBSCRIPTION_TRIALING.equals(subscription.getStatus())) {
-      return firstInstant(
+      return ObjectUtils.firstNonNull(
           subscription.getTrialEnd(),
           subscription.getCurrentPeriodEnd(),
           subscription.getGracePeriodEnd());
     }
     if (SubscriptionStatuses.SUBSCRIPTION_GRACE.equals(subscription.getStatus())) {
-      return firstInstant(subscription.getGracePeriodEnd(), subscription.getCurrentPeriodEnd());
+      return ObjectUtils.firstNonNull(
+          subscription.getGracePeriodEnd(), subscription.getCurrentPeriodEnd());
     }
-    return firstInstant(subscription.getCurrentPeriodEnd(), subscription.getGracePeriodEnd());
+    return ObjectUtils.firstNonNull(
+        subscription.getCurrentPeriodEnd(), subscription.getGracePeriodEnd());
   }
 
   private SubscriptionSummaryResponse summary(String accountId) {
@@ -1174,15 +1177,6 @@ public class SubscriptionService {
       return null;
     }
     return StringUtils.truncate(DigestUtils.sha256Hex(accountId), 12);
-  }
-
-  private Instant firstInstant(Instant... values) {
-    for (Instant value : values) {
-      if (value != null) {
-        return value;
-      }
-    }
-    return null;
   }
 
   private record ProcessedWebhook(
