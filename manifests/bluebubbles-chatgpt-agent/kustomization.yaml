@@ -3,6 +3,7 @@ kind: Kustomization
 namespace: bluebubbles-chatgpt-agent
 resources:
 - be-components.yaml
+- keycloak-bbagent/keycloak-bbagent.yaml
 images:
 - name: ghcr.io/omega-bred/bluebubbles-chatgpt-agent
   newName: ghcr.io/omega-bred/bluebubbles-chatgpt-agent

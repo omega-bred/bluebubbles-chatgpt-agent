@@ -1,0 +1,311 @@
+# Keycloak resources owned by the BlueBubbles ChatGPT Agent app.
+---
+apiVersion: onepassword.com/v1
+kind: OnePasswordItem
+metadata:
+  name: keycloak-idp-bbagent-apple
+  namespace: keycloak
+spec:
+  itemPath: vaults/Kubernetes/items/keycloak-idp-bbagent-apple
+---
+apiVersion: v1.edp.epam.com/v1
+kind: KeycloakRealm
+metadata:
+  name: realm-bbagent
+  namespace: keycloak
+  annotations:
+    edp.epam.com/preserve-resources-on-deletion: 'true'
+spec:
+  realmName: bbagent
+  id: e8dd4c32-ab23-4ffb-a5d4-0cd29902cd6a
+  keycloakRef:
+    name: keycloak
+    kind: Keycloak
+  displayName: BlueChat
+  browserFlow: browser
+  browserSecurityHeaders:
+    xContentTypeOptions: nosniff
+    referrerPolicy: no-referrer
+    xRobotsTag: none
+    xFrameOptions: SAMEORIGIN
+    contentSecurityPolicy: frame-src 'self'; frame-ancestors 'self'; object-src 'none';
+    strictTransportSecurity: max-age=31536000; includeSubDomains
+  login:
+    userRegistration: true
+    forgotPassword: true
+    rememberMe: true
+    emailAsUsername: true
+    loginWithEmail: true
+    duplicateEmails: false
+    verifyEmail: true
+    editUsername: false
+  themes:
+    loginTheme: acme-theme
+    emailTheme: acme-theme
+  localization:
+    internationalizationEnabled: false
+  realmEventConfig:
+    adminEventsDetailsEnabled: true
+    adminEventsEnabled: true
+    enabledEventTypes:
+      - UPDATE_CONSENT_ERROR
+      - SEND_RESET_PASSWORD
+      - GRANT_CONSENT
+      - VERIFY_PROFILE_ERROR
+      - UPDATE_TOTP
+      - REMOVE_TOTP
+      - REVOKE_GRANT
+      - LOGIN_ERROR
+      - CLIENT_LOGIN
+      - RESET_PASSWORD_ERROR
+      - UPDATE_CREDENTIAL
+      - IMPERSONATE_ERROR
+      - CODE_TO_TOKEN_ERROR
+      - CUSTOM_REQUIRED_ACTION
+      - OAUTH2_DEVICE_CODE_TO_TOKEN_ERROR
+      - RESTART_AUTHENTICATION
+      - UPDATE_PROFILE_ERROR
+      - IMPERSONATE
+      - LOGIN
+      - UPDATE_PASSWORD_ERROR
+      - OAUTH2_DEVICE_VERIFY_USER_CODE
+      - CLIENT_INITIATED_ACCOUNT_LINKING
+      - IDENTITY_PROVIDER_LOGIN
+      - USER_DISABLED_BY_PERMANENT_LOCKOUT
+      - OAUTH2_EXTENSION_GRANT
+      - REMOVE_CREDENTIAL_ERROR
+      - TOKEN_EXCHANGE
+      - REGISTER
+      - LOGOUT
+      - AUTHREQID_TO_TOKEN
+      - DELETE_ACCOUNT_ERROR
+      - CLIENT_REGISTER
+      - IDENTITY_PROVIDER_LINK_ACCOUNT
+      - USER_DISABLED_BY_TEMPORARY_LOCKOUT
+      - UPDATE_PASSWORD
+      - DELETE_ACCOUNT
+      - FEDERATED_IDENTITY_LINK_ERROR
+      - CLIENT_DELETE
+      - IDENTITY_PROVIDER_FIRST_LOGIN
+      - VERIFY_EMAIL
+      - CLIENT_DELETE_ERROR
+      - CLIENT_LOGIN_ERROR
+      - RESTART_AUTHENTICATION_ERROR
+      - REMOVE_FEDERATED_IDENTITY_ERROR
+      - EXECUTE_ACTIONS
+      - TOKEN_EXCHANGE_ERROR
+      - PERMISSION_TOKEN
+      - FEDERATED_IDENTITY_OVERRIDE_LINK
+      - SEND_IDENTITY_PROVIDER_LINK_ERROR
+      - UPDATE_CREDENTIAL_ERROR
+      - EXECUTE_ACTION_TOKEN_ERROR
+      - SEND_VERIFY_EMAIL
+      - OAUTH2_EXTENSION_GRANT_ERROR
+      - OAUTH2_DEVICE_AUTH
+      - EXECUTE_ACTIONS_ERROR
+      - REMOVE_FEDERATED_IDENTITY
+      - OAUTH2_DEVICE_CODE_TO_TOKEN
+      - IDENTITY_PROVIDER_POST_LOGIN
+      - IDENTITY_PROVIDER_LINK_ACCOUNT_ERROR
+      - FEDERATED_IDENTITY_OVERRIDE_LINK_ERROR
+      - UPDATE_EMAIL
+      - OAUTH2_DEVICE_VERIFY_USER_CODE_ERROR
+      - REGISTER_ERROR
+      - REVOKE_GRANT_ERROR
+      - LOGOUT_ERROR
+      - UPDATE_EMAIL_ERROR
+      - EXECUTE_ACTION_TOKEN
+      - CLIENT_UPDATE_ERROR
+      - UPDATE_PROFILE
+      - AUTHREQID_TO_TOKEN_ERROR
+      - INVITE_ORG_ERROR
+      - FEDERATED_IDENTITY_LINK
+      - CLIENT_REGISTER_ERROR
+      - INVITE_ORG
+      - SEND_VERIFY_EMAIL_ERROR
+      - SEND_IDENTITY_PROVIDER_LINK
+      - IDENTITY_PROVIDER_LOGIN_ERROR
+      - RESET_PASSWORD
+      - CLIENT_INITIATED_ACCOUNT_LINKING_ERROR
+      - OAUTH2_DEVICE_AUTH_ERROR
+      - REMOVE_CREDENTIAL
+      - UPDATE_CONSENT
+      - REMOVE_TOTP_ERROR
+      - VERIFY_EMAIL_ERROR
+      - SEND_RESET_PASSWORD_ERROR
+      - CLIENT_UPDATE
+      - IDENTITY_PROVIDER_POST_LOGIN_ERROR
+      - CUSTOM_REQUIRED_ACTION_ERROR
+      - UPDATE_TOTP_ERROR
+      - CODE_TO_TOKEN
+      - VERIFY_PROFILE
+      - GRANT_CONSENT_ERROR
+      - IDENTITY_PROVIDER_FIRST_LOGIN_ERROR
+    eventsEnabled: true
+    eventsExpiration: 604800
+    eventsListeners:
+      - jboss-logging
+  tokenSettings:
+    defaultSignatureAlgorithm: RS256
+    revokeRefreshToken: false
+    refreshTokenMaxReuse: 0
+    accessTokenLifespan: 300
+    accessToken: 900
+    accessCodeLifespan: 60
+    actionTokenGeneratedByUserLifespan: 300
+    actionTokenGeneratedByAdminLifespan: 43200
+  sessions:
+    ssoSessionSettings:
+      idleTimeout: 1800
+      maxLifespan: 36000
+      idleTimeoutRememberMe: 0
+      maxLifespanRememberMe: 0
+    ssoOfflineSessionSettings:
+      idleTimeout: 2592000
+      maxLifespanEnabled: false
+      maxLifespan: 5184000
+    ssoLoginSettings:
+      accessCodeLifespanLogin: 1800
+      accessCodeLifespanUserAction: 300
+  smtp:
+    template:
+      from: no-reply-bluechat@breland.io
+      fromDisplayName: BlueChat
+      replyTo: support-bluechat@bre.land
+    connection:
+      host: chocobo.mxrouting.net
+      port: 2525
+      enableSSL: false
+      enableStartTLS: true
+      authentication:
+        username:
+          secretKeyRef:
+            name: keycloak-smtp-relay-login
+            key: new_user
+        password:
+          secretKeyRef:
+            name: keycloak-smtp-relay-login
+            key: new_password
+  organizationsEnabled: false
+---
+apiVersion: v1.edp.epam.com/v1
+kind: KeycloakRealmRole
+metadata:
+  name: role-bbagent-bbagent-admin-role
+  namespace: keycloak
+  annotations:
+    edp.epam.com/preserve-resources-on-deletion: 'true'
+spec:
+  name: bbagent-admin-role
+  realmRef:
+    name: realm-bbagent
+    kind: KeycloakRealm
+  composite: false
+---
+apiVersion: v1.edp.epam.com/v1
+kind: KeycloakClient
+metadata:
+  name: client-bbagent-bbagent-web
+  namespace: keycloak
+  annotations:
+    edp.epam.com/preserve-resources-on-deletion: 'true'
+spec:
+  clientId: bbagent-web
+  realmRef:
+    name: realm-bbagent
+    kind: KeycloakRealm
+  public: true
+  protocol: openid-connect
+  attributes:
+    logout.confirmation.enabled: 'false'
+    id.token.as.detached.signature: 'false'
+    client.introspection.response.allow.jwt.claim.enabled: 'false'
+    standard.token.exchange.enabled: 'false'
+    oauth2.device.authorization.grant.enabled: 'false'
+    backchannel.logout.revoke.offline.tokens: 'false'
+    use.refresh.tokens: 'true'
+    realm_client: 'false'
+    oidc.ciba.grant.enabled: 'false'
+    client.use.lightweight.access.token.enabled: 'false'
+    backchannel.logout.session.required: 'false'
+    request.object.required: not required
+    client_credentials.use_refresh_token: 'false'
+    policyUri: https://bluechat.bre.land/privacy
+    tosUri: https://bluechat.bre.land/terms
+    access.token.header.type.rfc9068: 'false'
+    tls.client.certificate.bound.access.tokens: 'false'
+    require.pushed.authorization.requests: 'false'
+    acr.loa.map: "{}"
+    display.on.consent.screen: 'false'
+    pkce.code.challenge.method: S256
+    token.response.type.bearer.lower-case: 'false'
+    dpop.bound.access.tokens: 'false'
+  directAccess: false
+  frontChannelLogout: false
+  reconciliationStrategy: addOnly
+  defaultClientScopes:
+    - web-origins
+    - acr
+    - profile
+    - roles
+    - basic
+    - email
+  optionalClientScopes:
+    - address
+    - phone
+    - offline_access
+    - organization
+    - microprofile-jwt
+  redirectUris:
+    - http://localhost:8080/*
+    - http://localhost:4174/*
+    - https://bluechat.bre.land/*
+    - http://localhost:5174/*
+    - https://chatagent.bre.land/*
+    - https://4174--main--alpha--breland.coder.breland.io/*
+  webOrigins:
+    - http://localhost:8080
+    - http://localhost:4174
+    - https://bluechat.bre.land
+    - https://chatagent.bre.land
+    - http://localhost:5174
+    - https://4174--main--alpha--breland.coder.breland.io/*
+  implicitFlowEnabled: false
+  bearerOnly: false
+  clientAuthenticatorType: client-secret
+  enabled: true
+  fullScopeAllowed: true
+  standardFlowEnabled: true
+---
+apiVersion: v1.edp.epam.com/v1
+kind: KeycloakRealmIdentityProvider
+metadata:
+  name: idp-bbagent-apple
+  namespace: keycloak
+  annotations:
+    edp.epam.com/preserve-resources-on-deletion: 'true'
+spec:
+  realmRef:
+    name: realm-bbagent
+    kind: KeycloakRealm
+  providerId: apple
+  alias: apple
+  displayName: Sign in with Apple
+  enabled: true
+  config:
+    clientId: "$keycloak-idp-bbagent-apple:client_id"
+    acceptsPromptNoneForwardFromClient: 'false'
+    disableUserInfo: 'false'
+    displayName: Sign in with Apple
+    showInAccountConsole: ALWAYS
+    teamId: "$keycloak-idp-bbagent-apple:team_id"
+    filteredByClaim: 'false'
+    syncMode: IMPORT
+    keyId: "$keycloak-idp-bbagent-apple:key_id"
+    clientSecret: "$keycloak-idp-bbagent-apple:AuthKey_5W3UQA498L.p8"
+    tokenExchangeAccountLinkingEnabled: 'true'
+    caseSensitiveOriginalUsername: 'false'
+  trustEmail: true
+  storeToken: false
+  linkOnly: false
+  hideOnLogin: false
