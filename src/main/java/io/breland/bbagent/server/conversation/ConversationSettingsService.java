@@ -1,5 +1,7 @@
 package io.breland.bbagent.server.conversation;
 
+import static io.breland.bbagent.server.StringSupport.firstNonBlank;
+
 import com.fasterxml.jackson.databind.JsonNode;
 import io.breland.bbagent.generated.model.ConversationParticipantSummary;
 import io.breland.bbagent.generated.model.ConversationResponsivenessOption;
@@ -216,10 +218,6 @@ public class ConversationSettingsService {
       }
     }
     return null;
-  }
-
-  private String firstNonBlank(String... values) {
-    return StringUtils.trimToNull(StringUtils.firstNonBlank(values));
   }
 
   private record ResponsivenessOption(

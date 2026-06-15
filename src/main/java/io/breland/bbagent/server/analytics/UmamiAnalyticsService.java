@@ -1,5 +1,7 @@
 package io.breland.bbagent.server.analytics;
 
+import static io.breland.bbagent.server.StringSupport.firstNonBlank;
+
 import com.fasterxml.jackson.annotation.JsonInclude;
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -142,10 +144,6 @@ public class UmamiAnalyticsService {
       return null;
     }
     return DigestUtils.sha256Hex(cleanKey).substring(0, 50);
-  }
-
-  private String firstNonBlank(String... values) {
-    return StringUtils.trimToNull(StringUtils.firstNonBlank(values));
   }
 
   record UmamiSendRequest(String type, UmamiPayload payload) {}
