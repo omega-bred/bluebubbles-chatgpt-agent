@@ -21,7 +21,6 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
-import java.util.stream.Collectors;
 import org.springframework.stereotype.Component;
 
 @Component
@@ -126,7 +125,7 @@ public class CadenceAgentActivitiesImpl implements CadenceAgentActivities {
       List<CadenceToolCall> toolCalls =
           functionCalls.stream()
               .map(call -> new CadenceToolCall(call.callId(), call.name(), call.arguments()))
-              .collect(Collectors.toList());
+              .toList();
       String toolContextItemsJson =
           toJson(AgentResponseHelper.extractToolContextItems(response, functionCalls));
       return new CadenceResponseBundle(

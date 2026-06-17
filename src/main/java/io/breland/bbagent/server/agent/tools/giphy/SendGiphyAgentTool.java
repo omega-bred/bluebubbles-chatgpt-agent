@@ -25,7 +25,6 @@ import java.util.Optional;
 import java.util.function.Supplier;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
-import java.util.stream.Collectors;
 
 public class SendGiphyAgentTool implements ToolProvider {
   public static final String TOOL_NAME = "send_giphy";
@@ -129,7 +128,7 @@ public class SendGiphyAgentTool implements ToolProvider {
           candidates.stream()
               .filter(candidate -> candidate.stillUrl() != null && !candidate.stillUrl().isBlank())
               .limit(5)
-              .collect(Collectors.toList());
+              .toList();
       List<ResponseInputItem> input =
           buildPickerInput(query, caption, candidates, visualCandidates);
 

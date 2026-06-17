@@ -14,7 +14,6 @@ import io.breland.bbagent.server.agent.transport.bb.BBHttpClientWrapper;
 import io.swagger.v3.oas.annotations.media.Schema;
 import java.util.List;
 import java.util.Optional;
-import java.util.stream.Collectors;
 import lombok.extern.slf4j.Slf4j;
 
 @Slf4j
@@ -139,7 +138,7 @@ public class GetThreadContextAgentTool implements ToolProvider {
         .filter(att -> att.mimeType() != null && att.mimeType().startsWith("image/"))
         .map(this::resolveAttachmentImageUrl)
         .flatMap(Optional::stream)
-        .collect(Collectors.toList());
+        .toList();
   }
 
   private Optional<IncomingAttachment> parseAttachment(JsonNode node) {

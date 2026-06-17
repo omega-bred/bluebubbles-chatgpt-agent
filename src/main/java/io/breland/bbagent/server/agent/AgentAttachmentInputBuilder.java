@@ -11,7 +11,6 @@ import java.util.ArrayList;
 import java.util.Base64;
 import java.util.List;
 import java.util.Optional;
-import java.util.stream.Collectors;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.lang.Nullable;
@@ -37,12 +36,12 @@ public final class AgentAttachmentInputBuilder {
         message.attachments().stream()
             .map(this::resolveAttachmentImageUrl)
             .flatMap(Optional::stream)
-            .collect(Collectors.toList());
+            .toList();
     List<ResponseInputFile> files =
         message.attachments().stream()
             .map(this::resolveAttachmentFile)
             .flatMap(Optional::stream)
-            .collect(Collectors.toList());
+            .toList();
     return new ResolvedAttachments(imageUrls, files);
   }
 
