@@ -3,6 +3,7 @@ package io.breland.bbagent.server.controllers;
 import io.breland.bbagent.generated.bluebubblesclient.model.ApiV1MessageTextPostRequest;
 import io.breland.bbagent.server.agent.transport.bb.BBHttpClientWrapper;
 import java.net.URI;
+import org.apache.commons.lang3.StringUtils;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.util.UriComponentsBuilder;
@@ -19,13 +20,13 @@ final class OauthControllerSupport {
       String chatGuid,
       String messageGuid,
       String message) {
-    if (isBlank(chatGuid) || isBlank(message)) {
+    if (StringUtils.isBlank(chatGuid) || StringUtils.isBlank(message)) {
       return;
     }
     ApiV1MessageTextPostRequest request = new ApiV1MessageTextPostRequest();
     request.setChatGuid(chatGuid);
     request.setMessage(message);
-    if (!isBlank(messageGuid)) {
+    if (StringUtils.isNotBlank(messageGuid)) {
       request.setSelectedMessageGuid(messageGuid);
       request.setPartIndex(0);
     }
@@ -51,9 +52,5 @@ final class OauthControllerSupport {
             .encode()
             .toUri();
     return ResponseEntity.status(HttpStatus.SEE_OTHER).location(location).build();
-  }
-
-  private static boolean isBlank(String input) {
-    return input == null || input.isBlank();
   }
 }
