@@ -23,6 +23,7 @@ import java.time.Instant;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import org.apache.commons.codec.digest.DigestUtils;
+import org.apache.commons.lang3.ObjectUtils;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.http.HttpHeaders;
 import org.springframework.stereotype.Component;
@@ -278,7 +279,7 @@ public class StripeSubscriptionProvider implements SubscriptionProvider {
         epoch(currentPeriodEnd(subscription)),
         epoch(subscription.getTrialEnd()),
         null,
-        epoch(firstNonNull(subscription.getCanceledAt(), subscription.getEndedAt())),
+        epoch(ObjectUtils.firstNonNull(subscription.getCanceledAt(), subscription.getEndedAt())),
         Boolean.TRUE.equals(subscription.getCancelAtPeriodEnd()),
         null,
         json(subscription));
@@ -374,15 +375,6 @@ public class StripeSubscriptionProvider implements SubscriptionProvider {
 
   private Instant epoch(Long value) {
     return value == null ? null : Instant.ofEpochSecond(value);
-  }
-
-  private Long firstNonNull(Long... values) {
-    for (Long value : values) {
-      if (value != null) {
-        return value;
-      }
-    }
-    return null;
   }
 
   private String json(Object object) {
