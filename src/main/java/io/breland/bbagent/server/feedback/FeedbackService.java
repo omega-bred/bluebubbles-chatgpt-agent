@@ -8,6 +8,7 @@ import io.breland.bbagent.server.linear.LinearIssueService.FeedbackIssueInput;
 import io.breland.bbagent.server.linear.LinearIssueService.LinearIssue;
 import java.time.Instant;
 import java.util.List;
+import java.util.Locale;
 import java.util.Optional;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.stereotype.Service;
@@ -92,15 +93,11 @@ public class FeedbackService {
     }
 
     private static FeedbackStatus from(String value) {
-      if (value == null || value.isBlank()) {
-        return UNREAD;
-      }
-      for (FeedbackStatus status : values()) {
-        if (status.value.equalsIgnoreCase(value.trim())) {
-          return status;
-        }
-      }
-      return UNREAD;
+      return switch (StringUtils.trimToEmpty(value).toLowerCase(Locale.ROOT)) {
+        case "all" -> ALL;
+        case "read" -> READ;
+        default -> UNREAD;
+      };
     }
   }
 }
