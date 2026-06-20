@@ -185,6 +185,49 @@ class BBMessageAgentTest {
   }
 
   @Test
+  void acceptsExactYesWhenTermsValidatorModelFails() {
+    OpenAIClient openAIClient = Mockito.mock(OpenAIClient.class);
+    var responseService = Mockito.mock(com.openai.services.blocking.ResponseService.class);
+    when(openAIClient.responses()).thenReturn(responseService);
+    when(responseService.create(any(ResponseCreateParams.class)))
+        .thenThrow(new RuntimeException("model unavailable"));
+    AgentAccountResolver accountResolver = Mockito.mock(AgentAccountResolver.class);
+    AgentAccountEntity pendingAccount = account("account-terms", null);
+    AgentAccountEntity acceptedAccount = account("account-terms", Instant.now());
+    when(accountResolver.resolveOrCreate(any(IncomingMessage.class)))
+        .thenReturn(
+            Optional.of(new AgentAccountResolver.ResolvedAccount(pendingAccount, List.of())));
+    when(accountResolver.acceptTerms(any(IncomingMessage.class)))
+        .thenReturn(
+            Optional.of(new AgentAccountResolver.ResolvedAccount(acceptedAccount, List.of())));
+    StubBBHttpClientWrapper bbHttpClientWrapper = new StubBBHttpClientWrapper();
+    CadenceWorkflowLauncher cadenceWorkflowLauncher = Mockito.mock(CadenceWorkflowLauncher.class);
+    WorkflowExecution execution = new WorkflowExecution();
+    execution.setRunId("run-terms");
+    when(cadenceWorkflowLauncher.startWorkflow(any(CadenceMessageWorkflowRequest.class)))
+        .thenReturn(execution);
+    BBMessageAgent agent =
+        newAgent(openAIClient, bbHttpClientWrapper, accountResolver, cadenceWorkflowLauncher);
+    IncomingMessage original =
+        incomingMessage("iMessage;+;chat-terms", "msg-terms-1", "what can you do?", 1_000L);
+    IncomingMessage agreement =
+        incomingMessage("iMessage;+;chat-terms", "msg-terms-agree", "YES", 1_001L);
+
+    agent.handleIncomingMessage(original);
+    agent.handleIncomingMessage(agreement);
+
+    verify(accountResolver).acceptTerms(agreement);
+    verify(responseService).create(any(ResponseCreateParams.class));
+    ArgumentCaptor<CadenceMessageWorkflowRequest> requestCaptor =
+        ArgumentCaptor.forClass(CadenceMessageWorkflowRequest.class);
+    verify(cadenceWorkflowLauncher).startWorkflow(requestCaptor.capture());
+    assertEquals("msg-terms-1", requestCaptor.getValue().message().messageGuid());
+    assertEquals("what can you do?", requestCaptor.getValue().message().text());
+    assertEquals(1, bbHttpClientWrapper.sentTexts.size());
+    assertTrue(bbHttpClientWrapper.sentTexts.getFirst().contains("Terms of Use"));
+  }
+
+  @Test
   void doesNotAcceptTermsWhenMiniModelConfidenceIsLow() {
     OpenAIClient openAIClient = Mockito.mock(OpenAIClient.class);
     var responseService = Mockito.mock(com.openai.services.blocking.ResponseService.class);
