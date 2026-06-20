@@ -9,6 +9,7 @@ import com.openai.models.responses.ResponseCreateParams;
 import com.openai.models.responses.ResponseInputItem;
 import io.breland.bbagent.server.agent.AgentResponseHelper;
 import java.util.List;
+import java.util.Locale;
 import java.util.function.Supplier;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
@@ -73,9 +74,23 @@ public final class TermsAgreementValidator {
           cleanModel);
       return accepted;
     } catch (RuntimeException e) {
-      log.warn("Terms agreement validation failed", e);
-      return false;
+      boolean fallbackAccepted = isExplicitAgreement(text);
+      log.warn("Terms agreement validation failed fallbackAccepted={}", fallbackAccepted, e);
+      return fallbackAccepted;
     }
+  }
+
+  private static boolean isExplicitAgreement(String text) {
+    String normalized =
+        StringUtils.defaultString(text)
+            .trim()
+            .toLowerCase(Locale.ROOT)
+            .replaceAll("[\\p{Punct}\\s]+", " ")
+            .trim();
+    return switch (normalized) {
+      case "y", "yes", "yeah", "yep", "agreed", "i agree", "i accept" -> true;
+      default -> false;
+    };
   }
 
   private TermsAgreementDecision parseDecision(String text) {
