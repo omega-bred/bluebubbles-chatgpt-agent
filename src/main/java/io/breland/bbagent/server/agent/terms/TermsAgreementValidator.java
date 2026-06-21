@@ -9,6 +9,8 @@ import com.openai.models.responses.ResponseCreateParams;
 import com.openai.models.responses.ResponseInputItem;
 import io.breland.bbagent.server.agent.AgentResponseHelper;
 import java.util.List;
+import java.util.Locale;
+import java.util.Set;
 import java.util.function.Supplier;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
@@ -24,6 +26,21 @@ public final class TermsAgreementValidator {
           + "consents to the terms, such as yes, yep, sure, agreed, I accept, sounds good, or "
           + "similar. Do not mark questions, jokes, refusals, uncertainty, conditions, or unrelated "
           + "messages as agreement. confidence must be a number from 0 to 1.";
+  private static final Set<String> DETERMINISTIC_AGREEMENTS =
+      Set.of(
+          "y",
+          "yes",
+          "yeah",
+          "yep",
+          "sure",
+          "ok",
+          "okay",
+          "agreed",
+          "affirmative",
+          "i agree",
+          "i accept",
+          "i consent",
+          "sounds good");
 
   private final Supplier<OpenAIClient> openAiSupplier;
   private final ObjectMapper objectMapper;
@@ -41,6 +58,10 @@ public final class TermsAgreementValidator {
   public boolean isHighConfidenceAgreement(String text) {
     if (text == null || text.isBlank()) {
       return false;
+    }
+    if (DETERMINISTIC_AGREEMENTS.contains(normalizeAgreement(text))) {
+      log.info("Terms agreement validator accepted deterministic affirmative reply");
+      return true;
     }
     String cleanModel = StringUtils.defaultIfBlank(responsesModel.get(), DEFAULT_RESPONSES_MODEL);
     ResponseCreateParams params =
@@ -76,6 +97,10 @@ public final class TermsAgreementValidator {
       log.warn("Terms agreement validation failed", e);
       return false;
     }
+  }
+
+  private String normalizeAgreement(String text) {
+    return text.trim().toLowerCase(Locale.ROOT).replaceAll("[\\p{Punct}\\s]+", " ").trim();
   }
 
   private TermsAgreementDecision parseDecision(String text) {
