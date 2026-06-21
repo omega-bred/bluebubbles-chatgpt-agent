@@ -328,9 +328,7 @@ public class LinearIssueService {
 
   private String firstLine(String text) {
     String trimmed = StringUtils.defaultIfBlank(text, "User feedback").trim();
-    int lineBreak = trimmed.indexOf('\n');
-    String first = lineBreak >= 0 ? trimmed.substring(0, lineBreak) : trimmed;
-    return StringUtils.truncate(first, 120);
+    return StringUtils.truncate(StringUtils.substringBefore(trimmed, "\n"), 120);
   }
 
   private String nullText(String value) {
