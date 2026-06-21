@@ -10,6 +10,7 @@ import java.util.Locale;
 import java.util.Optional;
 import java.util.function.Supplier;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.lang3.StringUtils;
 import org.springframework.lang.Nullable;
 
 @Slf4j
@@ -88,7 +89,7 @@ public final class TermsGate {
       return null;
     }
     String threadRootGuid = message.isGroup() ? agreementThreadRootGuid(message) : null;
-    if (message.isGroup() && isBlank(threadRootGuid)) {
+    if (message.isGroup() && StringUtils.isBlank(threadRootGuid)) {
       return null;
     }
     return state.getPendingTermsAcceptance(message.sender(), threadRootGuid);
@@ -105,7 +106,7 @@ public final class TermsGate {
 
   private boolean shouldValidateAgreement(
       IncomingMessage message, ConversationState.PendingTermsAcceptance pending) {
-    if (message == null || message.text() == null || message.text().isBlank()) {
+    if (message == null || StringUtils.isBlank(message.text())) {
       return false;
     }
     if (!message.isGroup()) {
@@ -113,17 +114,17 @@ public final class TermsGate {
     }
     String threadRootGuid = agreementThreadRootGuid(message);
     return pending != null
-        && !isBlank(threadRootGuid)
+        && StringUtils.isNotBlank(threadRootGuid)
         && threadRootGuid.equals(pending.threadRootGuid());
   }
 
   private static boolean mightBeAgreement(String text) {
-    if (text == null || text.isBlank()) {
+    if (StringUtils.isBlank(text)) {
       return false;
     }
     String normalized =
         text.trim().toLowerCase(Locale.ROOT).replaceAll("[\\p{Punct}\\s]+", " ").trim();
-    if (normalized.isBlank()) {
+    if (StringUtils.isBlank(normalized)) {
       return false;
     }
     return normalized.equals("y")
@@ -152,7 +153,7 @@ public final class TermsGate {
       return agreementMessage;
     }
     IncomingMessage original = pending.originalMessage();
-    if (!isBlank(pending.threadRootGuid())) {
+    if (StringUtils.isNotBlank(pending.threadRootGuid())) {
       return original.withThreadOriginatorGuid(pending.threadRootGuid());
     }
     return original;
@@ -160,7 +161,7 @@ public final class TermsGate {
 
   private void sendReply(
       IncomingMessage message, String reply, @Nullable String selectedMessageGuid) {
-    if (isBlank(selectedMessageGuid)) {
+    if (StringUtils.isBlank(selectedMessageGuid)) {
       messageAgent.sendThreadAwareTextUnmetered(message, reply);
       return;
     }
@@ -173,7 +174,7 @@ public final class TermsGate {
     if (message == null || !message.isGroup()) {
       return null;
     }
-    if (pending != null && !isBlank(pending.threadRootGuid())) {
+    if (pending != null && StringUtils.isNotBlank(pending.threadRootGuid())) {
       return pending.threadRootGuid();
     }
     return promptThreadRootGuid(message);
@@ -184,7 +185,7 @@ public final class TermsGate {
       return null;
     }
     String existingThreadRootGuid = agreementThreadRootGuid(message);
-    if (!isBlank(existingThreadRootGuid)) {
+    if (StringUtils.isNotBlank(existingThreadRootGuid)) {
       return existingThreadRootGuid;
     }
     return message.messageGuid();
@@ -194,17 +195,13 @@ public final class TermsGate {
     if (message == null) {
       return null;
     }
-    if (!isBlank(message.threadOriginatorGuid())) {
+    if (StringUtils.isNotBlank(message.threadOriginatorGuid())) {
       return message.threadOriginatorGuid();
     }
-    if (!isBlank(message.replyToGuid())) {
+    if (StringUtils.isNotBlank(message.replyToGuid())) {
       return message.replyToGuid();
     }
     return null;
-  }
-
-  private static boolean isBlank(String value) {
-    return value == null || value.isBlank();
   }
 
   @FunctionalInterface
