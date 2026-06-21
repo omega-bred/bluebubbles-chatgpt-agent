@@ -1,18 +1,17 @@
 package io.breland.bbagent.server.agent.tools.bb;
 
-import static io.breland.bbagent.server.agent.tools.JsonSchemaUtilities.jsonSchema;
-
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.databind.JsonNode;
 import io.breland.bbagent.server.agent.ConversationState;
 import io.breland.bbagent.server.agent.cadence.models.IncomingAttachment;
 import io.breland.bbagent.server.agent.tools.AgentTool;
+import io.breland.bbagent.server.agent.tools.JsonSchemaUtilities;
 import io.breland.bbagent.server.agent.tools.ToolContext;
 import io.breland.bbagent.server.agent.tools.ToolJson;
 import io.breland.bbagent.server.agent.tools.ToolProvider;
 import io.breland.bbagent.server.agent.transport.bb.BBHttpClientWrapper;
-import io.swagger.v3.oas.annotations.media.Schema;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import lombok.extern.slf4j.Slf4j;
 
@@ -27,12 +26,6 @@ public class GetThreadContextAgentTool implements ToolProvider {
 
   public static final String TOOL_NAME = "get_thread_context";
 
-  @Schema(description = "Request for thread context.")
-  public record GetThreadContextRequest(
-      @Schema(description = "Thread root message GUID to fetch context for.")
-          @JsonProperty("thread_root_guid")
-          String threadRootGuid) {}
-
   public record GetThreadContextResponse(
       @JsonProperty("thread_root_guid") String threadRootGuid,
       @JsonProperty("last_message_guid") String lastMessageGuid,
@@ -46,15 +39,11 @@ public class GetThreadContextAgentTool implements ToolProvider {
     return new AgentTool(
         TOOL_NAME,
         "Get the latest message and images for the current thread. Use when asked about the last message in this thread or previously sent images in this thread.",
-        jsonSchema(GetThreadContextRequest.class),
+        JsonSchemaUtilities.functionParameters(
+            Map.of("type", "object", "properties", Map.of(), "additionalProperties", false)),
         false,
         (context, args) -> {
-          GetThreadContextRequest request =
-              context.getMapper().convertValue(args, GetThreadContextRequest.class);
-          String threadRootGuid = request.threadRootGuid();
-          if (threadRootGuid == null || threadRootGuid.isBlank()) {
-            threadRootGuid = resolveThreadRootGuid(context);
-          }
+          String threadRootGuid = resolveThreadRootGuid(context);
           if (threadRootGuid == null || threadRootGuid.isBlank()) {
             log.warn("Could not resolve thread_root_guid");
             return "no thread";
@@ -95,7 +84,8 @@ public class GetThreadContextAgentTool implements ToolProvider {
     if (threadOriginatorGuid != null && !threadOriginatorGuid.isBlank()) {
       return threadOriginatorGuid;
     }
-    return null;
+    String replyToGuid = context.message().replyToGuid();
+    return replyToGuid == null || replyToGuid.isBlank() ? null : replyToGuid;
   }
 
   private ConversationState.ThreadContext fetchThreadContext(

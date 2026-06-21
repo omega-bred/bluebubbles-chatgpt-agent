@@ -15,12 +15,8 @@ public class SendReactionAgentTool implements ToolProvider {
   @JsonIgnoreProperties(ignoreUnknown = true)
   public record SendReactionRequest(
       @Schema(
-              description = "Chat GUID containing the message.",
-              requiredMode = Schema.RequiredMode.REQUIRED)
-          String chatGuid,
-      @Schema(
-              description = "Message GUID to react to.",
-              requiredMode = Schema.RequiredMode.REQUIRED)
+              description =
+                  "Message GUID to react to. Defaults to the current message when omitted.")
           String selectedMessageGuid,
       @Schema(
               description = "Reaction value.",
@@ -52,8 +48,12 @@ public class SendReactionAgentTool implements ToolProvider {
         (context, args) -> {
           SendReactionRequest toolRequest =
               context.getMapper().convertValue(args, SendReactionRequest.class);
-          String chatGuid = toolRequest.chatGuid();
+          String chatGuid = context.message() == null ? null : context.message().chatGuid();
           String selectedMessageGuid = toolRequest.selectedMessageGuid();
+          if (selectedMessageGuid == null || selectedMessageGuid.isBlank()) {
+            selectedMessageGuid =
+                context.message() == null ? null : context.message().messageGuid();
+          }
           String reaction = toolRequest.reaction();
           if (chatGuid == null || chatGuid.isBlank()) {
             return "missing chatGuid";

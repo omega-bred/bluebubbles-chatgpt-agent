@@ -41,6 +41,7 @@ import io.breland.bbagent.server.agent.tools.model.SetPreferredModelAgentTool;
 import io.breland.bbagent.server.agent.tools.scheduled.ScheduledEventDeleteTool;
 import io.breland.bbagent.server.agent.tools.scheduled.ScheduledEventListTool;
 import io.breland.bbagent.server.agent.tools.scheduled.ScheduledEventTool;
+import io.breland.bbagent.server.agent.tools.search.ToolSearchAgentTool;
 import io.breland.bbagent.server.agent.tools.website.GetWebsiteAccountLinkStatusAgentTool;
 import io.breland.bbagent.server.agent.tools.website.LinkConversationSettingsAgentTool;
 import io.breland.bbagent.server.agent.tools.website.LinkWebsiteAccountAgentTool;
@@ -275,6 +276,7 @@ public final class AgentPromptBuilder {
                     : "This is a one on one message with a user. You should respond to messages unless no reply is needed.")
                 + "Never reply to your own messages."
                 + responsivenessInstruction
+                + toolSearchInstruction()
                 + "Use the "
                 + MemoryGetAgentTool.TOOL_NAME
                 + " tool when memory could improve your response (skip if no reply is needed or another tool is more appropriate). "
@@ -292,6 +294,7 @@ public final class AgentPromptBuilder {
           .role(EasyInputMessage.Role.DEVELOPER)
           .content(
               "You may respond with plain text if that is sufficient. "
+                  + toolSearchInstruction()
                   + "All outgoing LXMF text must be plain text only. Do not use markdown or formatting markers such as **, __, backticks, or markdown lists. "
                   + "LXMF support is currently minimal: one-on-one text only. Do not try to send reactions, images, attachments, GIFs, group changes, or thread replies. "
                   + "Only call "
@@ -332,6 +335,7 @@ public final class AgentPromptBuilder {
         .role(EasyInputMessage.Role.DEVELOPER)
         .content(
             "You may respond with plain text if that is sufficient. "
+                + toolSearchInstruction()
                 + IMESSAGE_FORMATTING_INSTRUCTION
                 + "Only call "
                 + SendTextAgentTool.TOOL_NAME
@@ -453,6 +457,14 @@ public final class AgentPromptBuilder {
                 + BBMessageAgent.NO_RESPONSE_TEXT
                 + ".")
         .build();
+  }
+
+  private String toolSearchInstruction() {
+    return "Most action tools are discovered on demand instead of loaded into context upfront. "
+        + "When these instructions mention a tool or capability that is not visible in the current"
+        + " tool list, first call "
+        + ToolSearchAgentTool.TOOL_NAME
+        + " with a concise query for that capability, then call the discovered tool. ";
   }
 
   private String feedbackInstruction() {
