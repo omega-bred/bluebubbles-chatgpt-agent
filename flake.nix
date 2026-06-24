@@ -463,6 +463,7 @@
 
               install -Dm755 app.py "$out/lib/lxmf-bridge/app.py"
               install -Dm755 canary.py "$out/lib/lxmf-bridge/canary.py"
+              install -Dm644 lxmf_common.py "$out/lib/lxmf-bridge/lxmf_common.py"
 
               runHook postInstall
             '';
@@ -538,6 +539,7 @@
               mkdir -p app tmp var/tmp
               ln -s ${lxmfBridge}/lib/lxmf-bridge/app.py app/app.py
               ln -s ${lxmfBridge}/lib/lxmf-bridge/canary.py app/canary.py
+              ln -s ${lxmfBridge}/lib/lxmf-bridge/lxmf_common.py app/lxmf_common.py
               chmod 1777 tmp var/tmp
             '';
             config = {
