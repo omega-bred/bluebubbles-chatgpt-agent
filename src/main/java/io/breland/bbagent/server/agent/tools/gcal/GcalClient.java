@@ -100,7 +100,7 @@ public class GcalClient {
     if (state == null) {
       return null;
     }
-    GoogleAuthorizationCodeFlow flow = buildFlow(pendingKey);
+    GoogleAuthorizationCodeFlow flow = buildFlow();
     return flow.newAuthorizationUrl()
         .setRedirectUri(redirectUri)
         .setState(state)
@@ -114,7 +114,7 @@ public class GcalClient {
       return Optional.empty();
     }
     try {
-      GoogleAuthorizationCodeFlow flow = buildFlow(pendingKey);
+      GoogleAuthorizationCodeFlow flow = buildFlow();
       TokenResponse tokenResponse =
           flow.newTokenRequest(code).setRedirectUri(redirectUri).execute();
       flow.createAndStoreCredential(tokenResponse, pendingKey);
@@ -131,10 +131,6 @@ public class GcalClient {
       log.warn("Failed to exchange code", e);
       return Optional.empty();
     }
-  }
-
-  public List<String> listAccounts() {
-    return credentialRepository.findAllAccountKeysByStoreId(STORE_ID);
   }
 
   public List<String> listAccountsFor(String accountId) {
@@ -275,7 +271,7 @@ public class GcalClient {
     if (!isConfigured()) {
       throw new IOException("Google Calendar client not configured");
     }
-    GoogleAuthorizationCodeFlow flow = buildFlow(accountKey);
+    GoogleAuthorizationCodeFlow flow = buildFlow();
     Credential credential = flow.loadCredential(accountKey);
     if (credential == null) {
       throw new IOException("No credentials found for account: " + accountKey);
@@ -283,7 +279,7 @@ public class GcalClient {
     return credential;
   }
 
-  private GoogleAuthorizationCodeFlow buildFlow(String accountKey) {
+  private GoogleAuthorizationCodeFlow buildFlow() {
     if (clientSecretPath != null
         && !clientSecretPath.isBlank()
         && Files.exists(Paths.get(clientSecretPath))) {
