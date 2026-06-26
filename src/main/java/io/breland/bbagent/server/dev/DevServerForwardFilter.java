@@ -10,7 +10,6 @@ import java.net.InetSocketAddress;
 import java.net.Socket;
 import java.util.Collections;
 import java.util.Locale;
-import java.util.Optional;
 import java.util.Set;
 import org.apache.hc.client5.http.classic.methods.HttpDelete;
 import org.apache.hc.client5.http.classic.methods.HttpGet;
@@ -78,10 +77,7 @@ public class DevServerForwardFilter extends OncePerRequestFilter {
       HttpServletRequest request, HttpServletResponse response, FilterChain filterChain)
       throws ServletException, IOException {
 
-    boolean isWebsocket =
-        Optional.ofNullable(request.getHeader("Upgrade"))
-            .map(u -> u.equals("websocket"))
-            .orElse(false);
+    boolean isWebsocket = "websocket".equalsIgnoreCase(request.getHeader("Upgrade"));
 
     if (!hasHandler(request) && isDevServerRunning() && !isWebsocket) {
       proxyHttp(request, response);
