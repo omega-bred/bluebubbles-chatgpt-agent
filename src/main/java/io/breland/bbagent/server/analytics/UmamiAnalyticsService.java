@@ -121,10 +121,7 @@ public class UmamiAnalyticsService {
     if (cleanPath == null) {
       return "/server";
     }
-    int queryIndex = cleanPath.indexOf('?');
-    if (queryIndex >= 0) {
-      cleanPath = cleanPath.substring(0, queryIndex);
-    }
+    cleanPath = StringUtils.substringBefore(cleanPath, "?");
     if (!cleanPath.startsWith("/")) {
       cleanPath = "/" + cleanPath;
     }
