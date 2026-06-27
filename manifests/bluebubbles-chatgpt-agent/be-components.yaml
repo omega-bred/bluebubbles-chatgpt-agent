@@ -551,7 +551,7 @@ spec:
   schedule: "*/15 * * * *"
   concurrencyPolicy: Forbid
   successfulJobsHistoryLimit: 2
-  failedJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 0
   jobTemplate:
     spec:
       activeDeadlineSeconds: 420
