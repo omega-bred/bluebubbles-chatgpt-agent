@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 import json
-import os
 import queue
 import signal
 import tempfile
@@ -15,9 +14,15 @@ from pathlib import Path
 import LXMF
 import RNS
 
-
-def env(name, default=""):
-    return os.environ.get(name, default)
+from lxmf_common import (
+    desired_lxmf_method,
+    env,
+    hex_bytes,
+    load_or_create_identity,
+    log,
+    message_id,
+    write_default_rns_config,
+)
 
 
 RUN_ID = env("CANARY_RUN_ID", str(uuid.uuid4()))
@@ -61,56 +66,6 @@ class CanaryFailure(Exception):
         self.failure_type = failure_type
 
 
-def log(message):
-    print(message, flush=True)
-
-
-def write_default_rns_config():
-    config_path = RNS_CONFIG_DIR / "config"
-    if config_path.exists():
-        return
-    RNS_CONFIG_DIR.mkdir(parents=True, exist_ok=True)
-    config_path.write_text(
-        f"""[reticulum]
-enable_transport = no
-panic_on_interface_error = yes
-respond_to_probes = yes
-
-[interfaces]
-
-[[Cluster RNode Backbone]]
-  type = BackboneInterface
-  enabled = yes
-  mode = boundary
-  remote = {RNS_BACKBONE_REMOTE}
-  target_port = {RNS_BACKBONE_PORT}
-""",
-        encoding="utf-8",
-    )
-
-
-def load_or_create_identity():
-    IDENTITY_PATH.parent.mkdir(parents=True, exist_ok=True)
-    if IDENTITY_PATH.exists():
-        return RNS.Identity.from_file(str(IDENTITY_PATH))
-    identity = RNS.Identity()
-    identity.to_file(str(IDENTITY_PATH))
-    return identity
-
-
-def hex_bytes(value):
-    if value is None:
-        return None
-    if isinstance(value, bytes):
-        return value.hex()
-    return str(value)
-
-
-def message_id(message):
-    value = getattr(message, "message_id", None) or getattr(message, "hash", None)
-    return hex_bytes(value)
-
-
 def content_text(message):
     try:
         return message.content_as_string() or ""
@@ -129,14 +84,6 @@ def delivery_callback(message):
             "timestamp": time.time(),
         }
     )
-
-
-def desired_method():
-    if OUTBOUND_METHOD == "opportunistic":
-        return LXMF.LXMessage.OPPORTUNISTIC
-    if OUTBOUND_METHOD == "propagated":
-        return LXMF.LXMessage.PROPAGATED
-    return LXMF.LXMessage.DIRECT
 
 
 def wait_for_path(destination_hash, stage):
@@ -165,7 +112,7 @@ def send_lxmf(destination_hash_hex, content, stage, title=""):
         local_destination,
         content,
         title or "",
-        desired_method=desired_method(),
+        desired_method=desired_lxmf_method(OUTBOUND_METHOD),
         include_ticket=True,
     )
     router.handle_outbound(lxm)
@@ -213,11 +160,11 @@ def announce_loop():
 
 def start_lxmf():
     global router, local_destination
-    write_default_rns_config()
+    write_default_rns_config(RNS_CONFIG_DIR, RNS_BACKBONE_REMOTE, RNS_BACKBONE_PORT)
     LXMF_STORAGE_DIR.mkdir(parents=True, exist_ok=True)
     RNS.Reticulum(configdir=str(RNS_CONFIG_DIR))
     router = LXMF.LXMRouter(storagepath=str(LXMF_STORAGE_DIR))
-    identity = load_or_create_identity()
+    identity = load_or_create_identity(IDENTITY_PATH)
     local_destination = router.register_delivery_identity(
         identity, display_name=DISPLAY_NAME, stamp_cost=STAMP_COST
     )
