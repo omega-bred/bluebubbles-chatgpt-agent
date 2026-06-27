@@ -91,23 +91,12 @@ public class TextingNumberService {
     if (request == null) {
       return "unknown";
     }
-    String forwardedFor = firstHeaderValue(request.getHeader("X-Forwarded-For"));
-    if (StringUtils.isNotBlank(forwardedFor)) {
-      return forwardedFor;
-    }
-    String realIp = firstHeaderValue(request.getHeader("X-Real-IP"));
-    if (StringUtils.isNotBlank(realIp)) {
-      return realIp;
-    }
-    return StringUtils.defaultIfBlank(request.getRemoteAddr(), "unknown");
-  }
-
-  private String firstHeaderValue(String value) {
-    if (StringUtils.isBlank(value)) {
-      return null;
-    }
-    String first = value.split(",", 2)[0];
-    return StringUtils.trimToNull(first);
+    String forwardedFor =
+        StringUtils.trimToNull(
+            StringUtils.substringBefore(request.getHeader("X-Forwarded-For"), ","));
+    String realIp =
+        StringUtils.trimToNull(StringUtils.substringBefore(request.getHeader("X-Real-IP"), ","));
+    return StringUtils.firstNonBlank(forwardedFor, realIp, request.getRemoteAddr(), "unknown");
   }
 
   private String smsUrl(String phoneNumber, String message) {

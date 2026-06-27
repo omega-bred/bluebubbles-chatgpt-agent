@@ -120,7 +120,7 @@ public class ContactService {
     }
     String forwardedFor = StringUtils.trimToNull(request.getHeader("X-Forwarded-For"));
     if (forwardedFor != null) {
-      return trimAndTruncate(forwardedFor.split(",", 2)[0], 255);
+      return trimAndTruncate(StringUtils.substringBefore(forwardedFor, ","), 255);
     }
     return trimAndTruncate(request.getRemoteAddr(), 255);
   }
