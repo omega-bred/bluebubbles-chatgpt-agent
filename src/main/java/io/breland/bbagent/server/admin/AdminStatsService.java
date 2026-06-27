@@ -1,5 +1,6 @@
 package io.breland.bbagent.server.admin;
 
+import static io.breland.bbagent.server.StringSupport.firstNonBlank;
 import static io.breland.bbagent.server.TimeSupport.offset;
 
 import io.breland.bbagent.generated.model.AdminBucketModelStats;
@@ -339,10 +340,6 @@ public class AdminStatsService implements AgentMetricsService {
 
   private String hash(String value) {
     return DigestUtils.sha256Hex(value);
-  }
-
-  private String firstNonBlank(String... values) {
-    return StringUtils.trimToNull(StringUtils.firstNonBlank(values));
   }
 
   private double successRate(long successfulCalls, long totalCalls) {
