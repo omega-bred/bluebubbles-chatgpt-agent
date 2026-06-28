@@ -16,10 +16,7 @@ public final class BlueBubblesPollSupport {
   private BlueBubblesPollSupport() {}
 
   public static boolean isPollBundle(String bundleIdentifier) {
-    return bundleIdentifier != null
-        && (bundleIdentifier.equals(POLLS_BUNDLE_SUFFIX)
-            || bundleIdentifier.endsWith(":" + POLLS_BUNDLE_SUFFIX)
-            || bundleIdentifier.contains(POLLS_BUNDLE_SUFFIX));
+    return bundleIdentifier != null && bundleIdentifier.contains(POLLS_BUNDLE_SUFFIX);
   }
 
   public static String pollMessageGuid(IncomingMessage message) {
@@ -103,9 +100,7 @@ public final class BlueBubblesPollSupport {
     if (text == null || text.isBlank() || !text.startsWith("Poll update: ")) {
       return null;
     }
-    int newline = text.indexOf('\n');
-    String firstLine = newline >= 0 ? text.substring(0, newline) : text;
-    return firstLine.trim();
+    return StringUtils.substringBefore(text, "\n").trim();
   }
 
   public static String formatPollReadResult(
