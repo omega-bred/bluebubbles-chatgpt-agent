@@ -10,8 +10,11 @@ import io.breland.bbagent.server.agent.BBMessageAgent;
 import io.breland.bbagent.server.agent.IncomingMessage;
 import java.time.OffsetDateTime;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mockito;
+import org.springframework.boot.test.system.CapturedOutput;
+import org.springframework.boot.test.system.OutputCaptureExtension;
 
 class LxmfWebhookControllerTest {
 
@@ -48,5 +51,21 @@ class LxmfWebhookControllerTest {
     assertEquals("msg-1", message.messageGuid());
     assertEquals("hello", message.text());
     assertFalse(message.isGroup());
+  }
+
+  @Test
+  @ExtendWith(OutputCaptureExtension.class)
+  void logsLxmfWebhookWithoutMessageContent(CapturedOutput output) {
+    BBMessageAgent messageAgent = Mockito.mock(BBMessageAgent.class);
+    LxmfWebhookController controller = new LxmfWebhookController(null, messageAgent, "secret");
+    LxmfMessageReceivedRequest request =
+        new LxmfMessageReceivedRequest("msg-1", "AABB", "secret body");
+
+    controller.lxmfReceiveMessages(request, "secret");
+
+    String logs = output.toString();
+    assertFalse(logs.contains("aabb"));
+    assertFalse(logs.contains("secret body"));
+    assertFalse(logs.contains("IncomingMessage["));
   }
 }
