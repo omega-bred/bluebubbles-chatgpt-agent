@@ -49,10 +49,11 @@ public class BBHttpClientWrapper {
   private static final int DIRECT_SEND_MAX_ATTEMPTS = 3;
   private static final int DIRECT_SEND_PING_ATTEMPTS = 2;
   private static final Duration DIRECT_SEND_MATCH_WINDOW_SKEW = Duration.ofSeconds(10);
+  private static final int BLUEBUBBLES_MAX_IN_MEMORY_BYTES = 2 * 1024 * 1024;
   private static final String ANY_DIRECT_CHAT_PREFIX = "any;-;";
 
   private final V1ContactApi contactApi;
-  private ApiClient apiClient;
+  private final ApiClient apiClient;
   private final V1MessageApi messageApi;
   private final V1AttachmentApi attachmentApi;
   private final V1ChatApi chatApi;
@@ -74,8 +75,7 @@ public class BBHttpClientWrapper {
       @Nullable OperationalMetricsService operationalMetricsService) {
     this.password = password;
     this.apiTimeout = normalizedTimeout(requestTimeoutSeconds);
-    this.apiClient = new ApiClient();
-    this.apiClient.setBasePath(basePath);
+    this.apiClient = blueBubblesApiClient(basePath);
     this.messageApi = new V1MessageApi(apiClient);
     this.contactApi = new V1ContactApi(apiClient);
     this.attachmentApi = new V1AttachmentApi(apiClient);
@@ -87,7 +87,7 @@ public class BBHttpClientWrapper {
   }
 
   public BBHttpClientWrapper(String password, V1MessageApi messageApi, V1ContactApi contactApi) {
-    this(password, messageApi, contactApi, new V1ICloudApi(new ApiClient()));
+    this(password, messageApi, contactApi, new V1ICloudApi(blueBubblesApiClient()));
   }
 
   public BBHttpClientWrapper(
@@ -125,7 +125,7 @@ public class BBHttpClientWrapper {
       @Nullable OperationalMetricsService operationalMetricsService) {
     this.password = password;
     this.apiTimeout = DEFAULT_API_TIMEOUT;
-    this.apiClient = new ApiClient();
+    this.apiClient = blueBubblesApiClient();
     this.messageApi = messageApi;
     this.contactApi = contactApi;
     this.attachmentApi = new V1AttachmentApi(apiClient);
@@ -134,6 +134,19 @@ public class BBHttpClientWrapper {
     this.icloudApi = icloudApi;
     this.objectMapper = objectMapper;
     this.operationalMetricsService = operationalMetricsService;
+  }
+
+  private static ApiClient blueBubblesApiClient() {
+    return new ApiClient(
+        ApiClient.buildWebClientBuilder()
+            .codecs(
+                configurer ->
+                    configurer.defaultCodecs().maxInMemorySize(BLUEBUBBLES_MAX_IN_MEMORY_BYTES))
+            .build());
+  }
+
+  private static ApiClient blueBubblesApiClient(String basePath) {
+    return blueBubblesApiClient().setBasePath(basePath);
   }
 
   public record AttachmentData(String filename, byte[] bytes) {}
