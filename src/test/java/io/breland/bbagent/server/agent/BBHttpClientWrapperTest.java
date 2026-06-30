@@ -9,6 +9,8 @@ import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.sun.net.httpserver.HttpServer;
 import io.breland.bbagent.generated.bluebubblesclient.api.V1ContactApi;
 import io.breland.bbagent.generated.bluebubblesclient.api.V1ICloudApi;
 import io.breland.bbagent.generated.bluebubblesclient.api.V1MessageApi;
@@ -21,6 +23,9 @@ import io.breland.bbagent.generated.bluebubblesclient.model.FindMyFriendLocation
 import io.breland.bbagent.server.agent.transport.bb.BBHttpClientWrapper;
 import io.breland.bbagent.server.metrics.OperationalMetricsService;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
+import java.io.IOException;
+import java.net.InetSocketAddress;
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
@@ -206,6 +211,41 @@ class BBHttpClientWrapperTest {
         new com.fasterxml.jackson.databind.ObjectMapper().readValue(json, ApiResponseGetChat.class);
 
     assertEquals(groupPhotoGuid, response.getData().getProperties().getFirst().getGroupPhotoGuid());
+  }
+
+  @Test
+  void getMessagesInChatAllowsLargeBlueBubblesResponses() throws IOException {
+    HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+    String largeText = "x".repeat(300 * 1024);
+    byte[] response =
+        """
+        {"status":200,"message":"ok","data":[{"guid":"message-guid","text":"%s","isFromMe":true}]}
+        """
+            .formatted(largeText)
+            .getBytes(StandardCharsets.UTF_8);
+    server.createContext(
+        "/api/v1/chat/chat-guid/message",
+        exchange -> {
+          exchange.getResponseHeaders().set("Content-Type", "application/json");
+          exchange.sendResponseHeaders(200, response.length);
+          exchange.getResponseBody().write(response);
+          exchange.close();
+        });
+    server.start();
+
+    try {
+      BBHttpClientWrapper wrapper =
+          new BBHttpClientWrapper(
+              "http://127.0.0.1:" + server.getAddress().getPort(),
+              "pw",
+              30,
+              new ObjectMapper(),
+              null);
+
+      assertEquals(largeText, wrapper.getMessagesInChat("chat-guid").getFirst().getText());
+    } finally {
+      server.stop(0);
+    }
   }
 
   private static BBHttpClientWrapper wrapper(V1ICloudApi icloudApi) {
