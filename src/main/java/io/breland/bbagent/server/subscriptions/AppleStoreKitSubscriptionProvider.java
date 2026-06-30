@@ -7,7 +7,6 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import io.breland.bbagent.generated.model.SubscriptionStoreKitTransactionRequest;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
-import java.util.Map;
 import java.util.UUID;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.http.HttpHeaders;
@@ -73,7 +72,9 @@ public class AppleStoreKitSubscriptionProvider implements SubscriptionProvider {
         null,
         null,
         null,
-        transaction == null ? null : originalTransactionId(transaction),
+        transaction == null
+            ? null
+            : firstNonBlank(transaction.originalTransactionId(), transaction.transactionId()),
         transaction == null || transaction.appAccountToken() == null
             ? null
             : transaction.appAccountToken().toString(),
@@ -138,7 +139,7 @@ public class AppleStoreKitSubscriptionProvider implements SubscriptionProvider {
       normalizedStatus = SubscriptionStatuses.SUBSCRIPTION_EXPIRED;
     }
     return new ProviderSubscription(
-        originalTransactionId(transaction),
+        firstNonBlank(transaction.originalTransactionId(), transaction.transactionId()),
         transaction.appAccountToken() == null ? null : transaction.appAccountToken().toString(),
         transaction.appAccountToken() == null
             ? accountId
@@ -157,16 +158,12 @@ public class AppleStoreKitSubscriptionProvider implements SubscriptionProvider {
 
   private String signedPayload(String payload) {
     try {
-      Map<?, ?> body = objectMapper.readValue(payload, Map.class);
-      Object signedPayload = body.get("signedPayload");
+      Object signedPayload =
+          objectMapper.readValue(payload, StoreKitWebhookEnvelope.class).signedPayload();
       return signedPayload == null ? null : StringUtils.trimToNull(String.valueOf(signedPayload));
     } catch (Exception e) {
       return StringUtils.trimToNull(payload);
     }
-  }
-
-  private String originalTransactionId(AppleStoreKitVerification.VerifiedTransaction transaction) {
-    return firstNonBlank(transaction.originalTransactionId(), transaction.transactionId());
   }
 
   private String text(JsonNode node) {
@@ -175,4 +172,6 @@ public class AppleStoreKitSubscriptionProvider implements SubscriptionProvider {
     }
     return StringUtils.trimToNull(node.asText());
   }
+
+  private record StoreKitWebhookEnvelope(Object signedPayload) {}
 }
