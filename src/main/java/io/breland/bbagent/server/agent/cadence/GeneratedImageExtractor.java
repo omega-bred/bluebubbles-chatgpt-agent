@@ -8,6 +8,7 @@ import java.net.URI;
 import java.util.Base64;
 import java.util.List;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.lang3.StringUtils;
 
 @Slf4j
 final class GeneratedImageExtractor {
@@ -31,7 +32,7 @@ final class GeneratedImageExtractor {
         continue;
       }
       String result = call.result().orElse(null);
-      if (result == null || result.isBlank()) {
+      if (StringUtils.isBlank(result)) {
         log.warn("Image generation failed(blank result): {}", call.id());
         continue;
       }
@@ -49,18 +50,15 @@ final class GeneratedImageExtractor {
   }
 
   private byte[] decodeImageResult(String result) {
-    if (result == null || result.isBlank()) {
+    if (StringUtils.isBlank(result)) {
       log.warn("Decode failed: empty string");
       return null;
     }
     String trimmed = result.trim();
     if (trimmed.startsWith("data:")) {
       log.debug("Decoding image data(inline)");
-      int comma = trimmed.indexOf(',');
-      if (comma > 0 && comma < trimmed.length() - 1) {
-        return decodeBase64(trimmed.substring(comma + 1));
-      }
-      return null;
+      String base64 = StringUtils.substringAfter(trimmed, ",");
+      return StringUtils.isEmpty(base64) ? null : decodeBase64(base64);
     }
     if (trimmed.startsWith("http://") || trimmed.startsWith("https://")) {
       log.debug("Need to download image bytes");
