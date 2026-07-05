@@ -1102,7 +1102,6 @@ public class BBHttpClientWrapper {
       recordOperationMetric("ping", true, null, startedNanos);
       return true;
     } catch (Exception e) {
-      log.warn("Failed to ping", e);
       recordOperationMetric("ping", false, OperationalMetricsService.failureType(e), startedNanos);
       return false;
     }
