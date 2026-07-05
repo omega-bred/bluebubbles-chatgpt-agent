@@ -94,10 +94,10 @@ public final class AgentAttachmentInputBuilder {
     }
     if (StringUtils.isNotBlank(attachment.dataUrl())) {
       String dataUrl = attachment.dataUrl();
-      int comma = dataUrl.indexOf(',');
-      if (comma > 0 && comma < dataUrl.length() - 1) {
-        return Optional.of(
-            new AttachmentData(dataUrl.substring(comma + 1), mimeType(dataUrl), null));
+      String prefix = StringUtils.substringBefore(dataUrl, ",");
+      String base64 = StringUtils.substringAfter(dataUrl, ",");
+      if (StringUtils.isNotEmpty(prefix) && StringUtils.isNotEmpty(base64)) {
+        return Optional.of(new AttachmentData(base64, mimeType(dataUrl), null));
       }
     }
     return Optional.empty();
@@ -149,14 +149,10 @@ public final class AgentAttachmentInputBuilder {
   }
 
   private static @Nullable String mimeType(String dataUrl) {
-    if (dataUrl == null || !dataUrl.startsWith("data:")) {
+    if (!StringUtils.startsWith(dataUrl, "data:")) {
       return null;
     }
-    int semicolon = dataUrl.indexOf(';');
-    if (semicolon <= "data:".length()) {
-      return null;
-    }
-    return dataUrl.substring("data:".length(), semicolon);
+    return StringUtils.defaultIfEmpty(StringUtils.substringBetween(dataUrl, "data:", ";"), null);
   }
 
   private static @Nullable String probeContentType(Path path) {
