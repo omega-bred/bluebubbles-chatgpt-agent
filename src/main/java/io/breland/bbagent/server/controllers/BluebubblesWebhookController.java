@@ -47,7 +47,6 @@ public class BluebubblesWebhookController extends BluebubblesApiController {
   @Override
   public ResponseEntity<Object> bluebubblesMessageReceived(
       @Valid @RequestBody BlueBubblesMessageReceivedRequest requestBody) {
-    log.info("Incoming Message {}", requestBody);
     if (requestBody == null || requestBody.getType() == null) {
       return ResponseEntity.badRequest().build();
     }
