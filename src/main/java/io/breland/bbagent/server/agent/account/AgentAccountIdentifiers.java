@@ -4,6 +4,7 @@ import io.breland.bbagent.server.agent.IncomingMessage;
 import java.util.Locale;
 import java.util.Optional;
 import java.util.regex.Pattern;
+import org.apache.commons.lang3.StringUtils;
 
 public final class AgentAccountIdentifiers {
   public static final String IMESSAGE_EMAIL = "imessage_email";
@@ -87,14 +88,11 @@ public final class AgentAccountIdentifiers {
       return null;
     }
     String clean = value.trim();
-    String lower = clean.toLowerCase(Locale.ROOT);
-    if (lower.startsWith("mailto:")) {
-      return clean.substring("mailto:".length());
+    String withoutMailto = StringUtils.removeStartIgnoreCase(clean, "mailto:");
+    if (!withoutMailto.equals(clean)) {
+      return withoutMailto;
     }
-    if (lower.startsWith("tel:")) {
-      return clean.substring("tel:".length());
-    }
-    return clean;
+    return StringUtils.removeStartIgnoreCase(clean, "tel:");
   }
 
   private static Optional<String> normalizePhone(String value) {
