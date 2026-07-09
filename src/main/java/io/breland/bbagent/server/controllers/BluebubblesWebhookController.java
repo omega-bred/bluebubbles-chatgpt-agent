@@ -9,6 +9,7 @@ import io.breland.bbagent.generated.model.BlueBubblesMessageReceivedRequest;
 import io.breland.bbagent.generated.model.BlueBubblesMessageReceivedRequestData;
 import io.breland.bbagent.generated.model.BlueBubblesMessageReceivedRequestDataAttachmentsInner;
 import io.breland.bbagent.generated.model.BlueBubblesMessageReceivedRequestDataChatsInner;
+import io.breland.bbagent.server.TimeSupport;
 import io.breland.bbagent.server.agent.BBMessageAgent;
 import io.breland.bbagent.server.agent.IncomingMessage;
 import io.breland.bbagent.server.agent.cadence.models.IncomingAttachment;
@@ -72,7 +73,7 @@ public class BluebubblesWebhookController extends BluebubblesApiController {
     Boolean fromMe = data.getIsFromMe();
     String service = data.getHandle() == null ? null : data.getHandle().getService();
     String sender = data.getHandle() == null ? null : data.getHandle().getAddress();
-    Instant timestamp = parseTimestamp(data.getDateCreated());
+    Instant timestamp = TimeSupport.epochSecondsOrMillisOrNow(data.getDateCreated());
     List<IncomingAttachment> attachments = parseAttachments(data.getAttachments());
     String chatGuid =
         data.getChats() == null || data.getChats().isEmpty()
@@ -180,17 +181,6 @@ public class BluebubblesWebhookController extends BluebubblesApiController {
 
   private static boolean hasGroupMetadata(List<?> chats, String groupTitle) {
     return (chats != null && chats.size() > 1) || (groupTitle != null && !groupTitle.isBlank());
-  }
-
-  private Instant parseTimestamp(Long value) {
-    if (value == null) {
-      return Instant.now();
-    }
-    long epoch = value;
-    if (epoch > 1_000_000_000_000L) {
-      return Instant.ofEpochMilli(epoch);
-    }
-    return Instant.ofEpochSecond(epoch);
   }
 
   private List<IncomingAttachment> parseAttachments(

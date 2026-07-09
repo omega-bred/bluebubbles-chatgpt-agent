@@ -1,6 +1,7 @@
 package io.breland.bbagent.server.agent;
 
 import io.breland.bbagent.generated.bluebubblesclient.model.ApiV1ChatChatGuidMessageGet200ResponseDataInner;
+import io.breland.bbagent.server.TimeSupport;
 import io.breland.bbagent.server.agent.cadence.models.IncomingAttachment;
 import io.breland.bbagent.server.controllers.BluebubblesWebhookController;
 import java.time.Instant;
@@ -107,7 +108,7 @@ public record IncomingMessage(
         BBMessageAgent.IMESSAGE_SERVICE,
         sender,
         BluebubblesWebhookController.resolveIsGroup(message),
-        parseTimestamp(message.getDateCreated()),
+        TimeSupport.epochSecondsOrMillisOrNow(message.getDateCreated()),
         List.of(),
         message.getBalloonBundleId(),
         message.getAssociatedMessageGuid(),
@@ -206,16 +207,6 @@ public record IncomingMessage(
         associatedMessageGuid,
         replyToGuid,
         isSystemMessage);
-  }
-
-  private static Instant parseTimestamp(Long value) {
-    if (value == null) {
-      return Instant.now();
-    }
-    if (value > 1_000_000_000_000L) {
-      return Instant.ofEpochMilli(value);
-    }
-    return Instant.ofEpochSecond(value);
   }
 
   public String computeMessageFingerprint() {

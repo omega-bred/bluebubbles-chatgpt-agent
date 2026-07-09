@@ -7,6 +7,7 @@ import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import io.breland.bbagent.generated.bluebubblesclient.ApiClient;
 import io.breland.bbagent.generated.bluebubblesclient.api.*;
 import io.breland.bbagent.generated.bluebubblesclient.model.*;
+import io.breland.bbagent.server.TimeSupport;
 import io.breland.bbagent.server.agent.BBMessageAgent;
 import io.breland.bbagent.server.agent.IncomingMessage;
 import io.breland.bbagent.server.agent.account.AgentAccountIdentifiers;
@@ -992,18 +993,8 @@ public class BBHttpClientWrapper {
       return false;
     }
     Instant lowerBound = firstAttemptStartedAt.minus(DIRECT_SEND_MATCH_WINDOW_SKEW);
-    Instant messageCreatedAt = parseBlueBubblesTimestamp(message.getDateCreated());
+    Instant messageCreatedAt = TimeSupport.epochSecondsOrMillis(message.getDateCreated());
     return messageCreatedAt == null || !messageCreatedAt.isBefore(lowerBound);
-  }
-
-  private static Instant parseBlueBubblesTimestamp(Long value) {
-    if (value == null) {
-      return null;
-    }
-    if (value > 1_000_000_000_000L) {
-      return Instant.ofEpochMilli(value);
-    }
-    return Instant.ofEpochSecond(value);
   }
 
   private void applyTextFormatting(ApiV1MessageTextPostRequest request) {
