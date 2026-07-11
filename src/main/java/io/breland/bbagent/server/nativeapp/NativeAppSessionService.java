@@ -170,7 +170,9 @@ public class NativeAppSessionService {
 
   private NativeAppSessionResponse response(
       String sessionToken, NativeAppSessionEntity session, String startToken) {
-    TextingNumberResponse texting = textingNumberService.response(startMessage(startToken));
+    TextingNumberResponse texting =
+        textingNumberService.response(
+            TextingNumberService.DEFAULT_MESSAGE + " Code: " + startToken);
     return new NativeAppSessionResponse()
         .sessionToken(sessionToken)
         .expiresAt(offset(session.getExpiresAt()))
@@ -191,14 +193,10 @@ public class NativeAppSessionService {
     return startToken;
   }
 
-  private String startMessage(String startToken) {
-    return "Hi BlueChatAI, let's start. Code: " + startToken;
-  }
-
   private String stripStartToken(String text) {
     String stripped = START_TOKEN_PATTERN.matcher(text).replaceAll("").replace("Code:", "");
     stripped = stripped.replaceAll("\\s{2,}", " ").trim();
-    return StringUtils.defaultIfBlank(stripped, "Hi BlueChatAI, let's start.");
+    return StringUtils.defaultIfBlank(stripped, TextingNumberService.DEFAULT_MESSAGE);
   }
 
   private String newStartToken() {

@@ -16,6 +16,8 @@ import org.springframework.web.server.ResponseStatusException;
 
 @Service
 public class TextingNumberService {
+  public static final String DEFAULT_MESSAGE = "Hi BlueChatAI, let's start.";
+
   private final String phoneNumberE164;
   private final String displayNumber;
   private final String defaultMessage;
@@ -27,8 +29,7 @@ public class TextingNumberService {
   public TextingNumberService(
       @Value("${bluechat.texting.phone-number-e164:+14158674956}") String phoneNumberE164,
       @Value("${bluechat.texting.display-number:+1 (415) 867-4956}") String displayNumber,
-      @Value("${bluechat.texting.default-message:Hi BlueChatAI, let's start.}")
-          String defaultMessage,
+      @Value("${bluechat.texting.default-message:" + DEFAULT_MESSAGE + "}") String defaultMessage,
       @Value("${bluechat.texting.public-rate-limit-rps:5}") int rateLimitRps) {
     this(phoneNumberE164, displayNumber, defaultMessage, rateLimitRps, Clock.systemUTC());
   }
@@ -43,8 +44,7 @@ public class TextingNumberService {
     this.displayNumber =
         StringUtils.defaultIfBlank(StringUtils.trimToNull(displayNumber), this.phoneNumberE164);
     this.defaultMessage =
-        StringUtils.defaultIfBlank(
-            StringUtils.trimToNull(defaultMessage), "Hi BlueChatAI, let's start.");
+        StringUtils.defaultIfBlank(StringUtils.trimToNull(defaultMessage), DEFAULT_MESSAGE);
     this.rateLimitRps = Math.max(1, rateLimitRps);
     this.clock = clock;
   }
