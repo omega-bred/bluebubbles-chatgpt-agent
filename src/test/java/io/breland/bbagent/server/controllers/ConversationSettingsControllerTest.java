@@ -44,7 +44,7 @@ class ConversationSettingsControllerTest {
                     WebsiteAccountService.LINK_PURPOSE_CONVERSATION_SETTINGS,
                     "chat-guid",
                     Instant.now().plusSeconds(300))));
-    when(settingsService.getSettings("account-1", "chat-guid"))
+    when(settingsService.getSettings("chat-guid"))
         .thenReturn(settingsResponse("default", "Balanced"));
 
     mockMvc

@@ -39,7 +39,7 @@ class ConversationSettingsServiceTest {
     ConversationSettingsService service =
         new ConversationSettingsService(profileService, bbHttpClientWrapper, null);
 
-    ConversationSettingsResponse response = service.getSettings("account-1", "chat-guid");
+    ConversationSettingsResponse response = service.getSettings("chat-guid");
 
     assertThat(response.getConversation().getDisplayName()).isEqualTo("Project Chat");
     assertThat(response.getConversation().getChatIdentifier()).isEqualTo("chat@example.com");
