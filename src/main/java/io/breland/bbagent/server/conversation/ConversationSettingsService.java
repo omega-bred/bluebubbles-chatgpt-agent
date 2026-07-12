@@ -56,9 +56,9 @@ public class ConversationSettingsService {
     this.umamiAnalyticsService = umamiAnalyticsService;
   }
 
-  public ConversationSettingsResponse getSettings(String accountId, String chatGuid) {
+  public ConversationSettingsResponse getSettings(String chatGuid) {
     String cleanChatGuid = requireChatGuid(chatGuid);
-    return response(accountId, cleanChatGuid);
+    return response(cleanChatGuid);
   }
 
   public ConversationSettingsUpdateResponse updateResponsiveness(
@@ -67,13 +67,13 @@ public class ConversationSettingsService {
     AssistantResponsiveness resolved = parseResponsiveness(responsiveness);
     profileService.setAssistantResponsiveness(cleanChatGuid, resolved);
     trackUpdate(accountId, resolved);
-    ConversationSettingsResponse settings = response(accountId, cleanChatGuid);
+    ConversationSettingsResponse settings = response(cleanChatGuid);
     return new ConversationSettingsUpdateResponse()
         .settings(settings)
         .message("Conversation response style changed to " + labelFor(resolved) + ".");
   }
 
-  private ConversationSettingsResponse response(String accountId, String chatGuid) {
+  private ConversationSettingsResponse response(String chatGuid) {
     AssistantResponsiveness current = profileService.getAssistantResponsiveness(chatGuid);
     return new ConversationSettingsResponse()
         .conversation(conversationSummary(chatGuid))

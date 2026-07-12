@@ -32,7 +32,7 @@ public class ConversationSettingsController {
       produces = MediaType.APPLICATION_JSON_VALUE)
   public ResponseEntity<ConversationSettingsResponse> conversationSettingsGet(
       @AuthenticationPrincipal Jwt jwt) {
-    return ResponseEntity.ok(settingsService.getSettings(accountId(jwt), chatGuid(jwt)));
+    return ResponseEntity.ok(settingsService.getSettings(chatGuid(jwt)));
   }
 
   @PostMapping(

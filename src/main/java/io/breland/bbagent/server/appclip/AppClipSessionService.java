@@ -151,7 +151,7 @@ public class AppClipSessionService {
     ConversationSettingsResponse conversationSettings =
         WebsiteAccountService.LINK_PURPOSE_CONVERSATION_SETTINGS.equals(purpose)
                 && StringUtils.isNotBlank(chatGuid)
-            ? conversationSettingsService.getSettings(accountId, chatGuid)
+            ? conversationSettingsService.getSettings(chatGuid)
             : null;
     return new AppClipSessionResponse()
         .sessionToken(sessionToken)
