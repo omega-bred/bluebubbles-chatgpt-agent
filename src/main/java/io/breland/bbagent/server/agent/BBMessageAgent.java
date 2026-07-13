@@ -414,10 +414,6 @@ public class BBMessageAgent {
     return toolActivityRunner.run(toolCall, message, workflowContext);
   }
 
-  static String truncateToolOutputForModel(String output, String toolName) {
-    return AgentToolActivityRunner.truncateToolOutputForModel(output, toolName);
-  }
-
   public void updateThreadContext(ConversationState state, IncomingMessage message) {
     threadContextRecorder.updateThreadContext(state, message);
   }
