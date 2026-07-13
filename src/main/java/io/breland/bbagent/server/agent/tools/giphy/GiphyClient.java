@@ -1,7 +1,6 @@
 package io.breland.bbagent.server.agent.tools.giphy;
 
 import com.fasterxml.jackson.databind.JsonNode;
-import io.netty.handler.logging.LogLevel;
 import java.time.Duration;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
@@ -11,15 +10,12 @@ import java.util.Optional;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.MediaType;
-import org.springframework.http.client.reactive.ReactorClientHttpConnector;
 import org.springframework.stereotype.Component;
 import org.springframework.web.reactive.function.client.ExchangeStrategies;
 import org.springframework.web.reactive.function.client.WebClient;
 import org.springframework.web.reactive.function.client.WebClientResponseException;
 import org.springframework.web.util.UriBuilder;
 import reactor.core.publisher.Mono;
-import reactor.netty.http.client.HttpClient;
-import reactor.netty.transport.logging.AdvancedByteBufFormat;
 
 @Component
 @Slf4j
@@ -41,18 +37,7 @@ public class GiphyClient {
         ExchangeStrategies.builder()
             .codecs(configurer -> configurer.defaultCodecs().maxInMemorySize(MAX_IN_MEMORY_BYTES))
             .build();
-    HttpClient httpClient =
-        HttpClient.create()
-            .wiretap(
-                "reactor.netty.http.client.HttpClient",
-                LogLevel.INFO,
-                AdvancedByteBufFormat.SIMPLE);
-    this.webClient =
-        WebClient.builder()
-            .baseUrl(baseUrl)
-            .exchangeStrategies(strategies)
-            .clientConnector(new ReactorClientHttpConnector(httpClient))
-            .build();
+    this.webClient = WebClient.builder().baseUrl(baseUrl).exchangeStrategies(strategies).build();
   }
 
   public Optional<GiphyGif> searchTopGif(String query) {
