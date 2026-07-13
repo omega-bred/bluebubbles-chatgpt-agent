@@ -957,7 +957,8 @@ class BBMessageAgentTest {
   void truncatesLargeToolOutputBeforeReturningItToModel() {
     String output = "a".repeat(30_000);
 
-    String truncated = BBMessageAgent.truncateToolOutputForModel(output, "kubernetes_get_pod_logs");
+    String truncated =
+        AgentToolActivityRunner.truncateToolOutputForModel(output, "kubernetes_get_pod_logs");
 
     assertTrue(truncated.length() < output.length());
     assertTrue(truncated.contains("kubernetes_get_pod_logs output truncated for model context"));
