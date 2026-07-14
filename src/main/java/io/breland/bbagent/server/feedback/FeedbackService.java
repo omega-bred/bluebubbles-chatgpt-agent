@@ -70,11 +70,8 @@ public class FeedbackService {
   }
 
   private String normalizeCategory(String category) {
-    String normalized = StringUtils.trimToNull(category);
-    if (normalized == null) {
-      return "general";
-    }
-    normalized = normalized.toLowerCase().replaceAll("[^a-z0-9_\\-]", "_");
+    String normalized =
+        StringUtils.trimToEmpty(category).toLowerCase(Locale.ROOT).replaceAll("[^a-z0-9_\\-]", "_");
     normalized = StringUtils.truncate(normalized, 64);
     return StringUtils.defaultIfBlank(normalized, "general");
   }

@@ -15,6 +15,7 @@ import io.breland.bbagent.server.linear.LinearIssueService.FeedbackIssueInput;
 import io.breland.bbagent.server.linear.LinearIssueService.LinearIssue;
 import java.time.Instant;
 import java.util.List;
+import java.util.Locale;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 
@@ -22,15 +23,7 @@ class FeedbackServiceTest {
 
   @Test
   void recordsFeedbackAsLinearIssue() {
-    LinearIssueService linearIssueService = mock(LinearIssueService.class);
-    when(linearIssueService.createFeedbackIssue(any(FeedbackIssueInput.class)))
-        .thenReturn(
-            new LinearIssue(
-                "issue-id",
-                "BLU-456",
-                "[Feedback/tool] model needs better tool hints",
-                "https://linear.app/bluechat/issue/BLU-456/model-needs-better-tool-hints",
-                Instant.parse("2026-05-01T00:00:00Z")));
+    LinearIssueService linearIssueService = linearIssueService();
     FeedbackService feedbackService = new FeedbackService(linearIssueService);
 
     FeedbackService.RecordedFeedback recorded =
@@ -65,6 +58,32 @@ class FeedbackServiceTest {
     assertEquals(0L, unread.getTotalCount());
     assertTrue(feedbackService.markRead("BLU-456").isEmpty());
     assertTrue(feedbackService.markUnread("BLU-456").isEmpty());
+  }
+
+  @Test
+  void normalizesFeedbackCategoryIndependentOfDefaultLocale() {
+    Locale originalLocale = Locale.getDefault();
+    try {
+      Locale.setDefault(Locale.forLanguageTag("tr-TR"));
+      LinearIssueService linearIssueService = linearIssueService();
+
+      new FeedbackService(linearIssueService)
+          .recordFeedback(null, "account-1", "feedback", "IMPROVEMENT");
+
+      ArgumentCaptor<FeedbackIssueInput> issueCaptor =
+          ArgumentCaptor.forClass(FeedbackIssueInput.class);
+      verify(linearIssueService).createFeedbackIssue(issueCaptor.capture());
+      assertEquals("improvement", issueCaptor.getValue().category());
+    } finally {
+      Locale.setDefault(originalLocale);
+    }
+  }
+
+  private LinearIssueService linearIssueService() {
+    LinearIssueService linearIssueService = mock(LinearIssueService.class);
+    when(linearIssueService.createFeedbackIssue(any(FeedbackIssueInput.class)))
+        .thenReturn(new LinearIssue("issue-id", "BLU-456", "title", "url", Instant.EPOCH));
+    return linearIssueService;
   }
 
   private IncomingMessage incomingMessage() {
