@@ -7,7 +7,7 @@ resources:
 images:
 - name: ghcr.io/omega-bred/bluebubbles-chatgpt-agent
   newName: ghcr.io/omega-bred/bluebubbles-chatgpt-agent
-  newTag: 27fd129424c5ccc5aa7fc168b9d3a895d24ca120-513
+  newTag: e976d683918efa399d212ac0b1aad0215756ce59-516
 - name: ghcr.io/omega-bred/bluebubbles-chatgpt-agent-lxmf-bridge
   newName: ghcr.io/omega-bred/bluebubbles-chatgpt-agent-lxmf-bridge
-  newTag: 27fd129424c5ccc5aa7fc168b9d3a895d24ca120-513
+  newTag: e976d683918efa399d212ac0b1aad0215756ce59-516
