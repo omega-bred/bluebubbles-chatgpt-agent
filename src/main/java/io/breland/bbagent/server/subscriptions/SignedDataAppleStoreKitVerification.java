@@ -14,6 +14,7 @@ import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.Base64;
 import java.util.LinkedHashSet;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
@@ -95,7 +96,7 @@ public class SignedDataAppleStoreKitVerification implements AppleStoreKitVerific
   }
 
   private Environment environment(String value) {
-    String normalized = StringUtils.defaultIfBlank(value, "XCODE").trim().toUpperCase();
+    String normalized = StringUtils.defaultIfBlank(value, "XCODE").trim().toUpperCase(Locale.ROOT);
     return Environment.valueOf(normalized);
   }
 
