@@ -53,31 +53,19 @@ final class AgentResponseCreator {
     try {
       startedNanos = System.nanoTime();
       log.info(
-          "Creating model response chat={} messageGuid={} workflowId={} provider={} model={} inputItems={}",
-          message.chatGuid(),
-          message.messageGuid(),
-          workflowContext == null ? null : workflowContext.workflowId(),
+          "Creating model response provider={} model={} inputItems={}",
           modelAccess.provider(),
           modelAccess.responsesModel(),
           requestInputItems.size());
-      log.trace("Final LLM request: {}", request);
       Response response = llmProvider.createResponse(request);
       recordLlmCallMetric(message, modelAccess, true, null, startedNanos);
-      log.info(
-          "Created model response chat={} messageGuid={} workflowId={} elapsedMs={}",
-          message.chatGuid(),
-          message.messageGuid(),
-          workflowContext == null ? null : workflowContext.workflowId(),
-          elapsedMillis(startedNanos));
+      log.info("Created model response elapsedMs={}", elapsedMillis(startedNanos));
       return response;
     } catch (RuntimeException e) {
       recordLlmCallMetric(
           message, modelAccess, false, OperationalMetricsService.failureType(e), startedNanos);
       log.warn(
-          "LLM response failed chat={} messageGuid={} workflowId={} provider={} model={}",
-          message.chatGuid(),
-          message.messageGuid(),
-          workflowContext == null ? null : workflowContext.workflowId(),
+          "LLM response failed provider={} model={}",
           modelAccess.provider(),
           modelAccess.responsesModel(),
           e);
