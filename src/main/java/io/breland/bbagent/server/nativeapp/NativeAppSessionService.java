@@ -157,17 +157,6 @@ public class NativeAppSessionService {
     return message.withText(stripStartToken(message.text()));
   }
 
-  @Transactional(readOnly = true)
-  public Optional<String> accountIdForAppAccountToken(String appAccountToken) {
-    String trimmed = StringUtils.trimToNull(appAccountToken);
-    if (trimmed == null) {
-      return Optional.empty();
-    }
-    return sessionRepository
-        .findByAppAccountToken(trimmed)
-        .map(NativeAppSessionEntity::getAccountId);
-  }
-
   private NativeAppSessionResponse response(
       String sessionToken, NativeAppSessionEntity session, String startToken) {
     TextingNumberResponse texting =
