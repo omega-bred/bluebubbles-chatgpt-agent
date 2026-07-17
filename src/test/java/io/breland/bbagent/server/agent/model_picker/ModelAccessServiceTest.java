@@ -35,7 +35,7 @@ class ModelAccessServiceTest {
     assertFalse(access.premium());
     assertEquals("local", access.currentModelKey());
     assertEquals("Free", access.currentModelLabel());
-    assertEquals("Qwen/Qwen3.6-27B", ModelAccessService.STANDARD_RESPONSES_MODEL);
+    assertEquals("openrouter/z-ai/glm-5.2", ModelAccessService.STANDARD_RESPONSES_MODEL);
     assertEquals(ModelAccessService.STANDARD_RESPONSES_MODEL, access.responsesModel());
   }
 

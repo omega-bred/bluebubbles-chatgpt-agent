@@ -25,11 +25,59 @@ import org.junit.jupiter.api.Timeout;
 
 class LiteLlmResponsesProviderIntegTest {
   private static final String ENABLE_FLAG = "BBAGENT_LITELLM_INTEG_TEST";
-  private static final String EXPECTED_TOKEN = "LITELLM_ANTHROPIC_OK";
+  private static final String ANTHROPIC_EXPECTED_TOKEN = "LITELLM_ANTHROPIC_OK";
+  private static final String OPENROUTER_GLM_MODEL = "openrouter/z-ai/glm-5.2";
+  private static final String OPENROUTER_GLM_EXPECTED_TOKEN = "LITELLM_OPENROUTER_GLM_OK";
 
   @Test
   @Timeout(120)
   void anthropicClaudeRespondsThroughLiteLlmResponsesProvider() {
+    assumeTrue(
+        Boolean.parseBoolean(setting(ENABLE_FLAG)),
+        "Set " + ENABLE_FLAG + "=true to run the live LiteLLM smoke test");
+    requireRealLiteLlmSettings();
+
+    ModelAccessService.ModelAccess access =
+        new ModelAccessService.ModelAccess(
+            "account-litellm-test",
+            true,
+            ModelAccessService.CLAUDE_MODEL_KEY,
+            ModelAccessService.CLAUDE_MODEL_LABEL,
+            claudeModel(),
+            true,
+            List.of());
+
+    assertModelResponds(
+        access, ANTHROPIC_EXPECTED_TOKEN, "You are running a local LiteLLM Anthropic smoke test.");
+  }
+
+  @Test
+  @Timeout(120)
+  void openRouterGlmRespondsForStandardAccountThroughLiteLlmResponsesProvider() {
+    assumeTrue(
+        Boolean.parseBoolean(setting(ENABLE_FLAG)),
+        "Set " + ENABLE_FLAG + "=true to run the live LiteLLM smoke test");
+    requireRealLiteLlmSettings();
+
+    ModelAccessService.ModelAccess access =
+        new ModelAccessService.ModelAccess(
+            "account-litellm-test",
+            false,
+            ModelAccessService.STANDARD_MODEL_KEY,
+            ModelAccessService.STANDARD_MODEL_LABEL,
+            OPENROUTER_GLM_MODEL,
+            false,
+            List.of());
+
+    assertModelResponds(
+        access,
+        OPENROUTER_GLM_EXPECTED_TOKEN,
+        "You are running a local LiteLLM OpenRouter GLM smoke test.");
+  }
+
+  @Test
+  @Timeout(120)
+  void openRouterGlmReturnsToolCallThroughLiteLlmResponsesProvider() {
     assumeTrue(
         Boolean.parseBoolean(setting(ENABLE_FLAG)),
         "Set " + ENABLE_FLAG + "=true to run the live LiteLLM smoke test");
@@ -42,11 +90,11 @@ class LiteLlmResponsesProviderIntegTest {
     ModelAccessService.ModelAccess access =
         new ModelAccessService.ModelAccess(
             "account-litellm-test",
-            true,
-            ModelAccessService.CLAUDE_MODEL_KEY,
-            ModelAccessService.CLAUDE_MODEL_LABEL,
-            claudeModel(),
-            true,
+            false,
+            ModelAccessService.STANDARD_MODEL_KEY,
+            ModelAccessService.STANDARD_MODEL_LABEL,
+            OPENROUTER_GLM_MODEL,
+            false,
             List.of());
 
     Response response =
@@ -56,9 +104,40 @@ class LiteLlmResponsesProviderIntegTest {
                 List.of(
                     inputMessage(
                         EasyInputMessage.Role.DEVELOPER,
-                        "You are running a local LiteLLM Anthropic smoke test. "
-                            + "Do not call tools. Reply with exactly "
-                            + EXPECTED_TOKEN
+                        "Call local_litellm_smoke_tool exactly once with value "
+                            + "GLM_TOOL_OK. Do not answer without calling the tool."),
+                    inputMessage(EasyInputMessage.Role.USER, "Call the tool now.")),
+                List.of(noopTool()),
+                incomingMessage(),
+                null));
+
+    assertNotNull(response);
+    assertTrue(
+        AgentResponseHelper.extractFunctionCalls(response).stream()
+            .anyMatch(
+                call ->
+                    "local_litellm_smoke_tool".equals(call.name())
+                        && call.arguments().contains("GLM_TOOL_OK")),
+        () -> "Expected a native GLM tool call but got: " + response);
+  }
+
+  private static void assertModelResponds(
+      ModelAccessService.ModelAccess access, String expectedToken, String developerPrompt) {
+    OpenAIClient client =
+        OpenAIOkHttpClient.fromEnv().withOptions(b -> b.timeout(Duration.ofSeconds(90)));
+    OpenAiResponsesLlmProvider provider =
+        new OpenAiResponsesLlmProvider(() -> client, new ModelPicker());
+
+    Response response =
+        provider.createResponse(
+            new LlmRequest(
+                access,
+                List.of(
+                    inputMessage(
+                        EasyInputMessage.Role.DEVELOPER,
+                        developerPrompt
+                            + " Do not call tools. Reply with exactly "
+                            + expectedToken
                             + "."),
                     inputMessage(
                         EasyInputMessage.Role.USER, "Return the exact smoke-test token now.")),
@@ -69,8 +148,14 @@ class LiteLlmResponsesProviderIntegTest {
     assertNotNull(response);
     String text = AgentResponseHelper.extractResponseText(response);
     assertTrue(
-        text.contains(EXPECTED_TOKEN),
-        () -> "Expected Claude via LiteLLM to return " + EXPECTED_TOKEN + " but got: " + text);
+        text.contains(expectedToken),
+        () ->
+            "Expected "
+                + access.responsesModel()
+                + " via LiteLLM to return "
+                + expectedToken
+                + " but got: "
+                + text);
   }
 
   private static ResponseInputItem inputMessage(EasyInputMessage.Role role, String text) {
