@@ -144,6 +144,46 @@ class BlueBubblesMessageTransportTest {
   }
 
   @Test
+  void wrapperRetriesFailedHistoryLookupWithoutResending() {
+    V1MessageApi messageApi = Mockito.mock(V1MessageApi.class);
+    SendConfirmingBBHttpClientWrapper wrapper = new SendConfirmingBBHttpClientWrapper(messageApi);
+    wrapper.messageLookupFailures(1);
+    wrapper.confirmationSnapshots(
+        List.of(sentMessage("iMessage;-;mindstorms6+apple@gmail.com", "hello")));
+    when(messageApi.apiV1MessageTextPost(eq("pw"), any())).thenReturn(Mono.empty());
+
+    ApiV1MessageTextPostRequest request =
+        ApiV1MessageTextPostRequest.builder()
+            .chatGuid("iMessage;-;mindstorms6+apple@gmail.com")
+            .tempGuid("tmp")
+            .message("hello")
+            .build();
+
+    assertTrue(wrapper.sendTextDirect(request));
+    verify(messageApi).apiV1MessageTextPost(eq("pw"), any());
+    assertEquals(2, wrapper.messageLookupCalls);
+  }
+
+  @Test
+  void wrapperDoesNotResendWhenHistoryLookupRemainsUnavailable() {
+    V1MessageApi messageApi = Mockito.mock(V1MessageApi.class);
+    SendConfirmingBBHttpClientWrapper wrapper = new SendConfirmingBBHttpClientWrapper(messageApi);
+    wrapper.messageLookupFailures(3);
+    when(messageApi.apiV1MessageTextPost(eq("pw"), any())).thenReturn(Mono.empty());
+
+    ApiV1MessageTextPostRequest request =
+        ApiV1MessageTextPostRequest.builder()
+            .chatGuid("iMessage;-;mindstorms6+apple@gmail.com")
+            .tempGuid("tmp")
+            .message("hello")
+            .build();
+
+    assertFalse(wrapper.sendTextDirect(request));
+    verify(messageApi).apiV1MessageTextPost(eq("pw"), any());
+    assertEquals(3, wrapper.messageLookupCalls);
+  }
+
+  @Test
   void wrapperRetriesDirectSendUntilChatHistoryConfirms() {
     V1MessageApi messageApi = Mockito.mock(V1MessageApi.class);
     SendConfirmingBBHttpClientWrapper wrapper = new SendConfirmingBBHttpClientWrapper(messageApi);
@@ -364,6 +404,7 @@ class BlueBubblesMessageTransportTest {
         confirmationSnapshots = new ArrayDeque<>();
     private int pingCalls;
     private int messageLookupCalls;
+    private int messageLookupFailuresRemaining;
     private String lastMessageLookupChatGuid;
 
     SendConfirmingBBHttpClientWrapper(V1MessageApi messageApi) {
@@ -372,6 +413,10 @@ class BlueBubblesMessageTransportTest {
 
     void pingResults(Boolean... results) {
       pingResults.addAll(List.of(results));
+    }
+
+    void messageLookupFailures(int failures) {
+      messageLookupFailuresRemaining = failures;
     }
 
     @SafeVarargs
@@ -394,6 +439,10 @@ class BlueBubblesMessageTransportTest {
         String chatGuid) {
       messageLookupCalls++;
       lastMessageLookupChatGuid = chatGuid;
+      if (messageLookupFailuresRemaining > 0) {
+        messageLookupFailuresRemaining--;
+        throw new RuntimeException("connection reset");
+      }
       return confirmationSnapshots.isEmpty() ? List.of() : confirmationSnapshots.remove();
     }
 

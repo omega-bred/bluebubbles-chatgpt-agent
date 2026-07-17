@@ -49,6 +49,7 @@ public class BBHttpClientWrapper {
   private static final Duration DIRECT_SEND_PING_TIMEOUT = Duration.ofSeconds(5);
   private static final int DIRECT_SEND_MAX_ATTEMPTS = 3;
   private static final int DIRECT_SEND_PING_ATTEMPTS = 2;
+  private static final int DIRECT_SEND_CONFIRMATION_ATTEMPTS = 3;
   private static final Duration DIRECT_SEND_MATCH_WINDOW_SKEW = Duration.ofSeconds(10);
   private static final int BLUEBUBBLES_MAX_IN_MEMORY_BYTES = 2 * 1024 * 1024;
   private static final String ANY_DIRECT_CHAT_PREFIX = "any;-;";
@@ -167,6 +168,12 @@ public class BBHttpClientWrapper {
     static MultipartMessagePart attachment(int partIndex, String attachment, String name) {
       return new MultipartMessagePart(partIndex, null, attachment, name);
     }
+  }
+
+  private enum DirectSendConfirmation {
+    CONFIRMED,
+    NOT_FOUND,
+    UNAVAILABLE
   }
 
   protected Duration directSendConfirmationDelay() {
@@ -791,10 +798,22 @@ public class BBHttpClientWrapper {
             apiTimeout,
             request);
         submitDirectTextMessage(request, attempt, overallStartedNanos);
-        if (confirmDirectTextSend(
-            request, confirmationChatGuid, firstAttemptStartedAt, attempt, overallStartedNanos)) {
+        DirectSendConfirmation confirmation =
+            confirmDirectTextSend(
+                request, confirmationChatGuid, firstAttemptStartedAt, attempt, overallStartedNanos);
+        if (confirmation == DirectSendConfirmation.CONFIRMED) {
           success = true;
           return true;
+        }
+        if (confirmation == DirectSendConfirmation.UNAVAILABLE) {
+          failureType = "confirmation_unavailable";
+          log.warn(
+              "BlueBubbles direct text send confirmation remained unavailable; not resubmitting to avoid a duplicate chatGuid={} tempGuid={} attempt={} elapsedMs={}",
+              request.getChatGuid(),
+              request.getTempGuid(),
+              attempt,
+              elapsedMillis(overallStartedNanos));
+          return false;
         }
       }
       log.warn(
@@ -903,7 +922,7 @@ public class BBHttpClientWrapper {
     }
   }
 
-  private boolean confirmDirectTextSend(
+  private DirectSendConfirmation confirmDirectTextSend(
       ApiV1MessageTextPostRequest request,
       String confirmationChatGuid,
       Instant firstAttemptStartedAt,
@@ -912,50 +931,64 @@ public class BBHttpClientWrapper {
     long startedNanos = System.nanoTime();
     boolean success = false;
     String failureType = "not_found";
-    if (!waitBeforeDirectSendConfirmation(request, attempt)) {
-      recordOperationMetric("send_text_direct_confirm", false, "interrupted", startedNanos);
-      return false;
-    }
     try {
       String historyChatGuid =
           StringUtils.defaultIfBlank(confirmationChatGuid, request.getChatGuid());
-      List<ApiV1ChatChatGuidMessageGet200ResponseDataInner> messages =
-          getMessagesInChat(historyChatGuid);
-      boolean confirmed =
-          messages != null
-              && messages.stream()
-                  .anyMatch(message -> isMatchingSentText(message, request, firstAttemptStartedAt));
-      if (confirmed) {
-        success = true;
-        log.info(
-            "Confirmed BlueBubbles direct text send in chat history chatGuid={} historyChatGuid={} tempGuid={} attempt={} elapsedMs={}",
-            request.getChatGuid(),
-            historyChatGuid,
-            request.getTempGuid(),
-            attempt,
-            elapsedMillis(overallStartedNanos));
-        return true;
+      for (int confirmationAttempt = 1;
+          confirmationAttempt <= DIRECT_SEND_CONFIRMATION_ATTEMPTS;
+          confirmationAttempt++) {
+        if (!waitBeforeDirectSendConfirmation(request, attempt)) {
+          failureType = "interrupted";
+          return DirectSendConfirmation.UNAVAILABLE;
+        }
+        try {
+          List<ApiV1ChatChatGuidMessageGet200ResponseDataInner> messages =
+              getMessagesInChat(historyChatGuid);
+          boolean confirmed =
+              messages != null
+                  && messages.stream()
+                      .anyMatch(
+                          message -> isMatchingSentText(message, request, firstAttemptStartedAt));
+          if (confirmed) {
+            success = true;
+            log.info(
+                "Confirmed BlueBubbles direct text send in chat history chatGuid={} historyChatGuid={} tempGuid={} attempt={} confirmationAttempt={} elapsedMs={}",
+                request.getChatGuid(),
+                historyChatGuid,
+                request.getTempGuid(),
+                attempt,
+                confirmationAttempt,
+                elapsedMillis(overallStartedNanos));
+            return DirectSendConfirmation.CONFIRMED;
+          }
+          failureType = "not_found";
+          log.warn(
+              "BlueBubbles direct text send not found in chat history chatGuid={} historyChatGuid={} tempGuid={} attempt={} confirmationAttempt={} elapsedMs={}",
+              request.getChatGuid(),
+              historyChatGuid,
+              request.getTempGuid(),
+              attempt,
+              confirmationAttempt,
+              elapsedMillis(overallStartedNanos));
+          return DirectSendConfirmation.NOT_FOUND;
+        } catch (Exception e) {
+          failureType = OperationalMetricsService.failureType(e);
+          log.warn(
+              "Failed to confirm BlueBubbles direct text send from chat history chatGuid={} confirmationChatGuid={} tempGuid={} attempt={} confirmationAttempt={}/{} elapsedMs={}",
+              request.getChatGuid(),
+              confirmationChatGuid,
+              request.getTempGuid(),
+              attempt,
+              confirmationAttempt,
+              DIRECT_SEND_CONFIRMATION_ATTEMPTS,
+              elapsedMillis(overallStartedNanos),
+              e);
+          if (confirmationAttempt == DIRECT_SEND_CONFIRMATION_ATTEMPTS) {
+            return DirectSendConfirmation.UNAVAILABLE;
+          }
+        }
       }
-      failureType = "not_found";
-      log.warn(
-          "BlueBubbles direct text send not found in chat history chatGuid={} historyChatGuid={} tempGuid={} attempt={} elapsedMs={}",
-          request.getChatGuid(),
-          historyChatGuid,
-          request.getTempGuid(),
-          attempt,
-          elapsedMillis(overallStartedNanos));
-      return false;
-    } catch (Exception e) {
-      failureType = OperationalMetricsService.failureType(e);
-      log.warn(
-          "Failed to confirm BlueBubbles direct text send from chat history chatGuid={} confirmationChatGuid={} tempGuid={} attempt={} elapsedMs={}",
-          request.getChatGuid(),
-          confirmationChatGuid,
-          request.getTempGuid(),
-          attempt,
-          elapsedMillis(overallStartedNanos),
-          e);
-      return false;
+      return DirectSendConfirmation.UNAVAILABLE;
     } finally {
       recordOperationMetric(
           "send_text_direct_confirm", success, success ? null : failureType, startedNanos);
