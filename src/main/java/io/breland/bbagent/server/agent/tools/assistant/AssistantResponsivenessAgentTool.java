@@ -44,24 +44,15 @@ public class AssistantResponsivenessAgentTool implements ToolProvider {
           if (request.responsiveness() == null) {
             return "missing responsiveness";
           }
-          AssistantResponsiveness resolved = resolveVerbosity(request.responsiveness());
-          if (resolved == null) {
-            return "invalid responsiveness";
-          }
+          AssistantResponsiveness resolved =
+              switch (request.responsiveness()) {
+                case LESS_RESPONSIVE -> AssistantResponsiveness.LESS_RESPONSIVE;
+                case MORE_RESPONSIVE -> AssistantResponsiveness.MORE_RESPONSIVE;
+                case DEFAULT -> AssistantResponsiveness.DEFAULT;
+                case SILENT -> AssistantResponsiveness.SILENT;
+              };
           context.setAssistantResponsiveness(resolved);
           return "updated to " + resolved.name().toLowerCase();
         });
-  }
-
-  private AssistantResponsiveness resolveVerbosity(Responsiveness responsiveness) {
-    if (responsiveness == null) {
-      return null;
-    }
-    return switch (responsiveness) {
-      case LESS_RESPONSIVE -> AssistantResponsiveness.LESS_RESPONSIVE;
-      case MORE_RESPONSIVE -> AssistantResponsiveness.MORE_RESPONSIVE;
-      case DEFAULT -> AssistantResponsiveness.DEFAULT;
-      case SILENT -> AssistantResponsiveness.SILENT;
-    };
   }
 }
