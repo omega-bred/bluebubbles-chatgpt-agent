@@ -111,9 +111,7 @@ public final class TextFormattingParser {
     for (Token token : tokens) {
       if (token.canClose && !stack.isEmpty() && stack.peek().delimiter.matches(token.delimiter)) {
         Token open = stack.pop();
-        open.matched = true;
         open.isOpen = true;
-        token.matched = true;
         token.isOpen = false;
         matched.put(open.index, open);
         matched.put(token.index, token);
@@ -203,7 +201,6 @@ public final class TextFormattingParser {
     private final Delimiter delimiter;
     private final boolean canOpen;
     private final boolean canClose;
-    private boolean matched;
     private boolean isOpen;
 
     private Token(int index, Delimiter delimiter, boolean canOpen, boolean canClose) {
