@@ -7,6 +7,7 @@ import io.breland.bbagent.server.agent.profile.AssistantResponsiveness;
 import io.breland.bbagent.server.agent.tools.AgentTool;
 import io.breland.bbagent.server.agent.tools.ToolProvider;
 import io.swagger.v3.oas.annotations.media.Schema;
+import java.util.Locale;
 
 public class AssistantResponsivenessAgentTool implements ToolProvider {
 
@@ -52,7 +53,7 @@ public class AssistantResponsivenessAgentTool implements ToolProvider {
                 case SILENT -> AssistantResponsiveness.SILENT;
               };
           context.setAssistantResponsiveness(resolved);
-          return "updated to " + resolved.name().toLowerCase();
+          return "updated to " + resolved.name().toLowerCase(Locale.ROOT);
         });
   }
 }
