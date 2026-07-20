@@ -32,7 +32,8 @@ public final class TextFormattingParser {
       return new Result(input, List.of());
     }
 
-    List<Token> tokens = collectTokens(input);
+    Map<Integer, MarkdownLink> markdownLinks = collectMarkdownLinks(input);
+    List<Token> tokens = collectTokens(input, markdownLinks);
     Map<Integer, Token> matchedTokens = matchTokens(tokens);
 
     StringBuilder output = new StringBuilder(input.length());
@@ -65,6 +66,13 @@ public final class TextFormattingParser {
         lastMask = activeMask;
       }
 
+      MarkdownLink markdownLink = markdownLinks.get(i);
+      if (markdownLink != null) {
+        output.append(markdownLink.destination);
+        i = markdownLink.endIndex;
+        continue;
+      }
+
       output.append(input.charAt(i));
       i++;
     }
@@ -76,10 +84,120 @@ public final class TextFormattingParser {
     return new Result(output.toString(), ranges);
   }
 
-  private static List<Token> collectTokens(String input) {
+  private static Map<Integer, MarkdownLink> collectMarkdownLinks(String input) {
+    Map<Integer, MarkdownLink> links = new HashMap<>();
+    for (int labelStart = 0; labelStart < input.length(); labelStart++) {
+      if (input.charAt(labelStart) != '[' || isEscaped(input, labelStart)) {
+        continue;
+      }
+
+      MarkdownLink link = parseMarkdownLink(input, labelStart);
+      if (link == null) {
+        continue;
+      }
+      links.put(link.startIndex, link);
+      labelStart = link.endIndex - 1;
+    }
+    return links;
+  }
+
+  private static MarkdownLink parseMarkdownLink(String input, int labelStart) {
+    int labelEnd = findLinkLabelEnd(input, labelStart + 1);
+    if (labelEnd < 0) {
+      return null;
+    }
+
+    int destinationStart = labelEnd + 2;
+    if (destinationStart >= input.length()) {
+      return null;
+    }
+
+    int nestedParentheses = 0;
+    for (int cursor = destinationStart; cursor < input.length(); cursor++) {
+      char current = input.charAt(cursor);
+      if (current == '\\' && cursor + 1 < input.length()) {
+        cursor++;
+        continue;
+      }
+      if (Character.isWhitespace(current) && nestedParentheses == 0) {
+        return null;
+      }
+      if (current == '(') {
+        nestedParentheses++;
+      } else if (current == ')') {
+        if (nestedParentheses == 0) {
+          if (cursor == destinationStart) {
+            return null;
+          }
+          int markdownStart =
+              labelStart > 0
+                      && input.charAt(labelStart - 1) == '!'
+                      && !isEscaped(input, labelStart - 1)
+                  ? labelStart - 1
+                  : labelStart;
+          String destination = unescapeMarkdown(input.substring(destinationStart, cursor));
+          return new MarkdownLink(markdownStart, cursor + 1, destination);
+        }
+        nestedParentheses--;
+      }
+    }
+    return null;
+  }
+
+  private static int findLinkLabelEnd(String input, int startIndex) {
+    for (int cursor = startIndex; cursor + 1 < input.length(); cursor++) {
+      char current = input.charAt(cursor);
+      if (current == '\\' && cursor + 1 < input.length()) {
+        cursor++;
+        continue;
+      }
+      if (current == '\n' || current == '\r') {
+        return -1;
+      }
+      if (current == ']' && input.charAt(cursor + 1) == '(') {
+        return cursor;
+      }
+    }
+    return -1;
+  }
+
+  private static String unescapeMarkdown(String value) {
+    StringBuilder unescaped = new StringBuilder(value.length());
+    for (int i = 0; i < value.length(); i++) {
+      char current = value.charAt(i);
+      if (current == '\\' && i + 1 < value.length() && isAsciiPunctuation(value.charAt(i + 1))) {
+        unescaped.append(value.charAt(++i));
+      } else {
+        unescaped.append(current);
+      }
+    }
+    return unescaped.toString();
+  }
+
+  private static boolean isAsciiPunctuation(char value) {
+    return (value >= '!' && value <= '/')
+        || (value >= ':' && value <= '@')
+        || (value >= '[' && value <= '`')
+        || (value >= '{' && value <= '~');
+  }
+
+  private static boolean isEscaped(String input, int index) {
+    int backslashes = 0;
+    for (int i = index - 1; i >= 0 && input.charAt(i) == '\\'; i--) {
+      backslashes++;
+    }
+    return backslashes % 2 != 0;
+  }
+
+  private static List<Token> collectTokens(String input, Map<Integer, MarkdownLink> markdownLinks) {
     List<Token> tokens = new ArrayList<>();
     int i = 0;
     while (i < input.length()) {
+      MarkdownLink markdownLink = markdownLinks.get(i);
+      if (markdownLink != null) {
+        i = markdownLink.endIndex;
+        continue;
+      }
       Delimiter delimiter = matchDelimiter(input, i);
       if (delimiter == null) {
         i++;
@@ -195,6 +313,8 @@ public final class TextFormattingParser {
       return marker.startsWith("_");
     }
   }
+
+  private record MarkdownLink(int startIndex, int endIndex, String destination) {}
 
   private static final class Token {
     private final int index;

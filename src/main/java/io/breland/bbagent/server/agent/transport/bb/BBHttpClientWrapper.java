@@ -1042,10 +1042,13 @@ public class BBHttpClientWrapper {
       return;
     }
     TextFormattingParser.Result parsed = TextFormattingParser.parse(message);
-    if (parsed.formatting().isEmpty()) {
+    if (message.equals(parsed.text()) && parsed.formatting().isEmpty()) {
       return;
     }
     request.setMessage(parsed.text());
+    if (parsed.formatting().isEmpty()) {
+      return;
+    }
     request.setTextFormatting(parsed.formatting());
     String method = request.getMethod();
     if (StringUtils.isBlank(method) || !"private-api".equalsIgnoreCase(method.trim())) {
