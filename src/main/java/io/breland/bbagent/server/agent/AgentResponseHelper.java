@@ -67,16 +67,28 @@ public final class AgentResponseHelper {
         items.add(ResponseInputItem.ofReasoning(item.reasoning().get()));
       }
       if (item.functionCall().isPresent()) {
-        items.add(ResponseInputItem.ofFunctionCall(item.functionCall().get()));
+        items.add(functionCallInputItem(item.functionCall().get()));
         addedFunctionCall = true;
       }
     }
     if (!addedFunctionCall && toolCalls != null && !toolCalls.isEmpty()) {
       for (ResponseFunctionToolCall toolCall : toolCalls) {
-        items.add(ResponseInputItem.ofFunctionCall(toolCall));
+        items.add(functionCallInputItem(toolCall));
       }
     }
     return items;
+  }
+
+  private static ResponseInputItem functionCallInputItem(ResponseFunctionToolCall toolCall) {
+    ResponseFunctionToolCall.Builder builder =
+        ResponseFunctionToolCall.builder()
+            .callId(toolCall.callId())
+            .name(toolCall.name())
+            .arguments(toolCall.arguments());
+    toolCall.id().ifPresent(builder::id);
+    toolCall.namespace().ifPresent(builder::namespace);
+    toolCall.status().ifPresent(builder::status);
+    return ResponseInputItem.ofFunctionCall(builder.build());
   }
 
   public static String extractResponseText(Response response) {

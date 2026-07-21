@@ -1,10 +1,13 @@
 package io.breland.bbagent.server.agent;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.openai.models.responses.Response;
+import com.openai.models.responses.ResponseInputItem;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 
@@ -89,6 +92,19 @@ call:send_text{message:Clone repos, cherry-pick commit, and push to GitHub.,thre
   }
 
   @Test
+  void extractToolContextItemsDropsNullFunctionCallNamespace() throws Exception {
+    Response response = responseWithFunctionCallNamespaceNull();
+
+    List<ResponseInputItem> items =
+        AgentResponseHelper.extractToolContextItems(
+            response, AgentResponseHelper.extractFunctionCalls(response));
+    JsonNode functionCall =
+        new ObjectMapper().readTree(new ObjectMapper().writeValueAsString(items.getFirst()));
+
+    assertFalse(functionCall.has("namespace"), functionCall::toPrettyString);
+  }
+
+  @Test
   void blockedToolCallOutputTellsModelNotToRepeatTool() throws Exception {
     String outputJson =
         new ObjectMapper().writeValueAsString(AgentResponseHelper.blockedToolCallOutput("call-1"));
@@ -142,5 +158,29 @@ call:send_text{message:Clone repos, cherry-pick commit, and push to GitHub.,thre
     } catch (Exception e) {
       throw new RuntimeException("Failed to build test response payload", e);
     }
+  }
+
+  private static Response responseWithFunctionCallNamespaceNull() throws Exception {
+    return new ObjectMapper()
+        .readValue(
+            """
+            {
+              "id": "resp-1",
+              "created_at": 0,
+              "model": "openrouter/z-ai/glm-5.2",
+              "output": [
+                {
+                  "type": "function_call",
+                  "arguments": "{}",
+                  "call_id": "call-1",
+                  "name": "local_litellm_smoke_tool",
+                  "namespace": null
+                }
+              ],
+              "parallel_tool_calls": false,
+              "tools": []
+            }
+            """,
+            Response.class);
   }
 }
