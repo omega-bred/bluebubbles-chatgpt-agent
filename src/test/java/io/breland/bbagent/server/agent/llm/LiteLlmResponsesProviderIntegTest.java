@@ -9,6 +9,7 @@ import com.openai.client.OpenAIClient;
 import com.openai.client.okhttp.OpenAIOkHttpClient;
 import com.openai.models.responses.EasyInputMessage;
 import com.openai.models.responses.Response;
+import com.openai.models.responses.ResponseFunctionToolCall;
 import com.openai.models.responses.ResponseInputItem;
 import io.breland.bbagent.server.agent.AgentResponseHelper;
 import io.breland.bbagent.server.agent.IncomingMessage;
@@ -18,6 +19,7 @@ import io.breland.bbagent.server.agent.tools.AgentTool;
 import io.breland.bbagent.server.agent.tools.JsonSchemaUtilities;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
@@ -77,7 +79,7 @@ class LiteLlmResponsesProviderIntegTest {
 
   @Test
   @Timeout(120)
-  void openRouterGlmReturnsToolCallThroughLiteLlmResponsesProvider() {
+  void openRouterGlmCompletesAfterToolCallThroughLiteLlmResponsesProvider() {
     assumeTrue(
         Boolean.parseBoolean(setting(ENABLE_FLAG)),
         "Set " + ENABLE_FLAG + "=true to run the live LiteLLM smoke test");
@@ -96,29 +98,37 @@ class LiteLlmResponsesProviderIntegTest {
             OPENROUTER_GLM_MODEL,
             false,
             List.of());
+    List<ResponseInputItem> input =
+        new ArrayList<>(
+            List.of(
+                inputMessage(
+                    EasyInputMessage.Role.DEVELOPER,
+                    "Call local_litellm_smoke_tool exactly once. After it returns, reply with "
+                        + OPENROUTER_GLM_EXPECTED_TOKEN
+                        + "."),
+                inputMessage(EasyInputMessage.Role.USER, "Call the tool now.")));
 
-    Response response =
+    Response toolCallResponse =
         provider.createResponse(
-            new LlmRequest(
-                access,
-                List.of(
-                    inputMessage(
-                        EasyInputMessage.Role.DEVELOPER,
-                        "Call local_litellm_smoke_tool exactly once with value "
-                            + "GLM_TOOL_OK. Do not answer without calling the tool."),
-                    inputMessage(EasyInputMessage.Role.USER, "Call the tool now.")),
-                List.of(noopTool()),
-                incomingMessage(),
-                null));
+            new LlmRequest(access, input, List.of(noopTool()), incomingMessage(), null));
+    List<ResponseFunctionToolCall> toolCalls =
+        AgentResponseHelper.extractFunctionCalls(toolCallResponse);
+    assertFalse(toolCalls.isEmpty(), () -> "Expected a native GLM tool call: " + toolCallResponse);
+    input.addAll(AgentResponseHelper.extractToolContextItems(toolCallResponse, toolCalls));
+    input.add(
+        ResponseInputItem.ofFunctionCallOutput(
+            ResponseInputItem.FunctionCallOutput.builder()
+                .callId(toolCalls.get(0).callId())
+                .output("ok")
+                .build()));
+    Response finalResponse =
+        provider.createResponse(
+            new LlmRequest(access, input, List.of(noopTool()), incomingMessage(), null));
 
-    assertNotNull(response);
     assertTrue(
-        AgentResponseHelper.extractFunctionCalls(response).stream()
-            .anyMatch(
-                call ->
-                    "local_litellm_smoke_tool".equals(call.name())
-                        && call.arguments().contains("GLM_TOOL_OK")),
-        () -> "Expected a native GLM tool call but got: " + response);
+        AgentResponseHelper.extractResponseText(finalResponse)
+            .contains(OPENROUTER_GLM_EXPECTED_TOKEN),
+        () -> "Expected GLM to complete after the tool call but got: " + finalResponse);
   }
 
   private static void assertModelResponds(
