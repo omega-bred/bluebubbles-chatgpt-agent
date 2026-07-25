@@ -109,10 +109,6 @@ public class ModelAccessService {
         .availableModels(access.availableModels().stream().map(this::toWebsiteOption).toList());
   }
 
-  public ModelSelectionResult selectModel(IncomingMessage message, String modelKey) {
-    return updatePreferences(message, modelKey);
-  }
-
   public ModelSelectionResult updatePreferences(
       IncomingMessage message, @Nullable String modelKey) {
     if (accountResolver == null) {
@@ -162,16 +158,6 @@ public class ModelAccessService {
     AgentAccountEntity saved = accountRepository.save(account);
     ModelAccess access = fromEntity(saved);
     return new ModelSelectionResult(changed, access, preferenceMessage(access));
-  }
-
-  public String resolveAccountId(IncomingMessage message) {
-    if (accountResolver == null) {
-      return null;
-    }
-    return accountResolver
-        .resolveOrCreate(message)
-        .map(resolved -> resolved.account().getAccountId())
-        .orElse(null);
   }
 
   private ModelAccess fromEntity(AgentAccountEntity entity) {

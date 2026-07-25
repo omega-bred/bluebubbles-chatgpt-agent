@@ -19,16 +19,10 @@ public final class OpenAiResponsesLlmProvider implements LlmProvider {
   }
 
   @Override
-  public String providerKey() {
-    return "openai_responses";
-  }
-
-  @Override
   public Response createResponse(LlmRequest request) {
     ResponseCreateParams.Builder params =
         ResponseCreateParams.builder().inputOfResponse(request.inputItems());
-    modelPicker.applyResponsesModelParams(
-        params, request.modelAccess(), request.message(), request.workflowContext());
+    modelPicker.applyResponsesModelParams(params, request.modelAccess(), request.message());
     for (AgentTool tool : request.tools()) {
       params.addTool(Tool.ofFunction(tool.asFunctionTool()));
     }

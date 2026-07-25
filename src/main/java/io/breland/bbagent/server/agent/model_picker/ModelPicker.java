@@ -5,7 +5,6 @@ import com.openai.models.ReasoningEffort;
 import com.openai.models.responses.ResponseCreateParams;
 import com.openai.models.responses.Tool;
 import com.openai.models.responses.WebSearchTool;
-import io.breland.bbagent.server.agent.AgentWorkflowContext;
 import io.breland.bbagent.server.agent.IncomingMessage;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -32,17 +31,8 @@ public class ModelPicker {
 
   public ResponseCreateParams.Builder applyResponsesModelParams(
       ResponseCreateParams.Builder builder,
-      IncomingMessage incomingMessage,
-      AgentWorkflowContext agentWorkflowContext) {
-    ModelAccessService.ModelAccess modelAccess = resolveModelAccess(incomingMessage);
-    return applyResponsesModelParams(builder, modelAccess, incomingMessage, agentWorkflowContext);
-  }
-
-  public ResponseCreateParams.Builder applyResponsesModelParams(
-      ResponseCreateParams.Builder builder,
       ModelAccessService.ModelAccess modelAccess,
-      IncomingMessage incomingMessage,
-      AgentWorkflowContext agentWorkflowContext) {
+      IncomingMessage incomingMessage) {
     if (modelAccess.premium()) {
       log.info(
           "User {} is a premium user using model {}",
