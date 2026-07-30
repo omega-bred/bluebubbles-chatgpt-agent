@@ -11,6 +11,7 @@ import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.codec.digest.DigestUtils;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.ResponseEntity;
@@ -51,7 +52,10 @@ public class LxmfWebhookController extends LxmfApiController {
       return ResponseEntity.badRequest().body(Map.of("status", "bad_request"));
     }
     IncomingMessage message = parseWebhookMessage(requestBody);
-    log.info("Incoming LXMF message {}", message);
+    log.info(
+        "Incoming LXMF message id={} sourceHashFingerprint={}",
+        message.messageGuid(),
+        fingerprint(message.sender()));
     messageAgent.handleIncomingMessage(message);
     return ResponseEntity.ok(Map.of("status", "ok"));
   }
@@ -87,5 +91,9 @@ public class LxmfWebhookController extends LxmfApiController {
     byte[] expected = webhookSecret.getBytes(StandardCharsets.UTF_8);
     byte[] actual = providedSecret.getBytes(StandardCharsets.UTF_8);
     return MessageDigest.isEqual(expected, actual);
+  }
+
+  private static String fingerprint(String value) {
+    return StringUtils.truncate(DigestUtils.sha256Hex(StringUtils.defaultString(value)), 12);
   }
 }
