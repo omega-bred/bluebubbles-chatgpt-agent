@@ -87,10 +87,8 @@ public final class CadenceIncomingMessageHandler {
 
   private @Nullable PreparedIncomingMessage prepare(IncomingMessage rawMessage) {
     if (!shouldProcess(rawMessage)) {
-      log.debug("Dropping message {}", rawMessage);
       return null;
     }
-    log.info("Processing Message {}", rawMessage);
     profileService.recordMessageIdentities(rawMessage);
     if (profileService.isProcessingBlocked(rawMessage)) {
       return null;
