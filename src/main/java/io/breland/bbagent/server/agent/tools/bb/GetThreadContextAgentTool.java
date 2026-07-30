@@ -81,9 +81,7 @@ public class GetThreadContextAgentTool implements ToolProvider {
                   threadContext.lastMessageSender(),
                   threadContext.lastMessageTimestamp(),
                   threadContext.lastImageUrls());
-          String modelResponse = ToolJson.stringify(context.getMapper(), response, "no context");
-          log.info("modelResponse: {}", modelResponse);
-          return modelResponse;
+          return ToolJson.stringify(context.getMapper(), response, "no context");
         });
   }
 
