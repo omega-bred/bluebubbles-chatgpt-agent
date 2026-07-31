@@ -205,10 +205,6 @@ public class AgentAccountResolver {
                 new AccountIdentityInput(normalized.type(), identifier.trim(), normalized.value()));
   }
 
-  public Optional<AccountIdentityInput> identityFromType(String identityType, String identifier) {
-    return identityFromTyped(identityType, identifier);
-  }
-
   private Optional<AccountIdentityInput> identityFromTyped(String identityType, String identifier) {
     return AgentAccountIdentifiers.normalizeByType(identityType, identifier)
         .map(

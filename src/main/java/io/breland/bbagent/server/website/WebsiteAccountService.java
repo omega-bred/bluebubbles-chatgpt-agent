@@ -178,11 +178,6 @@ public class WebsiteAccountService {
   }
 
   @Transactional
-  public SenderLinkStatus getLinkStatus(String sender, String chatGuid) {
-    return getLinkStatus(IncomingMessage.TRANSPORT_BLUEBUBBLES, sender, chatGuid);
-  }
-
-  @Transactional
   public SenderLinkStatus getLinkStatus(String transport, String sender, String chatGuid) {
     String identifier = linkStatusIdentifier(transport, sender, chatGuid);
     if (StringUtils.isBlank(identifier)) {
