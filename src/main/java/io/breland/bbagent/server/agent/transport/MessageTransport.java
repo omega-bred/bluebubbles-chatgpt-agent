@@ -46,8 +46,4 @@ public interface MessageTransport {
   default boolean supportsGeneratedImages() {
     return false;
   }
-
-  default boolean supportsIMessageFormatting() {
-    return false;
-  }
 }

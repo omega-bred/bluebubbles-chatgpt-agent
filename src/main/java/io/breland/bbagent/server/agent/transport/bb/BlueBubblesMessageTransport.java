@@ -152,9 +152,4 @@ public class BlueBubblesMessageTransport implements MessageTransport {
   public boolean supportsGeneratedImages() {
     return true;
   }
-
-  @Override
-  public boolean supportsIMessageFormatting() {
-    return true;
-  }
 }
