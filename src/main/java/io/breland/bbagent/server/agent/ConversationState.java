@@ -91,28 +91,27 @@ public class ConversationState {
     }
   }
 
-  public synchronized boolean recordIncomingTurnIfAbsent(IncomingMessage message) {
+  public synchronized void recordIncomingTurnIfAbsent(IncomingMessage message) {
     if (message == null || Boolean.TRUE.equals(message.fromMe())) {
-      return false;
+      return;
     }
     markIncomingMessageSeen(message);
     String guid = normalize(message.messageGuid());
     String fingerprint = normalize(message.computeMessageFingerprint());
     if ((guid != null && recordedIncomingMessageGuids.contains(guid))
         || (fingerprint != null && recordedIncomingMessageFingerprints.contains(fingerprint))) {
-      return false;
+      return;
     }
     Instant timestamp = message.timestamp() != null ? message.timestamp() : Instant.now();
     addTurn(ConversationTurn.user(message.summaryForHistory(), timestamp));
     remember(recordedIncomingMessageGuidOrder, recordedIncomingMessageGuids, guid);
     remember(
         recordedIncomingMessageFingerprintOrder, recordedIncomingMessageFingerprints, fingerprint);
-    return true;
   }
 
-  public synchronized boolean recordPendingIncomingTurn(IncomingMessage message) {
+  public synchronized void recordPendingIncomingTurn(IncomingMessage message) {
     if (message == null || Boolean.TRUE.equals(message.fromMe())) {
-      return false;
+      return;
     }
     markIncomingMessageSeen(message);
     String guid = normalize(message.messageGuid());
@@ -121,7 +120,7 @@ public class ConversationState {
         || (fingerprint != null && recordedIncomingMessageFingerprints.contains(fingerprint))
         || (guid != null && pendingIncomingMessageGuids.contains(guid))
         || (fingerprint != null && pendingIncomingMessageFingerprints.contains(fingerprint))) {
-      return false;
+      return;
     }
     Instant timestamp = message.timestamp() != null ? message.timestamp() : Instant.now();
     pendingIncomingTurns.addLast(
@@ -142,15 +141,13 @@ public class ConversationState {
         pendingIncomingMessageFingerprints.remove(removed.fingerprint());
       }
     }
-    return true;
   }
 
   public synchronized List<PendingIncomingTurn> pendingIncomingTurns() {
     return new ArrayList<>(pendingIncomingTurns);
   }
 
-  public synchronized int recordPendingIncomingTurnsToHistory() {
-    int recorded = 0;
+  public synchronized void recordPendingIncomingTurnsToHistory() {
     while (!pendingIncomingTurns.isEmpty()) {
       PendingIncomingTurn pending = pendingIncomingTurns.removeFirst();
       String guid = pending.messageGuid();
@@ -165,11 +162,9 @@ public class ConversationState {
           recordedIncomingMessageFingerprintOrder,
           recordedIncomingMessageFingerprints,
           fingerprint);
-      recorded++;
     }
     pendingIncomingMessageGuids.clear();
     pendingIncomingMessageFingerprints.clear();
-    return recorded;
   }
 
   public void recordThreadMessage(String threadRootGuid, ThreadContext context) {
