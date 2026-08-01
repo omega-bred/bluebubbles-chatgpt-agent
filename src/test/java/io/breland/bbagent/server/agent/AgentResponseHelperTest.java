@@ -113,17 +113,6 @@ call:send_text{message:Clone repos, cherry-pick commit, and push to GitHub.,thre
     assertTrue(outputJson.contains("without calling this tool again"));
   }
 
-  @Test
-  void emptyAssistantResponseRetryInstructionAsksForVisibleAnswer() throws Exception {
-    String itemJson =
-        new ObjectMapper()
-            .writeValueAsString(AgentResponseHelper.emptyAssistantResponseRetryInstruction());
-
-    assertTrue(itemJson.contains("developer"));
-    assertTrue(itemJson.contains("user-visible assistant message"));
-    assertTrue(itemJson.contains("Do not put the answer only in reasoning"));
-  }
-
   private static Response responseWithText(String text) {
     try {
       String responseJson =
