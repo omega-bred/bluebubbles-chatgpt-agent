@@ -2,7 +2,6 @@ package io.breland.bbagent.server.agent;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.openai.models.responses.EasyInputMessage;
 import com.openai.models.responses.Response;
 import com.openai.models.responses.ResponseFunctionToolCall;
 import com.openai.models.responses.ResponseInputItem;
@@ -176,14 +175,6 @@ public final class AgentResponseHelper {
             .output(REPEATED_TOOL_CALL_BLOCKED_OUTPUT)
             .build();
     return ResponseInputItem.ofFunctionCallOutput(toolOutput);
-  }
-
-  public static ResponseInputItem emptyAssistantResponseRetryInstruction() {
-    return ResponseInputItem.ofEasyInputMessage(
-        EasyInputMessage.builder()
-            .role(EasyInputMessage.Role.DEVELOPER)
-            .content(EMPTY_ASSISTANT_RESPONSE_RETRY_INSTRUCTION)
-            .build());
   }
 
   static List<ResponseFunctionToolCall> parseTextFunctionCalls(String text) {
