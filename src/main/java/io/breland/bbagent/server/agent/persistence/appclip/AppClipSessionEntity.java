@@ -46,15 +46,6 @@ public class AppClipSessionEntity {
   public AppClipSessionEntity(
       String tokenHash,
       String accountId,
-      String sourceLinkTokenHash,
-      Instant expiresAt,
-      Instant createdAt) {
-    this(tokenHash, accountId, "account_link", null, sourceLinkTokenHash, expiresAt, createdAt);
-  }
-
-  public AppClipSessionEntity(
-      String tokenHash,
-      String accountId,
       String purpose,
       String chatGuid,
       String sourceLinkTokenHash,
