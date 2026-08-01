@@ -656,7 +656,10 @@ public class SubscriptionService {
         firstNonBlank(webhookEvent.accountId(), checkout == null ? null : checkout.getAccountId());
     if (StringUtils.isBlank(accountId)) {
       accountId =
-          existingSubscription(providerKey, webhookEvent)
+          findExistingSubscription(
+                  providerKey,
+                  webhookEvent.providerSubscriptionId(),
+                  webhookEvent.customerSelector())
               .map(PaymentSubscriptionEntity::getAccountId)
               .orElse(null);
     }
@@ -729,23 +732,6 @@ public class SubscriptionService {
     return Optional.empty();
   }
 
-  private Optional<PaymentSubscriptionEntity> existingSubscription(
-      String providerKey, SubscriptionProvider.ProviderWebhookEvent webhookEvent) {
-    if (StringUtils.isNotBlank(webhookEvent.providerSubscriptionId())) {
-      Optional<PaymentSubscriptionEntity> subscription =
-          subscriptionRepository.findByProviderAndProviderSubscriptionId(
-              providerKey, webhookEvent.providerSubscriptionId());
-      if (subscription.isPresent()) {
-        return subscription;
-      }
-    }
-    if (StringUtils.isNotBlank(webhookEvent.customerSelector())) {
-      return subscriptionRepository.findByProviderAndProviderCustomerSelector(
-          providerKey, webhookEvent.customerSelector());
-    }
-    return Optional.empty();
-  }
-
   private PaymentSubscriptionEntity syncSubscription(PaymentSubscriptionEntity subscription) {
     SubscriptionProvider provider = requireProvider(subscription.getProvider());
     SubscriptionProvider.ProviderSubscription providerSubscription =
@@ -764,7 +750,10 @@ public class SubscriptionService {
       PaymentCheckoutSessionEntity checkout,
       SubscriptionProvider.ProviderSubscription providerSubscription) {
     PaymentSubscriptionEntity subscription =
-        findExistingSubscription(providerKey, providerSubscription)
+        findExistingSubscription(
+                providerKey,
+                providerSubscription.providerSubscriptionId(),
+                providerSubscription.customerSelector())
             .orElseGet(
                 () ->
                     new PaymentSubscriptionEntity(
@@ -788,18 +777,18 @@ public class SubscriptionService {
   }
 
   private Optional<PaymentSubscriptionEntity> findExistingSubscription(
-      String providerKey, SubscriptionProvider.ProviderSubscription providerSubscription) {
-    if (StringUtils.isNotBlank(providerSubscription.providerSubscriptionId())) {
+      String providerKey, String providerSubscriptionId, String customerSelector) {
+    if (StringUtils.isNotBlank(providerSubscriptionId)) {
       Optional<PaymentSubscriptionEntity> byProviderId =
           subscriptionRepository.findByProviderAndProviderSubscriptionId(
-              providerKey, providerSubscription.providerSubscriptionId());
+              providerKey, providerSubscriptionId);
       if (byProviderId.isPresent()) {
         return byProviderId;
       }
     }
-    if (StringUtils.isNotBlank(providerSubscription.customerSelector())) {
+    if (StringUtils.isNotBlank(customerSelector)) {
       return subscriptionRepository.findByProviderAndProviderCustomerSelector(
-          providerKey, providerSubscription.customerSelector());
+          providerKey, customerSelector);
     }
     return Optional.empty();
   }
