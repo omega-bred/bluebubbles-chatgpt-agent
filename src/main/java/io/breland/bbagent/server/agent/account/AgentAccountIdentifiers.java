@@ -36,10 +36,6 @@ public final class AgentAccountIdentifiers {
     return normalizeIMessage(clean);
   }
 
-  public static Optional<NormalizedIdentifier> normalize(String transport, String identifier) {
-    return normalizeMessageIdentity(transport, identifier);
-  }
-
   public static Optional<NormalizedIdentifier> normalizeByType(String type, String identifier) {
     if (type == null || identifier == null) {
       return Optional.empty();
@@ -49,12 +45,10 @@ public final class AgentAccountIdentifiers {
       return Optional.empty();
     }
     return switch (type) {
-      case IMESSAGE_EMAIL ->
+      case IMESSAGE_EMAIL, LXMF_ADDRESS ->
           Optional.of(new NormalizedIdentifier(type, compact(clean), compact(clean)));
       case IMESSAGE_PHONE ->
           normalizePhone(clean).map(value -> new NormalizedIdentifier(type, value, value));
-      case LXMF_ADDRESS ->
-          Optional.of(new NormalizedIdentifier(type, compact(clean), compact(clean)));
       default -> Optional.empty();
     };
   }
@@ -105,9 +99,6 @@ public final class AgentAccountIdentifiers {
       return Optional.of("+1" + digits);
     }
     if (digits.length() == 11 && digits.startsWith("1")) {
-      return Optional.of("+" + digits);
-    }
-    if (trimmed.startsWith("+")) {
       return Optional.of("+" + digits);
     }
     return Optional.of("+" + digits);
