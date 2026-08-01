@@ -19,17 +19,6 @@ public record AgentTool(
         .build();
   }
 
-  public static String getSenderId(IncomingMessage message) {
-    if (message == null) {
-      return null;
-    }
-    String sender = message.sender();
-    if (sender != null && !sender.isBlank()) {
-      return sender;
-    }
-    return null;
-  }
-
   public static String resolveUserIdOrGroupChatId(IncomingMessage message) {
     if (message == null) {
       return null;
