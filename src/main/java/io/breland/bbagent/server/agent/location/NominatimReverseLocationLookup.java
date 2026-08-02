@@ -6,6 +6,7 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Optional;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.lang3.StringUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.MediaType;
@@ -95,7 +96,8 @@ public class NominatimReverseLocationLookup implements ReverseLocationLookup {
     if (response == null || response.isNull() || response.hasNonNull("error")) {
       return Optional.empty();
     }
-    String displayName = textValue(response, "display_name");
+    String displayName =
+        StringUtils.defaultIfBlank(response.path("display_name").textValue(), null);
     Map<String, String> address = parseAddress(response.get("address"));
     ReverseLocationLookupResult result = new ReverseLocationLookupResult(displayName, address);
     String approximateAddress = result.approximateAddress();
@@ -122,14 +124,5 @@ public class NominatimReverseLocationLookup implements ReverseLocationLookup {
               }
             });
     return address;
-  }
-
-  private static String textValue(JsonNode node, String fieldName) {
-    JsonNode value = node.get(fieldName);
-    if (value == null || !value.isTextual()) {
-      return null;
-    }
-    String text = value.asText();
-    return text == null || text.isBlank() ? null : text;
   }
 }
