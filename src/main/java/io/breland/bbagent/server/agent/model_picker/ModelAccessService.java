@@ -89,10 +89,6 @@ public class ModelAccessService {
         .orElseGet(() -> standard(cleanAccountId));
   }
 
-  public boolean isPremium(IncomingMessage message) {
-    return resolve(message).premium();
-  }
-
   public WebsiteModelAccessSummary toWebsiteSummary(@Nullable String accountId) {
     return toWebsiteSummary(resolve(accountId));
   }
@@ -121,10 +117,6 @@ public class ModelAccessService {
             () ->
                 new ModelSelectionResult(
                     false, standard(null), "I could not resolve the current chat account."));
-  }
-
-  public ModelSelectionResult selectModel(String accountId, String modelKey) {
-    return updatePreferences(accountId, modelKey);
   }
 
   public ModelSelectionResult updatePreferences(String accountId, @Nullable String modelKey) {
