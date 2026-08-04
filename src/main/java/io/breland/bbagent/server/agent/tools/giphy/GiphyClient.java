@@ -40,14 +40,6 @@ public class GiphyClient {
     this.webClient = WebClient.builder().baseUrl(baseUrl).exchangeStrategies(strategies).build();
   }
 
-  public Optional<GiphyGif> searchTopGif(String query) {
-    List<GiphyGif> gifs = searchGifs(query, 5, null, "en");
-    if (gifs.isEmpty()) {
-      return Optional.empty();
-    }
-    return Optional.of(gifs.get(0));
-  }
-
   public List<GiphyGif> searchGifs(String query, int limit, String rating, String lang) {
     if (apiKey == null || apiKey.isBlank()) {
       log.warn("Giphy API key not configured");
