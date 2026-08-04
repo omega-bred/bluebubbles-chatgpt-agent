@@ -1,7 +1,6 @@
 package io.breland.bbagent.server.agent;
 
 import io.breland.bbagent.server.agent.tools.giphy.GiphyClient;
-import java.util.Optional;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.DisabledOnOs;
 import org.junit.jupiter.api.condition.OS;
@@ -16,9 +15,9 @@ public class GiphyClientTest {
 
   @Test
   public void testGiphyClient() {
-    Optional<GiphyClient.GiphyGif> hotdogs = giphyClient.searchTopGif("hotdogs");
-    assert hotdogs.isPresent();
-    assert hotdogs.get().url() != null;
-    System.out.println(hotdogs.get().url());
+    var hotdogs = giphyClient.searchGifs("hotdogs", 5, null, "en");
+    assert !hotdogs.isEmpty();
+    assert hotdogs.getFirst().url() != null;
+    System.out.println(hotdogs.getFirst().url());
   }
 }
