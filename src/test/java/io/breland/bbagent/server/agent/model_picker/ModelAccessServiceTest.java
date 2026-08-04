@@ -108,7 +108,8 @@ class ModelAccessServiceTest {
     when(repository.save(any(AgentAccountEntity.class)))
         .thenAnswer(invocation -> invocation.getArgument(0));
 
-    ModelAccessService.ModelSelectionResult result = service.selectModel("account-1", "gemini");
+    ModelAccessService.ModelSelectionResult result =
+        service.updatePreferences("account-1", "gemini");
 
     assertTrue(result.changed());
     assertEquals("gemini", result.modelAccess().currentModelKey());
