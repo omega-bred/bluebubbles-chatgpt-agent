@@ -23,6 +23,7 @@ import io.breland.bbagent.server.agent.transport.MessageTransportRegistry;
 import io.breland.bbagent.server.agent.transport.bb.BBHttpClientWrapper;
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Collectors;
@@ -95,6 +96,33 @@ class AgentToolRegistryTest {
 
     assertTrue(allowedNames.contains(KubernetesPodLogsAgentTool.TOOL_NAME));
     assertFalse(deniedNames.contains(KubernetesPodLogsAgentTool.TOOL_NAME));
+  }
+
+  @Test
+  void toolSearchFindsRepresentativeToolsFromNaturalLanguageQueries() throws Exception {
+    ObjectMapper mapper = new ObjectMapper();
+    AgentToolRegistry registry = registryForAccount("different-account");
+    ToolContext context =
+        new ToolContext(mock(BBMessageAgent.class), directMessage("someone-else"), null);
+    Map<String, String> expectedToolByQuery =
+        Map.of(
+            "send a plain text message", "send_text",
+            "create an event in google calendar", "create_event",
+            "remember a user preference", "memory_save",
+            "schedule a reminder for later", "schedule_event",
+            "change the assistant name", "assistant_name_tool");
+
+    for (Map.Entry<String, String> entry : expectedToolByQuery.entrySet()) {
+      ObjectNode args = mapper.createObjectNode();
+      args.put("query", entry.getKey());
+      args.put("maxResults", 5);
+
+      List<String> matches = toolSearch(registry, mapper, context, args);
+
+      assertTrue(
+          matches.contains(entry.getValue()),
+          () -> entry.getKey() + " should find " + entry.getValue() + " but got " + matches);
+    }
   }
 
   private static AgentToolRegistry registryForAccount(String accountId) {
