@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.time.Duration;
 import java.util.*;
+import java.util.function.Supplier;
 import lombok.Getter;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
@@ -64,23 +65,15 @@ public class Mem0Client {
       body.put("metadata", metadata);
     }
     applyWorkspace(body);
-    try {
-      webClient
-          .post()
-          .uri("/v1/memories/")
-          .contentType(MediaType.APPLICATION_JSON)
-          .bodyValue(body)
-          .retrieve()
-          .bodyToMono(JsonNode.class)
-          .block(API_TIMEOUT);
-      return true;
-    } catch (WebClientResponseException e) {
-      log.warn("Mem0 add memory failed: status={}", e.getStatusCode());
-      return false;
-    } catch (Exception e) {
-      log.warn("Mem0 add memory failed", e);
-      return false;
-    }
+    return executeMutation(
+        "add memory",
+        () ->
+            webClient
+                .post()
+                .uri("/v1/memories/")
+                .contentType(MediaType.APPLICATION_JSON)
+                .bodyValue(body)
+                .retrieve());
   }
 
   @SneakyThrows
@@ -179,23 +172,15 @@ public class Mem0Client {
       body.put("metadata", metadata);
     }
     applyWorkspace(body);
-    try {
-      webClient
-          .put()
-          .uri("/v1/memories/{memoryId}/", memoryId)
-          .contentType(MediaType.APPLICATION_JSON)
-          .bodyValue(body)
-          .retrieve()
-          .bodyToMono(JsonNode.class)
-          .block(API_TIMEOUT);
-      return true;
-    } catch (WebClientResponseException e) {
-      log.warn("Mem0 update memory failed: status={}", e.getStatusCode());
-      return false;
-    } catch (Exception e) {
-      log.warn("Mem0 update memory failed", e);
-      return false;
-    }
+    return executeMutation(
+        "update memory",
+        () ->
+            webClient
+                .put()
+                .uri("/v1/memories/{memoryId}/", memoryId)
+                .contentType(MediaType.APPLICATION_JSON)
+                .bodyValue(body)
+                .retrieve());
   }
 
   public boolean deleteMemory(String memoryId) {
@@ -205,19 +190,20 @@ public class Mem0Client {
     if (memoryId == null || memoryId.isBlank()) {
       return false;
     }
+    return executeMutation(
+        "delete memory",
+        () -> webClient.delete().uri("/v1/memories/{memoryId}/", memoryId).retrieve());
+  }
+
+  private boolean executeMutation(String operation, Supplier<WebClient.ResponseSpec> request) {
     try {
-      webClient
-          .delete()
-          .uri("/v1/memories/{memoryId}/", memoryId)
-          .retrieve()
-          .bodyToMono(JsonNode.class)
-          .block(API_TIMEOUT);
+      request.get().bodyToMono(JsonNode.class).block(API_TIMEOUT);
       return true;
     } catch (WebClientResponseException e) {
-      log.warn("Mem0 delete memory failed: status={}", e.getStatusCode());
+      log.warn("Mem0 {} failed: status={}", operation, e.getStatusCode());
       return false;
     } catch (Exception e) {
-      log.warn("Mem0 delete memory failed", e);
+      log.warn("Mem0 {} failed", operation, e);
       return false;
     }
   }
