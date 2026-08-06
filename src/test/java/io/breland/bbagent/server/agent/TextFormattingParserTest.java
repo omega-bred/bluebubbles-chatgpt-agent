@@ -25,6 +25,35 @@ class TextFormattingParserTest {
     assertRange(ranges.get(3), 22, 6, List.of("strikethrough"));
   }
 
+  @Test
+  void replacesMarkdownLinkWithFullUrl() {
+    TextFormattingParser.Result result =
+        TextFormattingParser.parse("Read [the documentation](https://example.com/docs) first.");
+
+    assertEquals("Read https://example.com/docs first.", result.text());
+    assertEquals(List.of(), result.formatting());
+  }
+
+  @Test
+  void replacesEveryMarkdownLinkWithItsFullUrl() {
+    TextFormattingParser.Result result =
+        TextFormattingParser.parse(
+            "Try [search](https://example.com/search) or [status](https://status.example.com).");
+
+    assertEquals("Try https://example.com/search or https://status.example.com.", result.text());
+    assertEquals(List.of(), result.formatting());
+  }
+
+  @Test
+  void preservesFullUrlAndFormattingAroundMarkdownLink() {
+    String url = "https://example.com/a_(b)/~~literal~~";
+    TextFormattingParser.Result result = TextFormattingParser.parse("**[reference](" + url + ")**");
+
+    assertEquals(url, result.text());
+    assertEquals(1, result.formatting().size());
+    assertRange(result.formatting().getFirst(), 0, url.length(), List.of("bold"));
+  }
+
   private static void assertRange(
       TextFormattingRange range, int start, int length, List<String> styles) {
     assertEquals(start, range.getStart());

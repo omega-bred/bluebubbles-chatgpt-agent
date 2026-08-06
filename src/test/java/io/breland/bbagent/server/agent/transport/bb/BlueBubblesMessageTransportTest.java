@@ -103,6 +103,30 @@ class BlueBubblesMessageTransportTest {
   }
 
   @Test
+  void wrapperSendsMarkdownLinkAsFullUrl() {
+    V1MessageApi messageApi = Mockito.mock(V1MessageApi.class);
+    SendConfirmingBBHttpClientWrapper wrapper = new SendConfirmingBBHttpClientWrapper(messageApi);
+    String expectedMessage = "Read https://example.com/docs first.";
+    wrapper.confirmationSnapshots(
+        List.of(sentMessage("iMessage;-;mindstorms6+apple@gmail.com", expectedMessage)));
+    when(messageApi.apiV1MessageTextPost(eq("pw"), any())).thenReturn(Mono.empty());
+
+    ApiV1MessageTextPostRequest request =
+        ApiV1MessageTextPostRequest.builder()
+            .chatGuid("iMessage;-;mindstorms6+apple@gmail.com")
+            .tempGuid("tmp")
+            .message("Read [the documentation](https://example.com/docs) first.")
+            .build();
+
+    assertTrue(wrapper.sendTextDirect(request));
+
+    ArgumentCaptor<ApiV1MessageTextPostRequest> requestCaptor =
+        ArgumentCaptor.forClass(ApiV1MessageTextPostRequest.class);
+    verify(messageApi).apiV1MessageTextPost(eq("pw"), requestCaptor.capture());
+    assertEquals(expectedMessage, requestCaptor.getValue().getMessage());
+  }
+
+  @Test
   void wrapperReturnsFalseWhenDirectSendFails() {
     V1MessageApi messageApi = Mockito.mock(V1MessageApi.class);
     SendConfirmingBBHttpClientWrapper wrapper = new SendConfirmingBBHttpClientWrapper(messageApi);
