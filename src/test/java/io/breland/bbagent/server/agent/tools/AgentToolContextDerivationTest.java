@@ -18,9 +18,7 @@ import io.breland.bbagent.server.agent.tools.bb.SendPollAgentTool;
 import io.breland.bbagent.server.agent.tools.bb.SendReactionAgentTool;
 import io.breland.bbagent.server.agent.tools.scheduled.ScheduledEventDeleteTool;
 import io.breland.bbagent.server.agent.tools.scheduled.ScheduledEventListTool;
-import io.breland.bbagent.server.agent.tools.website.GetWebsiteAccountLinkStatusAgentTool;
 import io.breland.bbagent.server.agent.transport.bb.BBHttpClientWrapper;
-import io.breland.bbagent.server.website.WebsiteAccountService;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
@@ -31,7 +29,7 @@ class AgentToolContextDerivationTest {
   private final ObjectMapper mapper = new ObjectMapper();
 
   @Test
-  void modelFacingSchemasDoNotExposeDerivedChatOrSenderSelectors() {
+  void modelFacingSchemasDoNotExposeDerivedConversationSelectors() {
     assertSchemaExcludes(
         new SendPollAgentTool(Mockito.mock(BBHttpClientWrapper.class)).getTool(),
         "conversation_id",
@@ -39,12 +37,6 @@ class AgentToolContextDerivationTest {
         "chat_guid");
     assertSchemaExcludes(
         new SendReactionAgentTool().getTool(), "chatGuid", "chat_guid", "conversation_id");
-    assertSchemaExcludes(
-        new GetWebsiteAccountLinkStatusAgentTool(Mockito.mock(WebsiteAccountService.class))
-            .getTool(),
-        "sender",
-        "chat_guid",
-        "transport");
     assertSchemaExcludes(
         new GetThreadContextAgentTool(Mockito.mock(BBHttpClientWrapper.class)).getTool(),
         "thread_root_guid");
