@@ -44,7 +44,7 @@ class GetThreadContextAgentToolTest {
             .handler()
             .apply(
                 new ToolContext(messageAgent, incomingMessage("iMessage;+;chat-1"), null),
-                mapper.readTree("{\"thread_root_guid\":\"root-guid\"}"));
+                mapper.createObjectNode());
     JsonNode result = mapper.readTree(output);
 
     assertEquals("root-guid", result.get("thread_root_guid").asText());
@@ -59,7 +59,7 @@ class GetThreadContextAgentToolTest {
     return new IncomingMessage(
         chatGuid,
         "message-guid",
-        null,
+        "root-guid",
         "what was sent?",
         false,
         "iMessage",

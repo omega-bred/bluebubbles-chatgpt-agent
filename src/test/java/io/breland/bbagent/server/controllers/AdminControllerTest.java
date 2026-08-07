@@ -31,14 +31,14 @@ import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
-import org.springframework.boot.test.mock.mockito.MockBean;
+import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.core.convert.converter.Converter;
 import org.springframework.http.MediaType;
 import org.springframework.security.authentication.AbstractAuthenticationToken;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.oauth2.jwt.Jwt;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
 @WebMvcTest(AdminController.class)
@@ -47,11 +47,11 @@ class AdminControllerTest {
   @Autowired private MockMvc mockMvc;
   @Autowired private Converter<Jwt, AbstractAuthenticationToken> jwtAuthenticationConverter;
 
-  @MockBean private AdminStatsService adminStatsService;
-  @MockBean private FeedbackService feedbackService;
-  @MockBean private MessageResponseRateLimitService messageResponseRateLimitService;
-  @MockBean private SubscriptionService subscriptionService;
-  @MockBean private AccountModerationService accountModerationService;
+  @MockitoBean private AdminStatsService adminStatsService;
+  @MockitoBean private FeedbackService feedbackService;
+  @MockitoBean private MessageResponseRateLimitService messageResponseRateLimitService;
+  @MockitoBean private SubscriptionService subscriptionService;
+  @MockitoBean private AccountModerationService accountModerationService;
 
   @Test
   void adminStatsRequiresAuthentication() throws Exception {

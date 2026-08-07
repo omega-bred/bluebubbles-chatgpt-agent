@@ -6,8 +6,11 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
 
+import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.openai.client.OpenAIClient;
+import io.breland.bbagent.server.agent.BBMessageAgent;
 import io.breland.bbagent.server.agent.IncomingMessage;
 import io.breland.bbagent.server.agent.cadence.CadenceWorkflowLauncher;
 import io.breland.bbagent.server.agent.tools.gcal.GcalClient;
@@ -15,10 +18,12 @@ import io.breland.bbagent.server.agent.tools.giphy.GiphyClient;
 import io.breland.bbagent.server.agent.tools.kubernetes.KubernetesPodLogsAgentTool;
 import io.breland.bbagent.server.agent.tools.kubernetes.KubernetesReadOnlyAgentTool;
 import io.breland.bbagent.server.agent.tools.memory.Mem0Client;
+import io.breland.bbagent.server.agent.tools.search.ToolSearchAgentTool;
 import io.breland.bbagent.server.agent.transport.MessageTransportRegistry;
 import io.breland.bbagent.server.agent.transport.bb.BBHttpClientWrapper;
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Collectors;
@@ -67,6 +72,59 @@ class AgentToolRegistryTest {
     assertFalse(tools.contains(KubernetesPodLogsAgentTool.TOOL_NAME));
   }
 
+  @Test
+  void toolSearchOnlyReturnsToolsAllowedForCurrentMessage() throws Exception {
+    ObjectMapper mapper = new ObjectMapper();
+    AgentToolRegistry allowedRegistry = registryForAccount(KUBERNETES_TOOL_ALLOWED_ACCOUNT_ID);
+    AgentToolRegistry deniedRegistry = registryForAccount("different-account");
+    ObjectNode args = mapper.createObjectNode();
+    args.put("query", KubernetesPodLogsAgentTool.TOOL_NAME);
+    args.put("maxResults", 10);
+
+    List<String> allowedNames =
+        toolSearch(
+            allowedRegistry,
+            mapper,
+            new ToolContext(mock(BBMessageAgent.class), directMessage("someone-else"), null),
+            args);
+    List<String> deniedNames =
+        toolSearch(
+            deniedRegistry,
+            mapper,
+            new ToolContext(mock(BBMessageAgent.class), directMessage("someone-else"), null),
+            args);
+
+    assertTrue(allowedNames.contains(KubernetesPodLogsAgentTool.TOOL_NAME));
+    assertFalse(deniedNames.contains(KubernetesPodLogsAgentTool.TOOL_NAME));
+  }
+
+  @Test
+  void toolSearchFindsRepresentativeToolsFromNaturalLanguageQueries() throws Exception {
+    ObjectMapper mapper = new ObjectMapper();
+    AgentToolRegistry registry = registryForAccount("different-account");
+    ToolContext context =
+        new ToolContext(mock(BBMessageAgent.class), directMessage("someone-else"), null);
+    Map<String, String> expectedToolByQuery =
+        Map.of(
+            "send a plain text message", "send_text",
+            "create an event in google calendar", "create_event",
+            "remember a user preference", "memory_save",
+            "schedule a reminder for later", "schedule_event",
+            "change the assistant name", "assistant_name_tool");
+
+    for (Map.Entry<String, String> entry : expectedToolByQuery.entrySet()) {
+      ObjectNode args = mapper.createObjectNode();
+      args.put("query", entry.getKey());
+      args.put("maxResults", 5);
+
+      List<String> matches = toolSearch(registry, mapper, context, args);
+
+      assertTrue(
+          matches.contains(entry.getValue()),
+          () -> entry.getKey() + " should find " + entry.getValue() + " but got " + matches);
+    }
+  }
+
   private static AgentToolRegistry registryForAccount(String accountId) {
     BBHttpClientWrapper bbHttpClientWrapper = mock(BBHttpClientWrapper.class);
     return new AgentToolRegistry(
@@ -86,6 +144,15 @@ class AgentToolRegistryTest {
 
   private static Set<String> toolNames(List<AgentTool> tools) {
     return tools.stream().map(AgentTool::name).collect(Collectors.toSet());
+  }
+
+  private static List<String> toolSearch(
+      AgentToolRegistry registry, ObjectMapper mapper, ToolContext context, ObjectNode args)
+      throws Exception {
+    AgentTool tool = registry.resolveTool(ToolSearchAgentTool.TOOL_NAME, context.message()).tool();
+    assertNotNull(tool);
+    String output = tool.handler().apply(context, args);
+    return mapper.readValue(output, new TypeReference<List<String>>() {});
   }
 
   private static IncomingMessage directMessage(String sender) {

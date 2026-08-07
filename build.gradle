@@ -5,9 +5,9 @@ import java.util.Locale
 
 plugins {
 	id 'java'
-	id 'org.springframework.boot' version '3.5.14'
+	id 'org.springframework.boot' version '4.1.0'
 	id 'io.spring.dependency-management' version '1.1.7'
-	id 'org.openapi.generator' version '7.14.0'
+	id 'org.openapi.generator' version '7.22.0'
 	id 'com.diffplug.spotless' version '8.4.0'
     id "org.flywaydb.flyway" version "11.7.2"
 }
@@ -191,7 +191,6 @@ repositories {
 configurations.all {
 	exclude group: 'ch.qos.logback', module: 'logback-classic'
 	exclude group: 'org.apache.logging.log4j', module: 'log4j-to-slf4j'
-	exclude group: 'commons-logging', module: 'commons-logging'
 }
 
 
@@ -199,15 +198,16 @@ dependencies {
 	implementation 'org.springframework.boot:spring-boot-starter-actuator'
 	implementation 'org.springframework.boot:spring-boot-starter-validation'
 	implementation 'org.springframework.boot:spring-boot-starter-web'
+	implementation 'org.springframework.boot:spring-boot-jackson2'
 
     // Persistence (PostgreSQL in prod)
-    implementation 'org.flywaydb:flyway-core'
+    implementation 'org.springframework.boot:spring-boot-starter-flyway'
     runtimeOnly 'org.flywaydb:flyway-database-postgresql'
     implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
     runtimeOnly 'org.postgresql:postgresql'
 
 
-    implementation 'de.codecentric:spring-boot-admin-starter-client:3.5.9'
+    implementation 'de.codecentric:spring-boot-admin-starter-client:4.1.2'
 
 	implementation("org.springframework.boot:spring-boot-starter-security")
 	implementation("org.springframework.boot:spring-boot-starter-oauth2-resource-server")
@@ -225,8 +225,10 @@ dependencies {
     // lombok
 	compileOnly 'org.projectlombok:lombok:1.18.46'
 	annotationProcessor 'org.projectlombok:lombok:1.18.46'
-	implementation platform('org.apache.logging.log4j:log4j-bom:2.25.4')
-    implementation platform("org.springframework.ai:spring-ai-bom:1.1.4")
+    implementation platform('org.apache.logging.log4j:log4j-bom:2.25.4')
+    implementation platform("org.springframework.ai:spring-ai-bom:2.0.0")
+    implementation("org.springframework.ai:spring-ai-tool-search-tool")
+    implementation("org.apache.lucene:lucene-core:9.12.3")
 
     runtimeOnly 'org.apache.logging.log4j:log4j-slf4j2-impl'
 
@@ -240,7 +242,7 @@ dependencies {
 	implementation 'jakarta.validation:jakarta.validation-api:3.1.1'
 	implementation 'jakarta.annotation:jakarta.annotation-api:3.0.0'
 	implementation 'org.openapitools:jackson-databind-nullable:0.2.8'
-    implementation "org.springframework.boot:spring-boot-starter-webflux"
+    implementation "org.springframework.boot:spring-boot-starter-webclient"
 
 
     implementation 'com.spotify:completable-futures:0.3.1'
@@ -268,6 +270,7 @@ dependencies {
     runtimeOnly 'io.micrometer:micrometer-registry-influx'
 	annotationProcessor 'org.springframework.boot:spring-boot-configuration-processor'
     testImplementation 'org.springframework.boot:spring-boot-starter-test'
+    testImplementation 'org.springframework.boot:spring-boot-webmvc-test'
     testImplementation 'org.mockito:mockito-core'
     testImplementation 'org.mockito:mockito-junit-jupiter'
     testImplementation 'org.springframework.security:spring-security-test'
@@ -285,14 +288,15 @@ tasks.named('test') {
 
 openApiGenerate {
 	generatorName = 'spring'
-	inputSpec = "$rootDir/src/main/resources/openapi.yaml" // Path to your OpenAPI spec file
-	outputDir = "$buildDir/generated"
+	inputSpec.set(layout.projectDirectory.file('src/main/resources/openapi.yaml'))
+	outputDir.set(layout.buildDirectory.dir('generated'))
 	apiPackage = grp + ".generated.api"
 	modelPackage = grp + ".generated.model"
 	configOptions = [
 			dateLibrary: 'java8',
-			useSpringBoot3: 'true',
+			useSpringBoot4: 'true',
 			useJakartaEe: 'true',
+			useJspecify: 'true',
 			generateBuilders: 'true',
 			useTags: 'true',
 			enumPropertyNaming: 'MACRO_CASE'
@@ -301,8 +305,8 @@ openApiGenerate {
 
 tasks.register('openApiGenerateTypescriptClient', GenerateTask) {
 	generatorName = 'typescript-axios'
-	inputSpec = "${projectDir}/src/main/resources/openapi.yaml"
-	outputDir = "$buildDir/typescript-client-generated"
+	inputSpec.set(layout.projectDirectory.file('src/main/resources/openapi.yaml'))
+	outputDir.set(layout.buildDirectory.dir('typescript-client-generated'))
 	configOptions = [
 			npmName    : "@bluebubbles-chatgpt-agent/backend-client",
 			axiosVersion: "1.16.1",
@@ -313,8 +317,8 @@ tasks.register('openApiGenerateTypescriptClient', GenerateTask) {
 
 tasks.register('openApiGenerateJavaClientBlueBubbles', GenerateTask) {
     generatorName = 'java'
-    inputSpec = "${projectDir}/src/main/resources/bluebubbles.yaml"
-    outputDir = "$buildDir/java-client-generated-bluebubbles"
+    inputSpec.set(layout.projectDirectory.file('src/main/resources/bluebubbles.yaml'))
+    outputDir.set(layout.buildDirectory.dir('java-client-generated-bluebubbles'))
     apiPackage =  "${grp}.generated.bluebubblesclient.api"
     modelPackage = "${grp}.generated.bluebubblesclient.model"
 
@@ -325,6 +329,8 @@ tasks.register('openApiGenerateJavaClientBlueBubbles', GenerateTask) {
             groupId: "${grp}",
             jakarta: 'true',
             useJakartaEe: 'true',
+            useSpringBoot4: 'true',
+            useJspecify: 'true',
             serializationLibrary: 'jackson',
             enumPropertyNaming: 'MACRO_CASE',
             generateBuilders: 'true',
@@ -343,8 +349,8 @@ tasks.register('openApiGenerateJavaClientBlueBubbles', GenerateTask) {
 
 tasks.register('openApiGenerateJavaClient', GenerateTask) {
 	generatorName = 'java'
-	inputSpec = "${projectDir}/src/main/resources/openapi.yaml"
-	outputDir = "$buildDir/java-client-generated"
+	inputSpec.set(layout.projectDirectory.file('src/main/resources/openapi.yaml'))
+	outputDir.set(layout.buildDirectory.dir('java-client-generated'))
 	apiPackage =  "${grp}.generated.client.api"
 	modelPackage = "${grp}.generated.client.model"
 	configOptions = [
@@ -354,6 +360,8 @@ tasks.register('openApiGenerateJavaClient', GenerateTask) {
 			groupId: "${grp}",
 			jakarta: 'true',
 			useJakartaEe: 'true',
+			useSpringBoot4: 'true',
+			useJspecify: 'true',
 			serializationLibrary: 'jackson',
 			enumPropertyNaming: 'MACRO_CASE',
             generateBuilders: 'true'
@@ -362,8 +370,8 @@ tasks.register('openApiGenerateJavaClient', GenerateTask) {
 
 tasks.register('openApiGenerateSwiftClient', GenerateTask) {
 	generatorName = 'swift5'
-	inputSpec = "${projectDir}/src/main/resources/openapi.yaml"
-	outputDir = "$buildDir/swift-client-generated"
+	inputSpec.set(layout.projectDirectory.file('src/main/resources/openapi.yaml'))
+	outputDir.set(layout.buildDirectory.dir('swift-client-generated'))
 	doFirst {
 		delete("$buildDir/swift-client-generated")
 	}

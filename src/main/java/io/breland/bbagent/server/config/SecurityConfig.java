@@ -9,7 +9,6 @@ import java.util.LinkedHashSet;
 import java.util.Map;
 import java.util.Set;
 import org.springframework.beans.factory.ObjectProvider;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.convert.converter.Converter;
@@ -33,30 +32,22 @@ public class SecurityConfig {
   private static final String ADMIN_ROLE = "bbagent-admin-role";
 
   @Bean
-  @ConditionalOnBean(AppClipSessionService.class)
-  AppClipSessionAuthenticationFilter appClipSessionAuthenticationFilter(
-      AppClipSessionService sessionService) {
-    return new AppClipSessionAuthenticationFilter(sessionService);
-  }
-
-  @Bean
-  @ConditionalOnBean(NativeAppSessionService.class)
-  NativeAppSessionAuthenticationFilter nativeAppSessionAuthenticationFilter(
-      NativeAppSessionService sessionService) {
-    return new NativeAppSessionAuthenticationFilter(sessionService);
-  }
-
-  @Bean
   SecurityFilterChain securityFilterChain(
       HttpSecurity http,
       Converter<Jwt, AbstractAuthenticationToken> jwtAuthenticationConverter,
-      ObjectProvider<AppClipSessionAuthenticationFilter> appClipSessionAuthenticationFilter,
-      ObjectProvider<NativeAppSessionAuthenticationFilter> nativeAppSessionAuthenticationFilter)
+      ObjectProvider<AppClipSessionService> appClipSessionService,
+      ObjectProvider<NativeAppSessionService> nativeAppSessionService)
       throws Exception {
-    appClipSessionAuthenticationFilter.ifAvailable(
-        filter -> http.addFilterBefore(filter, BearerTokenAuthenticationFilter.class));
-    nativeAppSessionAuthenticationFilter.ifAvailable(
-        filter -> http.addFilterBefore(filter, BearerTokenAuthenticationFilter.class));
+    appClipSessionService.ifAvailable(
+        service ->
+            http.addFilterBefore(
+                new AppClipSessionAuthenticationFilter(service),
+                BearerTokenAuthenticationFilter.class));
+    nativeAppSessionService.ifAvailable(
+        service ->
+            http.addFilterBefore(
+                new NativeAppSessionAuthenticationFilter(service),
+                BearerTokenAuthenticationFilter.class));
     return http.csrf(AbstractHttpConfigurer::disable)
         .sessionManagement(
             session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))

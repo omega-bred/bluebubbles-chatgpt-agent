@@ -2,6 +2,7 @@ package io.breland.bbagent.server.agent.tools;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.openai.client.OpenAIClient;
+import com.openai.models.responses.ResponseInputItem;
 import io.breland.bbagent.server.agent.IncomingMessage;
 import io.breland.bbagent.server.agent.cadence.CadenceWorkflowLauncher;
 import io.breland.bbagent.server.agent.model_picker.ModelAccessService;
@@ -44,6 +45,7 @@ import io.breland.bbagent.server.agent.tools.model.SetPreferredModelAgentTool;
 import io.breland.bbagent.server.agent.tools.scheduled.ScheduledEventDeleteTool;
 import io.breland.bbagent.server.agent.tools.scheduled.ScheduledEventListTool;
 import io.breland.bbagent.server.agent.tools.scheduled.ScheduledEventTool;
+import io.breland.bbagent.server.agent.tools.search.ToolSearchAgentTool;
 import io.breland.bbagent.server.agent.tools.website.GetWebsiteAccountLinkStatusAgentTool;
 import io.breland.bbagent.server.agent.tools.website.LinkConversationSettingsAgentTool;
 import io.breland.bbagent.server.agent.tools.website.LinkWebsiteAccountAgentTool;
@@ -54,6 +56,9 @@ import io.breland.bbagent.server.feedback.FeedbackService;
 import io.breland.bbagent.server.metrics.OperationalMetricsService;
 import io.breland.bbagent.server.ratelimit.MessageResponseRateLimitService;
 import io.breland.bbagent.server.website.WebsiteAccountService;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -126,6 +131,7 @@ public final class AgentToolRegistry {
   private final Map<String, AgentTool> tools = new ConcurrentHashMap<>();
   private final MessageTransportRegistry transportRegistry;
   private final Function<IncomingMessage, Optional<String>> accountIdResolver;
+  private final ObjectMapper objectMapper;
 
   public AgentToolRegistry(
       BBHttpClientWrapper bbHttpClientWrapper,
@@ -174,6 +180,7 @@ public final class AgentToolRegistry {
       @Nullable ModelAccessService modelAccessService) {
     this.transportRegistry = transportRegistry;
     this.accountIdResolver = accountIdResolver;
+    this.objectMapper = objectMapper;
     registerBuiltInTools(
         bbHttpClientWrapper,
         mem0Client,
@@ -190,8 +197,29 @@ public final class AgentToolRegistry {
   }
 
   public List<AgentTool> availableTools(IncomingMessage message) {
+    return availableActionTools(message);
+  }
+
+  public List<AgentTool> toolsForModel(
+      IncomingMessage message, List<ResponseInputItem> inputItems) {
+    Map<String, AgentTool> selectedTools = new LinkedHashMap<>();
+    AgentTool toolSearchTool = tools.get(ToolSearchAgentTool.TOOL_NAME);
+    if (toolSearchTool != null) {
+      selectedTools.put(toolSearchTool.name(), toolSearchTool);
+    }
+    for (String toolName : toolSearchReferences(inputItems)) {
+      AgentTool tool = resolveTool(toolName, message).tool();
+      if (tool != null && !ToolSearchAgentTool.TOOL_NAME.equals(tool.name())) {
+        selectedTools.put(tool.name(), tool);
+      }
+    }
+    return new ArrayList<>(selectedTools.values());
+  }
+
+  private List<AgentTool> availableActionTools(IncomingMessage message) {
     String accountId = resolveAccountId(message);
     return tools.values().stream()
+        .filter(tool -> !ToolSearchAgentTool.TOOL_NAME.equals(tool.name()))
         .filter(tool -> shouldIncludeTool(tool, message, accountId))
         .toList();
   }
@@ -211,6 +239,9 @@ public final class AgentToolRegistry {
   public String toolCategory(String toolName) {
     if (toolName == null || toolName.isBlank()) {
       return "other";
+    }
+    if (ToolSearchAgentTool.TOOL_NAME.equals(toolName)) {
+      return "tool_search";
     }
     if (BLUEBUBBLES_TOOL_NAMES.contains(toolName)) {
       return "bluebubbles";
@@ -270,6 +301,94 @@ public final class AgentToolRegistry {
   private String resolveAccountId(IncomingMessage message) {
     Optional<String> accountId = accountIdResolver.apply(message);
     return accountId == null ? null : accountId.orElse(null);
+  }
+
+  private List<ToolSearchAgentTool.ToolIndexEntry> toolIndexEntries(
+      IncomingMessage message, @Nullable String categoryFilter) {
+    String normalizedCategoryFilter = StringUtils.trimToNull(categoryFilter);
+    return availableActionTools(message).stream()
+        .filter(
+            tool ->
+                normalizedCategoryFilter == null
+                    || toolCategory(tool.name()).equalsIgnoreCase(normalizedCategoryFilter))
+        .map(
+            tool ->
+                new ToolSearchAgentTool.ToolIndexEntry(
+                    tool.name(),
+                    ToolSearchAgentTool.summaryFor(tool, toolCategory(tool.name()), objectMapper)))
+        .toList();
+  }
+
+  private List<String> toolSearchReferences(List<ResponseInputItem> inputItems) {
+    if (inputItems == null || inputItems.isEmpty()) {
+      return List.of();
+    }
+    Set<String> toolSearchCallIds = new LinkedHashSet<>();
+    List<String> references = new ArrayList<>();
+    for (ResponseInputItem item : inputItems) {
+      if (item != null
+          && item.isFunctionCall()
+          && ToolSearchAgentTool.TOOL_NAME.equals(item.asFunctionCall().name())) {
+        toolSearchCallIds.add(item.asFunctionCall().callId());
+      }
+    }
+    if (toolSearchCallIds.isEmpty()) {
+      return List.of();
+    }
+    for (ResponseInputItem item : inputItems) {
+      if (item == null || !item.isFunctionCallOutput()) {
+        continue;
+      }
+      ResponseInputItem.FunctionCallOutput output = item.asFunctionCallOutput();
+      if (!toolSearchCallIds.contains(output.callId()) || !output.output().isString()) {
+        continue;
+      }
+      references.addAll(parseToolSearchOutput(output.output().asString()));
+    }
+    return references;
+  }
+
+  private List<String> parseToolSearchOutput(String output) {
+    if (StringUtils.isBlank(output)) {
+      return List.of();
+    }
+    try {
+      com.fasterxml.jackson.databind.JsonNode node = objectMapper.readTree(output);
+      List<String> toolNames = new ArrayList<>();
+      appendToolNames(toolNames, node);
+      return toolNames;
+    } catch (Exception ignored) {
+      return List.of();
+    }
+  }
+
+  private void appendToolNames(
+      List<String> toolNames, com.fasterxml.jackson.databind.JsonNode node) {
+    if (node == null || node.isNull()) {
+      return;
+    }
+    if (node.isTextual()) {
+      addToolName(toolNames, node.asText());
+      return;
+    }
+    if (node.isArray()) {
+      node.forEach(child -> appendToolNames(toolNames, child));
+      return;
+    }
+    if (node.isObject()) {
+      appendToolNames(toolNames, node.get("toolName"));
+      appendToolNames(toolNames, node.get("tool_name"));
+      appendToolNames(toolNames, node.get("toolNames"));
+      appendToolNames(toolNames, node.get("tool_names"));
+      appendToolNames(toolNames, node.get("toolReferences"));
+      appendToolNames(toolNames, node.get("tool_references"));
+    }
+  }
+
+  private void addToolName(List<String> toolNames, String toolName) {
+    if (StringUtils.isNotBlank(toolName) && !toolNames.contains(toolName)) {
+      toolNames.add(toolName);
+    }
   }
 
   private void registerBuiltInTools(
@@ -335,6 +454,7 @@ public final class AgentToolRegistry {
     registerTool(new ScheduledEventTool(cadenceWorkflowLauncher).getTool());
     registerTool(new ScheduledEventListTool(cadenceWorkflowLauncher).getTool());
     registerTool(new ScheduledEventDeleteTool(cadenceWorkflowLauncher).getTool());
+    registerTool(new ToolSearchAgentTool(objectMapper, this::toolIndexEntries).getTool());
   }
 
   private void registerTool(AgentTool tool) {
