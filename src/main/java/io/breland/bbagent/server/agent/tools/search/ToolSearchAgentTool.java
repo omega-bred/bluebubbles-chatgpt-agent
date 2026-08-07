@@ -16,9 +16,9 @@ import java.util.Map;
 import java.util.UUID;
 import java.util.function.BiFunction;
 import org.apache.commons.lang3.StringUtils;
-import org.springaicommunity.tool.search.ToolReference;
-import org.springaicommunity.tool.search.ToolSearchRequest;
-import org.springaicommunity.tool.searcher.LuceneToolSearcher;
+import org.springframework.ai.tool.toolsearch.ToolReference;
+import org.springframework.ai.tool.toolsearch.ToolSearchRequest;
+import org.springframework.ai.tool.toolsearch.index.lucene.LuceneToolIndex;
 
 public final class ToolSearchAgentTool implements ToolProvider {
   public static final String TOOL_NAME = "toolSearchTool";
@@ -97,7 +97,7 @@ public final class ToolSearchAgentTool implements ToolProvider {
     List<ToolIndexEntry> toolEntries =
         toolEntriesProvider.apply(context == null ? null : context.message(), categoryFilter);
     String sessionId = "agent-tool-search-" + UUID.randomUUID();
-    try (LuceneToolSearcher searcher = new LuceneToolSearcher(0.2f)) {
+    try (LuceneToolIndex searcher = new LuceneToolIndex(0.2f)) {
       for (ToolIndexEntry entry : toolEntries) {
         searcher.indexTool(
             sessionId,
@@ -112,7 +112,7 @@ public final class ToolSearchAgentTool implements ToolProvider {
               .distinct()
               .toList();
       return objectMapper.writeValueAsString(toolNames);
-    } catch (IOException e) {
+    } catch (IOException | RuntimeException e) {
       return ToolJson.stringify(objectMapper, List.of(), "[]");
     }
   }

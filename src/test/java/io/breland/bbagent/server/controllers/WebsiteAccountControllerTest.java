@@ -24,20 +24,20 @@ import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
-import org.springframework.boot.test.mock.mockito.MockBean;
+import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
 import org.springframework.security.oauth2.jwt.Jwt;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
 @WebMvcTest(WebsiteAccountController.class)
-@Import({SecurityConfig.class, AppClipSessionAuthenticationFilter.class})
+@Import(SecurityConfig.class)
 class WebsiteAccountControllerTest {
   @Autowired private MockMvc mockMvc;
 
-  @MockBean private WebsiteAccountService accountService;
-  @MockBean private AppClipSessionService appClipSessionService;
+  @MockitoBean private WebsiteAccountService accountService;
+  @MockitoBean private AppClipSessionService appClipSessionService;
 
   @Test
   void accountApiRequiresAuthentication() throws Exception {

@@ -1,6 +1,8 @@
 package io.breland.bbagent.server.agent.location;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import io.breland.bbagent.server.config.Jackson2WebClientConfigurer;
 import java.time.Duration;
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -27,8 +29,13 @@ public class NominatimReverseLocationLookup implements ReverseLocationLookup {
   public NominatimReverseLocationLookup(
       @Value("${location.reverse-lookup.nominatim.base-url:}") String baseUrl,
       @Value("${location.reverse-lookup.nominatim.timeout-seconds:2}") long timeoutSeconds,
-      @Value("${location.reverse-lookup.nominatim.zoom:18}") int zoom) {
-    this(baseUrl, timeoutSeconds, zoom, createWebClient(baseUrl));
+      @Value("${location.reverse-lookup.nominatim.zoom:18}") int zoom,
+      ObjectMapper objectMapper) {
+    this(baseUrl, timeoutSeconds, zoom, createWebClient(baseUrl, objectMapper));
+  }
+
+  NominatimReverseLocationLookup(String baseUrl, long timeoutSeconds, int zoom) {
+    this(baseUrl, timeoutSeconds, zoom, createWebClient(baseUrl, new ObjectMapper()));
   }
 
   NominatimReverseLocationLookup(
@@ -39,8 +46,10 @@ public class NominatimReverseLocationLookup implements ReverseLocationLookup {
     this.webClient = webClient;
   }
 
-  private static WebClient createWebClient(String baseUrl) {
-    WebClient.Builder builder = WebClient.builder().defaultHeader("User-Agent", USER_AGENT);
+  private static WebClient createWebClient(String baseUrl, ObjectMapper objectMapper) {
+    WebClient.Builder builder =
+        Jackson2WebClientConfigurer.configure(WebClient.builder(), objectMapper)
+            .defaultHeader("User-Agent", USER_AGENT);
     if (baseUrl != null && !baseUrl.isBlank()) {
       builder.baseUrl(baseUrl.trim());
     }

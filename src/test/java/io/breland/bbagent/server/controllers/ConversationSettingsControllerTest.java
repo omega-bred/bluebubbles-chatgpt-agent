@@ -20,19 +20,19 @@ import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
-import org.springframework.boot.test.mock.mockito.MockBean;
+import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
 @WebMvcTest(ConversationSettingsController.class)
-@Import({SecurityConfig.class, AppClipSessionAuthenticationFilter.class})
+@Import(SecurityConfig.class)
 class ConversationSettingsControllerTest {
   @Autowired private MockMvc mockMvc;
 
-  @MockBean private ConversationSettingsService settingsService;
-  @MockBean private AppClipSessionService appClipSessionService;
+  @MockitoBean private ConversationSettingsService settingsService;
+  @MockitoBean private AppClipSessionService appClipSessionService;
 
   @Test
   void getsConversationSettingsForConversationPurposeSession() throws Exception {
