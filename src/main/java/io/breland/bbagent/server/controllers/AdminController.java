@@ -21,6 +21,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.util.Optional;
+import lombok.RequiredArgsConstructor;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -35,6 +36,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 @RestController
 @RequestMapping("${openapi.blueBubblesChatGPTAgentOpenAPISpec.base-path:}")
+@RequiredArgsConstructor
 public class AdminController {
   private static final Duration DEFAULT_STATS_PERIOD = Duration.ofHours(24);
 
@@ -43,19 +45,6 @@ public class AdminController {
   private final MessageResponseRateLimitService messageResponseRateLimitService;
   private final SubscriptionService subscriptionService;
   private final AccountModerationService accountModerationService;
-
-  public AdminController(
-      AdminStatsService adminStatsService,
-      FeedbackService feedbackService,
-      MessageResponseRateLimitService messageResponseRateLimitService,
-      SubscriptionService subscriptionService,
-      AccountModerationService accountModerationService) {
-    this.adminStatsService = adminStatsService;
-    this.feedbackService = feedbackService;
-    this.messageResponseRateLimitService = messageResponseRateLimitService;
-    this.subscriptionService = subscriptionService;
-    this.accountModerationService = accountModerationService;
-  }
 
   @GetMapping(path = "/api/v1/admin/get.statistics", produces = MediaType.APPLICATION_JSON_VALUE)
   public ResponseEntity<AdminStatsResponse> adminGetStatistics(
