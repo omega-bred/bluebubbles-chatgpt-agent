@@ -9,11 +9,13 @@ import io.breland.bbagent.server.agent.transport.OutgoingTextMessage;
 import java.util.Locale;
 import java.util.Optional;
 import java.util.function.Supplier;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.lang.Nullable;
 
 @Slf4j
+@RequiredArgsConstructor
 public final class TermsGate {
   private static final String ACCEPTANCE_REPLY =
       "Before I can help, you need to agree to the Terms of Use: %s\n\n"
@@ -24,19 +26,6 @@ public final class TermsGate {
   private final TermsAgreementValidator agreementValidator;
   private final Supplier<String> termsUrl;
   private final AcceptedMessageProcessor acceptedMessageProcessor;
-
-  public TermsGate(
-      BBMessageAgent messageAgent,
-      AgentProfileService profileService,
-      TermsAgreementValidator agreementValidator,
-      Supplier<String> termsUrl,
-      AcceptedMessageProcessor acceptedMessageProcessor) {
-    this.messageAgent = messageAgent;
-    this.profileService = profileService;
-    this.agreementValidator = agreementValidator;
-    this.termsUrl = termsUrl;
-    this.acceptedMessageProcessor = acceptedMessageProcessor;
-  }
 
   public boolean handle(ConversationState state, IncomingMessage message) {
     if (message == null) {
