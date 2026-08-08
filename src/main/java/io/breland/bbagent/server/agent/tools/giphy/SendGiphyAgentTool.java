@@ -25,7 +25,9 @@ import java.util.Optional;
 import java.util.function.Supplier;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import lombok.RequiredArgsConstructor;
 
+@RequiredArgsConstructor
 public class SendGiphyAgentTool implements ToolProvider {
   public static final String TOOL_NAME = "send_giphy";
   private final BBHttpClientWrapper bbHttpClientWrapper;
@@ -42,17 +44,6 @@ public class SendGiphyAgentTool implements ToolProvider {
       @Schema(description = "Optional caption to include with the GIF.") String caption,
       @Schema(description = "Giphy rating filter (e.g. g, pg, pg-13).") String rating,
       @Schema(description = "Language code for the search query.") String lang) {}
-
-  public SendGiphyAgentTool(
-      BBHttpClientWrapper bbHttpClientWrapper,
-      GiphyClient giphyClient,
-      Supplier<OpenAIClient> openAiSupplier,
-      OperationalMetricsService operationalMetricsService) {
-    this.bbHttpClientWrapper = bbHttpClientWrapper;
-    this.giphyClient = giphyClient;
-    this.openAiSupplier = openAiSupplier;
-    this.operationalMetricsService = operationalMetricsService;
-  }
 
   public AgentTool getTool() {
     return new AgentTool(
