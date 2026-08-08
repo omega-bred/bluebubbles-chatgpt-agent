@@ -10,6 +10,7 @@ import io.breland.bbagent.server.linear.LinearIssueService.LinearIssue;
 import io.breland.bbagent.server.linear.LinearIssueService.LinearIssueException;
 import jakarta.servlet.http.HttpServletRequest;
 import java.time.Instant;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.http.HttpStatus;
@@ -20,6 +21,7 @@ import org.springframework.web.server.ResponseStatusException;
 
 @Service
 @Slf4j
+@RequiredArgsConstructor
 public class ContactService {
   private static final int MAX_NAME_LENGTH = 200;
   private static final int MAX_EMAIL_LENGTH = 320;
@@ -30,17 +32,6 @@ public class ContactService {
   private final CapVerificationService capVerificationService;
   private final LinearIssueService linearIssueService;
   private final AgentAccountResolver accountResolver;
-
-  public ContactService(
-      ContactProperties properties,
-      CapVerificationService capVerificationService,
-      LinearIssueService linearIssueService,
-      AgentAccountResolver accountResolver) {
-    this.properties = properties;
-    this.capVerificationService = capVerificationService;
-    this.linearIssueService = linearIssueService;
-    this.accountResolver = accountResolver;
-  }
 
   public ContactConfigResponse config() {
     return new ContactConfigResponse()
