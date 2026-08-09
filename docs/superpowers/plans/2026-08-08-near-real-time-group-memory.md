@@ -964,12 +964,12 @@
 **Interfaces:**
 - Adds production controls and metrics around the typed conversation-settings APIs added in Tasks 2 and 7.
 
-- [ ] **Step 1: Add disabled-by-default configuration**
+- [ ] **Step 1: Add enabled-by-default global configuration with per-group opt-in**
 
   Add identical test-safe keys to both property files and environment wiring to the manifest:
 
   ```properties
-  bbagent.memory.group.enabled=${BBAGENT_GROUP_MEMORY_ENABLED:false}
+  bbagent.memory.group.enabled=${BBAGENT_GROUP_MEMORY_ENABLED:true}
   bbagent.memory.group.debounce=${BBAGENT_GROUP_MEMORY_DEBOUNCE:PT60S}
   bbagent.memory.group.worker-poll-interval=${BBAGENT_GROUP_MEMORY_POLL_INTERVAL:PT5S}
   bbagent.memory.group.worker-initial-delay=${BBAGENT_GROUP_MEMORY_INITIAL_DELAY:PT15S}
