@@ -156,7 +156,7 @@ public class ConversationQuestionAnsweringService {
         }
         exact = retriever.retrieveExact(request, plan);
         if (!exact.messages().isEmpty() && !deadlineReached(deadline)) {
-          exactSynthesis = synthesize(question, exact.messages(), from, deadline, budget);
+          exactSynthesis = synthesize(question, exact.messages(), from, deadline, budget, true);
           if (exactSynthesis.supported() && !exactSynthesis.routed().answer().needsMoreContext()) {
             return finalAnswer(exactSynthesis, exact, RetrievalMode.EXACT_SEARCH, from, to, null);
           }
@@ -185,7 +185,7 @@ public class ConversationQuestionAnsweringService {
       }
 
       Synthesis chronologicalSynthesis =
-          synthesize(question, chronological.messages(), from, deadline, budget);
+          synthesize(question, chronological.messages(), from, deadline, budget, false);
       if (chronologicalSynthesis.supported()) {
         return finalAnswer(chronologicalSynthesis, chronological, fallbackMode, from, to, null);
       }
@@ -209,7 +209,7 @@ public class ConversationQuestionAnsweringService {
     }
     try {
       return Objects.requireNonNull(
-          model.plan(question, from, to), "model returned no search plan");
+          model.plan(question, from, to, deadline), "model returned no search plan");
     } catch (RuntimeException ignored) {
       return emptyPlan();
     }
@@ -220,12 +220,14 @@ public class ConversationQuestionAnsweringService {
       List<QuestionMessage> submittedMessages,
       Instant from,
       Instant deadline,
-      ModelBudget budget) {
+      ModelBudget budget,
+      boolean stopOnNeedsMoreContext) {
     List<QuestionMessage> messages = List.copyOf(submittedMessages);
     List<SupportedFinding> findings = new ArrayList<>();
     RoutedModelAnswer lastUnsupported = null;
     Instant processedThrough = from;
     String partialReason = null;
+    boolean needsMoreContextObserved = false;
     int nextIndex = 0;
 
     while (nextIndex < messages.size()) {
@@ -252,7 +254,7 @@ public class ConversationQuestionAnsweringService {
       budget.characters += batch.characters();
       RoutedModelAnswer routed;
       try {
-        routed = model.answer(question, batch.messages());
+        routed = model.answer(question, batch.messages(), deadline);
       } catch (RuntimeException ignored) {
         partialReason = MODEL_UNAVAILABLE;
         break;
@@ -282,8 +284,11 @@ public class ConversationQuestionAnsweringService {
         break;
       }
       if (validated.needsMoreContext()) {
-        partialReason = NEEDS_MORE_CONTEXT;
-        break;
+        needsMoreContextObserved = true;
+        if (stopOnNeedsMoreContext) {
+          partialReason = NEEDS_MORE_CONTEXT;
+          break;
+        }
       }
       if (validated.status() == AnswerStatus.UNAVAILABLE) {
         partialReason = MODEL_UNAVAILABLE;
@@ -291,14 +296,14 @@ public class ConversationQuestionAnsweringService {
       }
     }
 
-    if (partialReason == null && budget.characters >= maxAggregateCharacters) {
-      partialReason = CHARACTER_LIMIT;
-    }
-    if (partialReason == null && budget.modelBatches >= maxModelBatches) {
-      partialReason = MODEL_BATCH_LIMIT;
-    }
     return finishSynthesis(
-        question, findings, lastUnsupported, processedThrough, partialReason, deadline);
+        question,
+        findings,
+        lastUnsupported,
+        processedThrough,
+        partialReason,
+        needsMoreContextObserved,
+        deadline);
   }
 
   private Synthesis finishSynthesis(
@@ -307,6 +312,7 @@ public class ConversationQuestionAnsweringService {
       @Nullable RoutedModelAnswer lastUnsupported,
       Instant processedThrough,
       @Nullable String partialReason,
+      boolean needsMoreContextObserved,
       Instant deadline) {
     if (findings.isEmpty()) {
       if (lastUnsupported == null) {
@@ -323,7 +329,11 @@ public class ConversationQuestionAnsweringService {
           lastUnsupported.answer().status() == AnswerStatus.UNAVAILABLE);
     }
     if (findings.size() == 1) {
-      return new Synthesis(findings.get(0).routed(), processedThrough, partialReason, false);
+      return new Synthesis(
+          findings.get(0).routed(),
+          processedThrough,
+          firstReason(partialReason, needsMoreContextObserved ? NEEDS_MORE_CONTEXT : null),
+          false);
     }
     if (deadlineReached(deadline)) {
       return bestFinding(findings, processedThrough, firstReason(TIME_LIMIT, partialReason));
@@ -333,7 +343,7 @@ public class ConversationQuestionAnsweringService {
         findings.stream().map(SupportedFinding::finding).toList();
     Set<String> submittedEvidence = findingGuids(questionFindings);
     try {
-      RoutedModelAnswer reduced = model.reduce(question, questionFindings);
+      RoutedModelAnswer reduced = model.reduce(question, questionFindings, deadline);
       ModelAnswer validated = validateAnswer(reduced, submittedEvidence);
       if (validated == null) {
         return bestFinding(findings, processedThrough, firstReason(MODEL_INVALID, partialReason));
@@ -426,6 +436,8 @@ public class ConversationQuestionAnsweringService {
         answer.status(),
         answer.answer(),
         answer.confidence(),
+        synthesis.routed().model(),
+        synthesis.routed().fallbackUsed(),
         distinctEvidenceCount(answer.evidenceMessageGuids()),
         mode,
         coverage,
@@ -451,7 +463,17 @@ public class ConversationQuestionAnsweringService {
         coverage == CoverageStatus.COMPLETE
             ? retrieval.coverageThrough()
             : synthesis.coverageThrough();
-    return terminalAnswer(status, from, to, mode, coverage, reason, coverageThrough);
+    RoutedModelAnswer routed = synthesis.routed();
+    return terminalAnswer(
+        status,
+        from,
+        to,
+        mode,
+        coverage,
+        reason,
+        coverageThrough,
+        routed == null ? null : routed.model(),
+        routed != null && routed.fallbackUsed());
   }
 
   private GroupQuestionAnswer supportedBackupOrUnavailable(
@@ -475,13 +497,29 @@ public class ConversationQuestionAnsweringService {
       Instant coverageThrough) {
     CoverageStatus coverage = reason == null ? CoverageStatus.COMPLETE : CoverageStatus.PARTIAL;
     return terminalAnswer(
-        AnswerStatus.INSUFFICIENT_EVIDENCE, from, to, mode, coverage, reason, coverageThrough);
+        AnswerStatus.INSUFFICIENT_EVIDENCE,
+        from,
+        to,
+        mode,
+        coverage,
+        reason,
+        coverageThrough,
+        null,
+        false);
   }
 
   private GroupQuestionAnswer unavailable(
       Instant from, Instant to, RetrievalMode mode, String reason, Instant coverageThrough) {
     return terminalAnswer(
-        AnswerStatus.UNAVAILABLE, from, to, mode, CoverageStatus.PARTIAL, reason, coverageThrough);
+        AnswerStatus.UNAVAILABLE,
+        from,
+        to,
+        mode,
+        CoverageStatus.PARTIAL,
+        reason,
+        coverageThrough,
+        null,
+        false);
   }
 
   private GroupQuestionAnswer terminalAnswer(
@@ -491,11 +529,15 @@ public class ConversationQuestionAnsweringService {
       RetrievalMode mode,
       CoverageStatus coverage,
       @Nullable String reason,
-      Instant coverageThrough) {
+      Instant coverageThrough,
+      @Nullable String modelName,
+      boolean fallbackUsed) {
     return new GroupQuestionAnswer(
         status,
         status == AnswerStatus.UNAVAILABLE ? UNAVAILABLE_ANSWER : INSUFFICIENT_ANSWER,
         Confidence.LOW,
+        modelName,
+        fallbackUsed,
         0,
         mode,
         coverage,

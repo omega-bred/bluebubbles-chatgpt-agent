@@ -18,6 +18,7 @@ import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Objects;
 import java.util.Set;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -65,27 +66,49 @@ public class ConversationQuestionAnsweringModelClient {
   }
 
   public SearchPlan plan(String question, Instant from, Instant to) {
+    return planInternal(question, from, to, null);
+  }
+
+  public SearchPlan plan(String question, Instant from, Instant to, Instant deadline) {
+    Objects.requireNonNull(deadline, "deadline");
+    return planInternal(question, from, to, deadline);
+  }
+
+  private SearchPlan planInternal(
+      String question, Instant from, Instant to, @Nullable Instant deadline) {
     requireQuestionAndRange(question, from, to);
     RawSearchPlan raw =
-        responsesClient
-            .create(
+        create(
                 SEARCH_PLAN_INSTRUCTIONS,
                 serializePlanInput(question, from, to),
                 300,
-                RawSearchPlan.class)
+                RawSearchPlan.class,
+                deadline)
             .value();
     return normalizePlan(raw, from, to);
   }
 
   public RoutedModelAnswer answer(String question, List<QuestionMessage> messages) {
+    return answerInternal(question, messages, null);
+  }
+
+  public RoutedModelAnswer answer(
+      String question, List<QuestionMessage> messages, Instant deadline) {
+    Objects.requireNonNull(deadline, "deadline");
+    return answerInternal(question, messages, deadline);
+  }
+
+  private RoutedModelAnswer answerInternal(
+      String question, List<QuestionMessage> messages, @Nullable Instant deadline) {
     requireQuestion(question);
     List<QuestionMessage> submittedMessages = List.copyOf(messages);
     RoutedResponse<RawQuestionAnswer> routed =
-        responsesClient.create(
+        create(
             ANSWER_INSTRUCTIONS,
             serializeAnswerInput(question, submittedMessages),
             800,
-            RawQuestionAnswer.class);
+            RawQuestionAnswer.class,
+            deadline);
     return new RoutedModelAnswer(
         parseAnswer(routed.value(), submittedMessageGuids(submittedMessages)),
         routed.model(),
@@ -93,18 +116,41 @@ public class ConversationQuestionAnsweringModelClient {
   }
 
   public RoutedModelAnswer reduce(String question, List<QuestionFinding> findings) {
+    return reduceInternal(question, findings, null);
+  }
+
+  public RoutedModelAnswer reduce(
+      String question, List<QuestionFinding> findings, Instant deadline) {
+    Objects.requireNonNull(deadline, "deadline");
+    return reduceInternal(question, findings, deadline);
+  }
+
+  private RoutedModelAnswer reduceInternal(
+      String question, List<QuestionFinding> findings, @Nullable Instant deadline) {
     requireQuestion(question);
     List<QuestionFinding> submittedFindings = List.copyOf(findings);
     RoutedResponse<RawQuestionAnswer> routed =
-        responsesClient.create(
+        create(
             REDUCE_INSTRUCTIONS,
             serializeFindings(question, submittedFindings),
             800,
-            RawQuestionAnswer.class);
+            RawQuestionAnswer.class,
+            deadline);
     return new RoutedModelAnswer(
         parseAnswer(routed.value(), submittedFindingMessageGuids(submittedFindings)),
         routed.model(),
         routed.fallbackUsed());
+  }
+
+  private <T> RoutedResponse<T> create(
+      String instructions,
+      String userInput,
+      int maxOutputTokens,
+      Class<T> outputType,
+      @Nullable Instant deadline) {
+    return deadline == null
+        ? responsesClient.create(instructions, userInput, maxOutputTokens, outputType)
+        : responsesClient.create(instructions, userInput, maxOutputTokens, outputType, deadline);
   }
 
   private SearchPlan normalizePlan(RawSearchPlan raw, Instant from, Instant to) {

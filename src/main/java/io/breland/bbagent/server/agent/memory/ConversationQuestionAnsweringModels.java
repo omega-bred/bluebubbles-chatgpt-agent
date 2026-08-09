@@ -174,6 +174,8 @@ public final class ConversationQuestionAnsweringModels {
       AnswerStatus status,
       String answer,
       Confidence confidence,
+      @Nullable String model,
+      boolean fallbackUsed,
       int evidenceMessageCount,
       RetrievalMode retrievalMode,
       CoverageStatus coverageStatus,
@@ -188,6 +190,13 @@ public final class ConversationQuestionAnsweringModels {
       requireNotBlank(answer, "answer");
       if (confidence == null) {
         throw new IllegalArgumentException("confidence must not be null");
+      }
+      model = StringUtils.trimToNull(model);
+      if (status == AnswerStatus.ANSWERED && model == null) {
+        throw new IllegalArgumentException("answered result must have a model");
+      }
+      if (fallbackUsed && model == null) {
+        throw new IllegalArgumentException("fallback use requires a model");
       }
       if (evidenceMessageCount < 0) {
         throw new IllegalArgumentException("evidence message count must not be negative");

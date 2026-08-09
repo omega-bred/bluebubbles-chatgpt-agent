@@ -26,6 +26,7 @@ import org.mockito.ArgumentCaptor;
 class ConversationQuestionAnsweringModelClientTest {
   private static final Instant FROM = Instant.parse("2026-08-08T00:00:00Z");
   private static final Instant TO = Instant.parse("2026-08-09T00:00:00Z");
+  private static final Instant DEADLINE = Instant.parse("2026-08-09T00:01:30Z");
 
   private final ConversationMemoryResponsesClient responses =
       mock(ConversationMemoryResponsesClient.class);
@@ -45,6 +46,16 @@ class ConversationQuestionAnsweringModelClientTest {
     assertThat(capturedUserInput())
         .contains("Who is winning Wordle?", FROM.toString(), TO.toString())
         .doesNotContain("message_guid", "transcript");
+  }
+
+  @Test
+  void planningUsesTheOperationDeadline() {
+    when(responses.create(anyString(), anyString(), eq(300), eq(RawSearchPlan.class), eq(DEADLINE)))
+        .thenReturn(routed(new RawSearchPlan(List.of("Wordle"), null, null, null)));
+
+    SearchPlan plan = client.plan("Who is winning Wordle?", FROM, TO, DEADLINE);
+
+    assertThat(plan.terms()).containsExactly("Wordle");
   }
 
   @Test
@@ -117,6 +128,20 @@ class ConversationQuestionAnsweringModelClientTest {
   }
 
   @Test
+  void answeringUsesTheOperationDeadline() {
+    when(responses.create(
+            anyString(), anyString(), eq(800), eq(RawQuestionAnswer.class), eq(DEADLINE)))
+        .thenReturn(
+            routed(
+                new RawQuestionAnswer(
+                    "ANSWERED", "Only reported result.", "HIGH", List.of("m-1"), false)));
+
+    var result = client.answer("Who won?", List.of(message("m-1", "Wordle 1,877 4/6")), DEADLINE);
+
+    assertThat(result.answer().evidenceMessageGuids()).containsExactly("m-1");
+  }
+
+  @Test
   void rejectsUnknownAnswerEnumsAndAnsweredResultsWithoutEvidence() {
     when(responses.create(anyString(), anyString(), eq(800), eq(RawQuestionAnswer.class)))
         .thenReturn(
@@ -153,6 +178,26 @@ class ConversationQuestionAnsweringModelClientTest {
     assertThat(capturedUserInput())
         .contains("The only reported score was 4/6.")
         .doesNotContain("text");
+  }
+
+  @Test
+  void reductionUsesTheOperationDeadline() {
+    when(responses.create(
+            anyString(), anyString(), eq(800), eq(RawQuestionAnswer.class), eq(DEADLINE)))
+        .thenReturn(
+            routed(
+                new RawQuestionAnswer(
+                    "ANSWERED", "Only reported result.", "MEDIUM", List.of("m-1"), false)));
+
+    var result =
+        client.reduce(
+            "Who won?",
+            List.of(
+                new QuestionFinding(
+                    "The only reported score was 4/6.", Confidence.MEDIUM, List.of("m-1"), TO)),
+            DEADLINE);
+
+    assertThat(result.answer().evidenceMessageGuids()).containsExactly("m-1");
   }
 
   private void rawAnswerUsesEvidence(String evidenceGuid) {

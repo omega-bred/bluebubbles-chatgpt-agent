@@ -3,13 +3,17 @@ package io.breland.bbagent.server.agent.memory;
 import com.openai.client.OpenAIClient;
 import com.openai.client.okhttp.OpenAIOkHttpClient;
 import com.openai.core.JsonValue;
+import com.openai.core.RequestOptions;
 import com.openai.models.responses.EasyInputMessage;
 import com.openai.models.responses.ResponseCreateParams;
 import com.openai.models.responses.ResponseInputItem;
 import com.openai.models.responses.StructuredResponseCreateParams;
+import java.time.Clock;
 import java.time.Duration;
+import java.time.Instant;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.function.Supplier;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -29,6 +33,7 @@ public class ConversationMemoryResponsesClient {
   private final String fallbackModel;
   private final double maxPromptPrice;
   private final double maxCompletionPrice;
+  private final Clock clock;
 
   @Autowired
   public ConversationMemoryResponsesClient(
@@ -56,7 +61,8 @@ public class ConversationMemoryResponsesClient {
         primaryModel,
         fallbackModel,
         maxPromptPrice,
-        maxCompletionPrice);
+        maxCompletionPrice,
+        Clock.systemUTC());
   }
 
   ConversationMemoryResponsesClient(
@@ -65,20 +71,63 @@ public class ConversationMemoryResponsesClient {
       String fallbackModel,
       double maxPromptPrice,
       double maxCompletionPrice) {
+    this(
+        openAiSupplier,
+        primaryModel,
+        fallbackModel,
+        maxPromptPrice,
+        maxCompletionPrice,
+        Clock.systemUTC());
+  }
+
+  ConversationMemoryResponsesClient(
+      Supplier<OpenAIClient> openAiSupplier,
+      String primaryModel,
+      String fallbackModel,
+      double maxPromptPrice,
+      double maxCompletionPrice,
+      Clock clock) {
     this.openAiSupplier = openAiSupplier;
     this.primaryModel = StringUtils.defaultIfBlank(primaryModel, DEFAULT_PRIMARY_MODEL);
     this.fallbackModel = StringUtils.defaultIfBlank(fallbackModel, DEFAULT_FALLBACK_MODEL);
     this.maxPromptPrice = requirePositivePrice(maxPromptPrice, "max prompt price");
     this.maxCompletionPrice = requirePositivePrice(maxCompletionPrice, "max completion price");
+    this.clock = Objects.requireNonNull(clock, "clock");
   }
 
   public <T> RoutedResponse<T> create(
       String instructions, String userInput, int maxOutputTokens, Class<T> outputType) {
+    return createInternal(instructions, userInput, maxOutputTokens, outputType, null);
+  }
+
+  public <T> RoutedResponse<T> create(
+      String instructions,
+      String userInput,
+      int maxOutputTokens,
+      Class<T> outputType,
+      Instant deadline) {
+    Objects.requireNonNull(deadline, "deadline");
+    return createInternal(instructions, userInput, maxOutputTokens, outputType, deadline);
+  }
+
+  private <T> RoutedResponse<T> createInternal(
+      String instructions,
+      String userInput,
+      int maxOutputTokens,
+      Class<T> outputType,
+      @Nullable Instant deadline) {
     requireRequestInput(instructions, userInput, maxOutputTokens, outputType);
     RuntimeException primaryFailure;
     try {
       return createWithModel(
-          instructions, userInput, maxOutputTokens, outputType, primaryModel, true, false);
+          instructions,
+          userInput,
+          maxOutputTokens,
+          outputType,
+          primaryModel,
+          true,
+          false,
+          deadline);
     } catch (RuntimeException e) {
       primaryFailure = e;
     }
@@ -87,7 +136,14 @@ public class ConversationMemoryResponsesClient {
     }
     try {
       return createWithModel(
-          instructions, userInput, maxOutputTokens, outputType, fallbackModel, false, true);
+          instructions,
+          userInput,
+          maxOutputTokens,
+          outputType,
+          fallbackModel,
+          false,
+          true,
+          deadline);
     } catch (RuntimeException fallbackFailure) {
       fallbackFailure.addSuppressed(primaryFailure);
       throw fallbackFailure;
@@ -101,19 +157,19 @@ public class ConversationMemoryResponsesClient {
       Class<T> outputType,
       String model,
       boolean applyPriceCeiling,
-      boolean fallbackUsed) {
+      boolean fallbackUsed,
+      @Nullable Instant deadline) {
+    var responses = openAiSupplier.get().responses();
+    var request =
+        buildRequest(
+            instructions, userInput, maxOutputTokens, outputType, model, applyPriceCeiling);
+    Duration attemptTimeout = deadline == null ? null : remaining(deadline);
     var response =
-        openAiSupplier
-            .get()
-            .responses()
-            .create(
-                buildRequest(
-                    instructions,
-                    userInput,
-                    maxOutputTokens,
-                    outputType,
-                    model,
-                    applyPriceCeiling));
+        attemptTimeout == null
+            ? responses.create(request)
+            : responses
+                .withOptions(builder -> builder.maxRetries(0))
+                .create(request, RequestOptions.builder().timeout(attemptTimeout).build());
     T output =
         response.output().stream()
             .flatMap(item -> item.message().stream())
@@ -123,6 +179,14 @@ public class ConversationMemoryResponsesClient {
             .orElseThrow(
                 () -> new IllegalStateException("memory response returned no structured output"));
     return new RoutedResponse<>(output, model, fallbackUsed);
+  }
+
+  private Duration remaining(Instant deadline) {
+    Duration remaining = Duration.between(clock.instant(), deadline);
+    if (remaining.isZero() || remaining.isNegative()) {
+      throw new IllegalStateException("memory response deadline elapsed");
+    }
+    return remaining;
   }
 
   private <T> StructuredResponseCreateParams<T> buildRequest(

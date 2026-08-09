@@ -45,6 +45,7 @@ class ConversationQuestionAnsweringServiceTest {
   private static final Instant FROM = Instant.parse("2026-08-08T00:00:00Z");
   private static final Instant TO = Instant.parse("2026-08-09T00:00:00Z");
   private static final Instant NOW = Instant.parse("2026-08-09T00:01:00Z");
+  private static final Instant DEADLINE = NOW.plusSeconds(90);
   private static final AuthorizedGroup GROUP =
       new AuthorizedGroup(CONVERSATION_ID, "Wordling Wonders", TO);
   private static final ConversationRecord CONVERSATION =
@@ -73,23 +74,27 @@ class ConversationQuestionAnsweringServiceTest {
     when(store.findConversation(CONVERSATION_ID)).thenReturn(Optional.of(CONVERSATION));
     when(store.findMembershipIntervals(CONVERSATION_ID, ACCOUNT, FROM, TO))
         .thenReturn(List.of(new MembershipInterval(FROM, null)));
-    when(model.plan(QUESTION, FROM, TO)).thenReturn(WORDLE_PLAN);
+    when(model.plan(QUESTION, FROM, TO, DEADLINE)).thenReturn(WORDLE_PLAN);
   }
 
   @Test
   void returnsOnlyReportedLeaderFromExactEvidence() {
     QuestionMessage score = message("score", "participant ending 0199", "Wordle 1,877 4/6", 1);
     when(retriever.retrieveExact(any(), eq(WORDLE_PLAN))).thenReturn(completeExact(List.of(score)));
-    when(model.answer(QUESTION, List.of(score)))
+    when(model.answer(QUESTION, List.of(score), DEADLINE))
         .thenReturn(
-            routed(
-                answered("The only reported score is participant ending 0199 with 4/6.", "score")));
+            new RoutedModelAnswer(
+                answered("The only reported score is participant ending 0199 with 4/6.", "score"),
+                "openai/gpt-4.1-mini",
+                true));
 
     GroupQuestionAnswer result = service.answer(ACCOUNT, GROUP, QUESTION, FROM, TO);
 
     assertThat(result.status()).isEqualTo(AnswerStatus.ANSWERED);
     assertThat(result.answer()).contains("only reported").contains("4/6");
     assertThat(result.evidenceMessageCount()).isEqualTo(1);
+    assertThat(result.model()).isEqualTo("openai/gpt-4.1-mini");
+    assertThat(result.fallbackUsed()).isTrue();
     assertThat(result.retrievalMode()).isEqualTo(RetrievalMode.EXACT_SEARCH);
     assertThat(result.coverageStatus()).isEqualTo(CoverageStatus.COMPLETE);
     assertThat(result.coverageThrough()).isEqualTo(TO);
@@ -104,7 +109,7 @@ class ConversationQuestionAnsweringServiceTest {
             message("score-2", "participant ending 0123", "Wordle 1,877 3/6", 2),
             message("score-old", "participant ending 0456", "Wordle 1,876 2/6", 3));
     when(retriever.retrieveExact(any(), eq(WORDLE_PLAN))).thenReturn(completeExact(evidence));
-    when(model.answer(QUESTION, evidence))
+    when(model.answer(QUESTION, evidence, DEADLINE))
         .thenReturn(
             routed(
                 answered(
@@ -115,7 +120,7 @@ class ConversationQuestionAnsweringServiceTest {
 
     assertThat(result.answer()).contains("3/6").doesNotContain("league");
     ArgumentCaptor<List<QuestionMessage>> submitted = listCaptor();
-    verify(model).answer(eq(QUESTION), submitted.capture());
+    verify(model).answer(eq(QUESTION), submitted.capture(), eq(DEADLINE));
     assertThat(submitted.getValue())
         .extracting(QuestionMessage::text)
         .allMatch(text -> text.startsWith("Wordle"));
@@ -126,7 +131,7 @@ class ConversationQuestionAnsweringServiceTest {
     QuestionMessage score = message("score", "participant ending 0199", "Wordle 1,877 4/6", 1);
     when(retriever.retrieveExact(any(), eq(WORDLE_PLAN))).thenReturn(completeExact(List.of()));
     when(retriever.retrieveChronological(any())).thenReturn(completeChronological(List.of(score)));
-    when(model.answer(QUESTION, List.of(score)))
+    when(model.answer(QUESTION, List.of(score), DEADLINE))
         .thenReturn(routed(answered("The only reported score is 4/6.", "score")));
 
     GroupQuestionAnswer result = service.answer(ACCOUNT, GROUP, QUESTION, FROM, TO);
@@ -134,17 +139,18 @@ class ConversationQuestionAnsweringServiceTest {
     assertThat(result.status()).isEqualTo(AnswerStatus.ANSWERED);
     assertThat(result.retrievalMode()).isEqualTo(RetrievalMode.HYBRID);
     verify(retriever, times(1)).retrieveChronological(any());
-    verify(model, times(1)).answer(eq(QUESTION), anyList());
+    verify(model, times(1)).answer(eq(QUESTION), anyList(), eq(DEADLINE));
   }
 
   @Test
   void plannerFailureSkipsExactSourceWorkAndUsesChronologicalEvidence() {
     SearchPlan emptyPlan = new SearchPlan(List.of(), null, null, null);
     QuestionMessage score = message("score", "participant ending 0199", "Wordle 1,877 4/6", 1);
-    when(model.plan(QUESTION, FROM, TO)).thenThrow(new IllegalStateException("provider failed"));
+    when(model.plan(QUESTION, FROM, TO, DEADLINE))
+        .thenThrow(new IllegalStateException("provider failed"));
     when(retriever.retrieveExact(any(), eq(emptyPlan))).thenReturn(completeExact(List.of()));
     when(retriever.retrieveChronological(any())).thenReturn(completeChronological(List.of(score)));
-    when(model.answer(QUESTION, List.of(score)))
+    when(model.answer(QUESTION, List.of(score), DEADLINE))
         .thenReturn(routed(answered("The only reported score is 4/6.", "score")));
 
     GroupQuestionAnswer result = service.answer(ACCOUNT, GROUP, QUESTION, FROM, TO);
@@ -162,7 +168,7 @@ class ConversationQuestionAnsweringServiceTest {
     when(retriever.retrieveExact(any(), eq(WORDLE_PLAN))).thenReturn(completeExact(List.of(exact)));
     when(retriever.retrieveChronological(any()))
         .thenReturn(completeChronological(List.of(context)));
-    when(model.answer(QUESTION, List.of(exact)))
+    when(model.answer(QUESTION, List.of(exact), DEADLINE))
         .thenReturn(
             routed(
                 new ModelAnswer(
@@ -171,7 +177,7 @@ class ConversationQuestionAnsweringServiceTest {
                     Confidence.LOW,
                     List.of("exact"),
                     true)));
-    when(model.answer(QUESTION, List.of(context)))
+    when(model.answer(QUESTION, List.of(context), DEADLINE))
         .thenReturn(routed(answered("The only contextual result is 3/6.", "context")));
 
     GroupQuestionAnswer result = service.answer(ACCOUNT, GROUP, QUESTION, FROM, TO);
@@ -179,7 +185,7 @@ class ConversationQuestionAnsweringServiceTest {
     assertThat(result.answer()).contains("3/6");
     assertThat(result.retrievalMode()).isEqualTo(RetrievalMode.HYBRID);
     verify(retriever, times(1)).retrieveChronological(any());
-    verify(model, times(2)).answer(eq(QUESTION), anyList());
+    verify(model, times(2)).answer(eq(QUESTION), anyList(), eq(DEADLINE));
   }
 
   @Test
@@ -187,16 +193,22 @@ class ConversationQuestionAnsweringServiceTest {
     List<QuestionMessage> messages = messages(101, 10);
     when(retriever.retrieveExact(any(), eq(WORDLE_PLAN))).thenReturn(completeExact(messages));
     answerEachBatchWithItsFirstEvidence();
-    when(model.reduce(eq(QUESTION), anyList()))
-        .thenReturn(routed(answered("The reduced exact answer.", "message-0", "message-100")));
+    when(model.reduce(eq(QUESTION), anyList(), eq(DEADLINE)))
+        .thenReturn(
+            new RoutedModelAnswer(
+                answered("The reduced exact answer.", "message-0", "message-100"),
+                "openai/gpt-4.1-mini",
+                true));
 
     GroupQuestionAnswer result = service.answer(ACCOUNT, GROUP, QUESTION, FROM, TO);
 
     assertThat(result.status()).isEqualTo(AnswerStatus.ANSWERED);
     assertThat(result.retrievalMode()).isEqualTo(RetrievalMode.EXACT_SEARCH);
     assertThat(result.evidenceMessageCount()).isEqualTo(2);
+    assertThat(result.model()).isEqualTo("openai/gpt-4.1-mini");
+    assertThat(result.fallbackUsed()).isTrue();
     assertSubmittedBatchBounds(2, 100, 60_000);
-    verify(model).reduce(eq(QUESTION), anyList());
+    verify(model).reduce(eq(QUESTION), anyList(), eq(DEADLINE));
     verify(retriever, never()).retrieveChronological(any());
   }
 
@@ -205,7 +217,7 @@ class ConversationQuestionAnsweringServiceTest {
     List<QuestionMessage> messages = messages(101, 10);
     exactMissThenChronological(messages);
     answerEachBatchWithItsFirstEvidence();
-    when(model.reduce(eq(QUESTION), anyList()))
+    when(model.reduce(eq(QUESTION), anyList(), eq(DEADLINE)))
         .thenReturn(
             routed(answered("The reduced chronological answer.", "message-0", "message-100")));
 
@@ -215,8 +227,39 @@ class ConversationQuestionAnsweringServiceTest {
     assertThat(result.evidenceMessageCount()).isEqualTo(2);
     assertSubmittedBatchBounds(2, 100, 60_000);
     ArgumentCaptor<List<QuestionFinding>> findings = findingListCaptor();
-    verify(model).reduce(eq(QUESTION), findings.capture());
+    verify(model).reduce(eq(QUESTION), findings.capture(), eq(DEADLINE));
     assertThat(findings.getValue()).hasSize(2);
+  }
+
+  @Test
+  void chronologicalNeedsMoreContextContinuesRemainingBatchesAndReducesFindings() {
+    List<QuestionMessage> messages = messages(101, 10);
+    exactMissThenChronological(messages);
+    when(model.answer(eq(QUESTION), anyList(), eq(DEADLINE)))
+        .thenAnswer(
+            invocation -> {
+              List<QuestionMessage> batch = invocation.getArgument(1);
+              String evidenceGuid = batch.getFirst().messageGuid();
+              if (evidenceGuid.equals("message-0")) {
+                return routed(
+                    new ModelAnswer(
+                        AnswerStatus.ANSWERED,
+                        "The first batch needs later context.",
+                        Confidence.LOW,
+                        List.of(evidenceGuid),
+                        true));
+              }
+              return routed(answered("The later batch supports the answer.", evidenceGuid));
+            });
+    when(model.reduce(eq(QUESTION), anyList(), eq(DEADLINE)))
+        .thenReturn(routed(answered("The reduced complete answer.", "message-0", "message-100")));
+
+    GroupQuestionAnswer result = service.answer(ACCOUNT, GROUP, QUESTION, FROM, TO);
+
+    assertThat(result.answer()).isEqualTo("The reduced complete answer.");
+    assertThat(result.coverageStatus()).isEqualTo(CoverageStatus.COMPLETE);
+    verify(model, times(2)).answer(eq(QUESTION), anyList(), eq(DEADLINE));
+    verify(model).reduce(eq(QUESTION), anyList(), eq(DEADLINE));
   }
 
   @Test
@@ -224,7 +267,7 @@ class ConversationQuestionAnsweringServiceTest {
     List<QuestionMessage> messages = messages(3, 30_001);
     exactMissThenChronological(messages);
     answerEachBatchWithItsFirstEvidence();
-    when(model.reduce(eq(QUESTION), anyList()))
+    when(model.reduce(eq(QUESTION), anyList(), eq(DEADLINE)))
         .thenReturn(
             routed(
                 answered(
@@ -245,7 +288,7 @@ class ConversationQuestionAnsweringServiceTest {
     List<QuestionMessage> messages = messages(201, 10);
     exactMissThenChronological(messages);
     answerEachBatchWithItsFirstEvidence();
-    when(model.reduce(eq(QUESTION), anyList()))
+    when(model.reduce(eq(QUESTION), anyList(), eq(DEADLINE)))
         .thenReturn(routed(answered("The supported partial result.", "message-0", "message-100")));
 
     GroupQuestionAnswer result = service.answer(ACCOUNT, GROUP, QUESTION, FROM, TO);
@@ -255,7 +298,7 @@ class ConversationQuestionAnsweringServiceTest {
     assertThat(result.partialReason()).isEqualTo("model_batch_limit");
     assertThat(result.coverageThrough()).isEqualTo(messages.get(199).timestamp());
     assertThat(result.evidenceMessageCount()).isEqualTo(2);
-    verify(model, times(2)).answer(eq(QUESTION), anyList());
+    verify(model, times(2)).answer(eq(QUESTION), anyList(), eq(DEADLINE));
   }
 
   @Test
@@ -264,7 +307,7 @@ class ConversationQuestionAnsweringServiceTest {
     List<QuestionMessage> messages = messages(3, 50_000);
     exactMissThenChronological(messages);
     answerEachBatchWithItsFirstEvidence();
-    when(model.reduce(eq(QUESTION), anyList()))
+    when(model.reduce(eq(QUESTION), anyList(), eq(DEADLINE)))
         .thenReturn(routed(answered("The supported partial result.", "message-0", "message-1")));
 
     GroupQuestionAnswer result = service.answer(ACCOUNT, GROUP, QUESTION, FROM, TO);
@@ -273,7 +316,48 @@ class ConversationQuestionAnsweringServiceTest {
     assertThat(result.coverageStatus()).isEqualTo(CoverageStatus.PARTIAL);
     assertThat(result.partialReason()).isEqualTo("character_limit");
     assertThat(result.coverageThrough()).isEqualTo(messages.get(1).timestamp());
-    verify(model, times(2)).answer(eq(QUESTION), anyList());
+    verify(model, times(2)).answer(eq(QUESTION), anyList(), eq(DEADLINE));
+  }
+
+  @Test
+  void exactFiveBatchEqualityIsCompleteWhenAllEvidenceWasProcessed() {
+    List<QuestionMessage> messages = messages(500, 10);
+    when(retriever.retrieveExact(any(), eq(WORDLE_PLAN))).thenReturn(completeExact(messages));
+    answerEachBatchWithItsFirstEvidence();
+    when(model.reduce(eq(QUESTION), anyList(), eq(DEADLINE)))
+        .thenReturn(
+            routed(
+                answered(
+                    "All five exact batches were reduced.",
+                    "message-0",
+                    "message-100",
+                    "message-200",
+                    "message-300",
+                    "message-400")));
+
+    GroupQuestionAnswer result = service.answer(ACCOUNT, GROUP, QUESTION, FROM, TO);
+
+    assertThat(result.status()).isEqualTo(AnswerStatus.ANSWERED);
+    assertThat(result.coverageStatus()).isEqualTo(CoverageStatus.COMPLETE);
+    assertThat(result.partialReason()).isNull();
+    verify(model, times(5)).answer(eq(QUESTION), anyList(), eq(DEADLINE));
+  }
+
+  @Test
+  void exactAggregateCharacterEqualityIsCompleteWhenAllEvidenceWasProcessed() {
+    service = service(100, 60_000, 5, 100_000);
+    List<QuestionMessage> messages = messages(2, 50_000);
+    when(retriever.retrieveExact(any(), eq(WORDLE_PLAN))).thenReturn(completeExact(messages));
+    answerEachBatchWithItsFirstEvidence();
+    when(model.reduce(eq(QUESTION), anyList(), eq(DEADLINE)))
+        .thenReturn(routed(answered("Both exact batches were reduced.", "message-0", "message-1")));
+
+    GroupQuestionAnswer result = service.answer(ACCOUNT, GROUP, QUESTION, FROM, TO);
+
+    assertThat(result.status()).isEqualTo(AnswerStatus.ANSWERED);
+    assertThat(result.coverageStatus()).isEqualTo(CoverageStatus.COMPLETE);
+    assertThat(result.partialReason()).isNull();
+    verify(model, times(2)).answer(eq(QUESTION), anyList(), eq(DEADLINE));
   }
 
   @Test
@@ -293,14 +377,30 @@ class ConversationQuestionAnsweringServiceTest {
     assertThat(result.coverageStatus()).isEqualTo(CoverageStatus.PARTIAL);
     assertThat(result.partialReason()).isEqualTo("time_limit");
     verify(retriever, never()).retrieveChronological(any());
-    verify(model, never()).answer(eq(QUESTION), anyList());
+    verify(model, never()).answer(eq(QUESTION), anyList(), any());
+  }
+
+  @Test
+  void usesOneOperationDeadlineForEveryModelBoundary() {
+    List<QuestionMessage> messages = messages(101, 10);
+    when(retriever.retrieveExact(any(), eq(WORDLE_PLAN))).thenReturn(completeExact(messages));
+    answerEachBatchWithItsFirstEvidence();
+    when(model.reduce(eq(QUESTION), anyList(), eq(DEADLINE)))
+        .thenReturn(routed(answered("The reduced answer.", "message-0", "message-100")));
+
+    GroupQuestionAnswer result = service.answer(ACCOUNT, GROUP, QUESTION, FROM, TO);
+
+    assertThat(result.status()).isEqualTo(AnswerStatus.ANSWERED);
+    verify(model).plan(QUESTION, FROM, TO, DEADLINE);
+    verify(model, times(2)).answer(eq(QUESTION), anyList(), eq(DEADLINE));
+    verify(model).reduce(eq(QUESTION), anyList(), eq(DEADLINE));
   }
 
   @Test
   void modelCallCompletingAtTheDeadlineCanOnlyReturnSupportedPartialEvidence() {
     QuestionMessage score = message("score", "participant ending 0199", "Wordle 1,877 4/6", 1);
     when(retriever.retrieveExact(any(), eq(WORDLE_PLAN))).thenReturn(completeExact(List.of(score)));
-    when(model.answer(QUESTION, List.of(score)))
+    when(model.answer(QUESTION, List.of(score), DEADLINE))
         .thenAnswer(
             invocation -> {
               clock.advance(Duration.ofSeconds(90));
@@ -328,7 +428,7 @@ class ConversationQuestionAnsweringServiceTest {
                 score.timestamp(),
                 "source_unavailable",
                 1));
-    when(model.answer(QUESTION, List.of(score)))
+    when(model.answer(QUESTION, List.of(score), DEADLINE))
         .thenReturn(
             routed(
                 new ModelAnswer(
@@ -352,14 +452,17 @@ class ConversationQuestionAnsweringServiceTest {
     when(retriever.retrieveExact(any(), eq(WORDLE_PLAN)))
         .thenThrow(new IllegalStateException("source unavailable"));
     when(retriever.retrieveChronological(any())).thenReturn(completeChronological(messages));
-    when(model.answer(eq(QUESTION), anyList()))
+    when(model.answer(eq(QUESTION), anyList(), eq(DEADLINE)))
         .thenAnswer(
             invocation -> {
               List<QuestionMessage> batch = invocation.getArgument(1);
               if (batch.get(0).messageGuid().equals("message-100")) {
                 throw new IllegalStateException("provider unavailable");
               }
-              return routed(answered("A supported first-batch result.", "message-0"));
+              return new RoutedModelAnswer(
+                  answered("A supported first-batch result.", "message-0"),
+                  "openai/gpt-4.1-mini",
+                  true);
             });
 
     GroupQuestionAnswer result = service.answer(ACCOUNT, GROUP, QUESTION, FROM, TO);
@@ -367,10 +470,12 @@ class ConversationQuestionAnsweringServiceTest {
     assertThat(result.status()).isEqualTo(AnswerStatus.ANSWERED);
     assertThat(result.answer()).isEqualTo("A supported first-batch result.");
     assertThat(result.evidenceMessageCount()).isEqualTo(1);
+    assertThat(result.model()).isEqualTo("openai/gpt-4.1-mini");
+    assertThat(result.fallbackUsed()).isTrue();
     assertThat(result.coverageStatus()).isEqualTo(CoverageStatus.PARTIAL);
     assertThat(result.partialReason()).isEqualTo("model_unavailable");
     assertThat(result.coverageThrough()).isEqualTo(messages.get(99).timestamp());
-    verify(model, never()).reduce(eq(QUESTION), anyList());
+    verify(model, never()).reduce(eq(QUESTION), anyList(), any());
   }
 
   @Test
@@ -396,9 +501,9 @@ class ConversationQuestionAnsweringServiceTest {
     when(retriever.retrieveExact(any(), eq(WORDLE_PLAN))).thenReturn(completeExact(List.of(exact)));
     when(retriever.retrieveChronological(any()))
         .thenReturn(completeChronological(List.of(chronological)));
-    when(model.answer(QUESTION, List.of(exact)))
+    when(model.answer(QUESTION, List.of(exact), DEADLINE))
         .thenReturn(routed(answered("Unsupported exact answer.", "not-submitted")));
-    when(model.answer(QUESTION, List.of(chronological)))
+    when(model.answer(QUESTION, List.of(chronological), DEADLINE))
         .thenReturn(routed(answered("Unsupported chronological answer.", "not-submitted")));
 
     GroupQuestionAnswer result = service.answer(ACCOUNT, GROUP, QUESTION, FROM, TO);
@@ -445,7 +550,7 @@ class ConversationQuestionAnsweringServiceTest {
   }
 
   private void answerEachBatchWithItsFirstEvidence() {
-    when(model.answer(eq(QUESTION), anyList()))
+    when(model.answer(eq(QUESTION), anyList(), eq(DEADLINE)))
         .thenAnswer(
             invocation -> {
               List<QuestionMessage> batch = invocation.getArgument(1);
@@ -457,7 +562,7 @@ class ConversationQuestionAnsweringServiceTest {
   private void assertSubmittedBatchBounds(
       int expectedBatchCount, int maxMessages, int maxCharacters) {
     ArgumentCaptor<List<QuestionMessage>> batches = listCaptor();
-    verify(model, times(expectedBatchCount)).answer(eq(QUESTION), batches.capture());
+    verify(model, times(expectedBatchCount)).answer(eq(QUESTION), batches.capture(), eq(DEADLINE));
     assertThat(batches.getAllValues()).hasSize(expectedBatchCount);
     assertThat(batches.getAllValues())
         .allSatisfy(
