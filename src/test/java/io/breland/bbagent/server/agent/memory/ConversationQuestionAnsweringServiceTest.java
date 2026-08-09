@@ -148,12 +148,13 @@ class ConversationQuestionAnsweringServiceTest {
 
   @Test
   void returnsOnlyReportedLeaderFromExactEvidence() {
-    QuestionMessage score = message("score", "participant ending 0199", "Wordle 1,877 4/6", 1);
+    QuestionMessage score = message("score-guid", "participant ending 0199", "Wordle 1,877 4/6", 1);
     when(retriever.retrieveExact(any(), eq(WORDLE_PLAN))).thenReturn(completeExact(List.of(score)));
     when(model.answer(QUESTION, List.of(score), DEADLINE))
         .thenReturn(
             new RoutedModelAnswer(
-                answered("The only reported score is participant ending 0199 with 4/6.", "score"),
+                answered(
+                    "The only reported score is participant ending 0199 with 4/6.", "score-guid"),
                 "openai/gpt-4.1-mini",
                 true));
 
@@ -214,11 +215,11 @@ class ConversationQuestionAnsweringServiceTest {
 
   @Test
   void exactMissUsesOneChronologicalFallback() {
-    QuestionMessage score = message("score", "participant ending 0199", "Wordle 1,877 4/6", 1);
+    QuestionMessage score = message("score-guid", "participant ending 0199", "Wordle 1,877 4/6", 1);
     when(retriever.retrieveExact(any(), eq(WORDLE_PLAN))).thenReturn(completeExact(List.of()));
     when(retriever.retrieveChronological(any())).thenReturn(completeChronological(List.of(score)));
     when(model.answer(QUESTION, List.of(score), DEADLINE))
-        .thenReturn(routed(answered("The only reported score is 4/6.", "score")));
+        .thenReturn(routed(answered("The only reported score is 4/6.", "score-guid")));
 
     GroupQuestionAnswer result = service.answer(ACCOUNT, GROUP, QUESTION, FROM, TO);
 
@@ -231,13 +232,13 @@ class ConversationQuestionAnsweringServiceTest {
   @Test
   void plannerFailureSkipsExactSourceWorkAndUsesChronologicalEvidence() {
     SearchPlan emptyPlan = new SearchPlan(List.of(), null, null, null);
-    QuestionMessage score = message("score", "participant ending 0199", "Wordle 1,877 4/6", 1);
+    QuestionMessage score = message("score-guid", "participant ending 0199", "Wordle 1,877 4/6", 1);
     when(model.plan(QUESTION, FROM, TO, DEADLINE))
         .thenThrow(new IllegalStateException("provider failed"));
     when(retriever.retrieveExact(any(), eq(emptyPlan))).thenReturn(completeExact(List.of()));
     when(retriever.retrieveChronological(any())).thenReturn(completeChronological(List.of(score)));
     when(model.answer(QUESTION, List.of(score), DEADLINE))
-        .thenReturn(routed(answered("The only reported score is 4/6.", "score")));
+        .thenReturn(routed(answered("The only reported score is 4/6.", "score-guid")));
 
     GroupQuestionAnswer result = service.answer(ACCOUNT, GROUP, QUESTION, FROM, TO);
 
@@ -250,7 +251,8 @@ class ConversationQuestionAnsweringServiceTest {
   @Test
   void needsMoreContextProducesOnlyOneChronologicalRetry() {
     QuestionMessage exact = message("exact", "participant ending 0199", "Wordle 1,877 4/6", 1);
-    QuestionMessage context = message("context", "participant ending 0123", "Wordle 1,877 3/6", 2);
+    QuestionMessage context =
+        message("context-guid", "participant ending 0123", "Wordle 1,877 3/6", 2);
     when(retriever.retrieveExact(any(), eq(WORDLE_PLAN))).thenReturn(completeExact(List.of(exact)));
     when(retriever.retrieveChronological(any()))
         .thenReturn(completeChronological(List.of(context)));
@@ -264,7 +266,7 @@ class ConversationQuestionAnsweringServiceTest {
                     List.of("exact"),
                     true)));
     when(model.answer(QUESTION, List.of(context), DEADLINE))
-        .thenReturn(routed(answered("The only contextual result is 3/6.", "context")));
+        .thenReturn(routed(answered("The only contextual result is 3/6.", "context-guid")));
 
     GroupQuestionAnswer result = service.answer(ACCOUNT, GROUP, QUESTION, FROM, TO);
 
@@ -485,13 +487,13 @@ class ConversationQuestionAnsweringServiceTest {
 
   @Test
   void modelCallCompletingAtTheDeadlineCanOnlyReturnSupportedPartialEvidence() {
-    QuestionMessage score = message("score", "participant ending 0199", "Wordle 1,877 4/6", 1);
+    QuestionMessage score = message("score-guid", "participant ending 0199", "Wordle 1,877 4/6", 1);
     when(retriever.retrieveExact(any(), eq(WORDLE_PLAN))).thenReturn(completeExact(List.of(score)));
     when(model.answer(QUESTION, List.of(score), DEADLINE))
         .thenAnswer(
             invocation -> {
               clock.advance(Duration.ofSeconds(90));
-              return routed(answered("The only reported score is 4/6.", "score"));
+              return routed(answered("The only reported score is 4/6.", "score-guid"));
             });
 
     GroupQuestionAnswer result = service.answer(ACCOUNT, GROUP, QUESTION, FROM, TO);
@@ -504,7 +506,7 @@ class ConversationQuestionAnsweringServiceTest {
 
   @Test
   void sourceCoverageFailureIsNotHiddenByAModelRequestForMoreContext() {
-    QuestionMessage score = message("score", "participant ending 0199", "Wordle 1,877 4/6", 1);
+    QuestionMessage score = message("score-guid", "participant ending 0199", "Wordle 1,877 4/6", 1);
     when(retriever.retrieveExact(any(), eq(WORDLE_PLAN))).thenReturn(completeExact(List.of()));
     when(retriever.retrieveChronological(any()))
         .thenReturn(
@@ -522,7 +524,7 @@ class ConversationQuestionAnsweringServiceTest {
                     AnswerStatus.ANSWERED,
                     "The only reported score is 4/6.",
                     Confidence.LOW,
-                    List.of("score"),
+                    List.of("score-guid"),
                     true)));
 
     GroupQuestionAnswer result = service.answer(ACCOUNT, GROUP, QUESTION, FROM, TO);
@@ -672,14 +674,14 @@ class ConversationQuestionAnsweringServiceTest {
 
   @Test
   void unsafeModelOutputCannotBecomeAGroupQuestionAnswer() {
-    QuestionMessage score = message("score", "Dom", "Wordle 1,877 3/6", 1);
+    QuestionMessage score = message("score-guid", "Dom", "Wordle 1,877 3/6", 1);
     when(retriever.retrieveExact(any(), eq(WORDLE_PLAN))).thenReturn(completeExact(List.of(score)));
     when(model.answer(QUESTION, List.of(score), DEADLINE))
         .thenReturn(
             routed(
                 answered(
                     "Dom reported Wordle 1,877 in 3/6; call +1 (555) 555-0199 for details.",
-                    "score")));
+                    "score-guid")));
     when(retriever.retrieveChronological(any()))
         .thenThrow(new IllegalStateException("source unavailable"));
 

@@ -278,32 +278,9 @@ public class ConversationQuestionHistoryRetriever {
       CandidateAccumulator candidates,
       CallBudget budget,
       RawGuidTracker seenRawGuids) {
-    Instant journalCoverageThrough = bounds.from();
-    for (Bounds sourceBound : sourceBounds) {
-      if (budget.reserve(request.deadline()) == null) {
-        return result(candidates.values(), RetrievalMode.CHRONOLOGICAL, bounds, budget, null);
-      }
-      List<JournalMessage> journal =
-          Objects.requireNonNull(
-              store.findMessages(
-                  request.conversation().conversationId(),
-                  sourceBound.from(),
-                  sourceBound.to().minusNanos(1)),
-              "journal returned no messages");
-      for (JournalMessage raw : journal) {
-        Optional<QuestionMessage> mapped = mapAuthorized(raw, request, sourceBound, seenRawGuids);
-        if (mapped.isPresent()) {
-          journalCoverageThrough = max(journalCoverageThrough, mapped.get().timestamp());
-          if (!candidates.add(mapped.get())) {
-            budget.limit(HISTORY_LIMIT);
-            break;
-          }
-        }
-      }
-      if (budget.partialReason() != null) {
-        break;
-      }
-    }
+    Instant journalCoverageThrough =
+        pageJournal(
+            request, sourceBounds, candidates, budget, seenRawGuids, List.of(), bounds.from());
     budget.limit(SOURCE_UNAVAILABLE);
     List<QuestionMessage> sorted = sort(candidates.values(), null);
     return new RetrievalResult(
@@ -311,7 +288,7 @@ public class ConversationQuestionHistoryRetriever {
         RetrievalMode.CHRONOLOGICAL,
         CoverageStatus.PARTIAL,
         journalCoverageThrough,
-        SOURCE_UNAVAILABLE,
+        budget.partialReason(),
         budget.pages());
   }
 
@@ -325,38 +302,21 @@ public class ConversationQuestionHistoryRetriever {
     CandidateAccumulator candidates = new CandidateAccumulator();
     CallBudget budget = new CallBudget();
     RawGuidTracker seenRawGuids = new RawGuidTracker();
-    Instant coverageThrough = bounds.from();
-    for (Bounds sourceBound : sourceBounds) {
-      if (budget.reserve(request.deadline()) == null) {
-        break;
-      }
-      List<JournalMessage> journal =
-          Objects.requireNonNull(
-              store.findMessages(
-                  request.conversation().conversationId(),
-                  sourceBound.from(),
-                  sourceBound.to().minusNanos(1)),
-              "journal returned no messages");
-      for (JournalMessage raw : journal) {
-        if (raw == null
-            || (!requiredTerms.isEmpty()
-                && requiredTerms.stream()
-                    .noneMatch(term -> StringUtils.containsIgnoreCase(raw.text(), term)))) {
-          continue;
-        }
-        Optional<QuestionMessage> mapped = mapAuthorized(raw, request, sourceBound, seenRawGuids);
-        if (mapped.isEmpty()) {
-          continue;
-        }
-        coverageThrough = max(coverageThrough, mapped.get().timestamp());
-        if (!candidates.add(mapped.get())) {
-          budget.limit(HISTORY_LIMIT);
-          break;
-        }
-      }
-      if (budget.partialReason() != null) {
-        break;
-      }
+    Instant coverageThrough;
+    try {
+      coverageThrough =
+          pageJournal(
+              request,
+              sourceBounds,
+              candidates,
+              budget,
+              seenRawGuids,
+              requiredTerms,
+              bounds.from());
+    } catch (RuntimeException sourceFailure) {
+      budget.limit(SOURCE_UNAVAILABLE);
+      throw new PartialRetrievalException(
+          result(candidates.values(), mode, bounds, budget, senderHint), sourceFailure);
     }
     budget.limit(SOURCE_UNAVAILABLE);
     return partialResult(
@@ -366,6 +326,68 @@ public class ConversationQuestionHistoryRetriever {
         budget.partialReason(),
         budget.pages(),
         senderHint);
+  }
+
+  private Instant pageJournal(
+      RetrievalRequest request,
+      List<Bounds> sourceBounds,
+      CandidateAccumulator candidates,
+      CallBudget budget,
+      RawGuidTracker seenRawGuids,
+      List<String> requiredTerms,
+      Instant initialCoverageThrough) {
+    Instant coverageThrough = initialCoverageThrough;
+    journalBounds:
+    for (Bounds sourceBound : sourceBounds) {
+      Instant afterTimestamp = null;
+      String afterMessageGuid = null;
+      while (true) {
+        Duration remaining = budget.reserve(request.deadline());
+        if (remaining == null) {
+          break journalBounds;
+        }
+        List<JournalMessage> page =
+            Objects.requireNonNull(
+                store.findMessagePage(
+                    request.conversation().conversationId(),
+                    sourceBound.from(),
+                    sourceBound.to(),
+                    afterTimestamp,
+                    afterMessageGuid,
+                    pageSize,
+                    remaining),
+                "journal returned no page");
+        for (JournalMessage raw : page) {
+          if (raw == null
+              || (!requiredTerms.isEmpty()
+                  && requiredTerms.stream()
+                      .noneMatch(term -> StringUtils.containsIgnoreCase(raw.text(), term)))) {
+            continue;
+          }
+          Optional<QuestionMessage> mapped = mapAuthorized(raw, request, sourceBound, seenRawGuids);
+          if (mapped.isEmpty()) {
+            continue;
+          }
+          coverageThrough = max(coverageThrough, mapped.get().timestamp());
+          if (!candidates.add(mapped.get())) {
+            budget.limit(HISTORY_LIMIT);
+            break journalBounds;
+          }
+        }
+        if (page.size() < pageSize) {
+          break;
+        }
+        JournalMessage cursor = page.getLast();
+        if (cursor == null
+            || cursor.sourceTimestamp() == null
+            || StringUtils.isBlank(cursor.messageGuid())) {
+          throw new IllegalStateException("journal returned an invalid page cursor");
+        }
+        afterTimestamp = cursor.sourceTimestamp();
+        afterMessageGuid = cursor.messageGuid();
+      }
+    }
+    return coverageThrough;
   }
 
   private boolean addNeighbors(

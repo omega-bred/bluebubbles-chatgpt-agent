@@ -17,12 +17,15 @@ import io.breland.bbagent.server.agent.memory.ConversationQuestionAnsweringModel
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicInteger;
 import javax.sql.DataSource;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.core.PreparedStatementCreator;
 import org.springframework.jdbc.core.PreparedStatementSetter;
+import org.springframework.jdbc.core.RowMapper;
 import org.springframework.transaction.annotation.Transactional;
 
 @SpringBootTest
@@ -79,6 +82,135 @@ class ConversationMemoryStoreTest {
         .containsExactly("message-1");
     assertThat(store.activeMembershipAccountIds(conversationId, OBSERVED_AT))
         .containsExactly(accountId);
+  }
+
+  @Test
+  void pagesJournalMessagesByTimestampAndGuidWithAnExclusiveUpperBound() {
+    String accountId = createAccount("journal-page@example.com");
+    String conversationId =
+        store.upsertConversation(
+            "bluebubbles", "iMessage;+;journal-page", true, "Journal page", OBSERVED_AT);
+    JournalMessage first =
+        new JournalMessage(
+            "message-a",
+            conversationId,
+            accountId,
+            "first",
+            OBSERVED_AT,
+            false,
+            false,
+            "hash-first");
+    JournalMessage second =
+        new JournalMessage(
+            "message-b",
+            conversationId,
+            accountId,
+            "second",
+            OBSERVED_AT,
+            false,
+            false,
+            "hash-second");
+    JournalMessage atExclusiveEnd =
+        new JournalMessage(
+            "message-end",
+            conversationId,
+            accountId,
+            "outside",
+            OBSERVED_AT.plusSeconds(1),
+            false,
+            false,
+            "hash-outside");
+    store.recordMessage(first);
+    store.recordMessage(second);
+    store.recordMessage(atExclusiveEnd);
+
+    List<JournalMessage> firstPage =
+        store.findMessagePage(
+            conversationId,
+            OBSERVED_AT.minusSeconds(1),
+            OBSERVED_AT.plusSeconds(1),
+            null,
+            null,
+            1,
+            Duration.ofSeconds(5));
+    List<JournalMessage> secondPage =
+        store.findMessagePage(
+            conversationId,
+            OBSERVED_AT.minusSeconds(1),
+            OBSERVED_AT.plusSeconds(1),
+            firstPage.getFirst().sourceTimestamp(),
+            firstPage.getFirst().messageGuid(),
+            10,
+            Duration.ofSeconds(5));
+
+    assertThat(firstPage).extracting(JournalMessage::messageGuid).containsExactly("message-a");
+    assertThat(secondPage).extracting(JournalMessage::messageGuid).containsExactly("message-b");
+  }
+
+  @Test
+  void appliesCeilingQueryTimeoutPerJournalPageWithoutMutatingSharedJdbcTemplateState() {
+    AtomicInteger statementTimeout = new AtomicInteger();
+    JdbcTemplate inspectingTemplate =
+        new JdbcTemplate(dataSource) {
+          @Override
+          public <T> List<T> query(
+              PreparedStatementCreator preparedStatementCreator, RowMapper<T> rowMapper) {
+            return super.query(
+                connection -> {
+                  var statement = preparedStatementCreator.createPreparedStatement(connection);
+                  statementTimeout.set(statement.getQueryTimeout());
+                  return statement;
+                },
+                rowMapper);
+          }
+        };
+    int sharedTimeout = inspectingTemplate.getQueryTimeout();
+    ConversationMemoryStore timeoutStore = new ConversationMemoryStore(inspectingTemplate);
+
+    timeoutStore.findMessagePage(
+        "missing-conversation",
+        OBSERVED_AT.minusSeconds(1),
+        OBSERVED_AT.plusSeconds(1),
+        null,
+        null,
+        10,
+        Duration.ofMillis(1_001));
+
+    assertThat(statementTimeout.get()).isEqualTo(2);
+    assertThat(inspectingTemplate.getQueryTimeout()).isEqualTo(sharedTimeout);
+  }
+
+  @Test
+  void journalPageTimeoutHonorsALowerPreconfiguredJdbcTemplateLimit() {
+    AtomicInteger statementTimeout = new AtomicInteger();
+    JdbcTemplate inspectingTemplate =
+        new JdbcTemplate(dataSource) {
+          @Override
+          public <T> List<T> query(
+              PreparedStatementCreator preparedStatementCreator, RowMapper<T> rowMapper) {
+            return super.query(
+                connection -> {
+                  var statement = preparedStatementCreator.createPreparedStatement(connection);
+                  statementTimeout.set(statement.getQueryTimeout());
+                  return statement;
+                },
+                rowMapper);
+          }
+        };
+    inspectingTemplate.setQueryTimeout(1);
+    ConversationMemoryStore timeoutStore = new ConversationMemoryStore(inspectingTemplate);
+
+    timeoutStore.findMessagePage(
+        "missing-conversation",
+        OBSERVED_AT.minusSeconds(1),
+        OBSERVED_AT.plusSeconds(1),
+        null,
+        null,
+        10,
+        Duration.ofSeconds(5));
+
+    assertThat(statementTimeout.get()).isEqualTo(1);
+    assertThat(inspectingTemplate.getQueryTimeout()).isEqualTo(1);
   }
 
   @Test

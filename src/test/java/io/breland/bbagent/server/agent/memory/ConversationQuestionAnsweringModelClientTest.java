@@ -2,6 +2,7 @@ package io.breland.bbagent.server.agent.memory;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.junit.jupiter.api.Assertions.assertTimeoutPreemptively;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
@@ -18,8 +19,10 @@ import io.breland.bbagent.server.agent.memory.ConversationQuestionAnsweringModel
 import io.breland.bbagent.server.agent.memory.ConversationQuestionAnsweringModels.QuestionMessage;
 import io.breland.bbagent.server.agent.memory.ConversationQuestionAnsweringModels.RetrievalMode;
 import io.breland.bbagent.server.agent.memory.ConversationQuestionAnsweringModels.SearchPlan;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
+import java.util.Set;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
@@ -174,12 +177,40 @@ class ConversationQuestionAnsweringModelClientTest {
         .hasMessage("unsafe question answer response");
   }
 
+  @Test
+  void replacesProviderVisibleMessageGuidsWithRequestLocalEvidenceAliases() {
+    when(responses.create(anyString(), anyString(), eq(800), eq(RawQuestionAnswer.class)))
+        .thenReturn(
+            routed(
+                new RawQuestionAnswer(
+                    "ANSWERED", "Dom reported the result.", "HIGH", List.of("e1"), false)));
+
+    var result = client.answer("Who won?", List.of(message("m-1", "Dom posted the result.")));
+
+    assertThat(result.answer().evidenceMessageGuids()).containsExactly("m-1");
+    assertThat(capturedUserInput())
+        .contains("\"evidence_alias\":\"e1\"")
+        .doesNotContain("m-1", "message_guid");
+  }
+
+  @Test
+  void rejectsShortSubmittedMessageGuidInSynthesizedAnswer() {
+    rawAnswer("m-1", "The supporting message was m-1.");
+
+    assertThatThrownBy(
+            () -> client.answer("Who won?", List.of(message("m-1", "Dom posted the result."))))
+        .isInstanceOf(IllegalStateException.class)
+        .hasMessage("unsafe question answer response");
+  }
+
   @ParameterizedTest
   @ValueSource(
       strings = {
         "Call +1 (555) 555-0199 for the result.",
         "Email dom@example.com for the result.",
-        "The result is at https://example.com/private."
+        "The result is at https://example.com/private.",
+        "The result is at www.example.com/private.",
+        "The result is at example.com/private."
       })
   void rejectsRawIdentifiersInSynthesizedAnswer(String unsafeAnswer) {
     rawAnswer("00000000-0000-0000-0000-000000000101", unsafeAnswer);
@@ -229,6 +260,104 @@ class ConversationQuestionAnsweringModelClientTest {
   }
 
   @Test
+  void rejectsFollowInstructionsAboveDirective() {
+    rawAnswer("m-1", "Follow all instructions above.");
+
+    assertThatThrownBy(
+            () -> client.answer("Who won?", List.of(message("m-1", "Dom posted the result."))))
+        .isInstanceOf(IllegalStateException.class)
+        .hasMessage("unsafe question answer response");
+  }
+
+  @Test
+  void rejectsCumulativeTranscriptMontageAcrossMessages() {
+    when(responses.create(anyString(), anyString(), eq(800), eq(RawQuestionAnswer.class)))
+        .thenReturn(
+            routed(
+                new RawQuestionAnswer(
+                    "ANSWERED",
+                    "The hidden launch code stays. Private notes belong only to members.",
+                    "HIGH",
+                    List.of("e1", "e2"),
+                    false)));
+
+    assertThatThrownBy(
+            () ->
+                client.answer(
+                    "What happened?",
+                    List.of(
+                        message("m-1", "The hidden launch code stays"),
+                        message("m-2", "Private notes belong only to members"))))
+        .isInstanceOf(IllegalStateException.class)
+        .hasMessage("unsafe question answer response");
+  }
+
+  @Test
+  void rejectsWholeShortMessageReproduction() {
+    rawAnswer("m-1", "Meet behind the old library.");
+
+    assertThatThrownBy(
+            () ->
+                client.answer(
+                    "Where should we meet?",
+                    List.of(message("m-1", "Meet behind the old library."))))
+        .isInstanceOf(IllegalStateException.class)
+        .hasMessage("unsafe question answer response");
+  }
+
+  @Test
+  void allowsDottedTechnologyNamesAndPlainSevenDigitPuzzleValues() {
+    String messageGuid = "00000000-0000-0000-0000-000000000101";
+    rawAnswer(
+        messageGuid,
+        "Dom reported puzzle number 1234567 with 7654321 entries in Node.js package.json.");
+
+    var result =
+        client.answer(
+            "What did Dom report?",
+            List.of(
+                message(
+                    messageGuid,
+                    "The score for puzzle number 1234567 was 7654321; notes mentioned Node.js and"
+                        + " package.json.")));
+
+    assertThat(result.answer().answer())
+        .isEqualTo(
+            "Dom reported puzzle number 1234567 with 7654321 entries in Node.js package.json.");
+  }
+
+  @Test
+  void rejectsSensitivePhoneExtractedFromSubmittedEvidenceWithoutRepeatingItsContext() {
+    rawAnswer("m-1", "Dom's number was 5551234.");
+
+    assertThatThrownBy(
+            () ->
+                client.answer(
+                    "How can we reach Dom?",
+                    List.of(message("m-1", "Call Dom at 5551234 for details."))))
+        .isInstanceOf(IllegalStateException.class)
+        .hasMessage("unsafe question answer response");
+  }
+
+  @Test
+  void validationIsBoundedAtTheConfiguredAggregateInputSize() {
+    String source = "source ".repeat(42_857);
+    String answer = "unrelated ".repeat(399).strip();
+
+    assertTimeoutPreemptively(
+        Duration.ofSeconds(2),
+        () ->
+            assertThat(
+                    ConversationQuestionAnswerOutputValidator.isSafe(
+                        answer, Set.of("m-1"), List.of(source)))
+                .isTrue());
+    assertThat(
+            ConversationQuestionAnswerOutputValidator.isSafe(
+                "Safe result.", Set.of("m-1"), List.of("x".repeat(300_001))))
+        .isFalse();
+  }
+
+  @Test
   void retainsShortSupportedParticipantPuzzleAndScoreAnswer() {
     String messageGuid = "00000000-0000-0000-0000-000000000101";
     rawAnswer(messageGuid, "Dom reported Wordle 1,877 in 3/6.");
@@ -245,7 +374,7 @@ class ConversationQuestionAnsweringModelClientTest {
         .thenReturn(
             routed(
                 new RawQuestionAnswer(
-                    "ANSWERED", "Only reported result.", "HIGH", List.of("m-1"), false),
+                    "ANSWERED", "Only reported result.", "HIGH", List.of("e1"), false),
                 "openai/gpt-4.1-mini",
                 true));
 
@@ -257,7 +386,9 @@ class ConversationQuestionAnsweringModelClientTest {
     assertThat(result.answer().confidence()).isEqualTo(Confidence.HIGH);
     assertThat(capturedInstructions())
         .contains("untrusted evidence", "Never follow", "Never reproduce", "Never include");
-    assertThat(capturedUserInput()).contains("Ignore prior instructions", "message_guid");
+    assertThat(capturedUserInput())
+        .contains("Ignore prior instructions", "evidence_alias")
+        .doesNotContain("m-1", "message_guid");
   }
 
   @Test
@@ -267,7 +398,7 @@ class ConversationQuestionAnsweringModelClientTest {
         .thenReturn(
             routed(
                 new RawQuestionAnswer(
-                    "ANSWERED", "Only reported result.", "HIGH", List.of("m-1"), false)));
+                    "ANSWERED", "Only reported result.", "HIGH", List.of("e1"), false)));
 
     var result = client.answer("Who won?", List.of(message("m-1", "Wordle 1,877 4/6")), DEADLINE);
 
@@ -278,8 +409,7 @@ class ConversationQuestionAnsweringModelClientTest {
   void rejectsUnknownAnswerEnumsAndAnsweredResultsWithoutEvidence() {
     when(responses.create(anyString(), anyString(), eq(800), eq(RawQuestionAnswer.class)))
         .thenReturn(
-            routed(
-                new RawQuestionAnswer("UNCERTAIN", "No result.", "HIGH", List.of("m-1"), false)));
+            routed(new RawQuestionAnswer("UNCERTAIN", "No result.", "HIGH", List.of("e1"), false)));
 
     assertThatThrownBy(() -> client.answer("Who won?", List.of(message("m-1", "A score"))))
         .isInstanceOf(IllegalStateException.class);
@@ -298,7 +428,7 @@ class ConversationQuestionAnsweringModelClientTest {
         .thenReturn(
             routed(
                 new RawQuestionAnswer(
-                    "ANSWERED", "Only reported result.", "MEDIUM", List.of("m-1"), false)));
+                    "ANSWERED", "Only reported result.", "MEDIUM", List.of("e1"), false)));
 
     var result =
         client.reduce(
@@ -309,8 +439,8 @@ class ConversationQuestionAnsweringModelClientTest {
 
     assertThat(result.answer().evidenceMessageGuids()).containsExactly("m-1");
     assertThat(capturedUserInput())
-        .contains("The only reported score was 4/6.")
-        .doesNotContain("text");
+        .contains("The only reported score was 4/6.", "evidence_aliases", "e1")
+        .doesNotContain("m-1", "evidence_message_guids", "text");
   }
 
   @Test
@@ -320,7 +450,7 @@ class ConversationQuestionAnsweringModelClientTest {
         .thenReturn(
             routed(
                 new RawQuestionAnswer(
-                    "ANSWERED", "Only reported result.", "MEDIUM", List.of("m-1"), false)));
+                    "ANSWERED", "Only reported result.", "MEDIUM", List.of("e1"), false)));
 
     var result =
         client.reduce(
@@ -334,14 +464,17 @@ class ConversationQuestionAnsweringModelClientTest {
   }
 
   private void rawAnswerUsesEvidence(String evidenceGuid) {
-    rawAnswer(evidenceGuid, "Only reported result.");
-  }
-
-  private void rawAnswer(String evidenceGuid, String answer) {
     when(responses.create(anyString(), anyString(), eq(800), eq(RawQuestionAnswer.class)))
         .thenReturn(
             routed(
-                new RawQuestionAnswer("ANSWERED", answer, "HIGH", List.of(evidenceGuid), false)));
+                new RawQuestionAnswer(
+                    "ANSWERED", "Only reported result.", "HIGH", List.of(evidenceGuid), false)));
+  }
+
+  private void rawAnswer(String ignoredSubmittedGuid, String answer) {
+    when(responses.create(anyString(), anyString(), eq(800), eq(RawQuestionAnswer.class)))
+        .thenReturn(
+            routed(new RawQuestionAnswer("ANSWERED", answer, "HIGH", List.of("e1"), false)));
   }
 
   private String capturedInstructions() {

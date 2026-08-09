@@ -213,7 +213,7 @@ class ConversationQuestionHistoryRetrieverTest {
         .extracting(QuestionMessage::messageGuid)
         .containsExactly(HIT_GUID.toString(), domGuid.toString());
     verify(bb).searchConversationHistory(GUID, "Wordle", FROM, narrowedTo, 500, 0);
-    verify(store, never()).findMessages(anyString(), any(), any());
+    verifyNoInteractions(store);
   }
 
   @Test
@@ -303,7 +303,7 @@ class ConversationQuestionHistoryRetrieverTest {
 
   @Test
   void nonBlueBubblesExactRetrievalUsesAuthorizedJournalOnly() {
-    when(store.findMessages(CONVERSATION_ID, FROM, TO.minusNanos(1)))
+    when(store.findMessagePage(CONVERSATION_ID, FROM, TO, null, null, 500, Duration.ofMinutes(30)))
         .thenReturn(
             List.of(
                 journal("matching", "account-2", "Wordle 1,877 3/6", at("12:00")),
@@ -322,7 +322,7 @@ class ConversationQuestionHistoryRetrieverTest {
 
   @Test
   void nonBlueBubblesChronologicalRetrievalUsesAuthorizedJournalOnly() {
-    when(store.findMessages(CONVERSATION_ID, FROM, TO.minusNanos(1)))
+    when(store.findMessagePage(CONVERSATION_ID, FROM, TO, null, null, 500, Duration.ofMinutes(30)))
         .thenReturn(List.of(journal("journal", "account-2", "available", at("12:00"))));
 
     RetrievalResult result =
@@ -333,6 +333,121 @@ class ConversationQuestionHistoryRetrieverTest {
         .containsExactly("journal");
     assertThat(result.coverageStatus()).isEqualTo(CoverageStatus.PARTIAL);
     assertThat(result.partialReason()).isEqualTo("source_unavailable");
+    verifyNoInteractions(bb);
+  }
+
+  @Test
+  void nonBlueBubblesJournalRetrievalUsesStableSeekPagesWithoutBlueBubblesCalls() {
+    retriever = retriever(5, 1, 100, 3, 300_000, NOW);
+    JournalMessage first = journal("message-a", ACCOUNT_ID, "first", at("12:00"));
+    JournalMessage second = journal("message-b", ACCOUNT_ID, "second", at("12:00"));
+    when(store.findMessagePage(CONVERSATION_ID, FROM, TO, null, null, 1, Duration.ofMinutes(30)))
+        .thenReturn(List.of(first));
+    when(store.findMessagePage(
+            CONVERSATION_ID,
+            FROM,
+            TO,
+            first.sourceTimestamp(),
+            first.messageGuid(),
+            1,
+            Duration.ofMinutes(30)))
+        .thenReturn(List.of(second));
+    when(store.findMessagePage(
+            CONVERSATION_ID,
+            FROM,
+            TO,
+            second.sourceTimestamp(),
+            second.messageGuid(),
+            1,
+            Duration.ofMinutes(30)))
+        .thenReturn(List.of());
+
+    RetrievalResult result = retriever.retrieveChronological(request("lxmf", activeFrom("10:00")));
+
+    assertThat(result.messages())
+        .extracting(QuestionMessage::messageGuid)
+        .containsExactly("message-a", "message-b");
+    assertThat(result.pageCount()).isEqualTo(3);
+    assertThat(result.partialReason()).isEqualTo("source_unavailable");
+    verifyNoInteractions(bb);
+  }
+
+  @Test
+  void busyJournalStopsAtTheSharedFiveThousandCandidateBudget() {
+    JournalMessage cursor = null;
+    for (int pageIndex = 0; pageIndex < 10; pageIndex++) {
+      List<JournalMessage> page = new ArrayList<>(500);
+      for (int itemIndex = 0; itemIndex < 500; itemIndex++) {
+        int messageIndex = pageIndex * 500 + itemIndex;
+        page.add(
+            journal(
+                "busy-" + String.format("%04d", messageIndex),
+                ACCOUNT_ID,
+                "x",
+                FROM.plusMillis(messageIndex + 1L)));
+      }
+      when(store.findMessagePage(
+              CONVERSATION_ID,
+              FROM,
+              TO,
+              cursor == null ? null : cursor.sourceTimestamp(),
+              cursor == null ? null : cursor.messageGuid(),
+              500,
+              Duration.ofMinutes(30)))
+          .thenReturn(page);
+      cursor = page.getLast();
+    }
+    when(store.findMessagePage(
+            CONVERSATION_ID,
+            FROM,
+            TO,
+            cursor.sourceTimestamp(),
+            cursor.messageGuid(),
+            500,
+            Duration.ofMinutes(30)))
+        .thenReturn(List.of(journal("busy-overflow", ACCOUNT_ID, "x", FROM.plusSeconds(10))));
+
+    RetrievalResult result = retriever.retrieveChronological(request("lxmf", activeFrom("10:00")));
+
+    assertThat(result.messages()).hasSize(5_000);
+    assertThat(result.pageCount()).isEqualTo(11);
+    assertThat(result.partialReason()).isEqualTo("history_limit");
+    verifyNoInteractions(bb);
+  }
+
+  @Test
+  void journalPagingReturnsPartialCoverageWhenTheSharedPageBudgetIsExhausted() {
+    retriever = retriever(5, 2, 1, 3, 300_000, NOW);
+    when(store.findMessagePage(CONVERSATION_ID, FROM, TO, null, null, 2, Duration.ofMinutes(30)))
+        .thenReturn(
+            List.of(
+                journal("first", ACCOUNT_ID, "first", at("11:00")),
+                journal("second", ACCOUNT_ID, "second", at("11:01"))));
+
+    RetrievalResult result = retriever.retrieveChronological(request("lxmf", activeFrom("10:00")));
+
+    assertThat(result.messages()).hasSize(2);
+    assertThat(result.pageCount()).isEqualTo(1);
+    assertThat(result.partialReason()).isEqualTo("history_limit");
+    verifyNoInteractions(bb);
+  }
+
+  @Test
+  void journalPagingPassesRemainingTimeAndStopsAtTheDeadline() {
+    retriever =
+        retriever(
+            5, 2, 100, 3, 300_000, new AdvancingClock(List.of(NOW, DEADLINE), ZoneOffset.UTC));
+    when(store.findMessagePage(CONVERSATION_ID, FROM, TO, null, null, 2, Duration.ofMinutes(30)))
+        .thenReturn(
+            List.of(
+                journal("first", ACCOUNT_ID, "first", at("11:00")),
+                journal("second", ACCOUNT_ID, "second", at("11:01"))));
+
+    RetrievalResult result = retriever.retrieveChronological(request("lxmf", activeFrom("10:00")));
+
+    assertThat(result.messages()).hasSize(2);
+    assertThat(result.pageCount()).isEqualTo(1);
+    assertThat(result.partialReason()).isEqualTo("time_limit");
     verifyNoInteractions(bb);
   }
 
@@ -442,7 +557,7 @@ class ConversationQuestionHistoryRetrieverTest {
   void cachesJournalAccountResolutionWithinOneRequest() {
     when(bb.getMessagesInChat(GUID, FROM, TO, 0, 500, "ASC"))
         .thenThrow(new IllegalStateException("unavailable"));
-    when(store.findMessages(CONVERSATION_ID, FROM, TO.minusNanos(1)))
+    when(store.findMessagePage(CONVERSATION_ID, FROM, TO, null, null, 500, Duration.ofMinutes(30)))
         .thenReturn(
             List.of(
                 journal("first", "account-2", "first", at("11:30")),
@@ -462,7 +577,8 @@ class ConversationQuestionHistoryRetrieverTest {
   void fallsBackToJournalOnlyWhenBlueBubblesFails() {
     when(bb.getMessagesInChat(GUID, at("11:00"), at("13:00"), 0, 500, "ASC"))
         .thenThrow(new IllegalStateException("unavailable"));
-    when(store.findMessages(CONVERSATION_ID, at("11:00"), at("13:00").minusNanos(1)))
+    when(store.findMessagePage(
+            CONVERSATION_ID, at("11:00"), at("13:00"), null, null, 500, Duration.ofMinutes(30)))
         .thenReturn(
             List.of(
                 journal("m-1", "account-2", "available", at("12:00")),
@@ -663,7 +779,7 @@ class ConversationQuestionHistoryRetrieverTest {
         .thenReturn(Collections.nCopies(500, raw("bluebubbles", "newer", at("12:30"))));
     when(bb.getMessagesInChat(GUID, FROM, TO, 500, 500, "ASC"))
         .thenThrow(new IllegalStateException("unavailable"));
-    when(store.findMessages(CONVERSATION_ID, FROM, TO.minusNanos(1)))
+    when(store.findMessagePage(CONVERSATION_ID, FROM, TO, null, null, 500, Duration.ofMinutes(30)))
         .thenReturn(List.of(journal("journal", "account-2", "available", at("12:00"))));
 
     RetrievalResult result = retriever.retrieveChronological(request(activeFrom("10:00")));
