@@ -125,7 +125,7 @@ class GetGroupCatchupAgentToolTest {
   }
 
   @Test
-  void questionModeSerializesOnlyTheSafeSynthesizedAnswer() throws Exception {
+  void questionModeSerializesSafePrimaryModelMetadataWithoutEvidence() throws Exception {
     Instant from = NOW.minusSeconds(86_400);
     GroupQuestionAnswer answer =
         new GroupQuestionAnswer(
@@ -141,21 +141,7 @@ class GetGroupCatchupAgentToolTest {
             NOW,
             NOW,
             null);
-    when(digestService.catchUp("account-1", "Wordling Wonders", from, NOW, "Who is winning?"))
-        .thenReturn(
-            new CatchupResult(
-                List.of(
-                    new CatchupGroup(
-                        "Wordling Wonders",
-                        "Daily summary without raw evidence.",
-                        List.of(),
-                        List.of(),
-                        List.of(),
-                        from,
-                        NOW,
-                        NOW,
-                        answer)),
-                List.of()));
+    stubQuestionAnswer(answer);
 
     String response =
         invokeTool("{\"group\":\"Wordling Wonders\",\"question\":\"Who is winning?\"}");
@@ -167,10 +153,64 @@ class GetGroupCatchupAgentToolTest {
     assertThat(questionAnswer.path("coverage_status").asText()).isEqualTo("complete");
     assertThat(questionAnswer.path("evidence_message_count").asInt()).isEqualTo(1);
     assertThat(questionAnswer.path("answer").asText()).contains("only reported score");
+    assertThat(questionAnswer.path("model").asText()).isEqualTo("private-model-name");
+    assertThat(questionAnswer.path("fallback_used").asBoolean()).isFalse();
     assertThat(questionAnswer.has("partial_reason")).isFalse();
     assertThat(response)
-        .doesNotContain(
-            "message_guid", "evidence_message_guid", "Wordle 1,877 4/6+", "private-model-name");
+        .doesNotContain("message_guid", "evidence_message_guid", "Wordle 1,877 4/6+");
+  }
+
+  @Test
+  void questionModeSerializesFallbackModelProvenance() throws Exception {
+    Instant from = NOW.minusSeconds(86_400);
+    stubQuestionAnswer(
+        new GroupQuestionAnswer(
+            AnswerStatus.ANSWERED,
+            "The fallback model found one supported result.",
+            Confidence.MEDIUM,
+            "fallback-model",
+            true,
+            1,
+            RetrievalMode.HYBRID,
+            CoverageStatus.COMPLETE,
+            from,
+            NOW,
+            NOW,
+            null));
+
+    String response =
+        invokeTool("{\"group\":\"Wordling Wonders\",\"question\":\"Who is winning?\"}");
+
+    var questionAnswer = mapper.readTree(response).path("groups").get(0).path("question_answer");
+    assertThat(questionAnswer.path("model").asText()).isEqualTo("fallback-model");
+    assertThat(questionAnswer.path("fallback_used").asBoolean()).isTrue();
+  }
+
+  @Test
+  void questionModeSerializesModelLessTerminalProvenance() throws Exception {
+    Instant from = NOW.minusSeconds(86_400);
+    stubQuestionAnswer(
+        new GroupQuestionAnswer(
+            AnswerStatus.INSUFFICIENT_EVIDENCE,
+            "There is insufficient evidence in the authorized group history to answer that question.",
+            Confidence.LOW,
+            null,
+            false,
+            0,
+            RetrievalMode.CHRONOLOGICAL,
+            CoverageStatus.COMPLETE,
+            from,
+            NOW,
+            NOW,
+            null));
+
+    String response =
+        invokeTool("{\"group\":\"Wordling Wonders\",\"question\":\"Who is winning?\"}");
+
+    var questionAnswer = mapper.readTree(response).path("groups").get(0).path("question_answer");
+    assertThat(questionAnswer.has("model")).isTrue();
+    assertThat(questionAnswer.path("model").isNull()).isTrue();
+    assertThat(questionAnswer.path("fallback_used").asBoolean()).isFalse();
   }
 
   @Test
@@ -214,6 +254,25 @@ class GetGroupCatchupAgentToolTest {
         .getTool()
         .handler()
         .apply(context, mapper.readTree(json));
+  }
+
+  private void stubQuestionAnswer(GroupQuestionAnswer answer) {
+    when(digestService.catchUp(
+            "account-1", "Wordling Wonders", answer.from(), answer.to(), "Who is winning?"))
+        .thenReturn(
+            new CatchupResult(
+                List.of(
+                    new CatchupGroup(
+                        "Wordling Wonders",
+                        "Daily summary without raw evidence.",
+                        List.of(),
+                        List.of(),
+                        List.of(),
+                        answer.from(),
+                        answer.to(),
+                        answer.coverageThrough(),
+                        answer)),
+                List.of()));
   }
 
   private static IncomingMessage message(boolean group) {

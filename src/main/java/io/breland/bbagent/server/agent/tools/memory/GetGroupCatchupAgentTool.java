@@ -142,6 +142,8 @@ public class GetGroupCatchupAgentTool implements ToolProvider {
     value.put("status", answer.status().wireValue());
     value.put("answer", answer.answer());
     value.put("confidence", answer.confidence().wireValue());
+    value.put("model", answer.model());
+    value.put("fallback_used", answer.fallbackUsed());
     value.put("evidence_message_count", answer.evidenceMessageCount());
     value.put("retrieval_mode", answer.retrievalMode().wireValue());
     value.put("coverage_status", answer.coverageStatus().wireValue());
