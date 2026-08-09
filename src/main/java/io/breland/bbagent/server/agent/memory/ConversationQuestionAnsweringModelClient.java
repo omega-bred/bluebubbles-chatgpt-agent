@@ -21,6 +21,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.UUID;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
@@ -131,7 +132,8 @@ public class ConversationQuestionAnsweringModelClient {
         parseAnswer(
             routed.value(),
             providerInput.aliasToMessageGuid(),
-            providerInput.forbiddenIdentifiers(),
+            providerInput.messageGuids(),
+            providerInput.evidenceAliases(),
             submittedMessages.stream().map(QuestionMessage::text).toList()),
         routed.model(),
         routed.fallbackUsed());
@@ -159,7 +161,8 @@ public class ConversationQuestionAnsweringModelClient {
         parseAnswer(
             routed.value(),
             providerInput.aliasToMessageGuid(),
-            providerInput.forbiddenIdentifiers(),
+            providerInput.messageGuids(),
+            providerInput.evidenceAliases(),
             submittedFindings.stream().map(QuestionFinding::answer).toList()),
         routed.model(),
         routed.fallbackUsed());
@@ -252,6 +255,7 @@ public class ConversationQuestionAnsweringModelClient {
       RawQuestionAnswer raw,
       Map<String, String> aliasToMessageGuid,
       Set<String> forbiddenIdentifiers,
+      Set<String> opaqueEvidenceAliases,
       List<String> submittedSourceTexts) {
     if (raw == null) {
       throw new IllegalStateException("invalid question answer response");
@@ -278,7 +282,7 @@ public class ConversationQuestionAnsweringModelClient {
       throw new IllegalStateException("invalid question answer response");
     }
     ConversationQuestionAnswerOutputValidator.requireSafe(
-        answer, forbiddenIdentifiers, submittedSourceTexts);
+        answer, forbiddenIdentifiers, opaqueEvidenceAliases, submittedSourceTexts);
     return new ModelAnswer(
         status, answer, confidence, List.copyOf(evidence), raw.needsMoreContext());
   }
@@ -298,12 +302,11 @@ public class ConversationQuestionAnsweringModelClient {
   private static EvidenceAliases evidenceAliases(Set<String> messageGuids) {
     LinkedHashMap<String, String> aliasToMessageGuid = new LinkedHashMap<>();
     LinkedHashMap<String, String> messageGuidToAlias = new LinkedHashMap<>();
-    int nextAlias = 1;
     for (String messageGuid : messageGuids) {
       String alias;
       do {
-        alias = "e" + nextAlias++;
-      } while (messageGuids.contains(alias));
+        alias = "ev_" + UUID.randomUUID().toString().replace("-", "");
+      } while (messageGuids.contains(alias) || aliasToMessageGuid.containsKey(alias));
       aliasToMessageGuid.put(alias, messageGuid);
       messageGuidToAlias.put(messageGuid, alias);
     }
@@ -311,11 +314,11 @@ public class ConversationQuestionAnsweringModelClient {
   }
 
   private static ProviderInput providerInput(String payload, EvidenceAliases aliases) {
-    LinkedHashSet<String> forbiddenIdentifiers =
-        new LinkedHashSet<>(aliases.aliasToMessageGuid().keySet());
-    forbiddenIdentifiers.addAll(aliases.aliasToMessageGuid().values());
     return new ProviderInput(
-        payload, aliases.aliasToMessageGuid(), Set.copyOf(forbiddenIdentifiers));
+        payload,
+        aliases.aliasToMessageGuid(),
+        Set.copyOf(aliases.aliasToMessageGuid().values()),
+        Set.copyOf(aliases.aliasToMessageGuid().keySet()));
   }
 
   private static <T extends Enum<T>> T parseEnum(String value, Class<T> enumType) {
@@ -412,5 +415,8 @@ public class ConversationQuestionAnsweringModelClient {
       Map<String, String> aliasToMessageGuid, Map<String, String> messageGuidToAlias) {}
 
   private record ProviderInput(
-      String payload, Map<String, String> aliasToMessageGuid, Set<String> forbiddenIdentifiers) {}
+      String payload,
+      Map<String, String> aliasToMessageGuid,
+      Set<String> messageGuids,
+      Set<String> evidenceAliases) {}
 }

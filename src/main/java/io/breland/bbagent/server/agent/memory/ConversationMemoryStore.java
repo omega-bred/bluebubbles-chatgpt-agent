@@ -2197,18 +2197,18 @@ public class ConversationMemoryStore {
     private <T> List<T> query(
         String sql, Duration remaining, RowMapper<T> rowMapper, Object... args) {
       Object[] converted = postgresArguments(args);
-      int queryTimeoutSeconds = queryTimeoutSeconds(remaining);
-      int configuredQueryTimeoutSeconds = delegate.getQueryTimeout();
-      if (configuredQueryTimeoutSeconds > 0) {
-        queryTimeoutSeconds = Math.min(queryTimeoutSeconds, configuredQueryTimeoutSeconds);
-      }
-      int requestQueryTimeoutSeconds = queryTimeoutSeconds;
+      int requestQueryTimeoutSeconds = queryTimeoutSeconds(remaining);
+      ArgumentPreparedStatementSetter argumentSetter =
+          new ArgumentPreparedStatementSetter(converted);
       return delegate.query(
-          connection -> {
-            var statement = connection.prepareStatement(sql);
-            new ArgumentPreparedStatementSetter(converted).setValues(statement);
-            statement.setQueryTimeout(requestQueryTimeoutSeconds);
-            return statement;
+          sql,
+          statement -> {
+            argumentSetter.setValues(statement);
+            int appliedTimeoutSeconds = statement.getQueryTimeout();
+            statement.setQueryTimeout(
+                appliedTimeoutSeconds > 0
+                    ? Math.min(requestQueryTimeoutSeconds, appliedTimeoutSeconds)
+                    : requestQueryTimeoutSeconds);
           },
           rowMapper);
     }

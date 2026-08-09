@@ -23,7 +23,6 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.jdbc.core.PreparedStatementCreator;
 import org.springframework.jdbc.core.PreparedStatementSetter;
 import org.springframework.jdbc.core.RowMapper;
 import org.springframework.transaction.annotation.Transactional;
@@ -148,22 +147,23 @@ class ConversationMemoryStoreTest {
   }
 
   @Test
-  void appliesCeilingQueryTimeoutPerJournalPageWithoutMutatingSharedJdbcTemplateState() {
+  void appliesSmallerPerRequestTimeoutAfterHigherSharedStatementSettings() {
     AtomicInteger statementTimeout = new AtomicInteger();
     JdbcTemplate inspectingTemplate =
         new JdbcTemplate(dataSource) {
           @Override
           public <T> List<T> query(
-              PreparedStatementCreator preparedStatementCreator, RowMapper<T> rowMapper) {
+              String sql, PreparedStatementSetter preparedStatementSetter, RowMapper<T> rowMapper) {
             return super.query(
-                connection -> {
-                  var statement = preparedStatementCreator.createPreparedStatement(connection);
+                sql,
+                statement -> {
+                  preparedStatementSetter.setValues(statement);
                   statementTimeout.set(statement.getQueryTimeout());
-                  return statement;
                 },
                 rowMapper);
           }
         };
+    inspectingTemplate.setQueryTimeout(10);
     int sharedTimeout = inspectingTemplate.getQueryTimeout();
     ConversationMemoryStore timeoutStore = new ConversationMemoryStore(inspectingTemplate);
 
@@ -187,12 +187,12 @@ class ConversationMemoryStoreTest {
         new JdbcTemplate(dataSource) {
           @Override
           public <T> List<T> query(
-              PreparedStatementCreator preparedStatementCreator, RowMapper<T> rowMapper) {
+              String sql, PreparedStatementSetter preparedStatementSetter, RowMapper<T> rowMapper) {
             return super.query(
-                connection -> {
-                  var statement = preparedStatementCreator.createPreparedStatement(connection);
+                sql,
+                statement -> {
+                  preparedStatementSetter.setValues(statement);
                   statementTimeout.set(statement.getQueryTimeout());
-                  return statement;
                 },
                 rowMapper);
           }
