@@ -4,6 +4,7 @@ import io.breland.bbagent.server.agent.memory.ConversationMemoryModels.Conversat
 import java.time.Instant;
 import java.util.List;
 import java.util.Locale;
+import java.util.Set;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.lang.Nullable;
 
@@ -251,7 +252,16 @@ public final class ConversationQuestionAnsweringModels {
       String answer,
       Confidence confidence,
       List<String> evidenceMessageGuids,
-      Instant coverageThrough) {
+      Instant coverageThrough,
+      Set<String> trustedParticipantLabels) {
+    public QuestionFinding(
+        String answer,
+        Confidence confidence,
+        List<String> evidenceMessageGuids,
+        Instant coverageThrough) {
+      this(answer, confidence, evidenceMessageGuids, coverageThrough, Set.of());
+    }
+
     public QuestionFinding {
       requireNotBlank(answer, "answer");
       if (confidence == null) {
@@ -261,6 +271,7 @@ public final class ConversationQuestionAnsweringModels {
       if (coverageThrough == null) {
         throw new IllegalArgumentException("coverage through must not be null");
       }
+      trustedParticipantLabels = Set.copyOf(trustedParticipantLabels);
     }
   }
 

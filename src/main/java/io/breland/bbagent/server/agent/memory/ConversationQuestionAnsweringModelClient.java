@@ -134,7 +134,10 @@ public class ConversationQuestionAnsweringModelClient {
             providerInput.aliasToMessageGuid(),
             providerInput.messageGuids(),
             providerInput.evidenceAliases(),
-            submittedMessages.stream().map(QuestionMessage::text).toList()),
+            submittedMessages.stream().map(QuestionMessage::text).toList(),
+            submittedMessages.stream()
+                .map(QuestionMessage::participant)
+                .collect(java.util.stream.Collectors.toUnmodifiableSet())),
         routed.model(),
         routed.fallbackUsed());
   }
@@ -163,7 +166,10 @@ public class ConversationQuestionAnsweringModelClient {
             providerInput.aliasToMessageGuid(),
             providerInput.messageGuids(),
             providerInput.evidenceAliases(),
-            submittedFindings.stream().map(QuestionFinding::answer).toList()),
+            submittedFindings.stream().map(QuestionFinding::answer).toList(),
+            submittedFindings.stream()
+                .flatMap(finding -> finding.trustedParticipantLabels().stream())
+                .collect(java.util.stream.Collectors.toUnmodifiableSet())),
         routed.model(),
         routed.fallbackUsed());
   }
@@ -256,7 +262,8 @@ public class ConversationQuestionAnsweringModelClient {
       Map<String, String> aliasToMessageGuid,
       Set<String> forbiddenIdentifiers,
       Set<String> opaqueEvidenceAliases,
-      List<String> submittedSourceTexts) {
+      List<String> submittedSourceTexts,
+      Set<String> trustedParticipantLabels) {
     if (raw == null) {
       throw new IllegalStateException("invalid question answer response");
     }
@@ -282,7 +289,11 @@ public class ConversationQuestionAnsweringModelClient {
       throw new IllegalStateException("invalid question answer response");
     }
     ConversationQuestionAnswerOutputValidator.requireSafe(
-        answer, forbiddenIdentifiers, opaqueEvidenceAliases, submittedSourceTexts);
+        answer,
+        forbiddenIdentifiers,
+        opaqueEvidenceAliases,
+        submittedSourceTexts,
+        trustedParticipantLabels);
     return new ModelAnswer(
         status, answer, confidence, List.copyOf(evidence), raw.needsMoreContext());
   }

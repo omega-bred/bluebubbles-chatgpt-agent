@@ -330,7 +330,8 @@ public class ConversationQuestionAnsweringService {
           validateAnswer(
               routed,
               messageGuids(batch.messages()),
-              batch.messages().stream().map(QuestionMessage::text).toList());
+              batch.messages().stream().map(QuestionMessage::text).toList(),
+              participantLabels(batch.messages()));
       if (validated == null) {
         partialReason = MODEL_INVALID;
         break;
@@ -345,7 +346,8 @@ public class ConversationQuestionAnsweringService {
                 validated.answer(),
                 validated.confidence(),
                 validated.evidenceMessageGuids(),
-                processedThrough);
+                processedThrough,
+                participantLabels(batch.messages()));
         findings.add(new SupportedFinding(finding, routed));
       } else {
         lastUnsupported = routed;
@@ -419,7 +421,10 @@ public class ConversationQuestionAnsweringService {
           validateAnswer(
               reduced,
               submittedEvidence,
-              questionFindings.stream().map(QuestionFinding::answer).toList());
+              questionFindings.stream().map(QuestionFinding::answer).toList(),
+              questionFindings.stream()
+                  .flatMap(finding -> finding.trustedParticipantLabels().stream())
+                  .collect(java.util.stream.Collectors.toUnmodifiableSet()));
       if (validated == null) {
         return bestFinding(findings, processedThrough, firstReason(MODEL_INVALID, partialReason));
       }
@@ -476,7 +481,8 @@ public class ConversationQuestionAnsweringService {
   private ModelAnswer validateAnswer(
       @Nullable RoutedModelAnswer routed,
       Set<String> submittedEvidence,
-      List<String> submittedSourceTexts) {
+      List<String> submittedSourceTexts,
+      Set<String> trustedParticipantLabels) {
     if (routed == null || routed.answer() == null) {
       return null;
     }
@@ -490,10 +496,16 @@ public class ConversationQuestionAnsweringService {
       return null;
     }
     if (!ConversationQuestionAnswerOutputValidator.isSafe(
-        answer.answer(), submittedEvidence, submittedSourceTexts)) {
+        answer.answer(), submittedEvidence, submittedSourceTexts, trustedParticipantLabels)) {
       return null;
     }
     return answer;
+  }
+
+  private static Set<String> participantLabels(List<QuestionMessage> messages) {
+    return messages.stream()
+        .map(QuestionMessage::participant)
+        .collect(java.util.stream.Collectors.toUnmodifiableSet());
   }
 
   private GroupQuestionAnswer finalAnswer(

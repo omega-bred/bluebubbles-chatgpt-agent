@@ -248,13 +248,22 @@ class ConversationQuestionAnsweringModelClientTest {
   @ValueSource(
       strings = {
         "Call +1 (555) 555-0199 for the result.",
+        "Call 555-1234 for the result.",
         "Email dom@example.com for the result.",
         "The result is at https://example.com/private.",
         "The result is at www.example.com/private.",
         "The result is at example.com/private.",
         "The secret is at vault.example.tech/secret.",
         "The secret is at vault.js/secret.",
-        "The company is foo.company."
+        "The company is foo.company.",
+        "The endpoint is 10.0.0.1:8080/private.",
+        "The endpoint is localhost:8080/private.",
+        "The endpoint is localhost/private.",
+        "The endpoint is internal:8080.",
+        "The configuration says endpoint:foo.company is private.",
+        "The endpoint is foo.company: use it only internally.",
+        "The endpoint is [2001:db8::1]:8080/private.",
+        "The endpoint is 2001:db8::1."
       })
   void rejectsRawIdentifiersInSynthesizedAnswer(String unsafeAnswer) {
     rawAnswer("00000000-0000-0000-0000-000000000101", unsafeAnswer);
@@ -397,15 +406,145 @@ class ConversationQuestionAnsweringModelClientTest {
   }
 
   @Test
+  void rejectsAlphabeticScorePaddingThatIsNotTheTrustedParticipant() {
+    String transcript = "Password posted Wordle 1877 in 3/6";
+    rawAnswer("m-1", transcript);
+
+    assertThatThrownBy(
+            () -> client.answer("What was posted?", List.of(message("m-1", "Dom", transcript))))
+        .isInstanceOf(IllegalStateException.class)
+        .hasMessage("unsafe question answer response");
+  }
+
+  @Test
+  void rejectsMontageOfScorePaddedTinyMessages() {
+    when(responses.create(anyString(), anyString(), eq(800), eq(RawQuestionAnswer.class)))
+        .thenAnswer(
+            invocation ->
+                routed(
+                    new RawQuestionAnswer(
+                        "ANSWERED",
+                        "alpha 3/6 beta 3/6",
+                        "HIGH",
+                        submittedAliases(invocation.getArgument(1)),
+                        false)));
+
+    assertThatThrownBy(
+            () ->
+                client.answer(
+                    "What were the results?",
+                    List.of(message("m-1", "Dom", "alpha 3/6"), message("m-2", "Dom", "beta 3/6"))))
+        .isInstanceOf(IllegalStateException.class)
+        .hasMessage("unsafe question answer response");
+  }
+
+  @ParameterizedTest
+  @ValueSource(
+      strings = {
+        "Eve reported puzzle 1877 in 3/6",
+        "Dom reported puzzle 9999 in 3/6",
+        "Dom reported puzzle 1877 in 2/6"
+      })
+  void rejectsUnsupportedParticipantPuzzleOrScoreInCanonicalScoreAnswer(String answer) {
+    rawAnswer("m-1", answer);
+
+    assertThatThrownBy(
+            () ->
+                client.answer(
+                    "What score did Dom report?",
+                    List.of(message("m-1", "Dom", "Wordle 1877 was 3/6"))))
+        .isInstanceOf(IllegalStateException.class)
+        .hasMessage("unsafe question answer response");
+  }
+
+  @Test
+  void doesNotTrustParticipantLikeTextAsTheParticipantLabel() {
+    rawAnswer("m-1", "Dom reported puzzle 1877 in 3/6");
+
+    assertThatThrownBy(
+            () ->
+                client.answer(
+                    "What score was reported?",
+                    List.of(
+                        message(
+                            "m-1", "participant ending 0199", "Dom posted Wordle 1877 in 3/6"))))
+        .isInstanceOf(IllegalStateException.class)
+        .hasMessage("unsafe question answer response");
+  }
+
+  @Test
+  void rejectsAnUntrustedMaskedParticipantLabel() {
+    rawAnswer("m-1", "participant ending 9999 reported puzzle 1877 in 3/6");
+
+    assertThatThrownBy(
+            () ->
+                client.answer(
+                    "What score was reported?",
+                    List.of(
+                        message(
+                            "m-1", "participant ending 0199", "Wordle 1877 was completed in 3/6"))))
+        .isInstanceOf(IllegalStateException.class)
+        .hasMessage("unsafe question answer response");
+  }
+
+  @Test
   void allowsSynthesizedScoreWhileDiscardingExtraSourceTokens() {
     rawAnswer("m-1", "Dom reported puzzle 1877 in 3/6");
 
     var result =
         client.answer(
             "What score did Dom report?",
-            List.of(message("m-1", "Secret Dom posted Wordle 1877 in 3/6")));
+            List.of(message("m-1", "Dom", "Secret Dom posted Wordle 1877 in 3/6")));
 
     assertThat(result.answer().answer()).isEqualTo("Dom reported puzzle 1877 in 3/6");
+  }
+
+  @Test
+  void allowsATrustedParticipantAfterNeutralFramingSeparatedByAClauseBoundary() {
+    rawAnswer("m-1", "According to the evidence, Dom reported puzzle 1877 in 3/6");
+
+    var result =
+        client.answer(
+            "What score did Dom report?",
+            List.of(message("m-1", "Dom", "Dom posted Wordle 1877 in 3/6")));
+
+    assertThat(result.answer().answer())
+        .isEqualTo("According to the evidence, Dom reported puzzle 1877 in 3/6");
+  }
+
+  @ParameterizedTest
+  @ValueSource(strings = {"participant ending 0199", "unknown participant"})
+  void allowsTrustedMaskedOrUnknownParticipantLabels(String participant) {
+    rawAnswer("m-1", participant + " reported puzzle 1877 in 3/6");
+
+    var result =
+        client.answer(
+            "What score was reported?",
+            List.of(message("m-1", participant, "Wordle 1877 was completed in 3/6")));
+
+    assertThat(result.answer().answer()).isEqualTo(participant + " reported puzzle 1877 in 3/6");
+  }
+
+  @Test
+  void allowsSupportedScoreRenderingWithTheTrustedLabelAfterNeutralWords() {
+    assertThat(
+            ConversationQuestionAnswerOutputValidator.isSafe(
+                "The only reported score is participant ending 0199 with 4/6.",
+                Set.of("score-guid"),
+                List.of("Wordle 1,877 4/6"),
+                Set.of("participant ending 0199")))
+        .isTrue();
+  }
+
+  @Test
+  void allowsSupportedLeaderRenderingWithTheTrustedLabelAfterTheScore() {
+    assertThat(
+            ConversationQuestionAnswerOutputValidator.isSafe(
+                "Of the reported Wordle 1,877 scores, participant ending 0123 leads with 3/6.",
+                Set.of("score-2"),
+                List.of("Wordle 1,877 4/6", "Wordle 1,877 3/6"),
+                Set.of("participant ending 0199", "participant ending 0123")))
+        .isTrue();
   }
 
   @Test
@@ -478,6 +617,16 @@ class ConversationQuestionAnsweringModelClientTest {
   }
 
   @Test
+  void rejectsACompleteInternalEndpointEvenWhenTinyMessageBudgetWouldAllowOneMatch() {
+    rawAnswer("m-1", "10.0.0.1:8080");
+
+    assertThatThrownBy(
+            () -> client.answer("Which endpoint?", List.of(message("m-1", "Dom", "10.0.0.1:8080"))))
+        .isInstanceOf(IllegalStateException.class)
+        .hasMessage("unsafe question answer response");
+  }
+
+  @Test
   void extractsPathAfterTheFullArbitraryTldRatherThanAComPrefix() {
     rawAnswer("m-1", "Use /board for details.");
 
@@ -509,12 +658,84 @@ class ConversationQuestionAnsweringModelClientTest {
   }
 
   @Test
+  void repeatedDottedNearCapInputIsValidatedWithinTheBoundedWorkBudget() {
+    String adversarialSource = "a.".repeat(149_000) + "x";
+
+    assertTimeoutPreemptively(
+        Duration.ofSeconds(3),
+        () ->
+            assertThat(
+                    ConversationQuestionAnswerOutputValidator.isSafe(
+                        "No endpoint was provided.", Set.of("m-1"), List.of(adversarialSource)))
+                .isTrue());
+  }
+
+  @ParameterizedTest
+  @ValueSource(strings = {"2026-08-09", "08-09-2026", "08/09/2026"})
+  void allowsValidCalendarDatesThatAreNotSensitiveSourcePhones(String date) {
+    rawAnswer("m-1", "The event is scheduled for " + date + ".");
+
+    var result =
+        client.answer(
+            "When is the event?", List.of(message("m-1", "Dom", "The event date is " + date)));
+
+    assertThat(result.answer().answer()).isEqualTo("The event is scheduled for " + date + ".");
+  }
+
+  @Test
+  void allowsAContextSupportedCommaGroupedCount() {
+    rawAnswer("m-1", "The total count was 1,234,567 entries.");
+
+    var result =
+        client.answer(
+            "What was the count?",
+            List.of(message("m-1", "Dom", "There were 1,234,567 total entries.")));
+
+    assertThat(result.answer().answer()).isEqualTo("The total count was 1,234,567 entries.");
+  }
+
+  @Test
+  void allowsACommonClockTimeRatherThanTreatingItAsHostnameAndPort() {
+    rawAnswer("m-1", "The event starts at 10:30.");
+
+    var result =
+        client.answer(
+            "When does it start?", List.of(message("m-1", "Dom", "The start time is 10:30.")));
+
+    assertThat(result.answer().answer()).isEqualTo("The event starts at 10:30.");
+  }
+
+  @Test
+  void allowsInvalidIpv4OctetsAsOrdinaryDottedData() {
+    rawAnswer("m-1", "The version tuple was 999.999.999.999.");
+
+    var result =
+        client.answer(
+            "Which version?", List.of(message("m-1", "Dom", "Version tuple: 999.999.999.999")));
+
+    assertThat(result.answer().answer()).isEqualTo("The version tuple was 999.999.999.999.");
+  }
+
+  @Test
+  void doesNotReinterpretAnExtractedSensitivePhoneAsAnIsoDate() {
+    rawAnswer("m-1", "The date was 2026-08-09.");
+
+    assertThatThrownBy(
+            () ->
+                client.answer(
+                    "What was the value?", List.of(message("m-1", "Dom", "Call 20260809."))))
+        .isInstanceOf(IllegalStateException.class)
+        .hasMessage("unsafe question answer response");
+  }
+
+  @Test
   void retainsShortSupportedParticipantPuzzleAndScoreAnswer() {
     String messageGuid = "00000000-0000-0000-0000-000000000101";
     rawAnswer(messageGuid, "Dom reported Wordle 1,877 in 3/6.");
 
     var result =
-        client.answer("Who won?", List.of(message(messageGuid, "Dom posted Wordle 1,877 in 3/6.")));
+        client.answer(
+            "Who won?", List.of(message(messageGuid, "Dom", "Dom posted Wordle 1,877 in 3/6.")));
 
     assertThat(result.answer().answer()).isEqualTo("Dom reported Wordle 1,877 in 3/6.");
   }
@@ -641,6 +862,35 @@ class ConversationQuestionAnsweringModelClientTest {
     assertThat(result.answer().evidenceMessageGuids()).containsExactly("m-1");
   }
 
+  @Test
+  void reductionRetainsTrustedParticipantMetadataWithoutAddingProviderFields() {
+    when(responses.create(anyString(), anyString(), eq(800), eq(RawQuestionAnswer.class)))
+        .thenAnswer(
+            invocation ->
+                routed(
+                    new RawQuestionAnswer(
+                        "ANSWERED",
+                        "participant ending 0199 reported puzzle 1877 in 4/6",
+                        "MEDIUM",
+                        submittedAliases(invocation.getArgument(1)),
+                        false)));
+
+    var result =
+        client.reduce(
+            "Who won?",
+            List.of(
+                new QuestionFinding(
+                    "participant ending 0199 reported Wordle 1877 in 4/6.",
+                    Confidence.MEDIUM,
+                    List.of("m-1"),
+                    TO,
+                    Set.of("participant ending 0199"))));
+
+    assertThat(result.answer().answer())
+        .isEqualTo("participant ending 0199 reported puzzle 1877 in 4/6");
+    assertThat(capturedUserInput()).doesNotContain("trustedParticipantLabels");
+  }
+
   private void rawAnswerUsesEvidence(String evidenceGuid) {
     when(responses.create(anyString(), anyString(), eq(800), eq(RawQuestionAnswer.class)))
         .thenReturn(
@@ -694,6 +944,10 @@ class ConversationQuestionAnsweringModelClientTest {
 
   private static QuestionMessage message(String messageGuid, String text) {
     return new QuestionMessage(messageGuid, "participant-1", FROM, text);
+  }
+
+  private static QuestionMessage message(String messageGuid, String participant, String text) {
+    return new QuestionMessage(messageGuid, participant, FROM, text);
   }
 
   private static <T> RoutedResponse<T> routed(T value) {
