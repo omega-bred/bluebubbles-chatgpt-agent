@@ -170,6 +170,53 @@ public final class ConversationQuestionAnsweringModels {
     }
   }
 
+  public record GroupQuestionAnswer(
+      AnswerStatus status,
+      String answer,
+      Confidence confidence,
+      int evidenceMessageCount,
+      RetrievalMode retrievalMode,
+      CoverageStatus coverageStatus,
+      Instant from,
+      Instant to,
+      Instant coverageThrough,
+      @Nullable String partialReason) {
+    public GroupQuestionAnswer {
+      if (status == null) {
+        throw new IllegalArgumentException("answer status must not be null");
+      }
+      requireNotBlank(answer, "answer");
+      if (confidence == null) {
+        throw new IllegalArgumentException("confidence must not be null");
+      }
+      if (evidenceMessageCount < 0) {
+        throw new IllegalArgumentException("evidence message count must not be negative");
+      }
+      if (status == AnswerStatus.ANSWERED && evidenceMessageCount == 0) {
+        throw new IllegalArgumentException("answered result must have evidence");
+      }
+      if (retrievalMode == null) {
+        throw new IllegalArgumentException("retrieval mode must not be null");
+      }
+      if (coverageStatus == null) {
+        throw new IllegalArgumentException("coverage status must not be null");
+      }
+      if (from == null || to == null || !from.isBefore(to)) {
+        throw new IllegalArgumentException("answer range must be ordered");
+      }
+      if (coverageThrough == null) {
+        throw new IllegalArgumentException("coverage through must not be null");
+      }
+      partialReason = StringUtils.trimToNull(partialReason);
+      if (coverageStatus == CoverageStatus.COMPLETE && partialReason != null) {
+        throw new IllegalArgumentException("complete answer must not have a partial reason");
+      }
+      if (coverageStatus == CoverageStatus.PARTIAL && partialReason == null) {
+        throw new IllegalArgumentException("partial answer must have a reason");
+      }
+    }
+  }
+
   public record QuestionFinding(
       String answer,
       Confidence confidence,
