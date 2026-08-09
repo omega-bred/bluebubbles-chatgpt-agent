@@ -81,7 +81,7 @@ public final class AgentToolRegistry {
           SetGroupIconAgentTool.TOOL_NAME,
           ConfigureGroupMemoryAgentTool.TOOL_NAME);
   private static final Set<String> DIRECT_ONLY_TOOLS =
-      Set.of(GetGroupCatchupAgentTool.TOOL_NAME, ConfigureGroupCatchupAgentTool.TOOL_NAME);
+      Set.of(ConfigureGroupCatchupAgentTool.TOOL_NAME);
   private static final Set<String> BLUEBUBBLES_ONLY_TOOLS =
       Set.of(
           SearchConvoHistoryAgentTool.TOOL_NAME,

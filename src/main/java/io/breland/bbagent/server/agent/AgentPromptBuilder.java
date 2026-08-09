@@ -68,7 +68,7 @@ public final class AgentPromptBuilder {
       "BlueChat supports basic text formatting, specifically bold, italic, underline, and"
           + " strikethrough. Bold is delimited with **, underline with __, strikethrough with ~~, and"
           + " italic with *. Constrain output to those formatting markers, plain text, and emojis."
-          + " Do not use unsupported markdown such as backticks, headings, tables, or lists. ";
+          + " Do not use unsupported markdown such as backticks, headings, tables, or lists. Links should just be the URL. ";
 
   private final BBHttpClientWrapper bbHttpClientWrapper;
   private final ReverseLocationLookup reverseLocationLookup;
@@ -309,6 +309,9 @@ public final class AgentPromptBuilder {
                   + " for questions like what happened, what did I miss, or summaries of a group over a time range. Use "
                   + MemoryGetAgentTool.TOOL_NAME
                   + " for semantic facts and decisions; its limited search results are not proof of complete time-range coverage. "
+                  + "For precise questions about who, what, which, when, counts, scores, or comparisons in an authorized group, call "
+                  + GetGroupCatchupAgentTool.TOOL_NAME
+                  + " with the user's exact question. Treat question_answer coverage and insufficient_evidence as authoritative for that requested range; do not substitute unrelated semantic memory as current group evidence. "
                   + "When the user asks to enable, disable, or schedule proactive summaries from a group into this one-to-one chat, call "
                   + ConfigureGroupCatchupAgentTool.TOOL_NAME
                   + ". "
@@ -360,14 +363,21 @@ public final class AgentPromptBuilder {
                 + " when asked to read poll results, count votes, summarize choices, or inspect a poll by message GUID. "
                 + "When sending a text, you may optionally apply a BlueChat effect via the effect parameter, but use effects sparingly (e.g. happy_birthday for birthday wishes). "
                 + "Use available tools for tasks like calendars or lookups when asked. "
-                + "In a one-to-one chat, use "
-                + GetGroupCatchupAgentTool.TOOL_NAME
-                + " for questions like what happened, what did I miss, or summaries of a group over a time range. Use "
-                + MemoryGetAgentTool.TOOL_NAME
-                + " for semantic facts and decisions; its limited search results are not proof of complete time-range coverage. "
-                + "When the user asks to enable, disable, or schedule proactive summaries from a group into this one-to-one chat, call "
-                + ConfigureGroupCatchupAgentTool.TOOL_NAME
-                + ". "
+                + (message != null && message.isGroup()
+                    ? "In a group chat, use "
+                        + GetGroupCatchupAgentTool.TOOL_NAME
+                        + " for precise questions about the current group's own history. The server always scopes this tool to the current group; do not use it to ask about another conversation. Treat question_answer coverage and insufficient_evidence as authoritative for that requested range; do not substitute unrelated semantic memory as current group evidence. "
+                    : "In a one-to-one chat, use "
+                        + GetGroupCatchupAgentTool.TOOL_NAME
+                        + " for questions like what happened, what did I miss, or summaries of a group over a time range. Use "
+                        + MemoryGetAgentTool.TOOL_NAME
+                        + " for semantic facts and decisions; its limited search results are not proof of complete time-range coverage. "
+                        + "For precise questions about who, what, which, when, counts, scores, or comparisons in an authorized group, call "
+                        + GetGroupCatchupAgentTool.TOOL_NAME
+                        + " with the user's exact question. Treat question_answer coverage and insufficient_evidence as authoritative for that requested range; do not substitute unrelated semantic memory as current group evidence. "
+                        + "When the user asks to enable, disable, or schedule proactive summaries from a group into this one-to-one chat, call "
+                        + ConfigureGroupCatchupAgentTool.TOOL_NAME
+                        + ". ")
                 + "Use web_search for current info or external lookups when relevant. "
                 + "When the user asks about quota, usage limits, monthly messages, or remaining messages, call "
                 + GetUsageLimitsAgentTool.TOOL_NAME
@@ -473,9 +483,9 @@ public final class AgentPromptBuilder {
                 + "If no reply is needed, output exactly "
                 + BBMessageAgent.NO_RESPONSE_TEXT
                 + ". "
-                + "If the incoming message starts with 'Reacted ', 'Loved ', 'Liked ', 'Disliked ', 'Questioned ', 'Emphasized ', 'Laughed at ' - reply "
+                + "If the incoming message starts with 'Reacted ', 'Loved ', 'Liked ', 'Disliked ', 'Questioned ', 'Emphasized ', 'Laughed at ' or is otherwise a 'reaction happened' message - by default you should reply "
                 + BBMessageAgent.NO_RESPONSE_TEXT
-                + " unless the reaction directly answers a question you (the assistant) asked or implies the user needs clarification. These are just reactions to your prior message and do not necessarily indicate a response is needed. Use your best judgement but err on the side of being less verbose and not responding by using "
+                + " unless the reaction directly answers a question you (the assistant) asked, implies the user needs clarification, or indicates that the user wants you to proceed (or not) with an action. These are just reactions to your prior message and do not necessarily indicate a response is needed. Use your best judgement but err on the side of being less verbose and not responding by using "
                 + BBMessageAgent.NO_RESPONSE_TEXT
                 + ".")
         .build();

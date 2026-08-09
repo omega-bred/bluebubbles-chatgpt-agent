@@ -481,6 +481,87 @@ class BBMessageAgentTest {
   }
 
   @Test
+  void directBlueChatPromptForwardsPreciseGroupQuestionsWithoutMemorySubstitution() {
+    IncomingMessage incoming =
+        incomingMessage(
+            "iMessage;-;+15555550123",
+            "msg-group-question-direct",
+            "Who is winning in Wordling Wonders?",
+            1_000L);
+
+    String prompt =
+        promptBuilder(new StubBBHttpClientWrapper())
+            .buildConversationInput(List.of(), List.of(), incoming)
+            .toString();
+
+    assertTrue(
+        prompt.contains(
+            "precise questions about who, what, which, when, counts, scores, or comparisons"));
+    assertTrue(prompt.contains("get_group_catchup with the user's exact question"));
+    assertTrue(
+        prompt.contains("question_answer coverage and insufficient_evidence as authoritative"));
+    assertTrue(
+        prompt.contains("do not substitute unrelated semantic memory as current group evidence"));
+  }
+
+  @Test
+  void directLxmfPromptForwardsPreciseGroupQuestionsWithoutMemorySubstitution() {
+    IncomingMessage incoming =
+        new IncomingMessage(
+            IncomingMessage.TRANSPORT_LXMF,
+            IncomingMessage.transportPrefix(IncomingMessage.TRANSPORT_LXMF, "aabbccdd"),
+            "msg-group-question-lxmf",
+            null,
+            "Which plan did the Hiking group choose?",
+            false,
+            "LXMF",
+            "aabbccdd",
+            false,
+            Instant.ofEpochSecond(1_000L),
+            List.of(),
+            false);
+
+    String prompt =
+        promptBuilder(new StubBBHttpClientWrapper())
+            .buildConversationInput(List.of(), List.of(), incoming)
+            .toString();
+
+    assertTrue(prompt.contains("get_group_catchup with the user's exact question"));
+    assertTrue(
+        prompt.contains("question_answer coverage and insufficient_evidence as authoritative"));
+    assertTrue(
+        prompt.contains("do not substitute unrelated semantic memory as current group evidence"));
+  }
+
+  @Test
+  void groupPromptRestrictsCatchupQuestionsToTheCurrentConversation() {
+    IncomingMessage incoming =
+        new IncomingMessage(
+            "iMessage;+;chat-group-question",
+            "msg-group-question",
+            null,
+            "Who is winning?",
+            false,
+            "iMessage",
+            "Alice",
+            true,
+            Instant.ofEpochSecond(1_000L),
+            List.of(),
+            false);
+
+    String prompt =
+        promptBuilder(new StubBBHttpClientWrapper())
+            .buildConversationInput(List.of(), List.of(), incoming)
+            .toString();
+
+    assertTrue(
+        prompt.contains(
+            "use get_group_catchup for precise questions about the current group's own history"));
+    assertTrue(prompt.contains("server always scopes this tool to the current group"));
+    assertTrue(prompt.contains("do not use it to ask about another conversation"));
+  }
+
+  @Test
   void injectsFindMyLocationContextForDirectMessages() {
     OpenAIClient openAIClient = Mockito.mock(OpenAIClient.class);
     var responseService = Mockito.mock(com.openai.services.blocking.ResponseService.class);

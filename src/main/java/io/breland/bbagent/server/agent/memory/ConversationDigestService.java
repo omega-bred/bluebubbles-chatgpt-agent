@@ -46,6 +46,7 @@ public class ConversationDigestService {
   private final ObjectMapper objectMapper;
   private final @Nullable BBHttpClientWrapper bbHttpClientWrapper;
   private final @Nullable ConversationJournalService journalService;
+  private final @Nullable ConversationQuestionAnsweringService questionAnsweringService;
   private final Clock clock;
   private final String workerId;
   private final @Nullable OperationalMetricsService metrics;
@@ -57,6 +58,7 @@ public class ConversationDigestService {
       ObjectMapper objectMapper,
       @Nullable BBHttpClientWrapper bbHttpClientWrapper,
       @Nullable ConversationJournalService journalService,
+      ConversationQuestionAnsweringService questionAnsweringService,
       @Nullable Clock clock,
       @Nullable OperationalMetricsService metrics,
       @Value("${bbagent.memory.group.enabled:false}") boolean globallyEnabled) {
@@ -65,6 +67,7 @@ public class ConversationDigestService {
         objectMapper,
         bbHttpClientWrapper,
         journalService,
+        questionAnsweringService,
         clock == null ? Clock.systemUTC() : clock,
         UUID.randomUUID().toString(),
         metrics,
@@ -78,7 +81,36 @@ public class ConversationDigestService {
       @Nullable ConversationJournalService journalService,
       Clock clock,
       String workerId) {
-    this(store, objectMapper, bbHttpClientWrapper, journalService, clock, workerId, null, true);
+    this(
+        store,
+        objectMapper,
+        bbHttpClientWrapper,
+        journalService,
+        null,
+        clock,
+        workerId,
+        null,
+        true);
+  }
+
+  ConversationDigestService(
+      ConversationMemoryStore store,
+      ObjectMapper objectMapper,
+      @Nullable BBHttpClientWrapper bbHttpClientWrapper,
+      @Nullable ConversationJournalService journalService,
+      ConversationQuestionAnsweringService questionAnsweringService,
+      Clock clock,
+      String workerId) {
+    this(
+        store,
+        objectMapper,
+        bbHttpClientWrapper,
+        journalService,
+        questionAnsweringService,
+        clock,
+        workerId,
+        null,
+        true);
   }
 
   ConversationDigestService(
@@ -90,10 +122,33 @@ public class ConversationDigestService {
       String workerId,
       @Nullable OperationalMetricsService metrics,
       boolean globallyEnabled) {
+    this(
+        store,
+        objectMapper,
+        bbHttpClientWrapper,
+        journalService,
+        null,
+        clock,
+        workerId,
+        metrics,
+        globallyEnabled);
+  }
+
+  ConversationDigestService(
+      ConversationMemoryStore store,
+      ObjectMapper objectMapper,
+      @Nullable BBHttpClientWrapper bbHttpClientWrapper,
+      @Nullable ConversationJournalService journalService,
+      @Nullable ConversationQuestionAnsweringService questionAnsweringService,
+      Clock clock,
+      String workerId,
+      @Nullable OperationalMetricsService metrics,
+      boolean globallyEnabled) {
     this.store = store;
     this.objectMapper = objectMapper;
     this.bbHttpClientWrapper = bbHttpClientWrapper;
     this.journalService = journalService;
+    this.questionAnsweringService = questionAnsweringService;
     this.clock = clock == null ? Clock.systemUTC() : clock;
     this.workerId = workerId;
     this.metrics = metrics;
@@ -102,9 +157,19 @@ public class ConversationDigestService {
 
   public CatchupResult catchUp(
       String accountId, @Nullable String groupHint, Instant requestedFrom, Instant requestedTo) {
+    return catchUp(accountId, groupHint, requestedFrom, requestedTo, null);
+  }
+
+  public CatchupResult catchUp(
+      String accountId,
+      @Nullable String groupHint,
+      Instant requestedFrom,
+      Instant requestedTo,
+      @Nullable String question) {
     Instant startedAt = clock.instant();
     try {
-      CatchupResult result = catchUpInternal(accountId, groupHint, requestedFrom, requestedTo);
+      CatchupResult result =
+          catchUpInternal(accountId, groupHint, requestedFrom, requestedTo, question);
       recordCatchup(true, null, startedAt);
       return result;
     } catch (RuntimeException e) {
@@ -114,7 +179,11 @@ public class ConversationDigestService {
   }
 
   private CatchupResult catchUpInternal(
-      String accountId, @Nullable String groupHint, Instant requestedFrom, Instant requestedTo) {
+      String accountId,
+      @Nullable String groupHint,
+      Instant requestedFrom,
+      Instant requestedTo,
+      @Nullable String question) {
     if (!globallyEnabled) {
       return new CatchupResult(List.of(), List.of());
     }
@@ -125,22 +194,75 @@ public class ConversationDigestService {
     if (requestedTo.isAfter(now) || !requestedFrom.isBefore(requestedTo)) {
       throw new IllegalArgumentException("catch-up range must be ordered and not in the future");
     }
+    boolean questionMode = StringUtils.isNotBlank(question);
     Instant from = requestedFrom;
-    if (Duration.between(from, requestedTo).compareTo(MAX_CATCHUP_RANGE) > 0) {
+    if (!questionMode && Duration.between(from, requestedTo).compareTo(MAX_CATCHUP_RANGE) > 0) {
       from = requestedTo.minus(MAX_CATCHUP_RANGE);
     }
 
     List<AuthorizedGroup> authorizedGroups =
         store.findAuthorizedGroups(accountId, from, requestedTo);
-    GroupSelection selection = selectGroups(authorizedGroups, groupHint);
+    GroupSelection selection =
+        questionMode
+            ? selectQuestionGroup(authorizedGroups, groupHint)
+            : selectGroups(authorizedGroups, groupHint);
     if (!selection.disambiguationOptions().isEmpty()) {
       return new CatchupResult(List.of(), selection.disambiguationOptions());
     }
     List<CatchupGroup> groups = new ArrayList<>();
     for (AuthorizedGroup group : selection.groups()) {
-      groups.add(buildCatchupGroup(accountId, group, from, requestedTo));
+      groups.add(buildCatchupGroup(accountId, group, from, requestedTo, question));
     }
     return new CatchupResult(List.copyOf(groups), List.of());
+  }
+
+  public CatchupResult catchUpForChat(
+      String accountId,
+      String transport,
+      String chatGuid,
+      Instant requestedFrom,
+      Instant requestedTo,
+      @Nullable String question) {
+    Instant startedAt = clock.instant();
+    try {
+      CatchupResult result =
+          catchUpForChatInternal(
+              accountId, transport, chatGuid, requestedFrom, requestedTo, question);
+      recordCatchup(true, null, startedAt);
+      return result;
+    } catch (RuntimeException e) {
+      recordCatchup(false, OperationalMetricsService.failureType(e), startedAt);
+      throw e;
+    }
+  }
+
+  private CatchupResult catchUpForChatInternal(
+      String accountId,
+      String transport,
+      String chatGuid,
+      Instant requestedFrom,
+      Instant requestedTo,
+      @Nullable String question) {
+    if (!globallyEnabled) {
+      return new CatchupResult(List.of(), List.of());
+    }
+    if (StringUtils.isAnyBlank(accountId, transport, chatGuid)
+        || requestedFrom == null
+        || requestedTo == null) {
+      throw new IllegalArgumentException("account, current chat, and catch-up range are required");
+    }
+    Instant now = clock.instant();
+    if (requestedTo.isAfter(now) || !requestedFrom.isBefore(requestedTo)) {
+      throw new IllegalArgumentException("catch-up range must be ordered and not in the future");
+    }
+    AuthorizedGroup group =
+        store.findCurrentlyAuthorizedGroup(accountId, transport, chatGuid, now).orElse(null);
+    if (group == null) {
+      return new CatchupResult(List.of(), List.of());
+    }
+    return new CatchupResult(
+        List.of(buildCatchupGroup(accountId, group, requestedFrom, requestedTo, question)),
+        List.of());
   }
 
   public CatchupResult catchUpForConversation(
@@ -186,7 +308,8 @@ public class ConversationDigestService {
       return new CatchupResult(List.of(), List.of());
     }
     return new CatchupResult(
-        List.of(buildCatchupGroup(accountId, group.get(), authorizedFrom, requestedTo)), List.of());
+        List.of(buildCatchupGroup(accountId, group.get(), authorizedFrom, requestedTo, null)),
+        List.of());
   }
 
   public Instant currentTime() {
@@ -232,7 +355,11 @@ public class ConversationDigestService {
   }
 
   private CatchupGroup buildCatchupGroup(
-      String accountId, AuthorizedGroup group, Instant from, Instant to) {
+      String accountId,
+      AuthorizedGroup group,
+      Instant from,
+      Instant to,
+      @Nullable String question) {
     Instant todayStart =
         LocalDate.ofInstant(clock.instant(), ZoneOffset.UTC)
             .atStartOfDay()
@@ -281,6 +408,13 @@ public class ConversationDigestService {
                         .map(ConversationMemoryModels.ExtractionCheckpoint::lastProcessedAt))
             .map(value -> value.isAfter(to) ? to : value)
             .orElse(from);
+    ConversationQuestionAnsweringModels.GroupQuestionAnswer questionAnswer = null;
+    if (StringUtils.isNotBlank(question)) {
+      if (questionAnsweringService == null) {
+        throw new IllegalStateException("group question answering unavailable");
+      }
+      questionAnswer = questionAnsweringService.answer(accountId, group, question, from, to);
+    }
     return new CatchupGroup(
         StringUtils.defaultIfBlank(group.displayName(), "Group conversation"),
         String.join(" ", developments),
@@ -289,7 +423,20 @@ public class ConversationDigestService {
         openQuestions,
         from,
         to,
-        coverageThrough);
+        coverageThrough,
+        questionAnswer);
+  }
+
+  private GroupSelection selectQuestionGroup(
+      List<AuthorizedGroup> authorizedGroups, @Nullable String groupHint) {
+    GroupSelection selection = selectGroups(authorizedGroups, groupHint);
+    if (selection.groups().size() == 1 || !selection.disambiguationOptions().isEmpty()) {
+      return selection;
+    }
+    if (normalizeGroupHint(groupHint) == null && authorizedGroups.size() > 1) {
+      return new GroupSelection(List.of(), disambiguationOptions(authorizedGroups));
+    }
+    return new GroupSelection(List.of(), List.of());
   }
 
   private GroupSelection selectGroups(
@@ -309,18 +456,20 @@ public class ConversationDigestService {
                 .toList()
             : exact;
     if (matches.size() > 1) {
-      return new GroupSelection(
-          List.of(),
-          matches.stream()
-              .map(
-                  group ->
-                      StringUtils.defaultIfBlank(group.displayName(), "Group conversation")
-                          + " (last active "
-                          + DateTimeFormatter.ISO_INSTANT.format(group.lastActivityAt())
-                          + ")")
-              .toList());
+      return new GroupSelection(List.of(), disambiguationOptions(matches));
     }
     return new GroupSelection(matches, List.of());
+  }
+
+  private List<String> disambiguationOptions(List<AuthorizedGroup> groups) {
+    return groups.stream()
+        .map(
+            group ->
+                StringUtils.defaultIfBlank(group.displayName(), "Group conversation")
+                    + " (last active "
+                    + DateTimeFormatter.ISO_INSTANT.format(group.lastActivityAt())
+                    + ")")
+        .toList();
   }
 
   private String normalizeGroupHint(@Nullable String hint) {

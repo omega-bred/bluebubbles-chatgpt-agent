@@ -18,6 +18,7 @@ import io.breland.bbagent.server.agent.tools.gcal.GcalClient;
 import io.breland.bbagent.server.agent.tools.giphy.GiphyClient;
 import io.breland.bbagent.server.agent.tools.kubernetes.KubernetesPodLogsAgentTool;
 import io.breland.bbagent.server.agent.tools.kubernetes.KubernetesReadOnlyAgentTool;
+import io.breland.bbagent.server.agent.tools.memory.ConfigureGroupCatchupAgentTool;
 import io.breland.bbagent.server.agent.tools.memory.GetGroupCatchupAgentTool;
 import io.breland.bbagent.server.agent.tools.memory.Mem0Client;
 import io.breland.bbagent.server.agent.tools.search.ToolSearchAgentTool;
@@ -128,16 +129,24 @@ class AgentToolRegistryTest {
   }
 
   @Test
-  void groupCatchupToolIsAvailableOnlyInDirectChats() {
+  void groupCatchupIsAvailableInDirectAndGroupChatsWhileConfigurationRemainsDirectOnly() {
     AgentToolRegistry registry = registryForAccount("account-1", mock(MemoryScopeResolver.class));
 
     assertTrue(
         toolNames(registry.availableTools(directMessage("person")))
             .contains(GetGroupCatchupAgentTool.TOOL_NAME));
-    assertFalse(
+    assertTrue(
         toolNames(registry.availableTools(groupMessage()))
             .contains(GetGroupCatchupAgentTool.TOOL_NAME));
-    assertNull(registry.resolveTool(GetGroupCatchupAgentTool.TOOL_NAME, groupMessage()).tool());
+    assertNotNull(registry.resolveTool(GetGroupCatchupAgentTool.TOOL_NAME, groupMessage()).tool());
+    assertTrue(
+        toolNames(registry.availableTools(directMessage("person")))
+            .contains(ConfigureGroupCatchupAgentTool.TOOL_NAME));
+    assertFalse(
+        toolNames(registry.availableTools(groupMessage()))
+            .contains(ConfigureGroupCatchupAgentTool.TOOL_NAME));
+    assertNull(
+        registry.resolveTool(ConfigureGroupCatchupAgentTool.TOOL_NAME, groupMessage()).tool());
   }
 
   private static AgentToolRegistry registryForAccount(String accountId) {

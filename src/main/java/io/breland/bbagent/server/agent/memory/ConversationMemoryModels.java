@@ -1,8 +1,10 @@
 package io.breland.bbagent.server.agent.memory;
 
+import io.breland.bbagent.server.agent.memory.ConversationQuestionAnsweringModels.GroupQuestionAnswer;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
+import org.springframework.lang.Nullable;
 
 public final class ConversationMemoryModels {
   private ConversationMemoryModels() {}
@@ -190,11 +192,33 @@ public final class ConversationMemoryModels {
       List<String> openQuestions,
       Instant from,
       Instant to,
-      Instant coverageThrough) {
+      Instant coverageThrough,
+      @Nullable GroupQuestionAnswer questionAnswer) {
     public CatchupGroup {
       keyDevelopments = List.copyOf(keyDevelopments);
       decisions = List.copyOf(decisions);
       openQuestions = List.copyOf(openQuestions);
+    }
+
+    public CatchupGroup(
+        String group,
+        String summary,
+        List<String> keyDevelopments,
+        List<String> decisions,
+        List<String> openQuestions,
+        Instant from,
+        Instant to,
+        Instant coverageThrough) {
+      this(
+          group,
+          summary,
+          keyDevelopments,
+          decisions,
+          openQuestions,
+          from,
+          to,
+          coverageThrough,
+          null);
     }
   }
 
