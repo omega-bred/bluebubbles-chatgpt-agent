@@ -4,7 +4,6 @@ import io.breland.bbagent.server.agent.memory.ConversationMemoryModels.Conversat
 import java.time.Instant;
 import java.util.List;
 import java.util.Locale;
-import java.util.Set;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.lang.Nullable;
 
@@ -192,6 +191,12 @@ public final class ConversationQuestionAnsweringModels {
     }
   }
 
+  public record RoutedSupportVerification(boolean supported, String model, boolean fallbackUsed) {
+    public RoutedSupportVerification {
+      requireNotBlank(model, "verification model");
+    }
+  }
+
   public record GroupQuestionAnswer(
       AnswerStatus status,
       String answer,
@@ -253,22 +258,12 @@ public final class ConversationQuestionAnsweringModels {
     private final Confidence confidence;
     private final List<String> evidenceMessageGuids;
     private final Instant coverageThrough;
-    private final List<TrustedQuestionFact> trustedFacts;
 
     public QuestionFinding(
         String answer,
         Confidence confidence,
         List<String> evidenceMessageGuids,
         Instant coverageThrough) {
-      this(answer, confidence, evidenceMessageGuids, coverageThrough, List.of());
-    }
-
-    private QuestionFinding(
-        String answer,
-        Confidence confidence,
-        List<String> evidenceMessageGuids,
-        Instant coverageThrough,
-        List<TrustedQuestionFact> trustedFacts) {
       requireNotBlank(answer, "answer");
       if (confidence == null) {
         throw new IllegalArgumentException("confidence must not be null");
@@ -280,22 +275,6 @@ public final class ConversationQuestionAnsweringModels {
       this.confidence = confidence;
       this.evidenceMessageGuids = List.copyOf(evidenceMessageGuids);
       this.coverageThrough = coverageThrough;
-      this.trustedFacts = List.copyOf(trustedFacts);
-      Set<String> evidence = Set.copyOf(this.evidenceMessageGuids);
-      if (this.trustedFacts.stream()
-          .anyMatch(fact -> !evidence.contains(fact.evidenceMessageGuid()))) {
-        throw new IllegalArgumentException("trusted fact evidence must belong to finding");
-      }
-    }
-
-    static QuestionFinding trusted(
-        String answer,
-        Confidence confidence,
-        List<String> evidenceMessageGuids,
-        Instant coverageThrough,
-        List<TrustedQuestionFact> trustedFacts) {
-      return new QuestionFinding(
-          answer, confidence, evidenceMessageGuids, coverageThrough, trustedFacts);
     }
 
     public String answer() {
@@ -312,23 +291,6 @@ public final class ConversationQuestionAnsweringModels {
 
     public Instant coverageThrough() {
       return coverageThrough;
-    }
-
-    List<TrustedQuestionFact> trustedFacts() {
-      return trustedFacts;
-    }
-  }
-
-  record TrustedQuestionFact(
-      String evidenceMessageGuid,
-      String participantLabel,
-      @Nullable String puzzleId,
-      String score) {
-    TrustedQuestionFact {
-      requireNotBlank(evidenceMessageGuid, "trusted fact evidence");
-      requireNotBlank(participantLabel, "trusted fact participant");
-      puzzleId = StringUtils.trimToNull(puzzleId);
-      requireNotBlank(score, "trusted fact score");
     }
   }
 

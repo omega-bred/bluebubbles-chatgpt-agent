@@ -14,8 +14,8 @@ import io.breland.bbagent.server.agent.memory.ConversationQuestionAnsweringModel
 import io.breland.bbagent.server.agent.memory.ConversationQuestionAnsweringModels.RetrievalRequest;
 import io.breland.bbagent.server.agent.memory.ConversationQuestionAnsweringModels.RetrievalResult;
 import io.breland.bbagent.server.agent.memory.ConversationQuestionAnsweringModels.RoutedModelAnswer;
+import io.breland.bbagent.server.agent.memory.ConversationQuestionAnsweringModels.RoutedSupportVerification;
 import io.breland.bbagent.server.agent.memory.ConversationQuestionAnsweringModels.SearchPlan;
-import io.breland.bbagent.server.agent.memory.ConversationQuestionAnsweringModels.TrustedQuestionFact;
 import io.breland.bbagent.server.metrics.OperationalMetricsService;
 import java.time.Clock;
 import java.time.Duration;
@@ -147,7 +147,7 @@ public class ConversationQuestionAnsweringService {
         result.model(),
         work.messageCount(),
         work.pageCount,
-        budget.modelBatches,
+        budget.totalModelCalls(),
         success,
         success ? null : firstReason(result.partialReason(), result.status().name()),
         Duration.between(startedAt, clock.instant()));
@@ -327,36 +327,41 @@ public class ConversationQuestionAnsweringService {
         partialReason = MODEL_UNAVAILABLE;
         break;
       }
-      List<TrustedQuestionFact> batchFacts =
-          ConversationQuestionAnswerOutputValidator.trustedFacts(batch.messages());
       ModelAnswer validated =
           validateAnswer(
               routed,
               messageGuids(batch.messages()),
-              batch.messages().stream().map(QuestionMessage::text).toList(),
-              batchFacts);
+              batch.messages().stream().map(QuestionMessage::text).toList());
       if (validated == null) {
         partialReason = MODEL_INVALID;
         break;
+      }
+
+      RoutedModelAnswer accepted = routed;
+      if (validated.status() == AnswerStatus.ANSWERED) {
+        VerificationOutcome verification =
+            verifyBatchAnswer(question, routed, batch.messages(), deadline, budget);
+        if (verification.failureReason() != null) {
+          partialReason = verification.failureReason();
+          break;
+        }
+        accepted = Objects.requireNonNull(verification.routed());
+        validated = accepted.answer();
       }
 
       processedThrough = maxTimestamp(batch.messages(), processedThrough);
       nextIndex = batch.nextIndex();
       boolean completedAtDeadline = deadlineReached(deadline);
       if (validated.status() == AnswerStatus.ANSWERED) {
-        Set<String> citedEvidence = Set.copyOf(validated.evidenceMessageGuids());
         QuestionFinding finding =
-            QuestionFinding.trusted(
+            new QuestionFinding(
                 validated.answer(),
                 validated.confidence(),
                 validated.evidenceMessageGuids(),
-                processedThrough,
-                batchFacts.stream()
-                    .filter(fact -> citedEvidence.contains(fact.evidenceMessageGuid()))
-                    .toList());
-        findings.add(new SupportedFinding(finding, routed));
+                processedThrough);
+        findings.add(new SupportedFinding(finding, accepted));
       } else {
-        lastUnsupported = routed;
+        lastUnsupported = accepted;
       }
       if (completedAtDeadline) {
         partialReason = TIME_LIMIT;
@@ -382,7 +387,8 @@ public class ConversationQuestionAnsweringService {
         processedThrough,
         partialReason,
         needsMoreContextObserved,
-        deadline);
+        deadline,
+        budget);
   }
 
   private Synthesis finishSynthesis(
@@ -392,7 +398,8 @@ public class ConversationQuestionAnsweringService {
       Instant processedThrough,
       @Nullable String partialReason,
       boolean needsMoreContextObserved,
-      Instant deadline) {
+      Instant deadline,
+      ModelBudget budget) {
     if (findings.isEmpty()) {
       if (lastUnsupported == null) {
         return new Synthesis(null, processedThrough, partialReason, false);
@@ -421,18 +428,48 @@ public class ConversationQuestionAnsweringService {
     List<QuestionFinding> questionFindings =
         findings.stream().map(SupportedFinding::finding).toList();
     Set<String> submittedEvidence = findingGuids(questionFindings);
+    int reductionCharacters;
+    try {
+      reductionCharacters = model.reduceInputCharacters(question, questionFindings);
+    } catch (RuntimeException ignored) {
+      return bestFinding(findings, processedThrough, firstReason(MODEL_INVALID, partialReason));
+    }
+    if (budget.modelBatches >= maxModelBatches
+        || reductionCharacters > maxBatchCharacters
+        || reductionCharacters > maxAggregateCharacters - budget.characters) {
+      return bestFinding(
+          findings,
+          processedThrough,
+          firstReason(
+              budget.modelBatches >= maxModelBatches ? MODEL_BATCH_LIMIT : CHARACTER_LIMIT,
+              partialReason));
+    }
+    budget.modelBatches++;
+    budget.characters += reductionCharacters;
     try {
       RoutedModelAnswer reduced = model.reduce(question, questionFindings, deadline);
       ModelAnswer validated =
           validateAnswer(
               reduced,
               submittedEvidence,
-              questionFindings.stream().map(QuestionFinding::answer).toList(),
-              questionFindings.stream()
-                  .flatMap(finding -> finding.trustedFacts().stream())
-                  .toList());
+              questionFindings.stream().map(QuestionFinding::answer).toList());
       if (validated == null) {
         return bestFinding(findings, processedThrough, firstReason(MODEL_INVALID, partialReason));
+      }
+      RoutedModelAnswer accepted = reduced;
+      if (validated.status() == AnswerStatus.ANSWERED) {
+        VerificationOutcome verification =
+            verifyReducedAnswer(question, reduced, questionFindings, deadline, budget);
+        if (verification.failureReason() != null) {
+          return bestFinding(
+              findings, processedThrough, firstReason(verification.failureReason(), partialReason));
+        }
+        accepted = Objects.requireNonNull(verification.routed());
+        validated = accepted.answer();
+        if (validated.status() != AnswerStatus.ANSWERED) {
+          return bestFinding(
+              findings, processedThrough, firstReason(NEEDS_MORE_CONTEXT, partialReason));
+        }
       }
       String reason =
           dominantReason(
@@ -441,7 +478,7 @@ public class ConversationQuestionAnsweringService {
               validated.needsMoreContext() ? NEEDS_MORE_CONTEXT : null,
               deadlineReached(deadline) ? TIME_LIMIT : null);
       return new Synthesis(
-          reduced, processedThrough, reason, validated.status() == AnswerStatus.UNAVAILABLE);
+          accepted, processedThrough, reason, validated.status() == AnswerStatus.UNAVAILABLE);
     } catch (RuntimeException ignored) {
       return bestFinding(findings, processedThrough, firstReason(MODEL_UNAVAILABLE, partialReason));
     }
@@ -487,8 +524,7 @@ public class ConversationQuestionAnsweringService {
   private ModelAnswer validateAnswer(
       @Nullable RoutedModelAnswer routed,
       Set<String> submittedEvidence,
-      List<String> submittedSourceTexts,
-      List<TrustedQuestionFact> trustedFacts) {
+      List<String> submittedSourceTexts) {
     if (routed == null || routed.answer() == null) {
       return null;
     }
@@ -502,14 +538,91 @@ public class ConversationQuestionAnsweringService {
       return null;
     }
     if (!ConversationQuestionAnswerOutputValidator.isSafe(
-        answer.answer(),
-        submittedEvidence,
-        submittedSourceTexts,
-        trustedFacts,
-        Set.copyOf(answer.evidenceMessageGuids()))) {
+        answer.answer(), submittedEvidence, submittedSourceTexts)) {
       return null;
     }
     return answer;
+  }
+
+  private VerificationOutcome verifyBatchAnswer(
+      String question,
+      RoutedModelAnswer proposed,
+      List<QuestionMessage> submittedMessages,
+      Instant deadline,
+      ModelBudget budget) {
+    Set<String> cited = Set.copyOf(proposed.answer().evidenceMessageGuids());
+    List<QuestionMessage> citedMessages =
+        submittedMessages.stream()
+            .filter(message -> cited.contains(message.messageGuid()))
+            .toList();
+    if (citedMessages.isEmpty() || deadlineReached(deadline)) {
+      return VerificationOutcome.failure(citedMessages.isEmpty() ? MODEL_INVALID : TIME_LIMIT);
+    }
+    try {
+      int verificationCharacters =
+          model.verificationInputCharacters(question, proposed.answer().answer(), citedMessages);
+      if (verificationCharacters > maxBatchCharacters
+          || verificationCharacters > maxAggregateCharacters - budget.characters) {
+        return VerificationOutcome.failure(CHARACTER_LIMIT);
+      }
+      budget.characters += verificationCharacters;
+      budget.verifierCalls++;
+      RoutedSupportVerification verification =
+          model.verifyAnswer(question, proposed.answer().answer(), citedMessages, deadline);
+      return VerificationOutcome.success(applyVerification(proposed, verification));
+    } catch (RuntimeException ignored) {
+      return VerificationOutcome.failure(MODEL_UNAVAILABLE);
+    }
+  }
+
+  private VerificationOutcome verifyReducedAnswer(
+      String question,
+      RoutedModelAnswer proposed,
+      List<QuestionFinding> submittedFindings,
+      Instant deadline,
+      ModelBudget budget) {
+    Set<String> cited = Set.copyOf(proposed.answer().evidenceMessageGuids());
+    List<QuestionFinding> citedFindings =
+        submittedFindings.stream()
+            .filter(finding -> finding.evidenceMessageGuids().stream().anyMatch(cited::contains))
+            .toList();
+    if (citedFindings.isEmpty() || deadlineReached(deadline)) {
+      return VerificationOutcome.failure(citedFindings.isEmpty() ? MODEL_INVALID : TIME_LIMIT);
+    }
+    try {
+      int verificationCharacters =
+          model.reductionVerificationInputCharacters(
+              question, proposed.answer().answer(), citedFindings);
+      if (verificationCharacters > maxBatchCharacters
+          || verificationCharacters > maxAggregateCharacters - budget.characters) {
+        return VerificationOutcome.failure(CHARACTER_LIMIT);
+      }
+      budget.characters += verificationCharacters;
+      budget.verifierCalls++;
+      RoutedSupportVerification verification =
+          model.verifyReduction(question, proposed.answer().answer(), citedFindings, deadline);
+      return VerificationOutcome.success(applyVerification(proposed, verification));
+    } catch (RuntimeException ignored) {
+      return VerificationOutcome.failure(MODEL_UNAVAILABLE);
+    }
+  }
+
+  private static RoutedModelAnswer applyVerification(
+      RoutedModelAnswer proposed, RoutedSupportVerification verification) {
+    boolean fallbackUsed = proposed.fallbackUsed() || verification.fallbackUsed();
+    String routedModel = verification.fallbackUsed() ? verification.model() : proposed.model();
+    if (verification.supported()) {
+      return new RoutedModelAnswer(proposed.answer(), routedModel, fallbackUsed);
+    }
+    return new RoutedModelAnswer(
+        new ModelAnswer(
+            AnswerStatus.INSUFFICIENT_EVIDENCE,
+            INSUFFICIENT_ANSWER,
+            Confidence.LOW,
+            List.of(),
+            true),
+        routedModel,
+        fallbackUsed);
   }
 
   private GroupQuestionAnswer finalAnswer(
@@ -732,7 +845,12 @@ public class ConversationQuestionAnsweringService {
 
   private final class ModelBudget {
     private int modelBatches;
+    private int verifierCalls;
     private int characters;
+
+    private int totalModelCalls() {
+      return modelBatches + verifierCalls;
+    }
   }
 
   private static final class QuestionAnswerWork {
@@ -752,6 +870,17 @@ public class ConversationQuestionAnsweringService {
   private record Batch(List<QuestionMessage> messages, int characters, int nextIndex) {}
 
   private record SupportedFinding(QuestionFinding finding, RoutedModelAnswer routed) {}
+
+  private record VerificationOutcome(
+      @Nullable RoutedModelAnswer routed, @Nullable String failureReason) {
+    private static VerificationOutcome success(RoutedModelAnswer routed) {
+      return new VerificationOutcome(routed, null);
+    }
+
+    private static VerificationOutcome failure(String reason) {
+      return new VerificationOutcome(null, reason);
+    }
+  }
 
   private record Synthesis(
       @Nullable RoutedModelAnswer routed,

@@ -27,6 +27,7 @@ import io.breland.bbagent.server.agent.memory.ConversationQuestionAnsweringModel
 import io.breland.bbagent.server.agent.memory.ConversationQuestionAnsweringModels.RetrievalRequest;
 import io.breland.bbagent.server.agent.memory.ConversationQuestionAnsweringModels.RetrievalResult;
 import io.breland.bbagent.server.agent.memory.ConversationQuestionAnsweringModels.RoutedModelAnswer;
+import io.breland.bbagent.server.agent.memory.ConversationQuestionAnsweringModels.RoutedSupportVerification;
 import io.breland.bbagent.server.agent.memory.ConversationQuestionAnsweringModels.SearchPlan;
 import io.breland.bbagent.server.metrics.OperationalMetricsService;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
@@ -45,24 +46,25 @@ import org.mockito.ArgumentCaptor;
 class ConversationQuestionAnsweringServiceTest {
   private static final String ACCOUNT = "account-1";
   private static final String CONVERSATION_ID = "conversation-1";
-  private static final String QUESTION = "Who is winning the current Wordle?";
+  private static final String QUESTION = "Who is leading the current challenge?";
   private static final Instant FROM = Instant.parse("2026-08-08T00:00:00Z");
   private static final Instant TO = Instant.parse("2026-08-09T00:00:00Z");
   private static final Instant NOW = Instant.parse("2026-08-09T00:01:00Z");
   private static final Instant DEADLINE = NOW.plusSeconds(90);
   private static final AuthorizedGroup GROUP =
-      new AuthorizedGroup(CONVERSATION_ID, "Wordling Wonders", TO);
+      new AuthorizedGroup(CONVERSATION_ID, "Weekend Updates", TO);
   private static final ConversationRecord CONVERSATION =
       new ConversationRecord(
           CONVERSATION_ID,
           "bluebubbles",
           "iMessage;+;group",
           true,
-          "Wordling Wonders",
+          "Weekend Updates",
           FROM.minusSeconds(1),
           ACCOUNT,
           TO);
-  private static final SearchPlan WORDLE_PLAN = new SearchPlan(List.of("Wordle"), null, null, null);
+  private static final SearchPlan REPORT_PLAN =
+      new SearchPlan(List.of("reported"), null, null, null);
 
   private final ConversationMemoryStore store = mock(ConversationMemoryStore.class);
   private final ConversationQuestionHistoryRetriever retriever =
@@ -84,12 +86,132 @@ class ConversationQuestionAnsweringServiceTest {
     when(store.findConversation(CONVERSATION_ID)).thenReturn(Optional.of(CONVERSATION));
     when(store.findMembershipIntervals(CONVERSATION_ID, ACCOUNT, FROM, TO))
         .thenReturn(List.of(new MembershipInterval(FROM, null)));
-    when(model.plan(QUESTION, FROM, TO, DEADLINE)).thenReturn(WORDLE_PLAN);
+    when(model.plan(QUESTION, FROM, TO, DEADLINE)).thenReturn(REPORT_PLAN);
     when(model.answerInputCharacters(anyString(), anyList()))
         .thenAnswer(
             invocation ->
                 payloadSizer.answerInputCharacters(
                     invocation.getArgument(0), invocation.getArgument(1)));
+    when(model.answerWorkCharacters(anyString(), anyList()))
+        .thenAnswer(
+            invocation ->
+                payloadSizer.answerWorkCharacters(
+                    invocation.getArgument(0), invocation.getArgument(1)));
+    when(model.reduceWorkCharacters(anyString(), anyList()))
+        .thenAnswer(
+            invocation ->
+                payloadSizer.reduceWorkCharacters(
+                    invocation.getArgument(0), invocation.getArgument(1)));
+    when(model.reduceInputCharacters(anyString(), anyList()))
+        .thenAnswer(
+            invocation ->
+                payloadSizer.reduceInputCharacters(
+                    invocation.getArgument(0), invocation.getArgument(1)));
+    when(model.verificationInputCharacters(anyString(), anyString(), anyList()))
+        .thenAnswer(
+            invocation ->
+                payloadSizer.verificationInputCharacters(
+                    invocation.getArgument(0),
+                    invocation.getArgument(1),
+                    invocation.getArgument(2)));
+    when(model.reductionVerificationInputCharacters(anyString(), anyString(), anyList()))
+        .thenAnswer(
+            invocation ->
+                payloadSizer.reductionVerificationInputCharacters(
+                    invocation.getArgument(0),
+                    invocation.getArgument(1),
+                    invocation.getArgument(2)));
+    when(model.verifyAnswer(anyString(), anyString(), anyList(), any()))
+        .thenReturn(supportedVerification());
+    when(model.verifyReduction(anyString(), anyString(), anyList(), any()))
+        .thenReturn(supportedVerification());
+  }
+
+  @Test
+  void unsupportedExactAttributionFallsBackToVerifiedChronologicalEvidence() {
+    String question = "Who owns Project Atlas and what is its status?";
+    SearchPlan plan = new SearchPlan(List.of("Project Atlas"), null, null, null);
+    QuestionMessage exact = message("exact", "Alice", "I own Project Atlas.", 1);
+    QuestionMessage chronological =
+        message("chronological", "Alice", "Project Atlas is ready for review.", 2);
+    when(model.plan(question, FROM, TO, DEADLINE)).thenReturn(plan);
+    when(retriever.retrieveExact(any(), eq(plan))).thenReturn(completeExact(List.of(exact)));
+    when(retriever.retrieveChronological(any()))
+        .thenReturn(completeChronological(List.of(chronological)));
+    when(model.answer(question, List.of(exact), DEADLINE))
+        .thenReturn(routed(answered("Bob owns Project Atlas.", "exact")));
+    when(model.verifyAnswer(question, "Bob owns Project Atlas.", List.of(exact), DEADLINE))
+        .thenReturn(new RoutedSupportVerification(false, "openrouter/z-ai/glm-5.2", false));
+    when(model.answer(question, List.of(chronological), DEADLINE))
+        .thenReturn(routed(answered("Alice said Atlas is review-ready.", "chronological")));
+
+    GroupQuestionAnswer result = service.answer(ACCOUNT, GROUP, question, FROM, TO);
+
+    assertThat(result.status()).isEqualTo(AnswerStatus.ANSWERED);
+    assertThat(result.answer()).isEqualTo("Alice said Atlas is review-ready.");
+    assertThat(result.retrievalMode()).isEqualTo(RetrievalMode.HYBRID);
+    verify(retriever).retrieveChronological(any());
+  }
+
+  @Test
+  void verifierReceivesOnlyMessagesCitedByTheProposedAnswer() {
+    QuestionMessage cited = message("cited", "Alice", "Inventory is 84 units.", 1);
+    QuestionMessage uncited = message("uncited", "Bob", "Private unrelated details.", 2);
+    when(retriever.retrieveExact(any(), eq(REPORT_PLAN)))
+        .thenReturn(completeExact(List.of(cited, uncited)));
+    when(model.answer(QUESTION, List.of(cited, uncited), DEADLINE))
+        .thenReturn(routed(answered("Alice reported 84 units.", "cited")));
+
+    service.answer(ACCOUNT, GROUP, QUESTION, FROM, TO);
+
+    @SuppressWarnings("unchecked")
+    ArgumentCaptor<List<QuestionMessage>> evidence = ArgumentCaptor.forClass(List.class);
+    verify(model)
+        .verifyAnswer(
+            eq(QUESTION), eq("Alice reported 84 units."), evidence.capture(), eq(DEADLINE));
+    assertThat(evidence.getValue()).containsExactly(cited).doesNotContain(uncited);
+  }
+
+  @Test
+  void verifierProviderFailureIsContainedWithoutReturningTheUnverifiedAnswer() {
+    QuestionMessage exact = message("exact", "Alice", "The launch inventory is 84 units.", 1);
+    QuestionMessage chronological =
+        message("chronological", "Alice", "The launch inventory remains 84 units.", 2);
+    when(retriever.retrieveExact(any(), eq(REPORT_PLAN))).thenReturn(completeExact(List.of(exact)));
+    when(retriever.retrieveChronological(any()))
+        .thenReturn(completeChronological(List.of(chronological)));
+    when(model.answer(QUESTION, List.of(exact), DEADLINE))
+        .thenReturn(routed(answered("Alice reported 84 units.", "exact")));
+    when(model.answer(QUESTION, List.of(chronological), DEADLINE))
+        .thenReturn(routed(answered("Alice still reported 84 units.", "chronological")));
+    when(model.verifyAnswer(anyString(), anyString(), anyList(), eq(DEADLINE)))
+        .thenThrow(new IllegalStateException("verifier unavailable"));
+
+    GroupQuestionAnswer result = service.answer(ACCOUNT, GROUP, QUESTION, FROM, TO);
+
+    assertThat(result.status()).isEqualTo(AnswerStatus.UNAVAILABLE);
+    assertThat(result.partialReason()).isEqualTo("model_unavailable");
+    assertThat(result.answer())
+        .doesNotContain("Alice reported 84 units", "Alice still reported 84 units");
+    verify(model, times(2)).verifyAnswer(anyString(), anyString(), anyList(), eq(DEADLINE));
+  }
+
+  @Test
+  void verifierFallbackModelMetadataIsReportedHonestly() {
+    QuestionMessage evidence =
+        message("inventory", "Alice", "The launch inventory is 84 units.", 1);
+    when(retriever.retrieveExact(any(), eq(REPORT_PLAN)))
+        .thenReturn(completeExact(List.of(evidence)));
+    when(model.answer(QUESTION, List.of(evidence), DEADLINE))
+        .thenReturn(routed(answered("Alice reported 84 units.", "inventory")));
+    when(model.verifyAnswer(QUESTION, "Alice reported 84 units.", List.of(evidence), DEADLINE))
+        .thenReturn(new RoutedSupportVerification(true, "openai/gpt-4.1-mini", true));
+
+    GroupQuestionAnswer result = service.answer(ACCOUNT, GROUP, QUESTION, FROM, TO);
+
+    assertThat(result.status()).isEqualTo(AnswerStatus.ANSWERED);
+    assertThat(result.model()).isEqualTo("openai/gpt-4.1-mini");
+    assertThat(result.fallbackUsed()).isTrue();
   }
 
   @Test
@@ -114,7 +236,7 @@ class ConversationQuestionAnsweringServiceTest {
     QuestionMessage escaped = message("escaped", "Dom", escapedText, 1);
     int rawCharacters = QUESTION.length() + escapedText.length();
     service = service(100, rawCharacters, 5, rawCharacters);
-    when(retriever.retrieveExact(any(), eq(WORDLE_PLAN)))
+    when(retriever.retrieveExact(any(), eq(REPORT_PLAN)))
         .thenReturn(completeExact(List.of(escaped)));
     when(retriever.retrieveChronological(any()))
         .thenReturn(completeChronological(List.of(escaped)));
@@ -128,11 +250,19 @@ class ConversationQuestionAnsweringServiceTest {
 
   @Test
   void repeatedQuestionAndSerializationOverheadCountAgainstAggregateBudget() {
-    QuestionMessage first = message("first", "Dom", "Wordle 1,877 4/6", 1);
-    QuestionMessage second = message("second", "Alice", "Wordle 1,877 3/6", 2);
-    int onePayloadCharacters = payloadSizer.answerInputCharacters(QUESTION, List.of(first));
-    service = service(1, onePayloadCharacters, 5, onePayloadCharacters);
-    when(retriever.retrieveExact(any(), eq(WORDLE_PLAN)))
+    QuestionMessage first = message("first", "Dom", "Challenge round 1,877 result 4/6", 1);
+    QuestionMessage second = message("second", "Alice", "Challenge round 1,877 result 3/6", 2);
+    int generationCharacters = payloadSizer.answerInputCharacters(QUESTION, List.of(first));
+    int verificationCharacters =
+        payloadSizer.verificationInputCharacters(
+            QUESTION, "Dom only reported 4/6.", List.of(first));
+    service =
+        service(
+            1,
+            Math.max(generationCharacters, verificationCharacters),
+            5,
+            generationCharacters + verificationCharacters);
+    when(retriever.retrieveExact(any(), eq(REPORT_PLAN)))
         .thenReturn(completeExact(List.of(first, second)));
     when(model.answer(QUESTION, List.of(first), DEADLINE))
         .thenReturn(routed(answered("Dom only reported 4/6.", "first")));
@@ -148,8 +278,9 @@ class ConversationQuestionAnsweringServiceTest {
 
   @Test
   void returnsOnlyReportedLeaderFromExactEvidence() {
-    QuestionMessage score = message("score-guid", "participant ending 0199", "Wordle 1,877 4/6", 1);
-    when(retriever.retrieveExact(any(), eq(WORDLE_PLAN))).thenReturn(completeExact(List.of(score)));
+    QuestionMessage score =
+        message("score-guid", "participant ending 0199", "Challenge round 1,877 result 4/6", 1);
+    when(retriever.retrieveExact(any(), eq(REPORT_PLAN))).thenReturn(completeExact(List.of(score)));
     when(model.answer(QUESTION, List.of(score), DEADLINE))
         .thenReturn(
             new RoutedModelAnswer(
@@ -185,7 +316,7 @@ class ConversationQuestionAnsweringServiceTest {
     assertThat(registry.get("bbagent.memory.question.answer.page.count").counter().count())
         .isEqualTo(1.0);
     assertThat(registry.get("bbagent.memory.question.answer.model.batch.count").counter().count())
-        .isEqualTo(1.0);
+        .isEqualTo(2.0);
   }
 
   @Test
@@ -195,7 +326,7 @@ class ConversationQuestionAnsweringServiceTest {
             message("score-1", "participant ending 0199", "Wordle 1,877 4/6", 1),
             message("score-2", "participant ending 0123", "Wordle 1,877 3/6", 2),
             message("score-old", "participant ending 0456", "Wordle 1,876 2/6", 3));
-    when(retriever.retrieveExact(any(), eq(WORDLE_PLAN))).thenReturn(completeExact(evidence));
+    when(retriever.retrieveExact(any(), eq(REPORT_PLAN))).thenReturn(completeExact(evidence));
     when(model.answer(QUESTION, evidence, DEADLINE))
         .thenReturn(
             routed(
@@ -215,8 +346,9 @@ class ConversationQuestionAnsweringServiceTest {
 
   @Test
   void exactMissUsesOneChronologicalFallback() {
-    QuestionMessage score = message("score-guid", "participant ending 0199", "Wordle 1,877 4/6", 1);
-    when(retriever.retrieveExact(any(), eq(WORDLE_PLAN))).thenReturn(completeExact(List.of()));
+    QuestionMessage score =
+        message("score-guid", "participant ending 0199", "Challenge round 1,877 result 4/6", 1);
+    when(retriever.retrieveExact(any(), eq(REPORT_PLAN))).thenReturn(completeExact(List.of()));
     when(retriever.retrieveChronological(any())).thenReturn(completeChronological(List.of(score)));
     when(model.answer(QUESTION, List.of(score), DEADLINE))
         .thenReturn(routed(answered("The only reported score is 4/6.", "score-guid")));
@@ -232,7 +364,8 @@ class ConversationQuestionAnsweringServiceTest {
   @Test
   void plannerFailureSkipsExactSourceWorkAndUsesChronologicalEvidence() {
     SearchPlan emptyPlan = new SearchPlan(List.of(), null, null, null);
-    QuestionMessage score = message("score-guid", "participant ending 0199", "Wordle 1,877 4/6", 1);
+    QuestionMessage score =
+        message("score-guid", "participant ending 0199", "Challenge round 1,877 result 4/6", 1);
     when(model.plan(QUESTION, FROM, TO, DEADLINE))
         .thenThrow(new IllegalStateException("provider failed"));
     when(retriever.retrieveExact(any(), eq(emptyPlan))).thenReturn(completeExact(List.of()));
@@ -250,10 +383,11 @@ class ConversationQuestionAnsweringServiceTest {
 
   @Test
   void needsMoreContextProducesOnlyOneChronologicalRetry() {
-    QuestionMessage exact = message("exact", "participant ending 0199", "Wordle 1,877 4/6", 1);
+    QuestionMessage exact =
+        message("exact", "participant ending 0199", "Challenge round 1,877 result 4/6", 1);
     QuestionMessage context =
-        message("context-guid", "participant ending 0123", "Wordle 1,877 3/6", 2);
-    when(retriever.retrieveExact(any(), eq(WORDLE_PLAN))).thenReturn(completeExact(List.of(exact)));
+        message("context-guid", "participant ending 0123", "Challenge round 1,877 result 3/6", 2);
+    when(retriever.retrieveExact(any(), eq(REPORT_PLAN))).thenReturn(completeExact(List.of(exact)));
     when(retriever.retrieveChronological(any()))
         .thenReturn(completeChronological(List.of(context)));
     when(model.answer(QUESTION, List.of(exact), DEADLINE))
@@ -279,7 +413,7 @@ class ConversationQuestionAnsweringServiceTest {
   @Test
   void boundsEveryExactEvidenceBatchAndReducesSupportedFindings() {
     List<QuestionMessage> messages = messages(101, 10);
-    when(retriever.retrieveExact(any(), eq(WORDLE_PLAN))).thenReturn(completeExact(messages));
+    when(retriever.retrieveExact(any(), eq(REPORT_PLAN))).thenReturn(completeExact(messages));
     answerEachBatchWithItsFirstEvidence();
     when(model.reduce(eq(QUESTION), anyList(), eq(DEADLINE)))
         .thenReturn(
@@ -317,6 +451,30 @@ class ConversationQuestionAnsweringServiceTest {
     ArgumentCaptor<List<QuestionFinding>> findings = findingListCaptor();
     verify(model).reduce(eq(QUESTION), findings.capture(), eq(DEADLINE));
     assertThat(findings.getValue()).hasSize(2);
+  }
+
+  @Test
+  void reducedAnswerVerifierReceivesOnlyTheCitedVerifiedFinding() {
+    List<QuestionMessage> messages = messages(101, 10);
+    exactMissThenChronological(messages);
+    answerEachBatchWithItsFirstEvidence();
+    when(model.reduce(eq(QUESTION), anyList(), eq(DEADLINE)))
+        .thenReturn(routed(answered("The later race result is decisive.", "message-100")));
+
+    service.answer(ACCOUNT, GROUP, QUESTION, FROM, TO);
+
+    @SuppressWarnings("unchecked")
+    ArgumentCaptor<List<QuestionFinding>> citedFindings = ArgumentCaptor.forClass(List.class);
+    verify(model)
+        .verifyReduction(
+            eq(QUESTION),
+            eq("The later race result is decisive."),
+            citedFindings.capture(),
+            eq(DEADLINE));
+    assertThat(citedFindings.getValue())
+        .singleElement()
+        .satisfies(
+            finding -> assertThat(finding.evidenceMessageGuids()).containsExactly("message-100"));
   }
 
   @Test
@@ -385,13 +543,13 @@ class ConversationQuestionAnsweringServiceTest {
     assertThat(result.coverageStatus()).isEqualTo(CoverageStatus.PARTIAL);
     assertThat(result.partialReason()).isEqualTo("model_batch_limit");
     assertThat(result.coverageThrough()).isEqualTo(messages.get(199).timestamp());
-    assertThat(result.evidenceMessageCount()).isEqualTo(2);
+    assertThat(result.evidenceMessageCount()).isEqualTo(1);
     verify(model, times(2)).answer(eq(QUESTION), anyList(), eq(DEADLINE));
   }
 
   @Test
   void aggregateCharacterLimitReturnsBestSupportedPartialAnswer() {
-    service = service(100, 60_000, 5, 100_000);
+    service = service(100, 60_000, 5, 110_000);
     List<QuestionMessage> messages = messages(3, 50_000);
     exactMissThenChronological(messages);
     answerEachBatchWithItsFirstEvidence();
@@ -408,9 +566,9 @@ class ConversationQuestionAnsweringServiceTest {
   }
 
   @Test
-  void exactFiveBatchEqualityIsCompleteWhenAllEvidenceWasProcessed() {
+  void exactFiveBatchLimitReturnsTheBestVerifiedFindingWithoutAnUnboundedReduction() {
     List<QuestionMessage> messages = messages(500, 10);
-    when(retriever.retrieveExact(any(), eq(WORDLE_PLAN))).thenReturn(completeExact(messages));
+    when(retriever.retrieveExact(any(), eq(REPORT_PLAN))).thenReturn(completeExact(messages));
     answerEachBatchWithItsFirstEvidence();
     when(model.reduce(eq(QUESTION), anyList(), eq(DEADLINE)))
         .thenReturn(
@@ -426,16 +584,16 @@ class ConversationQuestionAnsweringServiceTest {
     GroupQuestionAnswer result = service.answer(ACCOUNT, GROUP, QUESTION, FROM, TO);
 
     assertThat(result.status()).isEqualTo(AnswerStatus.ANSWERED);
-    assertThat(result.coverageStatus()).isEqualTo(CoverageStatus.COMPLETE);
-    assertThat(result.partialReason()).isNull();
+    assertThat(result.coverageStatus()).isEqualTo(CoverageStatus.PARTIAL);
+    assertThat(result.partialReason()).isEqualTo("model_batch_limit");
     verify(model, times(5)).answer(eq(QUESTION), anyList(), eq(DEADLINE));
   }
 
   @Test
   void rawTextAggregateEqualityIsPartialWhenSerializedPayloadExceedsTheLimit() {
-    service = service(100, 60_000, 5, 100_000);
+    service = service(100, 60_000, 5, 110_000);
     List<QuestionMessage> messages = messages(2, 50_000);
-    when(retriever.retrieveExact(any(), eq(WORDLE_PLAN))).thenReturn(completeExact(messages));
+    when(retriever.retrieveExact(any(), eq(REPORT_PLAN))).thenReturn(completeExact(messages));
     answerEachBatchWithItsFirstEvidence();
     when(model.reduce(eq(QUESTION), anyList(), eq(DEADLINE)))
         .thenReturn(routed(answered("Both exact batches were reduced.", "message-0", "message-1")));
@@ -452,7 +610,7 @@ class ConversationQuestionAnsweringServiceTest {
   @Test
   void oneNinetySecondDeadlineIsSharedAndStopsFallbackWork() {
     ArgumentCaptor<RetrievalRequest> exactRequest = ArgumentCaptor.forClass(RetrievalRequest.class);
-    when(retriever.retrieveExact(exactRequest.capture(), eq(WORDLE_PLAN)))
+    when(retriever.retrieveExact(exactRequest.capture(), eq(REPORT_PLAN)))
         .thenAnswer(
             invocation -> {
               clock.advance(Duration.ofSeconds(90));
@@ -472,7 +630,7 @@ class ConversationQuestionAnsweringServiceTest {
   @Test
   void usesOneOperationDeadlineForEveryModelBoundary() {
     List<QuestionMessage> messages = messages(101, 10);
-    when(retriever.retrieveExact(any(), eq(WORDLE_PLAN))).thenReturn(completeExact(messages));
+    when(retriever.retrieveExact(any(), eq(REPORT_PLAN))).thenReturn(completeExact(messages));
     answerEachBatchWithItsFirstEvidence();
     when(model.reduce(eq(QUESTION), anyList(), eq(DEADLINE)))
         .thenReturn(routed(answered("The reduced answer.", "message-0", "message-100")));
@@ -482,13 +640,16 @@ class ConversationQuestionAnsweringServiceTest {
     assertThat(result.status()).isEqualTo(AnswerStatus.ANSWERED);
     verify(model).plan(QUESTION, FROM, TO, DEADLINE);
     verify(model, times(2)).answer(eq(QUESTION), anyList(), eq(DEADLINE));
+    verify(model, times(2)).verifyAnswer(eq(QUESTION), anyString(), anyList(), eq(DEADLINE));
     verify(model).reduce(eq(QUESTION), anyList(), eq(DEADLINE));
+    verify(model).verifyReduction(eq(QUESTION), anyString(), anyList(), eq(DEADLINE));
   }
 
   @Test
-  void modelCallCompletingAtTheDeadlineCanOnlyReturnSupportedPartialEvidence() {
-    QuestionMessage score = message("score-guid", "participant ending 0199", "Wordle 1,877 4/6", 1);
-    when(retriever.retrieveExact(any(), eq(WORDLE_PLAN))).thenReturn(completeExact(List.of(score)));
+  void generationCompletingAtTheDeadlineCannotBypassSupportVerification() {
+    QuestionMessage score =
+        message("score-guid", "participant ending 0199", "Challenge round 1,877 result 4/6", 1);
+    when(retriever.retrieveExact(any(), eq(REPORT_PLAN))).thenReturn(completeExact(List.of(score)));
     when(model.answer(QUESTION, List.of(score), DEADLINE))
         .thenAnswer(
             invocation -> {
@@ -498,7 +659,7 @@ class ConversationQuestionAnsweringServiceTest {
 
     GroupQuestionAnswer result = service.answer(ACCOUNT, GROUP, QUESTION, FROM, TO);
 
-    assertThat(result.status()).isEqualTo(AnswerStatus.ANSWERED);
+    assertThat(result.status()).isEqualTo(AnswerStatus.UNAVAILABLE);
     assertThat(result.coverageStatus()).isEqualTo(CoverageStatus.PARTIAL);
     assertThat(result.partialReason()).isEqualTo("time_limit");
     verify(retriever, never()).retrieveChronological(any());
@@ -506,8 +667,9 @@ class ConversationQuestionAnsweringServiceTest {
 
   @Test
   void sourceCoverageFailureIsNotHiddenByAModelRequestForMoreContext() {
-    QuestionMessage score = message("score-guid", "participant ending 0199", "Wordle 1,877 4/6", 1);
-    when(retriever.retrieveExact(any(), eq(WORDLE_PLAN))).thenReturn(completeExact(List.of()));
+    QuestionMessage score =
+        message("score-guid", "participant ending 0199", "Challenge round 1,877 result 4/6", 1);
+    when(retriever.retrieveExact(any(), eq(REPORT_PLAN))).thenReturn(completeExact(List.of()));
     when(retriever.retrieveChronological(any()))
         .thenReturn(
             new RetrievalResult(
@@ -538,7 +700,7 @@ class ConversationQuestionAnsweringServiceTest {
   @Test
   void sourceAndModelExceptionsNeverEscapeAndCanStillReturnSupportedPartialEvidence() {
     List<QuestionMessage> messages = messages(101, 10);
-    when(retriever.retrieveExact(any(), eq(WORDLE_PLAN)))
+    when(retriever.retrieveExact(any(), eq(REPORT_PLAN)))
         .thenThrow(new IllegalStateException("source unavailable"));
     when(retriever.retrieveChronological(any())).thenReturn(completeChronological(messages));
     when(model.answer(eq(QUESTION), anyList(), eq(DEADLINE)))
@@ -569,7 +731,7 @@ class ConversationQuestionAnsweringServiceTest {
 
   @Test
   void totalSourceFailureReturnsUnavailableWithoutThrowing() {
-    when(retriever.retrieveExact(any(), eq(WORDLE_PLAN)))
+    when(retriever.retrieveExact(any(), eq(REPORT_PLAN)))
         .thenThrow(new IllegalStateException("exact unavailable"));
     when(retriever.retrieveChronological(any()))
         .thenThrow(new IllegalStateException("chronological unavailable"));
@@ -585,7 +747,7 @@ class ConversationQuestionAnsweringServiceTest {
   @Test
   void lateExactFailureRetainsSupportedPartialAnswerAndRecordsWorkOnce() {
     QuestionMessage duplicate =
-        message("duplicate", "participant ending 0199", "Wordle 1,877 4/6", 1);
+        message("duplicate", "participant ending 0199", "Challenge round 1,877 result 4/6", 1);
     RetrievalResult partialExact =
         new RetrievalResult(
             List.of(duplicate),
@@ -594,7 +756,7 @@ class ConversationQuestionAnsweringServiceTest {
             duplicate.timestamp(),
             "source_unavailable",
             4);
-    when(retriever.retrieveExact(any(), eq(WORDLE_PLAN)))
+    when(retriever.retrieveExact(any(), eq(REPORT_PLAN)))
         .thenThrow(
             new ConversationQuestionHistoryRetriever.PartialRetrievalException(
                 partialExact, new IllegalStateException("late source failure")));
@@ -621,8 +783,8 @@ class ConversationQuestionAnsweringServiceTest {
   @Test
   void lateChronologicalProcessingFailureSynthesizesPartialMessagesAndRecordsWorkOnce() {
     QuestionMessage completed =
-        message("completed", "participant ending 0199", "Wordle 1,877 4/6", 1);
-    when(retriever.retrieveExact(any(), eq(WORDLE_PLAN))).thenReturn(completeExact(List.of()));
+        message("completed", "participant ending 0199", "Challenge round 1,877 result 4/6", 1);
+    when(retriever.retrieveExact(any(), eq(REPORT_PLAN))).thenReturn(completeExact(List.of()));
     when(retriever.retrieveChronological(any()))
         .thenThrow(
             new ConversationQuestionHistoryRetriever.PartialRetrievalException(
@@ -654,10 +816,11 @@ class ConversationQuestionAnsweringServiceTest {
 
   @Test
   void unsupportedEvidenceIsNotReportedAndDoesNotCauseAnotherFallbackLoop() {
-    QuestionMessage exact = message("exact", "participant ending 0199", "Wordle 1,877 4/6", 1);
+    QuestionMessage exact =
+        message("exact", "participant ending 0199", "Challenge round 1,877 result 4/6", 1);
     QuestionMessage chronological =
-        message("chronological", "participant ending 0123", "Wordle 1,877 3/6", 2);
-    when(retriever.retrieveExact(any(), eq(WORDLE_PLAN))).thenReturn(completeExact(List.of(exact)));
+        message("chronological", "participant ending 0123", "Challenge round 1,877 result 3/6", 2);
+    when(retriever.retrieveExact(any(), eq(REPORT_PLAN))).thenReturn(completeExact(List.of(exact)));
     when(retriever.retrieveChronological(any()))
         .thenReturn(completeChronological(List.of(chronological)));
     when(model.answer(QUESTION, List.of(exact), DEADLINE))
@@ -674,13 +837,13 @@ class ConversationQuestionAnsweringServiceTest {
 
   @Test
   void unsafeModelOutputCannotBecomeAGroupQuestionAnswer() {
-    QuestionMessage score = message("score-guid", "Dom", "Wordle 1,877 3/6", 1);
-    when(retriever.retrieveExact(any(), eq(WORDLE_PLAN))).thenReturn(completeExact(List.of(score)));
+    QuestionMessage score = message("score-guid", "Dom", "Challenge round 1,877 result 3/6", 1);
+    when(retriever.retrieveExact(any(), eq(REPORT_PLAN))).thenReturn(completeExact(List.of(score)));
     when(model.answer(QUESTION, List.of(score), DEADLINE))
         .thenReturn(
             routed(
                 answered(
-                    "Dom reported Wordle 1,877 in 3/6; call +1 (555) 555-0199 for details.",
+                    "Dom reported challenge round 1,877 in 3/6; call +1 (555) 555-0199 for details.",
                     "score-guid")));
     when(retriever.retrieveChronological(any()))
         .thenThrow(new IllegalStateException("source unavailable"));
@@ -688,27 +851,31 @@ class ConversationQuestionAnsweringServiceTest {
     GroupQuestionAnswer result = service.answer(ACCOUNT, GROUP, QUESTION, FROM, TO);
 
     assertThat(result.status()).isNotEqualTo(AnswerStatus.ANSWERED);
-    assertThat(result.answer()).doesNotContain("555-0199", "Wordle 1,877");
+    assertThat(result.answer()).doesNotContain("555-0199", "challenge round 1,877");
     assertThat(totalQuestionAnswers()).isEqualTo(1.0);
   }
 
   @Test
-  void wrongParticipantScoreTupleCannotBypassTheServiceValidationBoundary() {
-    QuestionMessage dom = message("m-dom", "Dom", "Wordle 1877 was 5/6", 1);
-    QuestionMessage eve = message("m-eve", "Eve", "Wordle 1877 was 3/6", 2);
-    when(retriever.retrieveExact(any(), eq(WORDLE_PLAN)))
+  void crossMessageRaceAttributionCannotBypassTheGenericVerifier() {
+    QuestionMessage dom = message("m-dom", "Dom", "I finished heat 7 in 52.4 seconds.", 1);
+    QuestionMessage eve = message("m-eve", "Eve", "I finished heat 7 in 49.8 seconds.", 2);
+    when(retriever.retrieveExact(any(), eq(REPORT_PLAN)))
         .thenReturn(completeExact(List.of(dom, eve)));
     when(model.answer(QUESTION, List.of(dom, eve), DEADLINE))
         .thenReturn(
             routed(
-                answered("Dom reported puzzle 1877 in 3/6", dom.messageGuid(), eve.messageGuid())));
+                answered(
+                    "Dom finished heat 7 in 49.8 seconds.", dom.messageGuid(), eve.messageGuid())));
+    when(model.verifyAnswer(
+            QUESTION, "Dom finished heat 7 in 49.8 seconds.", List.of(dom, eve), DEADLINE))
+        .thenReturn(new RoutedSupportVerification(false, "openrouter/z-ai/glm-5.2", false));
     when(retriever.retrieveChronological(any()))
         .thenThrow(new IllegalStateException("source unavailable"));
 
     GroupQuestionAnswer result = service.answer(ACCOUNT, GROUP, QUESTION, FROM, TO);
 
     assertThat(result.status()).isNotEqualTo(AnswerStatus.ANSWERED);
-    assertThat(result.answer()).doesNotContain("Dom reported puzzle 1877 in 3/6");
+    assertThat(result.answer()).doesNotContain("Dom finished heat 7 in 49.8 seconds");
     assertThat(totalQuestionAnswers()).isEqualTo(1.0);
   }
 
@@ -803,7 +970,7 @@ class ConversationQuestionAnsweringServiceTest {
   }
 
   private void exactMissThenChronological(List<QuestionMessage> messages) {
-    when(retriever.retrieveExact(any(), eq(WORDLE_PLAN))).thenReturn(completeExact(List.of()));
+    when(retriever.retrieveExact(any(), eq(REPORT_PLAN))).thenReturn(completeExact(List.of()));
     when(retriever.retrieveChronological(any())).thenReturn(completeChronological(messages));
   }
 
@@ -878,6 +1045,10 @@ class ConversationQuestionAnsweringServiceTest {
 
   private static RoutedModelAnswer routed(ModelAnswer answer) {
     return new RoutedModelAnswer(answer, "openrouter/z-ai/glm-5.2");
+  }
+
+  private static RoutedSupportVerification supportedVerification() {
+    return new RoutedSupportVerification(true, "openrouter/z-ai/glm-5.2", false);
   }
 
   private static final class MutableClock extends Clock {

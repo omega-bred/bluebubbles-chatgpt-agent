@@ -1,7 +1,5 @@
 package io.breland.bbagent.server.agent.memory;
 
-import io.breland.bbagent.server.agent.memory.ConversationQuestionAnsweringModels.QuestionMessage;
-import io.breland.bbagent.server.agent.memory.ConversationQuestionAnsweringModels.TrustedQuestionFact;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeFormatterBuilder;
@@ -51,49 +49,16 @@ final class ConversationQuestionAnswerOutputValidator {
       Pattern.compile("(?<![\\p{L}\\p{N}])\\d{7,}(?![\\p{L}\\p{N}])");
   private static final Pattern GROUPED_LONG_NUMBER =
       Pattern.compile("(?<![\\p{L}\\p{N}])\\d{1,3}(?:,\\d{3}){2,}(?![\\p{L}\\p{N}])");
+  private static final Pattern PAYMENT_CARD_LIKE =
+      Pattern.compile("(?<![\\p{L}\\p{N}])\\d{13,19}(?![\\p{L}\\p{N}])");
   private static final Pattern PHONE_CONTEXT =
       Pattern.compile("(?i)\\b(?:phone|call|text|contact|mobile|telephone|tel|sms|fax|reach)\\b");
   private static final Pattern PHONE_FORMAT =
       Pattern.compile("(?:\\d{3}[- .]\\d{4}|\\d{3}[- .]\\d{3}[- .]\\d{4}|\\d{3}-\\d{2}-\\d{4})");
-  private static final Pattern SUPPORTED_LONG_NUMBER_CONTEXT =
-      Pattern.compile(
-          "(?i)\\b(?:puzzle|wordle|score|count|total|entries?|items?|messages?|points?|votes?|round|game)\\b");
-  private static final Pattern SCORE_TOKEN = Pattern.compile("\\d{1,2}/\\d{1,2}");
-  private static final Pattern PUZZLE_ID_TOKEN = Pattern.compile("\\d{1,7}(?:,\\d{3})*");
-  private static final Set<String> SCORE_REPORTING_VERBS =
-      Set.of("got", "posted", "reported", "scored", "solved");
-  private static final Set<String> SCORE_PUZZLE_MARKERS = Set.of("puzzle", "wordle");
-  private static final Set<String> SCORE_CONNECTORS = Set.of("in", "with");
-  private static final Set<String> SAFE_SCORE_RENDERING_TOKENS =
-      Set.of("reported", "puzzle", "wordle", "in", "with", "score", "scores");
-  private static final Set<String> SAFE_GENERATED_TOKENS =
+  private static final Set<String> GENERIC_STOPWORDS =
       Set.of(
-          "a",
-          "an",
-          "and",
-          "are",
-          "according",
-          "code",
-          "codes",
-          "evidence",
-          "in",
-          "is",
-          "model",
-          "models",
-          "of",
-          "only",
-          "puzzle",
-          "reported",
-          "result",
-          "results",
-          "score",
-          "scores",
-          "the",
-          "to",
-          "was",
-          "were",
-          "with",
-          "wordle");
+          "a", "an", "and", "are", "as", "at", "be", "by", "for", "from", "had", "has", "have",
+          "in", "is", "it", "of", "on", "or", "that", "the", "to", "was", "were", "with");
   private static final DateTimeFormatter US_DASH_DATE =
       new DateTimeFormatterBuilder()
           .appendPattern("MM-dd-uuuu")
@@ -120,8 +85,7 @@ final class ConversationQuestionAnswerOutputValidator {
 
   static void requireSafe(
       String answer, Set<String> forbiddenEvidenceIdentifiers, List<String> submittedSourceTexts) {
-    requireSafe(
-        answer, forbiddenEvidenceIdentifiers, Set.of(), submittedSourceTexts, List.of(), Set.of());
+    requireSafe(answer, forbiddenEvidenceIdentifiers, Set.of(), submittedSourceTexts);
   }
 
   static void requireSafe(
@@ -129,69 +93,25 @@ final class ConversationQuestionAnswerOutputValidator {
       Set<String> forbiddenEvidenceIdentifiers,
       Set<String> opaqueEvidenceAliases,
       List<String> submittedSourceTexts) {
-    requireSafe(
-        answer,
-        forbiddenEvidenceIdentifiers,
-        opaqueEvidenceAliases,
-        submittedSourceTexts,
-        List.of(),
-        Set.of());
-  }
-
-  static void requireSafe(
-      String answer,
-      Set<String> forbiddenEvidenceIdentifiers,
-      Set<String> opaqueEvidenceAliases,
-      List<String> submittedSourceTexts,
-      List<TrustedQuestionFact> trustedFacts,
-      Set<String> citedEvidenceIdentifiers) {
     if (!isSafe(
-        answer,
-        forbiddenEvidenceIdentifiers,
-        opaqueEvidenceAliases,
-        submittedSourceTexts,
-        trustedFacts,
-        citedEvidenceIdentifiers)) {
+        answer, forbiddenEvidenceIdentifiers, opaqueEvidenceAliases, submittedSourceTexts)) {
       throw new IllegalStateException("unsafe question answer response");
     }
   }
 
   static boolean isSafe(
       String answer, Set<String> forbiddenEvidenceIdentifiers, List<String> submittedSourceTexts) {
-    return isSafe(
-        answer, forbiddenEvidenceIdentifiers, Set.of(), submittedSourceTexts, List.of(), Set.of());
-  }
-
-  static boolean isSafe(
-      String answer,
-      Set<String> forbiddenEvidenceIdentifiers,
-      List<String> submittedSourceTexts,
-      List<TrustedQuestionFact> trustedFacts,
-      Set<String> citedEvidenceIdentifiers) {
-    return isSafe(
-        answer,
-        forbiddenEvidenceIdentifiers,
-        Set.of(),
-        submittedSourceTexts,
-        trustedFacts,
-        citedEvidenceIdentifiers);
+    return isSafe(answer, forbiddenEvidenceIdentifiers, Set.of(), submittedSourceTexts);
   }
 
   private static boolean isSafe(
       String answer,
       Set<String> forbiddenEvidenceIdentifiers,
       Set<String> opaqueEvidenceAliases,
-      List<String> submittedSourceTexts,
-      List<TrustedQuestionFact> trustedFacts,
-      Set<String> citedEvidenceIdentifiers) {
+      List<String> submittedSourceTexts) {
     try {
       return evaluate(
-          answer,
-          forbiddenEvidenceIdentifiers,
-          opaqueEvidenceAliases,
-          submittedSourceTexts,
-          trustedFacts,
-          citedEvidenceIdentifiers);
+          answer, forbiddenEvidenceIdentifiers, opaqueEvidenceAliases, submittedSourceTexts);
     } catch (RuntimeException ignored) {
       return false;
     }
@@ -201,9 +121,7 @@ final class ConversationQuestionAnswerOutputValidator {
       String answer,
       Set<String> forbiddenEvidenceIdentifiers,
       Set<String> opaqueEvidenceAliases,
-      List<String> submittedSourceTexts,
-      List<TrustedQuestionFact> trustedFactMetadata,
-      Set<String> citedEvidenceIdentifiers) {
+      List<String> submittedSourceTexts) {
     String normalizedAnswer = StringUtils.trimToNull(answer);
     List<String> sources = submittedSourceTexts == null ? List.of() : submittedSourceTexts;
     if (normalizedAnswer == null
@@ -212,12 +130,12 @@ final class ConversationQuestionAnswerOutputValidator {
         || containsForbiddenIdentifier(normalizedAnswer, forbiddenEvidenceIdentifiers, false)
         || containsForbiddenIdentifier(normalizedAnswer, opaqueEvidenceAliases, true)
         || containsDirectEmailOrUrl(normalizedAnswer)
+        || PAYMENT_CARD_LIKE.matcher(normalizedAnswer).find()
         || INSTRUCTION_LEAKAGE.matcher(normalizedAnswer).find()) {
       return false;
     }
 
     List<TokenValue> answerTokens = tokens(normalizedAnswer);
-    TrustedFacts trustedFacts = new TrustedFacts(trustedFactMetadata, citedEvidenceIdentifiers);
     Set<NgramKey> sourceNgrams = new HashSet<>();
     Map<String, Integer> sourceUnigrams = new HashMap<>();
     Map<Integer, Set<NgramKey>> wholeShortMessages = new HashMap<>();
@@ -256,22 +174,19 @@ final class ConversationQuestionAnswerOutputValidator {
       }
     }
 
-    sourceIdentifiers.finish();
-    boolean[] supportedAnswerFacts =
-        trustedFacts.validateAndMaskAnswer(normalizedAnswer, answerTokens);
-    if (supportedAnswerFacts == null) {
-      return false;
-    }
+    boolean[] overlapExemptions = new boolean[answerTokens.size()];
     if (containsSensitiveNumber(normalizedAnswer, sourceIdentifiers)
         || containsSourceIdentifier(normalizedAnswer, sourceIdentifiers)
         || reproducesWholeShortMessage(answerTokens, wholeShortMessages)
         || hasUnsafeCompleteTinyMessageMontage(
-            answerTokens, supportedAnswerFacts, completeTinyMessages, sourceIdentifiers)
+            answerTokens, overlapExemptions, completeTinyMessages, sourceIdentifiers)
         || hasUnsafeGlobalUnigramMontage(
-            answerTokens, supportedAnswerFacts, sourceUnigrams, sourceIdentifiers)) {
+            answerTokens, overlapExemptions, sourceUnigrams, sourceIdentifiers)
+        || hasUnsafeRawMessageCopy(
+            normalizedAnswer, answerTokens, overlapExemptions, sources, sourceIdentifiers)) {
       return false;
     }
-    return !hasUnsafeCumulativeOverlap(answerTokens, supportedAnswerFacts, sourceNgrams);
+    return !hasUnsafeCumulativeOverlap(answerTokens, overlapExemptions, sourceNgrams);
   }
 
   private static boolean containsForbiddenIdentifier(
@@ -311,35 +226,21 @@ final class ConversationQuestionAnswerOutputValidator {
   }
 
   private static boolean containsDirectEmailOrUrl(String answer) {
-    if (EMAIL.matcher(answer).find()
+    return EMAIL.matcher(answer).find()
         || SCHEME.matcher(answer).find()
-        || WWW.matcher(answer).find()) {
-      return true;
-    }
-    return !endpoints(answer).isEmpty();
+        || WWW.matcher(answer).find()
+        || !endpoints(answer).isEmpty();
   }
 
-  private static void collectSourceIdentifiers(String source, SourceIdentifiers sourceIdentifiers) {
-    Matcher emailMatcher = EMAIL.matcher(source);
-    while (emailMatcher.find()) {
-      sourceIdentifiers.addText(emailMatcher.group());
-    }
-    Matcher schemeMatcher = SCHEME.matcher(source);
-    while (schemeMatcher.find()) {
-      sourceIdentifiers.addText(schemeMatcher.group());
-    }
-    Matcher wwwMatcher = WWW.matcher(source);
-    while (wwwMatcher.find()) {
-      sourceIdentifiers.addText(wwwMatcher.group());
-    }
+  private static void collectSourceIdentifiers(String source, SourceIdentifiers identifiers) {
+    collectMatches(source, EMAIL, identifiers::addText);
+    collectMatches(source, SCHEME, identifiers::addText);
+    collectMatches(source, WWW, identifiers::addText);
     for (EndpointValue endpoint : endpoints(source)) {
-      sourceIdentifiers.addEndpoint(endpoint.key());
-      sourceIdentifiers.addPath(endpoint.path());
+      identifiers.addEndpoint(endpoint.key());
+      identifiers.addPath(endpoint.path());
     }
-    Matcher pathMatcher = PATH_IDENTIFIER.matcher(source);
-    while (pathMatcher.find()) {
-      sourceIdentifiers.addPath(pathMatcher.group());
-    }
+    collectMatches(source, PATH_IDENTIFIER, identifiers::addPath);
 
     Matcher formattedMatcher = NUMBER_CANDIDATE.matcher(source);
     while (formattedMatcher.find()) {
@@ -347,87 +248,76 @@ final class ConversationQuestionAnswerOutputValidator {
       String candidateDigits = digits(candidate);
       if (isValidCalendarDate(normalizePhoneCandidate(candidate))) {
         for (TokenValue value : tokens(candidate)) {
-          sourceIdentifiers.addOverlapExemptToken(value.normalized());
+          identifiers.addOverlapExemptToken(value.normalized());
         }
-      }
-      if (candidateDigits.length() >= 7
+      } else if (candidateDigits.length() >= 7
           && (isRealisticPhone(candidate) || hasPhoneContext(source, formattedMatcher))) {
-        sourceIdentifiers.addSensitiveNumber(candidateDigits);
+        identifiers.addSensitiveNumber(candidateDigits);
       }
     }
-    Matcher numberMatcher = BARE_LONG_NUMBER.matcher(source);
-    while (numberMatcher.find()) {
-      if (hasSupportedLongNumberContext(source, numberMatcher.start(), numberMatcher.end())) {
-        sourceIdentifiers.addSupportedNumber(digits(numberMatcher.group()));
-      } else {
-        sourceIdentifiers.addSensitiveNumber(digits(numberMatcher.group()));
-      }
-    }
-    Matcher groupedNumberMatcher = GROUPED_LONG_NUMBER.matcher(source);
-    while (groupedNumberMatcher.find()) {
-      if (hasSupportedLongNumberContext(
-          source, groupedNumberMatcher.start(), groupedNumberMatcher.end())) {
-        sourceIdentifiers.addSupportedNumber(digits(groupedNumberMatcher.group()));
-      } else {
-        sourceIdentifiers.addSensitiveNumber(digits(groupedNumberMatcher.group()));
-      }
+    collectNumberMatches(source, BARE_LONG_NUMBER, identifiers);
+    collectNumberMatches(source, GROUPED_LONG_NUMBER, identifiers);
+  }
+
+  private static void collectMatches(
+      String source, Pattern pattern, java.util.function.Consumer<String> consumer) {
+    Matcher matcher = pattern.matcher(source);
+    while (matcher.find()) {
+      consumer.accept(matcher.group());
     }
   }
 
-  private static boolean containsSourceIdentifier(
-      String answer, SourceIdentifiers sourceIdentifiers) {
+  private static void collectNumberMatches(
+      String source, Pattern pattern, SourceIdentifiers identifiers) {
+    Matcher matcher = pattern.matcher(source);
+    while (matcher.find()) {
+      identifiers.addSensitiveNumber(digits(matcher.group()));
+    }
+  }
+
+  private static boolean containsSourceIdentifier(String answer, SourceIdentifiers identifiers) {
     Matcher emailMatcher = EMAIL.matcher(answer);
     while (emailMatcher.find()) {
-      if (sourceIdentifiers
-          .textIdentifiers()
-          .contains(emailMatcher.group().toLowerCase(Locale.ROOT))) {
+      if (identifiers.textIdentifiers().contains(emailMatcher.group().toLowerCase(Locale.ROOT))) {
         return true;
       }
     }
     for (EndpointValue endpoint : endpoints(answer)) {
-      if (sourceIdentifiers.endpoints().contains(endpoint.key())) {
+      if (identifiers.endpoints().contains(endpoint.key())) {
         return true;
       }
     }
     Matcher pathMatcher = PATH_IDENTIFIER.matcher(answer);
     while (pathMatcher.find()) {
-      if (sourceIdentifiers.paths().contains(normalizePath(pathMatcher.group()))) {
+      if (identifiers.paths().contains(normalizePath(pathMatcher.group()))) {
         return true;
       }
     }
     return false;
   }
 
-  private static boolean containsSensitiveNumber(
-      String answer, SourceIdentifiers sourceIdentifiers) {
+  private static boolean containsSensitiveNumber(String answer, SourceIdentifiers identifiers) {
     Matcher formattedMatcher = NUMBER_CANDIDATE.matcher(answer);
     while (formattedMatcher.find()) {
       String candidate = formattedMatcher.group();
       String candidateDigits = digits(candidate);
       if (candidateDigits.length() >= 7
-          && (sourceIdentifiers.sensitiveNumbers().contains(candidateDigits)
+          && !isValidCalendarDate(normalizePhoneCandidate(candidate))
+          && (identifiers.sensitiveNumbers().contains(candidateDigits)
               || isRealisticPhone(candidate)
               || hasPhoneContext(answer, formattedMatcher))) {
         return true;
       }
     }
-    Matcher numberMatcher = BARE_LONG_NUMBER.matcher(answer);
-    while (numberMatcher.find()) {
-      String value = numberMatcher.group();
-      String valueDigits = digits(value);
-      if (sourceIdentifiers.sensitiveNumbers().contains(valueDigits)
-          || !sourceIdentifiers.supportedNumbers().contains(valueDigits)
-          || !hasSupportedLongNumberContext(answer, numberMatcher.start(), numberMatcher.end())) {
-        return true;
-      }
-    }
-    Matcher groupedNumberMatcher = GROUPED_LONG_NUMBER.matcher(answer);
-    while (groupedNumberMatcher.find()) {
-      String valueDigits = digits(groupedNumberMatcher.group());
-      if (sourceIdentifiers.sensitiveNumbers().contains(valueDigits)
-          || !sourceIdentifiers.supportedNumbers().contains(valueDigits)
-          || !hasSupportedLongNumberContext(
-              answer, groupedNumberMatcher.start(), groupedNumberMatcher.end())) {
+    return containsSensitiveNumberMatch(answer, BARE_LONG_NUMBER, identifiers)
+        || containsSensitiveNumberMatch(answer, GROUPED_LONG_NUMBER, identifiers);
+  }
+
+  private static boolean containsSensitiveNumberMatch(
+      String answer, Pattern pattern, SourceIdentifiers identifiers) {
+    Matcher matcher = pattern.matcher(answer);
+    while (matcher.find()) {
+      if (identifiers.sensitiveNumbers().contains(digits(matcher.group()))) {
         return true;
       }
     }
@@ -483,12 +373,6 @@ final class ConversationQuestionAnswerOutputValidator {
     } catch (DateTimeParseException ignored) {
       return false;
     }
-  }
-
-  private static boolean hasSupportedLongNumberContext(String text, int start, int end) {
-    int contextStart = Math.max(0, start - 48);
-    int contextEnd = Math.min(text.length(), end + 48);
-    return SUPPORTED_LONG_NUMBER_CONTEXT.matcher(text.substring(contextStart, contextEnd)).find();
   }
 
   private static String normalizePath(String path) {
@@ -548,10 +432,9 @@ final class ConversationQuestionAnswerOutputValidator {
       return endpoint;
     }
     int punctuationColon = value.indexOf(':');
-    if (punctuationColon > 0 && punctuationColon + 1 < value.length()) {
-      return parseEndpointValue(value.substring(punctuationColon + 1));
-    }
-    return null;
+    return punctuationColon > 0 && punctuationColon + 1 < value.length()
+        ? parseEndpointValue(value.substring(punctuationColon + 1))
+        : null;
   }
 
   private static EndpointValue parseEndpointValue(String rawValue) {
@@ -566,7 +449,6 @@ final class ConversationQuestionAnswerOutputValidator {
     if (value.isEmpty()) {
       return null;
     }
-
     if (value.charAt(0) == '[') {
       int close = value.indexOf(']');
       if (close < 0 || !isValidIpv6(value.substring(1, close))) {
@@ -592,8 +474,8 @@ final class ConversationQuestionAnswerOutputValidator {
         return null;
       }
       EndpointSuffix suffix = new EndpointSuffix(null, normalizePath(rawPath));
-      String host = authority.toLowerCase(Locale.ROOT);
-      return new EndpointValue(endpointKey("[" + host + "]", suffix), suffix.path());
+      return new EndpointValue(
+          endpointKey("[" + authority.toLowerCase(Locale.ROOT) + "]", suffix), suffix.path());
     }
 
     Integer port = null;
@@ -714,20 +596,22 @@ final class ConversationQuestionAnswerOutputValidator {
   private static boolean isValidIpv4(String value) {
     int octets = 0;
     int octet = 0;
-    int digits = 0;
+    int digitCount = 0;
     for (int index = 0; index <= value.length(); index++) {
       if (index < value.length() && Character.isDigit(value.charAt(index))) {
-        if (++digits > 3) {
+        if (++digitCount > 3) {
           return false;
         }
         octet = octet * 10 + value.charAt(index) - '0';
         continue;
       }
-      if (digits == 0 || octet > 255 || (index < value.length() && value.charAt(index) != '.')) {
+      if (digitCount == 0
+          || octet > 255
+          || (index < value.length() && value.charAt(index) != '.')) {
         return false;
       }
       octets++;
-      digits = 0;
+      digitCount = 0;
       octet = 0;
     }
     return octets == 4;
@@ -808,7 +692,6 @@ final class ConversationQuestionAnswerOutputValidator {
           groups++;
         }
         groupStart = index + 1;
-        continue;
       }
     }
     return groups;
@@ -901,29 +784,25 @@ final class ConversationQuestionAnswerOutputValidator {
 
   private static boolean hasUnsafeGlobalUnigramMontage(
       List<TokenValue> answerTokens,
-      boolean[] supportedFacts,
+      boolean[] exemptions,
       Map<String, Integer> sourceUnigrams,
-      SourceIdentifiers sourceIdentifiers) {
-    if (answerTokens.isEmpty() || sourceUnigrams.isEmpty()) {
-      return false;
-    }
+      SourceIdentifiers identifiers) {
     Map<String, Integer> used = new HashMap<>();
     int matchedTokens = 0;
     int matchedCharacters = 0;
     for (int index = 0; index < answerTokens.size(); index++) {
-      TokenValue answerToken = answerTokens.get(index);
-      String token = answerToken.normalized();
-      if (isOverlapExempt(answerToken, supportedFacts[index], sourceIdentifiers)) {
+      TokenValue token = answerTokens.get(index);
+      if (isOverlapExempt(token, exemptions[index], identifiers)) {
         continue;
       }
-      int available = sourceUnigrams.getOrDefault(token, 0);
-      int consumed = used.getOrDefault(token, 0);
+      int available = sourceUnigrams.getOrDefault(token.normalized(), 0);
+      int consumed = used.getOrDefault(token.normalized(), 0);
       if (consumed >= available) {
         continue;
       }
-      used.put(token, consumed + 1);
+      used.put(token.normalized(), consumed + 1);
       matchedTokens++;
-      matchedCharacters = Math.addExact(matchedCharacters, answerToken.characters());
+      matchedCharacters = Math.addExact(matchedCharacters, token.characters());
       if (matchedTokens >= UNSAFE_GLOBAL_MATCHED_SOURCE_TOKEN_BOUNDARY
           || matchedCharacters >= UNSAFE_GLOBAL_MATCHED_SOURCE_CHARACTER_BOUNDARY) {
         return true;
@@ -932,9 +811,108 @@ final class ConversationQuestionAnswerOutputValidator {
     return false;
   }
 
+  private static boolean hasUnsafeRawMessageCopy(
+      String answer,
+      List<TokenValue> answerTokens,
+      boolean[] exemptions,
+      List<String> sources,
+      SourceIdentifiers identifiers) {
+    String normalizedAnswer = normalizeRawText(answer);
+    List<TokenValue> normalizedAnswerTokens = tokens(normalizedAnswer);
+    if (normalizedAnswerTokens.size() != answerTokens.size()) {
+      return true;
+    }
+    int[] nextNonExemptTokenEnd =
+        nextNonExemptTokenEnd(normalizedAnswer, normalizedAnswerTokens, exemptions, identifiers);
+    boolean[] matchedCharacters = new boolean[normalizedAnswer.length()];
+    Set<String> distinctSources = new HashSet<>();
+    int matchedCharacterCount = 0;
+    for (String source : sources) {
+      String normalizedSource = normalizeRawText(source);
+      if (normalizedSource.isEmpty() || !distinctSources.add(normalizedSource)) {
+        continue;
+      }
+      List<TokenValue> sourceTokens = tokens(normalizedSource);
+      for (int matchStart = normalizedAnswer.indexOf(normalizedSource);
+          matchStart >= 0;
+          matchStart = normalizedAnswer.indexOf(normalizedSource, matchStart + 1)) {
+        int matchEnd = matchStart + normalizedSource.length();
+        if (sourceTokens.isEmpty()) {
+          if (isMaterialTokenlessMessage(normalizedSource)) {
+            return true;
+          }
+          continue;
+        }
+        if (nextNonExemptTokenEnd[matchStart] > matchEnd) {
+          continue;
+        }
+        for (int index = matchStart; index < matchEnd; index++) {
+          if (!matchedCharacters[index]) {
+            matchedCharacters[index] = true;
+            if (++matchedCharacterCount >= UNSAFE_GLOBAL_MATCHED_SOURCE_CHARACTER_BOUNDARY) {
+              return true;
+            }
+          }
+        }
+      }
+    }
+    return false;
+  }
+
+  private static int[] nextNonExemptTokenEnd(
+      String answer, List<TokenValue> tokens, boolean[] exemptions, SourceIdentifiers identifiers) {
+    int[] nextEnd = new int[answer.length() + 1];
+    int tokenIndex = tokens.size() - 1;
+    int nearestEnd = Integer.MAX_VALUE;
+    for (int position = answer.length(); position >= 0; position--) {
+      while (tokenIndex >= 0 && tokens.get(tokenIndex).start() == position) {
+        TokenValue token = tokens.get(tokenIndex);
+        if (!isOverlapExempt(token, exemptions[tokenIndex], identifiers)) {
+          nearestEnd = token.end();
+        }
+        tokenIndex--;
+      }
+      nextEnd[position] = nearestEnd;
+    }
+    return nextEnd;
+  }
+
+  private static boolean isMaterialTokenlessMessage(String value) {
+    int codePoints = value.codePointCount(0, value.length());
+    if (codePoints > 1) {
+      return true;
+    }
+    if (codePoints == 0) {
+      return false;
+    }
+    int type = Character.getType(value.codePointAt(0));
+    return type == Character.MATH_SYMBOL
+        || type == Character.CURRENCY_SYMBOL
+        || type == Character.MODIFIER_SYMBOL
+        || type == Character.OTHER_SYMBOL;
+  }
+
+  private static String normalizeRawText(String value) {
+    StringBuilder normalized = new StringBuilder(value == null ? 0 : value.length());
+    boolean pendingSpace = false;
+    for (int index = 0; value != null && index < value.length(); index++) {
+      char character = value.charAt(index);
+      if (Character.isWhitespace(character) || Character.isSpaceChar(character)) {
+        pendingSpace = !normalized.isEmpty();
+      } else {
+        if (pendingSpace) {
+          normalized.append(' ');
+          pendingSpace = false;
+        }
+        normalized.append(Character.toLowerCase(character));
+      }
+    }
+    return normalized.toString();
+  }
+
   private static boolean reproducesWholeShortMessage(
-      List<TokenValue> answerTokens, Map<Integer, Set<NgramKey>> wholeShortMessages) {
-    for (Map.Entry<Integer, Set<NgramKey>> entry : wholeShortMessages.entrySet()) {
+      List<TokenValue> answerTokens, Map<Integer, Set<NgramKey>> messages) {
+    for (Map.Entry<Integer, Set<NgramKey>> entry : messages.entrySet()) {
       int size = entry.getKey();
       for (int index = 0; index + size <= answerTokens.size(); index++) {
         if (entry.getValue().contains(hash(answerTokens, index, size))) {
@@ -947,43 +925,35 @@ final class ConversationQuestionAnswerOutputValidator {
 
   private static boolean hasUnsafeCompleteTinyMessageMontage(
       List<TokenValue> answerTokens,
-      boolean[] supportedScoreFacts,
-      Map<Integer, Set<NgramKey>> completeTinyMessages,
-      SourceIdentifiers sourceIdentifiers) {
-    if (answerTokens.isEmpty() || completeTinyMessages.isEmpty()) {
-      return false;
-    }
-    boolean[] matchedTokens = new boolean[answerTokens.size()];
+      boolean[] exemptions,
+      Map<Integer, Set<NgramKey>> messages,
+      SourceIdentifiers identifiers) {
+    boolean[] matched = new boolean[answerTokens.size()];
     int matches = 0;
     for (int size = 2; size >= 1; size--) {
-      Set<NgramKey> sourceMessages = completeTinyMessages.get(size);
+      Set<NgramKey> sourceMessages = messages.get(size);
       if (sourceMessages == null) {
         continue;
       }
       for (int index = 0; index + size <= answerTokens.size(); index++) {
         if (!sourceMessages.contains(hash(answerTokens, index, size))
-            || allOverlapExempt(answerTokens, supportedScoreFacts, index, size, sourceIdentifiers)
-            || (size == 1 && matchedTokens[index])) {
+            || allOverlapExempt(answerTokens, exemptions, index, size, identifiers)
+            || (size == 1 && matched[index])) {
           continue;
         }
         matches++;
         for (int tokenIndex = index; tokenIndex < index + size; tokenIndex++) {
-          if (!isOverlapExempt(
-              answerTokens.get(tokenIndex), supportedScoreFacts[tokenIndex], sourceIdentifiers)) {
-            matchedTokens[tokenIndex] = true;
+          if (!isOverlapExempt(answerTokens.get(tokenIndex), exemptions[tokenIndex], identifiers)) {
+            matched[tokenIndex] = true;
           }
         }
       }
     }
     int matchedTokenCount = 0;
     int matchedCharacterCount = 0;
-    for (boolean matched : matchedTokens) {
-      if (matched) {
+    for (int index = 0; index < matched.length; index++) {
+      if (matched[index]) {
         matchedTokenCount++;
-      }
-    }
-    for (int index = 0; index < matchedTokens.length; index++) {
-      if (matchedTokens[index]) {
         matchedCharacterCount =
             Math.addExact(matchedCharacterCount, answerTokens.get(index).characters());
       }
@@ -995,12 +965,12 @@ final class ConversationQuestionAnswerOutputValidator {
 
   private static boolean allOverlapExempt(
       List<TokenValue> values,
-      boolean[] mask,
+      boolean[] exemptions,
       int from,
       int size,
-      SourceIdentifiers sourceIdentifiers) {
+      SourceIdentifiers identifiers) {
     for (int index = from; index < from + size; index++) {
-      if (!isOverlapExempt(values.get(index), mask[index], sourceIdentifiers)) {
+      if (!isOverlapExempt(values.get(index), exemptions[index], identifiers)) {
         return false;
       }
     }
@@ -1008,45 +978,32 @@ final class ConversationQuestionAnswerOutputValidator {
   }
 
   private static boolean isOverlapExempt(
-      TokenValue value, boolean supportedFact, SourceIdentifiers sourceIdentifiers) {
-    return supportedFact
-        || SAFE_GENERATED_TOKENS.contains(value.normalized())
-        || sourceIdentifiers.overlapExemptTokens().contains(value.normalized())
-        || isSupportedLongNumberToken(value.normalized(), sourceIdentifiers.supportedNumbers());
-  }
-
-  private static boolean isSupportedLongNumberToken(String token, Set<String> supportedNumbers) {
-    if (token.isEmpty() || !isAsciiDigit(token.charAt(0))) {
-      return false;
-    }
-    for (int index = 0; index < token.length(); index++) {
-      char value = token.charAt(index);
-      if (!isAsciiDigit(value) && value != ',') {
-        return false;
-      }
-    }
-    return supportedNumbers.contains(digits(token));
+      TokenValue value, boolean exempt, SourceIdentifiers identifiers) {
+    return exempt
+        || GENERIC_STOPWORDS.contains(value.normalized())
+        || identifiers.overlapExemptTokens().contains(value.normalized());
   }
 
   private static boolean hasUnsafeCumulativeOverlap(
-      List<TokenValue> answerTokens, boolean[] supportedScoreFacts, Set<NgramKey> sourceNgrams) {
+      List<TokenValue> answerTokens, boolean[] exemptions, Set<NgramKey> sourceNgrams) {
     if (answerTokens.size() < MATCH_NGRAM_TOKENS || sourceNgrams.isEmpty()) {
       return false;
     }
     boolean[] matched = new boolean[answerTokens.size()];
     for (int index = 0; index + MATCH_NGRAM_TOKENS <= answerTokens.size(); index++) {
-      if (!sourceNgrams.contains(hash(answerTokens, index, MATCH_NGRAM_TOKENS))) {
-        continue;
-      }
-      for (int matchedIndex = index; matchedIndex < index + MATCH_NGRAM_TOKENS; matchedIndex++) {
-        matched[matchedIndex] = true;
+      if (sourceNgrams.contains(hash(answerTokens, index, MATCH_NGRAM_TOKENS))) {
+        for (int offset = 0; offset < MATCH_NGRAM_TOKENS; offset++) {
+          matched[index + offset] = true;
+        }
       }
     }
     int matchedTokens = 0;
     int matchedCharacters = 0;
     boolean previousMatched = false;
     for (int index = 0; index < matched.length; index++) {
-      if (!matched[index] || supportedScoreFacts[index]) {
+      if (!matched[index]
+          || exemptions[index]
+          || GENERIC_STOPWORDS.contains(answerTokens.get(index).normalized())) {
         previousMatched = false;
         continue;
       }
@@ -1060,14 +1017,6 @@ final class ConversationQuestionAnswerOutputValidator {
     return (matchedTokens > MAX_SAFE_VERBATIM_TOKENS
             && matchedCharacters >= MIN_UNSAFE_VERBATIM_CHARACTERS)
         || matchedCharacters >= ALWAYS_UNSAFE_VERBATIM_CHARACTERS;
-  }
-
-  private static boolean isPuzzleId(TokenValue value) {
-    return PUZZLE_ID_TOKEN.matcher(value.normalized()).matches();
-  }
-
-  private static boolean isScoreToken(TokenValue value) {
-    return SCORE_TOKEN.matcher(value.normalized()).matches();
   }
 
   private static int phraseCharacters(List<TokenValue> values, int from, int size) {
@@ -1095,7 +1044,6 @@ final class ConversationQuestionAnswerOutputValidator {
     }
     List<TokenValue> tokens = new ArrayList<>();
     int index = 0;
-    int previousEnd = 0;
     while (index < value.length()) {
       while (index < value.length() && !Character.isLetterOrDigit(value.charAt(index))) {
         index++;
@@ -1104,23 +1052,17 @@ final class ConversationQuestionAnswerOutputValidator {
         break;
       }
       int start = index++;
-      boolean clauseBoundaryBefore =
-          tokens.isEmpty() || hasClauseBoundary(value, previousEnd, start);
-      boolean statementBoundaryBefore =
-          tokens.isEmpty() || hasStatementBoundary(value, previousEnd, start);
       while (index < value.length()) {
         char character = value.charAt(index);
         if (Character.isLetterOrDigit(character)) {
           index++;
-          continue;
-        }
-        if (isTokenSeparator(character)
+        } else if (isTokenSeparator(character)
             && index + 1 < value.length()
             && Character.isLetterOrDigit(value.charAt(index + 1))) {
           index++;
-          continue;
+        } else {
+          break;
         }
-        break;
       }
       String token = value.substring(start, index);
       String normalized = token.toLowerCase(Locale.ROOT);
@@ -1131,125 +1073,13 @@ final class ConversationQuestionAnswerOutputValidator {
         firstHash = (firstHash ^ character) * 0x100000001b3L;
         secondHash = Long.rotateLeft(secondHash ^ character, 7) * 0x9e3779b185ebca87L;
       }
-      tokens.add(
-          new TokenValue(
-              token.length(),
-              normalized,
-              firstHash,
-              secondHash,
-              start,
-              index,
-              clauseBoundaryBefore,
-              statementBoundaryBefore));
-      previousEnd = index;
+      tokens.add(new TokenValue(token.length(), normalized, firstHash, secondHash, start, index));
     }
     return List.copyOf(tokens);
   }
 
   private static boolean isTokenSeparator(char value) {
     return ",.'/-".indexOf(value) >= 0;
-  }
-
-  private static boolean hasClauseBoundary(String value, int from, int to) {
-    for (int index = from; index < to; index++) {
-      if (",;:.!?\n\r".indexOf(value.charAt(index)) >= 0) {
-        return true;
-      }
-    }
-    return false;
-  }
-
-  private static boolean hasStatementBoundary(String value, int from, int to) {
-    for (int index = from; index < to; index++) {
-      if (";.!?\n\r".indexOf(value.charAt(index)) >= 0) {
-        return true;
-      }
-    }
-    return false;
-  }
-
-  private static int[] statementIds(String value) {
-    int[] statementIds = new int[value.length() + 1];
-    int statement = 0;
-    for (int index = 0; index < value.length(); index++) {
-      statementIds[index] = statement;
-      if (";.!?\n\r".indexOf(value.charAt(index)) >= 0) {
-        statement++;
-      }
-    }
-    statementIds[value.length()] = statement;
-    return statementIds;
-  }
-
-  private static List<AttributionAtom> attributionAtoms(String value, int[] statementIds) {
-    List<AttributionAtom> atoms = new ArrayList<>();
-    int index = 0;
-    while (index < value.length()) {
-      while (index < value.length() && !Character.isLetterOrDigit(value.charAt(index))) {
-        index++;
-      }
-      if (index == value.length()) {
-        break;
-      }
-      int start = index++;
-      while (index < value.length() && Character.isLetterOrDigit(value.charAt(index))) {
-        index++;
-      }
-      atoms.add(
-          new AttributionAtom(
-              value.substring(start, index).toLowerCase(Locale.ROOT),
-              start,
-              index,
-              statementIds[start]));
-    }
-    return List.copyOf(atoms);
-  }
-
-  private static List<RawScoreOccurrence> rawScoreOccurrences(String value, int[] statementIds) {
-    List<RawScoreOccurrence> scores = new ArrayList<>();
-    for (int index = 0; index < value.length(); index++) {
-      if (!isAsciiDigit(value.charAt(index))
-          || (index > 0 && Character.isLetterOrDigit(value.charAt(index - 1)))) {
-        continue;
-      }
-      int numeratorEnd = index;
-      while (numeratorEnd < value.length()
-          && isAsciiDigit(value.charAt(numeratorEnd))
-          && numeratorEnd - index < 2) {
-        numeratorEnd++;
-      }
-      if (numeratorEnd == index
-          || (numeratorEnd < value.length() && isAsciiDigit(value.charAt(numeratorEnd)))
-          || numeratorEnd >= value.length()
-          || value.charAt(numeratorEnd) != '/') {
-        continue;
-      }
-      int denominatorStart = numeratorEnd + 1;
-      int end = denominatorStart;
-      while (end < value.length()
-          && isAsciiDigit(value.charAt(end))
-          && end - denominatorStart < 2) {
-        end++;
-      }
-      if (end == denominatorStart
-          || (end < value.length() && isAsciiDigit(value.charAt(end)))
-          || (end < value.length()
-              && (Character.isLetterOrDigit(value.charAt(end)) || value.charAt(end) == '/'))) {
-        continue;
-      }
-      scores.add(
-          new RawScoreOccurrence(
-              value.substring(index, end).toLowerCase(Locale.ROOT),
-              index,
-              end,
-              statementIds[index]));
-      index = end - 1;
-    }
-    return List.copyOf(scores);
-  }
-
-  private static boolean isAsciiDigit(char value) {
-    return value >= '0' && value <= '9';
   }
 
   static boolean isSafeParticipantLabel(String label) {
@@ -1261,450 +1091,25 @@ final class ConversationQuestionAnswerOutputValidator {
     return !values.isEmpty() && values.size() <= MAX_PARTICIPANT_LABEL_TOKENS;
   }
 
-  static List<TrustedQuestionFact> trustedFacts(List<QuestionMessage> messages) {
-    List<QuestionMessage> submitted = messages == null ? List.of() : messages;
-    if (submitted.size() > MAX_SOURCE_COUNT) {
-      throw new IllegalStateException("trusted fact message budget exceeded");
-    }
-    List<TrustedQuestionFact> facts = new ArrayList<>();
-    int sourceCharacters = 0;
-    int sourceTokens = 0;
-    for (QuestionMessage message : submitted) {
-      if (message == null || !isSafeParticipantLabel(message.participant())) {
-        throw new IllegalStateException("trusted participant label is invalid");
-      }
-      sourceCharacters = Math.addExact(sourceCharacters, message.text().length());
-      if (sourceCharacters > MAX_SOURCE_CHARACTERS) {
-        throw new IllegalStateException("trusted fact character budget exceeded");
-      }
-      List<TokenValue> values = tokens(message.text());
-      sourceTokens = Math.addExact(sourceTokens, values.size());
-      if (sourceTokens > MAX_SOURCE_TOKENS) {
-        throw new IllegalStateException("trusted fact token budget exceeded");
-      }
-      for (int scoreIndex = 0; scoreIndex < values.size(); scoreIndex++) {
-        if (!isScoreToken(values.get(scoreIndex))) {
-          continue;
-        }
-        PuzzleReference puzzle = findPuzzleReference(values, scoreIndex, null);
-        facts.add(
-            new TrustedQuestionFact(
-                message.messageGuid(),
-                message.participant().trim(),
-                puzzle == null ? null : puzzle.puzzleId(),
-                values.get(scoreIndex).normalized()));
-        if (facts.size() > MAX_SENSITIVE_SOURCE_IDENTIFIERS) {
-          throw new IllegalStateException("trusted fact count budget exceeded");
-        }
-      }
-    }
-    return List.copyOf(facts);
-  }
-
-  private static PuzzleReference findPuzzleReference(
-      List<TokenValue> values, int scoreIndex, boolean[] participantTokens) {
-    PuzzleReference result = null;
-    int earliest = Math.max(0, scoreIndex - 12);
-    for (int index = scoreIndex; index > earliest; index--) {
-      if (values.get(index).statementBoundaryBefore()) {
-        earliest = index;
-        break;
-      }
-    }
-    for (int index = earliest; index + 1 < scoreIndex; index++) {
-      if (SCORE_PUZZLE_MARKERS.contains(values.get(index).normalized())
-          && isPuzzleId(values.get(index + 1))
-          && !isMarked(participantTokens, index + 1)) {
-        result =
-            new PuzzleReference(index + 1, canonicalPuzzleId(values.get(index + 1).normalized()));
-      }
-    }
-    if (result != null) {
-      return result;
-    }
-    if (scoreIndex - 2 >= earliest
-        && SCORE_CONNECTORS.contains(values.get(scoreIndex - 1).normalized())
-        && isPuzzleId(values.get(scoreIndex - 2))
-        && !isMarked(participantTokens, scoreIndex - 2)) {
-      return new PuzzleReference(
-          scoreIndex - 2, canonicalPuzzleId(values.get(scoreIndex - 2).normalized()));
-    }
-    if (scoreIndex - 1 >= earliest
-        && isPuzzleId(values.get(scoreIndex - 1))
-        && !isMarked(participantTokens, scoreIndex - 1)) {
-      return new PuzzleReference(
-          scoreIndex - 1, canonicalPuzzleId(values.get(scoreIndex - 1).normalized()));
-    }
-    int latest = Math.min(values.size() - 1, scoreIndex + 8);
-    for (int index = scoreIndex + 1; index < latest; index++) {
-      if (values.get(index).statementBoundaryBefore()) {
-        break;
-      }
-      if (SCORE_PUZZLE_MARKERS.contains(values.get(index).normalized())
-          && isPuzzleId(values.get(index + 1))
-          && !isMarked(participantTokens, index + 1)) {
-        return new PuzzleReference(
-            index + 1, canonicalPuzzleId(values.get(index + 1).normalized()));
-      }
-    }
-    return null;
-  }
-
-  private static boolean isMarked(boolean[] marks, int index) {
-    return marks != null && marks[index];
-  }
-
-  private static String canonicalPuzzleId(String value) {
-    return digits(value);
-  }
-
-  private static final class TrustedFacts {
-    private static final Set<String> SAFE_SUBJECT_RENDERING_TOKENS =
-        Set.of("a", "an", "of", "only", "the");
-
-    private final ParticipantNode participantLabels = new ParticipantNode();
-    private final ParticipantNode rawParticipantLabels = new ParticipantNode();
-    private final Set<String> supportedScores = new HashSet<>();
-    private final Set<ScorePuzzle> supportedScorePuzzles = new HashSet<>();
-    private final Set<ScoreParticipant> supportedScoreParticipants = new HashSet<>();
-    private final Set<FactTuple> supportedTuples = new HashSet<>();
-
-    private TrustedFacts(
-        List<TrustedQuestionFact> trustedFactMetadata, Set<String> citedEvidenceIdentifiers) {
-      List<TrustedQuestionFact> metadata =
-          trustedFactMetadata == null ? List.of() : trustedFactMetadata;
-      Set<String> cited = citedEvidenceIdentifiers == null ? Set.of() : citedEvidenceIdentifiers;
-      if (metadata.size() > MAX_SENSITIVE_SOURCE_IDENTIFIERS || cited.size() > MAX_SOURCE_COUNT) {
-        throw new IllegalStateException("trusted fact budget exceeded");
-      }
-      for (TrustedQuestionFact fact : metadata) {
-        if (fact == null || !cited.contains(fact.evidenceMessageGuid())) {
-          continue;
-        }
-        if (!isSafeParticipantLabel(fact.participantLabel())) {
-          throw new IllegalStateException("trusted participant label is invalid");
-        }
-        List<TokenValue> participantTokens = tokens(fact.participantLabel());
-        List<AttributionAtom> participantAtoms =
-            attributionAtoms(fact.participantLabel(), statementIds(fact.participantLabel()));
-        String participantKey = participantKey(participantTokens);
-        String score = StringUtils.trimToEmpty(fact.score()).toLowerCase(Locale.ROOT);
-        if (!SCORE_TOKEN.matcher(score).matches()) {
-          throw new IllegalStateException("trusted score is invalid");
-        }
-        String puzzle = fact.puzzleId() == null ? null : canonicalPuzzleId(fact.puzzleId());
-        if (puzzle != null && puzzle.isEmpty()) {
-          throw new IllegalStateException("trusted puzzle is invalid");
-        }
-        addParticipant(participantTokens, participantKey);
-        addRawParticipant(participantAtoms, participantKey);
-        supportedScores.add(score);
-        supportedScoreParticipants.add(new ScoreParticipant(score, participantKey));
-        if (puzzle != null) {
-          supportedScorePuzzles.add(new ScorePuzzle(score, puzzle));
-        }
-        supportedTuples.add(new FactTuple(score, participantKey, puzzle));
-      }
-    }
-
-    private void addParticipant(List<TokenValue> values, String participantKey) {
-      ParticipantNode node = participantLabels;
-      for (TokenValue value : values) {
-        node = node.children.computeIfAbsent(value.normalized(), ignored -> new ParticipantNode());
-      }
-      if (node.participantKey != null && !node.participantKey.equals(participantKey)) {
-        throw new IllegalStateException("ambiguous trusted participant label");
-      }
-      node.participantKey = participantKey;
-    }
-
-    private void addRawParticipant(List<AttributionAtom> values, String participantKey) {
-      ParticipantNode node = rawParticipantLabels;
-      for (AttributionAtom value : values) {
-        node = node.children.computeIfAbsent(value.normalized(), ignored -> new ParticipantNode());
-      }
-      if (node.participantKey != null && !node.participantKey.equals(participantKey)) {
-        throw new IllegalStateException("ambiguous trusted participant label");
-      }
-      node.participantKey = participantKey;
-    }
-
-    private boolean[] validateAndMaskAnswer(String rawAnswer, List<TokenValue> values) {
-      boolean[] allowed = new boolean[values.size()];
-      ParticipantMatches participants = markParticipantLabels(values, allowed);
-      if (!validateRawAttributions(rawAnswer, values, participants.participantTokens())) {
-        return null;
-      }
-      String currentParticipant = null;
-      for (int index = 0; index < values.size(); index++) {
-        if (values.get(index).statementBoundaryBefore()) {
-          currentParticipant = null;
-        }
-        if (participants.endingAt()[index] != null) {
-          currentParticipant = participants.endingAt()[index];
-        }
-        String token = values.get(index).normalized();
-        if (SAFE_GENERATED_TOKENS.contains(token)
-            || SAFE_SCORE_RENDERING_TOKENS.contains(token)
-            || SAFE_SUBJECT_RENDERING_TOKENS.contains(token)) {
-          allowed[index] = true;
-        }
-        if (!isScoreToken(values.get(index))) {
-          continue;
-        }
-        String participant =
-            currentParticipant != null
-                ? currentParticipant
-                : nextParticipant(values, participants.startingAt(), index + 1);
-        PuzzleReference puzzle =
-            findPuzzleReference(values, index, participants.participantTokens());
-        String puzzleId = puzzle == null ? null : puzzle.puzzleId();
-        if (!isSupported(token, participant, puzzleId)) {
-          return null;
-        }
-        allowed[index] = true;
-        if (puzzle != null) {
-          allowed[puzzle.tokenIndex()] = true;
-        }
-      }
-      return hasUntrustedCanonicalScoreSubject(values, participants.participantTokens())
-          ? null
-          : allowed;
-    }
-
-    private boolean validateRawAttributions(
-        String answer, List<TokenValue> values, boolean[] participantTokens) {
-      int[] statements = statementIds(answer);
-      List<AttributionAtom> answerAtoms = attributionAtoms(answer, statements);
-      Map<Integer, List<RawParticipantOccurrence>> participantsByStatement =
-          rawParticipantsByStatement(answerAtoms);
-      Map<Integer, Integer> participantCursors = new HashMap<>();
-      int tokenIndex = 0;
-      for (RawScoreOccurrence score : rawScoreOccurrences(answer, statements)) {
-        while (tokenIndex < values.size() && values.get(tokenIndex).end() <= score.start()) {
-          tokenIndex++;
-        }
-        PuzzleReference puzzle =
-            tokenIndex < values.size()
-                    && values.get(tokenIndex).start() <= score.start()
-                    && values.get(tokenIndex).end() >= score.end()
-                ? findPuzzleReference(values, tokenIndex, participantTokens)
-                : null;
-        String puzzleId = puzzle == null ? null : puzzle.puzzleId();
-        String participant =
-            nearestRawParticipant(score, participantsByStatement, participantCursors);
-        if (participant == null) {
-          if (!isSupported(score.score(), null, puzzleId)) {
-            return false;
-          }
-          continue;
-        }
-        if (!isSupported(score.score(), participant, puzzleId)) {
-          return false;
-        }
-      }
-      return true;
-    }
-
-    private Map<Integer, List<RawParticipantOccurrence>> rawParticipantsByStatement(
-        List<AttributionAtom> values) {
-      Map<Integer, List<RawParticipantOccurrence>> participants = new HashMap<>();
-      for (int start = 0; start < values.size(); start++) {
-        AttributionAtom first = values.get(start);
-        ParticipantNode node = rawParticipantLabels;
-        for (int end = start; end < values.size(); end++) {
-          AttributionAtom value = values.get(end);
-          if (value.statementId() != first.statementId()) {
-            break;
-          }
-          node = node.children.get(value.normalized());
-          if (node == null) {
-            break;
-          }
-          if (node.participantKey != null) {
-            participants
-                .computeIfAbsent(first.statementId(), ignored -> new ArrayList<>())
-                .add(
-                    new RawParticipantOccurrence(
-                        node.participantKey, first.start(), value.end(), first.statementId()));
-          }
-        }
-      }
-      return participants;
-    }
-
-    private String nearestRawParticipant(
-        RawScoreOccurrence score,
-        Map<Integer, List<RawParticipantOccurrence>> participantsByStatement,
-        Map<Integer, Integer> participantCursors) {
-      List<RawParticipantOccurrence> participants =
-          participantsByStatement.getOrDefault(score.statementId(), List.of());
-      int cursor = participantCursors.getOrDefault(score.statementId(), 0);
-      while (cursor < participants.size() && participants.get(cursor).start() < score.start()) {
-        cursor++;
-      }
-      participantCursors.put(score.statementId(), cursor);
-      if (cursor > 0) {
-        return participants.get(cursor - 1).participant();
-      }
-      return cursor < participants.size() ? participants.get(cursor).participant() : null;
-    }
-
-    private boolean isSupported(String score, String participant, String puzzle) {
-      if (participant != null && puzzle != null) {
-        return supportedTuples.contains(new FactTuple(score, participant, puzzle));
-      }
-      if (participant != null) {
-        return supportedScoreParticipants.contains(new ScoreParticipant(score, participant));
-      }
-      if (puzzle != null) {
-        return supportedScorePuzzles.contains(new ScorePuzzle(score, puzzle));
-      }
-      return supportedScores.contains(score);
-    }
-
-    private ParticipantMatches markParticipantLabels(List<TokenValue> values, boolean[] allowed) {
-      boolean[] participant = new boolean[values.size()];
-      String[] endingAt = new String[values.size()];
-      String[] startingAt = new String[values.size()];
-      for (int start = 0; start < values.size(); start++) {
-        ParticipantNode node = participantLabels;
-        int end = start;
-        while (end < values.size() && end - start < MAX_PARTICIPANT_LABEL_TOKENS) {
-          node = node.children.get(values.get(end).normalized());
-          if (node == null) {
-            break;
-          }
-          if (node.participantKey != null) {
-            startingAt[start] = node.participantKey;
-            endingAt[end] = node.participantKey;
-            for (int tokenIndex = start; tokenIndex <= end; tokenIndex++) {
-              allowed[tokenIndex] = true;
-              participant[tokenIndex] = true;
-            }
-          }
-          end++;
-        }
-      }
-      return new ParticipantMatches(participant, endingAt, startingAt);
-    }
-
-    private String nextParticipant(List<TokenValue> values, String[] startingAt, int startIndex) {
-      int end = Math.min(values.size(), startIndex + MAX_PARTICIPANT_LABEL_TOKENS + 2);
-      for (int index = startIndex; index < end; index++) {
-        if (values.get(index).statementBoundaryBefore()) {
-          break;
-        }
-        if (startingAt[index] != null) {
-          return startingAt[index];
-        }
-      }
-      return null;
-    }
-
-    private boolean hasUntrustedCanonicalScoreSubject(
-        List<TokenValue> values, boolean[] participant) {
-      for (int verbIndex = 0; verbIndex < values.size(); verbIndex++) {
-        if (!SCORE_REPORTING_VERBS.contains(values.get(verbIndex).normalized())
-            || !hasScoreAfter(values, verbIndex)) {
-          continue;
-        }
-        int clauseStart = verbIndex;
-        while (clauseStart > 0 && !values.get(clauseStart).clauseBoundaryBefore()) {
-          clauseStart--;
-        }
-        int cursor = verbIndex - 1;
-        while (cursor >= clauseStart
-            && SAFE_SUBJECT_RENDERING_TOKENS.contains(values.get(cursor).normalized())) {
-          cursor--;
-        }
-        if (cursor < clauseStart) {
-          continue;
-        }
-        if (!participant[cursor]) {
-          return true;
-        }
-        while (cursor >= clauseStart && participant[cursor]) {
-          cursor--;
-        }
-        for (int index = clauseStart; index <= cursor; index++) {
-          if (!SAFE_SUBJECT_RENDERING_TOKENS.contains(values.get(index).normalized())) {
-            return true;
-          }
-        }
-      }
-      return false;
-    }
-
-    private boolean hasScoreAfter(List<TokenValue> values, int verbIndex) {
-      int end = Math.min(values.size(), verbIndex + 9);
-      for (int index = verbIndex + 1; index < end; index++) {
-        if (values.get(index).statementBoundaryBefore()) {
-          return false;
-        }
-        if (isScoreToken(values.get(index))) {
-          return true;
-        }
-      }
-      return false;
-    }
-
-    private static String participantKey(List<TokenValue> values) {
-      StringBuilder key = new StringBuilder();
-      for (TokenValue value : values) {
-        if (!key.isEmpty()) {
-          key.append('\0');
-        }
-        key.append(value.normalized());
-      }
-      return key.toString();
-    }
-
-    private static final class ParticipantNode {
-      private final Map<String, ParticipantNode> children = new HashMap<>();
-      private String participantKey;
-    }
-
-    private record ParticipantMatches(
-        boolean[] participantTokens, String[] endingAt, String[] startingAt) {}
-
-    private record ScorePuzzle(String score, String puzzle) {}
-
-    private record ScoreParticipant(String score, String participant) {}
-
-    private record FactTuple(String score, String participant, String puzzle) {}
-  }
-
-  private record PuzzleReference(int tokenIndex, String puzzleId) {}
-
   private static final class SourceIdentifiers {
     private final Set<String> textIdentifiers = new HashSet<>();
     private final Set<String> endpoints = new HashSet<>();
     private final Set<String> paths = new HashSet<>();
     private final Set<String> sensitiveNumbers = new HashSet<>();
-    private final Set<String> supportedNumbers = new HashSet<>();
     private final Set<String> overlapExemptTokens = new HashSet<>();
 
     private void addText(String value) {
-      String normalized = StringUtils.trimToEmpty(value).toLowerCase(Locale.ROOT);
-      if (!normalized.isEmpty()) {
-        textIdentifiers.add(normalized);
-        checkSize();
-      }
+      addNormalized(textIdentifiers, value);
+    }
+
+    private void addEndpoint(String value) {
+      addNormalized(endpoints, value);
     }
 
     private void addPath(String value) {
       String normalized = normalizePath(value);
       if (normalized.length() > 1) {
         paths.add(normalized);
-        checkSize();
-      }
-    }
-
-    private void addEndpoint(String value) {
-      String normalized = StringUtils.trimToEmpty(value).toLowerCase(Locale.ROOT);
-      if (!normalized.isEmpty()) {
-        endpoints.add(normalized);
         checkSize();
       }
     }
@@ -1716,43 +1121,32 @@ final class ConversationQuestionAnswerOutputValidator {
       }
     }
 
-    private void addSupportedNumber(String value) {
-      if (!value.isEmpty()) {
-        supportedNumbers.add(value);
-        checkSize();
-      }
+    private void addOverlapExemptToken(String value) {
+      addNormalized(overlapExemptTokens, value);
     }
 
-    private void addOverlapExemptToken(String value) {
+    private void addNormalized(Set<String> target, String value) {
       String normalized = StringUtils.trimToEmpty(value).toLowerCase(Locale.ROOT);
       if (!normalized.isEmpty()) {
-        overlapExemptTokens.add(normalized);
+        target.add(normalized);
         checkSize();
       }
-    }
-
-    private void finish() {
-      supportedNumbers.removeAll(sensitiveNumbers);
     }
 
     private Set<String> textIdentifiers() {
       return textIdentifiers;
     }
 
-    private Set<String> paths() {
-      return paths;
-    }
-
     private Set<String> endpoints() {
       return endpoints;
     }
 
-    private Set<String> sensitiveNumbers() {
-      return sensitiveNumbers;
+    private Set<String> paths() {
+      return paths;
     }
 
-    private Set<String> supportedNumbers() {
-      return supportedNumbers;
+    private Set<String> sensitiveNumbers() {
+      return sensitiveNumbers;
     }
 
     private Set<String> overlapExemptTokens() {
@@ -1765,7 +1159,6 @@ final class ConversationQuestionAnswerOutputValidator {
               + endpoints.size()
               + paths.size()
               + sensitiveNumbers.size()
-              + supportedNumbers.size()
               + overlapExemptTokens.size();
       if (size > MAX_SENSITIVE_SOURCE_IDENTIFIERS) {
         throw new IllegalStateException("sensitive source identifier budget exceeded");
@@ -1774,21 +1167,7 @@ final class ConversationQuestionAnswerOutputValidator {
   }
 
   private record TokenValue(
-      int characters,
-      String normalized,
-      long firstHash,
-      long secondHash,
-      int start,
-      int end,
-      boolean clauseBoundaryBefore,
-      boolean statementBoundaryBefore) {}
-
-  private record AttributionAtom(String normalized, int start, int end, int statementId) {}
-
-  private record RawScoreOccurrence(String score, int start, int end, int statementId) {}
-
-  private record RawParticipantOccurrence(
-      String participant, int start, int end, int statementId) {}
+      int characters, String normalized, long firstHash, long secondHash, int start, int end) {}
 
   private record NgramKey(long first, long second) {}
 
