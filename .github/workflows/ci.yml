@@ -31,6 +31,10 @@ jobs:
       - name: Run tests
         run: CI=true BBAGENT_NIX_SHELL_QUIET=1 nix develop --command ./gradlew test
 
+      - name: Build app image with Nix
+        if: ${{ github.event_name == 'pull_request' }}
+        run: CI=true BBAGENT_NIX_SHELL_QUIET=1 nix build .#app-image --no-link
+
   ios_appclip_build:
     name: iOS App Clip Build
     runs-on: macos-latest
