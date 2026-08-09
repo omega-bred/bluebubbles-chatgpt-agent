@@ -564,40 +564,74 @@ public class BBHttpClientWrapper {
 
   public List<Message> searchConversationHistory(
       String chatGuid, String query, Integer limit, Integer offset) {
-    if (StringUtils.isBlank(chatGuid)) {
-      return null;
-    }
-    ApiV1MessageQueryPostRequest.Builder requestBuilder =
+    Instant now = Instant.now();
+    return searchConversationHistory(
+        chatGuid,
+        query,
+        now.minus(30, ChronoUnit.DAYS),
+        now,
+        limit != null && limit > 0 ? limit : 20,
+        offset != null && offset >= 0 ? offset : 0);
+  }
+
+  public List<Message> searchConversationHistory(
+      String chatGuid, String literalQuery, Instant after, Instant before, int limit, int offset) {
+    validateHistorySearch(chatGuid, literalQuery, after, before, limit, offset);
+    String escaped =
+        literalQuery.trim().replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_");
+    WhereClause textClause =
+        WhereClause.builder()
+            .statement("message.text LIKE :text ESCAPE '\\\\'")
+            .args(Map.of("text", "%" + escaped + "%"))
+            .build();
+    ApiV1MessageQueryPostRequest request =
         ApiV1MessageQueryPostRequest.builder()
             .chatGuid(chatGuid)
             .sort(ApiV1MessageQueryPostRequest.SortEnum.DESC)
-            .after(Instant.now().minus(30, ChronoUnit.DAYS).getEpochSecond())
-            .offset(offset != null && offset >= 0 ? offset : 0)
-            .limit(limit != null && limit > 0 ? limit : 20)
-            .with(Set.of(ApiV1MessageQueryPostRequest.WithEnum.HANDLE));
+            .after(after.getEpochSecond())
+            .before(before.getEpochSecond())
+            .offset(offset)
+            .limit(limit)
+            .with(Set.of(ApiV1MessageQueryPostRequest.WithEnum.HANDLE))
+            .where(List.of(textClause))
+            .build();
 
-    List<WhereClause> whereClauses = new ArrayList<>();
+    return executeMessageQuery(request, "search conversation history");
+  }
 
-    if (StringUtils.isNotBlank(query)) {
-      whereClauses.add(
-          WhereClause.builder()
-              .statement("message.text LIKE :text")
-              .args(Map.of("text", "%" + query + "%"))
-              .build());
+  private static void validateHistorySearch(
+      String chatGuid, String literalQuery, Instant after, Instant before, int limit, int offset) {
+    if (StringUtils.isBlank(chatGuid)) {
+      throw new IllegalArgumentException("Cannot search conversation history without chatGuid");
     }
-    requestBuilder.where(whereClauses);
+    if (StringUtils.isBlank(literalQuery)) {
+      throw new IllegalArgumentException(
+          "Cannot search conversation history without a literal query");
+    }
+    if (after == null || before == null || !after.isBefore(before)) {
+      throw new IllegalArgumentException(
+          "Conversation history search requires an ordered time range");
+    }
+    if (limit <= 0) {
+      throw new IllegalArgumentException("Conversation history search limit must be positive");
+    }
+    if (offset < 0) {
+      throw new IllegalArgumentException("Conversation history search offset cannot be negative");
+    }
+  }
 
+  private List<Message> executeMessageQuery(
+      ApiV1MessageQueryPostRequest request, String operation) {
     return measuredOperation(
         "search_conversation_history",
         () -> {
           ApiV1MessageQueryPost200Response response =
               this.messageApi
-                  .apiV1MessageQueryPost(password, requestBuilder.build())
+                  .apiV1MessageQueryPost(password, request)
                   .block(Duration.of(120, ChronoUnit.SECONDS));
-          response = requirePresent(response, "search conversation history");
-          requireSuccessfulResponse(
-              response.getStatus(), response.getMessage(), "search conversation history");
-          return requirePresent(response.getData(), "search conversation history");
+          response = requirePresent(response, operation);
+          requireSuccessfulResponse(response.getStatus(), response.getMessage(), operation);
+          return requirePresent(response.getData(), operation);
         });
   }
 
