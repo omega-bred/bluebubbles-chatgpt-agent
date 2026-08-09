@@ -1088,7 +1088,7 @@ git commit -m "feat: instrument group question answering"
 - Consumes: the complete feature branch.
 - Produces: local verification evidence and a production E2E checklist that remains gated on explicit publication/deployment approval.
 
-- [ ] **Step 1: Run the focused QA and catch-up suite**
+- [x] **Step 1: Run the focused QA and catch-up suite**
 
 Run:
 
@@ -1109,7 +1109,7 @@ CI=true nix develop --command ./gradlew test \
 
 Expected: all focused tests pass with no live-network dependency.
 
-- [ ] **Step 2: Run formatting, compilation, Spring context, and all memory tests**
+- [x] **Step 2: Run formatting, compilation, Spring context, and all memory tests**
 
 Run:
 
@@ -1122,7 +1122,7 @@ CI=true nix develop --command ./gradlew spotlessApply spotlessCheck compileJava 
 
 Expected: formatting, compilation, context startup, and every memory/tool test pass.
 
-- [ ] **Step 3: Run the full test suite**
+- [x] **Step 3: Run the full test suite**
 
 Run:
 
@@ -1132,7 +1132,7 @@ CI=true nix develop --command ./gradlew test
 
 Expected: all tests pass. If only `NominatimReverseLookupIntegTest.testReverseLookup()` fails due timeout or changed external address data, record it as the documented ambient live-service failure and retain the focused green evidence.
 
-- [ ] **Step 4: Render the production manifest and inspect the exact environment diff**
+- [x] **Step 4: Render the production manifest and inspect the exact environment diff**
 
 Run:
 
@@ -1144,7 +1144,7 @@ git status --short
 
 Expected: Kustomize renders successfully, every QA environment variable appears once, `git diff --check` is clean, and only intended plan checkbox changes remain uncommitted.
 
-- [ ] **Step 5: Review privacy-sensitive output paths**
+- [x] **Step 5: Review privacy-sensitive output paths**
 
 Run:
 
@@ -1157,14 +1157,14 @@ rg -n "log\.(trace|debug|info|warn|error)|recordMemoryQuestionAnswer|question_an
 
 Expected: no logger receives question, term, raw message, GUID, account, group, chat, sender, phone, or email data; the tool serializer emits only the approved synthesized fields.
 
-- [ ] **Step 6: Commit completed plan tracking**
+- [x] **Step 6: Commit completed plan tracking**
 
 ```bash
 git add docs/superpowers/plans/2026-08-09-group-catchup-question-answering.md
 git commit -m "docs: complete group question answering plan"
 ```
 
-- [ ] **Step 7: Stop at the publication gate and report verification**
+- [x] **Step 7: Stop at the publication gate and report verification**
 
 Do not push, create a pull request, merge, alter manifests in another repository, restart workloads, or touch production until the user explicitly authorizes the corresponding external write.
 
