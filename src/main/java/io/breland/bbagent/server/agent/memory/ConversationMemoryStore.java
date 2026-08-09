@@ -5,8 +5,10 @@ import static io.breland.bbagent.server.agent.memory.ConversationMemoryModels.Ar
 import static io.breland.bbagent.server.agent.memory.ConversationMemoryModels.ProjectionOperation.UPSERT;
 
 import io.breland.bbagent.server.agent.memory.ConversationMemoryModels.ConversationRecord;
+import io.breland.bbagent.server.agent.memory.ConversationMemoryModels.ExistingArtifact;
 import io.breland.bbagent.server.agent.memory.ConversationMemoryModels.ExtractionBatch;
 import io.breland.bbagent.server.agent.memory.ConversationMemoryModels.ExtractionCandidate;
+import io.breland.bbagent.server.agent.memory.ConversationMemoryModels.ExtractionCheckpoint;
 import io.breland.bbagent.server.agent.memory.ConversationMemoryModels.JournalMessage;
 import io.breland.bbagent.server.agent.memory.ConversationMemoryModels.ProjectionClaim;
 import io.breland.bbagent.server.agent.memory.ConversationMemoryModels.ProjectionOperation;
@@ -485,6 +487,84 @@ public class ConversationMemoryStore {
     return List.copyOf(claims);
   }
 
+  @Transactional(readOnly = true)
+  public Optional<ExtractionCheckpoint> findCheckpoint(String conversationId) {
+    return jdbcTemplate
+        .query(
+            """
+            select last_processed_at, last_processed_message_guid, last_corpus_hash
+              from conversation_memory_checkpoints
+             where conversation_id = ?
+            """,
+            (resultSet, rowNumber) ->
+                new ExtractionCheckpoint(
+                    toInstant(resultSet.getTimestamp("last_processed_at")),
+                    resultSet.getString("last_processed_message_guid"),
+                    resultSet.getString("last_corpus_hash")),
+            conversationId)
+        .stream()
+        .findFirst();
+  }
+
+  @Transactional(readOnly = true)
+  public List<ExistingArtifact> findActiveArtifacts(String conversationId) {
+    return jdbcTemplate.query(
+        """
+        select artifact_id, kind, artifact_text, status, occurred_at
+          from conversation_memory_artifacts
+         where conversation_id = ? and status not in ('SUPERSEDED', 'DELETED')
+         order by occurred_at, artifact_id
+        """,
+        (resultSet, rowNumber) ->
+            new ExistingArtifact(
+                resultSet.getString("artifact_id"),
+                ConversationMemoryModels.ArtifactKind.valueOf(resultSet.getString("kind")),
+                resultSet.getString("artifact_text"),
+                ConversationMemoryModels.ArtifactStatus.valueOf(resultSet.getString("status")),
+                resultSet.getTimestamp("occurred_at").toInstant()),
+        conversationId);
+  }
+
+  @Transactional
+  public void completeUnchangedExtraction(WorkClaim claim, Instant completedAt) {
+    int deleted =
+        jdbcTemplate.update(
+            """
+            delete from conversation_memory_work
+             where conversation_id = ? and claimed_by = ? and claimed_until >= ?
+               and available_at <= ?
+            """,
+            claim.conversationId(),
+            claim.workerId(),
+            completedAt,
+            completedAt);
+    if (deleted == 0) {
+      releaseClaimForFutureWork(claim, completedAt);
+    }
+  }
+
+  @Transactional
+  public void failExtractionWork(WorkClaim claim, Instant failedAt, String errorCode) {
+    requireText(errorCode, "extraction error code");
+    jdbcTemplate.update(
+        """
+        update conversation_memory_work
+           set available_at = case
+                 when available_at > ? then available_at
+                 else ?
+               end,
+               claimed_by = null, claimed_until = null, last_error_code = ?, updated_at = ?
+         where conversation_id = ? and claimed_by = ? and claimed_until >= ?
+        """,
+        failedAt,
+        failedAt.plusSeconds(30),
+        StringUtils.truncate(errorCode, 64),
+        failedAt,
+        claim.conversationId(),
+        claim.workerId(),
+        failedAt);
+  }
+
   @Transactional
   public List<String> saveExtraction(WorkClaim claim, ExtractionBatch batch) {
     Objects.requireNonNull(claim, "claim");
@@ -603,10 +683,18 @@ public class ConversationMemoryStore {
 
     saveSummarySegment(batch);
     saveCheckpoint(batch);
-    jdbcTemplate.update(
-        "delete from conversation_memory_work where conversation_id = ? and claimed_by = ?",
-        claim.conversationId(),
-        claim.workerId());
+    int deleted =
+        jdbcTemplate.update(
+            """
+            delete from conversation_memory_work
+             where conversation_id = ? and claimed_by = ? and available_at <= ?
+            """,
+            claim.conversationId(),
+            claim.workerId(),
+            batch.processedAt());
+    if (deleted == 0) {
+      releaseClaimForFutureWork(claim, batch.processedAt());
+    }
     return List.copyOf(savedArtifactIds);
   }
 
@@ -858,13 +946,15 @@ public class ConversationMemoryStore {
   }
 
   private void saveCheckpoint(ExtractionBatch batch) {
-    String lastMessageGuid =
+    JournalMessage lastMessage =
         batch.sourceMessages().stream()
             .max(
                 java.util.Comparator.comparing(JournalMessage::sourceTimestamp)
                     .thenComparing(JournalMessage::messageGuid))
-            .map(JournalMessage::messageGuid)
             .orElse(null);
+    Instant lastProcessedAt =
+        lastMessage == null ? batch.processedAt() : lastMessage.sourceTimestamp();
+    String lastMessageGuid = lastMessage == null ? null : lastMessage.messageGuid();
     Integer existing =
         jdbcTemplate.queryForObject(
             "select count(*) from conversation_memory_checkpoints where conversation_id = ?",
@@ -878,7 +968,7 @@ public class ConversationMemoryStore {
                  updated_at = ?
            where conversation_id = ?
           """,
-          batch.processedAt(),
+          lastProcessedAt,
           lastMessageGuid,
           batch.corpusHash(),
           batch.processedAt(),
@@ -893,10 +983,23 @@ public class ConversationMemoryStore {
         values (?, ?, ?, ?, ?)
         """,
         batch.conversationId(),
-        batch.processedAt(),
+        lastProcessedAt,
         lastMessageGuid,
         batch.corpusHash(),
         batch.processedAt());
+  }
+
+  private void releaseClaimForFutureWork(WorkClaim claim, Instant releasedAt) {
+    jdbcTemplate.update(
+        """
+        update conversation_memory_work
+           set claimed_by = null, claimed_until = null, updated_at = ?
+         where conversation_id = ? and claimed_by = ? and claimed_until >= ?
+        """,
+        releasedAt,
+        claim.conversationId(),
+        claim.workerId(),
+        releasedAt);
   }
 
   private void requireText(String value, String label) {

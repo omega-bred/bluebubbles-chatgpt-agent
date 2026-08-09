@@ -75,6 +75,23 @@ public final class ConversationMemoryModels {
     }
   }
 
+  public record ExistingArtifact(
+      String artifactId,
+      ArtifactKind kind,
+      String text,
+      ArtifactStatus status,
+      Instant occurredAt) {}
+
+  public record ExtractionCheckpoint(
+      Instant lastProcessedAt, String lastProcessedMessageGuid, String lastCorpusHash) {}
+
+  public record ModelExtraction(
+      String summary, List<ExtractionCandidate> candidates, String itemPayload) {
+    public ModelExtraction {
+      candidates = List.copyOf(candidates);
+    }
+  }
+
   public record AuthorizedMemory(
       String artifactId,
       String memory,

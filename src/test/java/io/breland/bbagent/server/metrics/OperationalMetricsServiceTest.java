@@ -93,4 +93,33 @@ class OperationalMetricsServiceTest {
             .counter()
             .count());
   }
+
+  @Test
+  void recordsConversationMemoryExtractionMetricsWithoutIdentifiers() {
+    SimpleMeterRegistry registry = new SimpleMeterRegistry();
+    OperationalMetricsService service = new OperationalMetricsService(registry);
+
+    service.recordMemoryExtraction(false, "membership_refresh", Duration.ofMillis(75));
+    service.recordMemoryExtractionCandidate("GROUP_DECISION", "CONFIRMED", true);
+    service.recordMemoryWorkLag(Duration.ofSeconds(12));
+
+    assertEquals(
+        1.0,
+        registry
+            .get("bbagent.memory.extraction.count")
+            .tag("outcome", "failure")
+            .tag("failure_type", "membership_refresh")
+            .counter()
+            .count());
+    assertEquals(
+        1.0,
+        registry
+            .get("bbagent.memory.extraction.candidate.count")
+            .tag("kind", "group_decision")
+            .tag("status", "confirmed")
+            .tag("accepted", "true")
+            .counter()
+            .count());
+    assertEquals(1L, registry.get("bbagent.memory.work.lag").timer().count());
+  }
 }

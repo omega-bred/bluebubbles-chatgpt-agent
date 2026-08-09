@@ -194,6 +194,38 @@ public class OperationalMetricsService {
     return "exception";
   }
 
+  public void recordMemoryExtraction(
+      boolean success, @Nullable String failureType, Duration duration) {
+    Tags tags =
+        Tags.of("outcome", outcome(success), "failure_type", failureTag(success, failureType));
+    recordTimer(
+        "bbagent.memory.extraction.duration",
+        "Conversation memory extraction duration",
+        duration,
+        tags);
+    incrementCounter(
+        "bbagent.memory.extraction.count", "Conversation memory extraction count", tags);
+  }
+
+  public void recordMemoryExtractionCandidate(String kind, String status, boolean accepted) {
+    Tags tags =
+        Tags.of(
+            "kind",
+            memoryCandidateKindTag(kind),
+            "status",
+            memoryCandidateStatusTag(status),
+            "accepted",
+            Boolean.toString(accepted));
+    incrementCounter(
+        "bbagent.memory.extraction.candidate.count",
+        "Conversation memory extraction candidate count",
+        tags);
+  }
+
+  public void recordMemoryWorkLag(Duration lag) {
+    recordTimer("bbagent.memory.work.lag", "Conversation memory work lag", lag, Tags.empty());
+  }
+
   private void registerBlueBubblesHealthGauges() {
     if (meterRegistry == null) {
       return;
@@ -294,6 +326,23 @@ public class OperationalMetricsService {
   private static String modelTagValue(@Nullable String value) {
     String trimmed = StringUtils.trimToNull(value);
     return trimmed == null ? "unknown" : StringUtils.truncate(trimmed, MAX_TAG_VALUE_LENGTH);
+  }
+
+  private static String memoryCandidateKindTag(@Nullable String value) {
+    String normalized = tagValue(value, "unknown");
+    return normalized.equals("group_decision") || normalized.equals("group_fact")
+        ? normalized
+        : "unknown";
+  }
+
+  private static String memoryCandidateStatusTag(@Nullable String value) {
+    String normalized = tagValue(value, "unknown");
+    return normalized.equals("provisional")
+            || normalized.equals("confirmed")
+            || normalized.equals("superseded")
+            || normalized.equals("deleted")
+        ? normalized
+        : "unknown";
   }
 
   private static boolean hasCause(Throwable throwable, Class<? extends Throwable> type) {

@@ -127,6 +127,104 @@ class ConversationMemoryStoreTest {
   }
 
   @Test
+  void extractionCheckpointUsesTheLastSourceMessageAndExposesActiveArtifacts() {
+    String accountId = createAccount("checkpoint@example.com");
+    String conversationId =
+        store.upsertConversation(
+            "bluebubbles", "iMessage;+;group-checkpoint", true, "Checkpoint", OBSERVED_AT);
+    store.recordMembership(conversationId, accountId, OBSERVED_AT.minusSeconds(30));
+    JournalMessage source =
+        message("message-checkpoint", conversationId, accountId, "Saturday at six");
+    store.recordMessage(source);
+    store.scheduleExtraction(conversationId, OBSERVED_AT.plusSeconds(30));
+    WorkClaim claim =
+        store
+            .claimDueExtractionWork("worker-checkpoint", OBSERVED_AT.plusSeconds(30), 10)
+            .getFirst();
+
+    store.saveExtraction(
+        claim,
+        new ExtractionBatch(
+            conversationId,
+            List.of(source),
+            List.of(
+                new ExtractionCandidate(
+                    GROUP_DECISION,
+                    "The group chose Saturday at six.",
+                    CONFIRMED,
+                    NORMAL,
+                    0.95,
+                    OBSERVED_AT,
+                    null,
+                    List.of(source.messageGuid()),
+                    null,
+                    "checkpoint-artifact-hash")),
+            "Saturday was selected.",
+            "[]",
+            "checkpoint-corpus-hash",
+            OBSERVED_AT.plusSeconds(30)));
+
+    assertThat(store.findCheckpoint(conversationId))
+        .hasValueSatisfying(
+            checkpoint -> {
+              assertThat(checkpoint.lastProcessedAt()).isEqualTo(OBSERVED_AT);
+              assertThat(checkpoint.lastProcessedMessageGuid()).isEqualTo("message-checkpoint");
+              assertThat(checkpoint.lastCorpusHash()).isEqualTo("checkpoint-corpus-hash");
+            });
+    assertThat(store.findActiveArtifacts(conversationId))
+        .singleElement()
+        .satisfies(
+            artifact -> assertThat(artifact.text()).isEqualTo("The group chose Saturday at six."));
+  }
+
+  @Test
+  void extractionCompletionPreservesMessagesScheduledWhileTheLeaseIsHeld() {
+    String conversationId =
+        store.upsertConversation("bluebubbles", "iMessage;+;group-race", true, "Race", OBSERVED_AT);
+    store.scheduleExtraction(conversationId, OBSERVED_AT);
+    WorkClaim claim = store.claimDueExtractionWork("worker-race", OBSERVED_AT, 10).getFirst();
+    Instant futureAvailableAt = OBSERVED_AT.plusSeconds(90);
+    store.scheduleExtraction(conversationId, futureAvailableAt);
+
+    store.saveExtraction(
+        claim,
+        new ExtractionBatch(
+            conversationId,
+            List.of(),
+            List.of(),
+            "",
+            "[]",
+            "empty-corpus-hash",
+            OBSERVED_AT.plusSeconds(1)));
+
+    assertThat(store.extractionAvailableAt(conversationId)).contains(futureAvailableAt);
+    assertThat(store.claimDueExtractionWork("worker-early", OBSERVED_AT.plusSeconds(30), 10))
+        .isEmpty();
+    assertThat(store.claimDueExtractionWork("worker-later", futureAvailableAt, 10))
+        .singleElement()
+        .extracting(WorkClaim::conversationId)
+        .isEqualTo(conversationId);
+  }
+
+  @Test
+  void failedExtractionBecomesRetryableAfterTheBoundedDelay() {
+    String conversationId =
+        store.upsertConversation(
+            "bluebubbles", "iMessage;+;group-retry", true, "Retry", OBSERVED_AT);
+    store.scheduleExtraction(conversationId, OBSERVED_AT);
+    WorkClaim claim = store.claimDueExtractionWork("worker-failed", OBSERVED_AT, 10).getFirst();
+
+    store.failExtractionWork(claim, OBSERVED_AT, "invalid_response");
+
+    assertThat(store.claimDueExtractionWork("worker-early", OBSERVED_AT.plusSeconds(29), 10))
+        .isEmpty();
+    assertThat(store.claimDueExtractionWork("worker-retry", OBSERVED_AT.plusSeconds(30), 10))
+        .singleElement()
+        .extracting(WorkClaim::conversationId)
+        .isEqualTo(conversationId);
+  }
+
+  @Test
   void canonicalMemoryOwnershipCannotMoveAcrossScopes() {
     String accountId = createAccount("memory-owner@example.com");
     String canonicalScope = "account:" + accountId;
