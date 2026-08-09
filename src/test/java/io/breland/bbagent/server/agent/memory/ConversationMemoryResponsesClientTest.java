@@ -8,6 +8,8 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 import com.openai.client.OpenAIClient;
+import com.openai.models.responses.EasyInputMessage;
+import com.openai.models.responses.ResponseInputItem;
 import com.openai.models.responses.StructuredResponse;
 import com.openai.models.responses.StructuredResponseCreateParams;
 import com.openai.models.responses.StructuredResponseOutputItem;
@@ -76,7 +78,20 @@ class ConversationMemoryResponsesClientTest {
     assertThat(result.model()).isEqualTo("openrouter/z-ai/glm-5.2");
     assertThat(result.fallbackUsed()).isFalse();
     assertThat(requests).singleElement();
-    assertThat(requests.getFirst().toString())
+    var params = requests.getFirst().rawParams();
+    assertThat(params.temperature()).contains(0.0);
+    assertThat(params.maxOutputTokens()).contains(200L);
+    assertThat(params.tools()).contains(List.of());
+    assertThat(params.parallelToolCalls()).contains(false);
+    List<ResponseInputItem> input = params.input().orElseThrow().asResponse();
+    assertThat(input).hasSize(2);
+    assertThat(input.getFirst().asEasyInputMessage().role())
+        .isEqualTo(EasyInputMessage.Role.DEVELOPER);
+    assertThat(input.getFirst().asEasyInputMessage().content().asTextInput())
+        .isEqualTo("instructions");
+    assertThat(input.get(1).asEasyInputMessage().role()).isEqualTo(EasyInputMessage.Role.USER);
+    assertThat(input.get(1).asEasyInputMessage().content().asTextInput()).isEqualTo("input");
+    assertThat(params.toString())
         .contains("require_parameters=true")
         .contains("prompt=0.4")
         .contains("completion=1.6");
