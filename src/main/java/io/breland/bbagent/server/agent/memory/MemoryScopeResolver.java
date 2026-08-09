@@ -18,19 +18,29 @@ public class MemoryScopeResolver {
   private final ConversationMemoryStore store;
   private final boolean legacyScopeReadEnabled;
   private final @Nullable AuthorizedMemoryRetrievalService authorizedMemoryRetrievalService;
+  private final @Nullable ConversationDigestService conversationDigestService;
 
   @Autowired
   public MemoryScopeResolver(
       ConversationMemoryStore store,
       @Value("${bbagent.memory.legacy-scope-read-enabled:true}") boolean legacyScopeReadEnabled,
-      @Nullable AuthorizedMemoryRetrievalService authorizedMemoryRetrievalService) {
+      @Nullable AuthorizedMemoryRetrievalService authorizedMemoryRetrievalService,
+      @Nullable ConversationDigestService conversationDigestService) {
     this.store = store;
     this.legacyScopeReadEnabled = legacyScopeReadEnabled;
     this.authorizedMemoryRetrievalService = authorizedMemoryRetrievalService;
+    this.conversationDigestService = conversationDigestService;
   }
 
   public MemoryScopeResolver(ConversationMemoryStore store, boolean legacyScopeReadEnabled) {
-    this(store, legacyScopeReadEnabled, null);
+    this(store, legacyScopeReadEnabled, null, null);
+  }
+
+  public MemoryScopeResolver(
+      ConversationMemoryStore store,
+      boolean legacyScopeReadEnabled,
+      @Nullable AuthorizedMemoryRetrievalService authorizedMemoryRetrievalService) {
+    this(store, legacyScopeReadEnabled, authorizedMemoryRetrievalService, null);
   }
 
   public Optional<String> primaryScope(ToolContext context) {
@@ -75,6 +85,10 @@ public class MemoryScopeResolver {
 
   public Optional<AuthorizedMemoryRetrievalService> authorizedRetrievalService() {
     return Optional.ofNullable(authorizedMemoryRetrievalService);
+  }
+
+  public Optional<ConversationDigestService> conversationDigestService() {
+    return Optional.ofNullable(conversationDigestService);
   }
 
   public void updateOwnership(String canonicalScope, String memoryId, String text) {

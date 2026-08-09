@@ -39,6 +39,7 @@ import io.breland.bbagent.server.agent.tools.kubernetes.KubernetesPodLogsAgentTo
 import io.breland.bbagent.server.agent.tools.kubernetes.KubernetesReadOnlyAgentTool;
 import io.breland.bbagent.server.agent.tools.limits.GetUsageLimitsAgentTool;
 import io.breland.bbagent.server.agent.tools.memory.ConfigureGroupMemoryAgentTool;
+import io.breland.bbagent.server.agent.tools.memory.GetGroupCatchupAgentTool;
 import io.breland.bbagent.server.agent.tools.memory.Mem0Client;
 import io.breland.bbagent.server.agent.tools.memory.MemoryDeleteAgentTool;
 import io.breland.bbagent.server.agent.tools.memory.MemoryGetAgentTool;
@@ -78,6 +79,7 @@ public final class AgentToolRegistry {
           RenameConversationAgentTool.TOOL_NAME,
           SetGroupIconAgentTool.TOOL_NAME,
           ConfigureGroupMemoryAgentTool.TOOL_NAME);
+  private static final Set<String> DIRECT_ONLY_TOOLS = Set.of(GetGroupCatchupAgentTool.TOOL_NAME);
   private static final Set<String> BLUEBUBBLES_ONLY_TOOLS =
       Set.of(
           SearchConvoHistoryAgentTool.TOOL_NAME,
@@ -274,11 +276,7 @@ public final class AgentToolRegistry {
 
   public ResolvedTool resolveTool(String toolName, IncomingMessage message) {
     AgentTool tool = tools.get(toolName);
-    if (tool != null) {
-      if (KUBERNETES_TOOL_NAMES.contains(toolName)
-          && !isKubernetesToolAllowed(message, resolveAccountId(message))) {
-        return new ResolvedTool(null);
-      }
+    if (tool != null && shouldIncludeTool(tool, message, resolveAccountId(message))) {
       return new ResolvedTool(tool);
     }
     return new ResolvedTool(null);
@@ -312,7 +310,8 @@ public final class AgentToolRegistry {
     if (toolName.startsWith("memory_")) {
       return "memory";
     }
-    if (ConfigureGroupMemoryAgentTool.TOOL_NAME.equals(toolName)) {
+    if (ConfigureGroupMemoryAgentTool.TOOL_NAME.equals(toolName)
+        || GetGroupCatchupAgentTool.TOOL_NAME.equals(toolName)) {
       return "memory";
     }
     if (FeedbackAgentTool.TOOL_NAME.equals(toolName)) {
@@ -336,6 +335,9 @@ public final class AgentToolRegistry {
     }
     if (GROUP_ONLY_TOOLS.contains(tool.name())) {
       return message != null && message.isGroup();
+    }
+    if (DIRECT_ONLY_TOOLS.contains(tool.name())) {
+      return message != null && !message.isGroup();
     }
     if (KUBERNETES_TOOL_NAMES.contains(tool.name())) {
       return isKubernetesToolAllowed(message, accountId);
@@ -478,6 +480,9 @@ public final class AgentToolRegistry {
     registerTool(new MemoryGetAgentTool(mem0Client, memoryScopeResolver).getTool());
     registerTool(new MemoryUpdateAgentTool(mem0Client, memoryScopeResolver).getTool());
     registerTool(new MemoryDeleteAgentTool(mem0Client, memoryScopeResolver).getTool());
+    if (memoryScopeResolver != null) {
+      registerTool(new GetGroupCatchupAgentTool(memoryScopeResolver).getTool());
+    }
     if (conversationMemorySettingsService != null) {
       registerTool(new ConfigureGroupMemoryAgentTool(conversationMemorySettingsService).getTool());
     }

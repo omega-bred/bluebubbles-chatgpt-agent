@@ -144,4 +144,67 @@ public final class ConversationMemoryModels {
       double confidence,
       Instant occurredAt,
       Instant expiresAt) {}
+
+  public record DigestWorkClaim(
+      String conversationId,
+      Instant periodStart,
+      Instant periodEnd,
+      String workerId,
+      Instant claimedUntil) {}
+
+  public record SummaryMaterial(
+      String summaryId,
+      String summaryType,
+      String conversationId,
+      String summary,
+      String itemPayload,
+      Instant windowStart,
+      Instant windowEnd,
+      Instant coverageThrough,
+      String corpusHash) {}
+
+  public record AuthorizedGroup(
+      String conversationId, String displayName, Instant lastActivityAt) {}
+
+  public record DigestBatch(
+      String conversationId,
+      Instant periodStart,
+      Instant periodEnd,
+      String summary,
+      String itemPayload,
+      String corpusHash,
+      Instant coverageThrough,
+      List<String> sourceSegmentIds,
+      Instant processedAt) {
+    public DigestBatch {
+      sourceSegmentIds = List.copyOf(sourceSegmentIds);
+    }
+  }
+
+  public record CatchupGroup(
+      String group,
+      String summary,
+      List<String> keyDevelopments,
+      List<String> decisions,
+      List<String> openQuestions,
+      Instant from,
+      Instant to,
+      Instant coverageThrough) {
+    public CatchupGroup {
+      keyDevelopments = List.copyOf(keyDevelopments);
+      decisions = List.copyOf(decisions);
+      openQuestions = List.copyOf(openQuestions);
+    }
+  }
+
+  public record CatchupResult(List<CatchupGroup> groups, List<String> disambiguationOptions) {
+    public CatchupResult {
+      groups = List.copyOf(groups);
+      disambiguationOptions = List.copyOf(disambiguationOptions);
+    }
+
+    public boolean ambiguous() {
+      return !disambiguationOptions.isEmpty();
+    }
+  }
 }

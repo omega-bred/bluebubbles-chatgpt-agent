@@ -4,7 +4,10 @@ import static io.breland.bbagent.server.agent.memory.ConversationMemoryModels.Ar
 import static io.breland.bbagent.server.agent.memory.ConversationMemoryModels.ArtifactStatus.CONFIRMED;
 import static io.breland.bbagent.server.agent.memory.ConversationMemoryModels.ProjectionOperation.UPSERT;
 
+import io.breland.bbagent.server.agent.memory.ConversationMemoryModels.AuthorizedGroup;
 import io.breland.bbagent.server.agent.memory.ConversationMemoryModels.ConversationRecord;
+import io.breland.bbagent.server.agent.memory.ConversationMemoryModels.DigestBatch;
+import io.breland.bbagent.server.agent.memory.ConversationMemoryModels.DigestWorkClaim;
 import io.breland.bbagent.server.agent.memory.ConversationMemoryModels.ExistingArtifact;
 import io.breland.bbagent.server.agent.memory.ConversationMemoryModels.ExtractionBatch;
 import io.breland.bbagent.server.agent.memory.ConversationMemoryModels.ExtractionCandidate;
@@ -14,6 +17,7 @@ import io.breland.bbagent.server.agent.memory.ConversationMemoryModels.Projected
 import io.breland.bbagent.server.agent.memory.ConversationMemoryModels.ProjectionArtifact;
 import io.breland.bbagent.server.agent.memory.ConversationMemoryModels.ProjectionClaim;
 import io.breland.bbagent.server.agent.memory.ConversationMemoryModels.ProjectionOperation;
+import io.breland.bbagent.server.agent.memory.ConversationMemoryModels.SummaryMaterial;
 import io.breland.bbagent.server.agent.memory.ConversationMemoryModels.WorkClaim;
 import java.time.Duration;
 import java.time.Instant;
@@ -927,6 +931,341 @@ public class ConversationMemoryStore {
     return count != null && count > 0;
   }
 
+  @Transactional(readOnly = true)
+  public List<AuthorizedGroup> findAuthorizedGroups(
+      String accountId, Instant fromInclusive, Instant toExclusive) {
+    return jdbcTemplate.query(
+        """
+        select c.conversation_id, c.display_name, max(c.last_observed_at) as last_activity_at
+          from agent_conversations c
+          join agent_conversation_memberships membership
+            on membership.conversation_id = c.conversation_id
+         where c.is_group = true and c.memory_enabled_at is not null
+           and membership.account_id = ? and membership.started_at < ?
+           and (membership.ended_at is null or membership.ended_at > ?)
+         group by c.conversation_id, c.display_name
+         order by last_activity_at desc, c.conversation_id
+        """,
+        (resultSet, rowNumber) ->
+            new AuthorizedGroup(
+                resultSet.getString("conversation_id"),
+                resultSet.getString("display_name"),
+                resultSet.getTimestamp("last_activity_at").toInstant()),
+        accountId,
+        toExclusive,
+        fromInclusive);
+  }
+
+  @Transactional(readOnly = true)
+  public List<SummaryMaterial> findAuthorizedDigests(
+      String conversationId, String accountId, Instant fromInclusive, Instant toExclusive) {
+    return jdbcTemplate.query(
+        """
+        select digest.digest_id, digest.conversation_id, digest.summary_text,
+               digest.item_payload, digest.period_start, digest.period_end,
+               digest.coverage_through, digest.corpus_hash
+          from conversation_daily_digests digest
+          join conversation_summary_audiences audience
+            on audience.summary_type = 'DIGEST' and audience.summary_id = digest.digest_id
+         where digest.conversation_id = ? and audience.account_id = ?
+           and digest.period_end > ? and digest.period_start < ?
+         order by digest.period_start, digest.digest_id
+        """,
+        (resultSet, rowNumber) ->
+            summaryMaterial(resultSet, "DIGEST", "digest_id", "period_start", "period_end"),
+        conversationId,
+        accountId,
+        fromInclusive,
+        toExclusive);
+  }
+
+  @Transactional(readOnly = true)
+  public List<SummaryMaterial> findAuthorizedSegments(
+      String conversationId, String accountId, Instant fromInclusive, Instant toExclusive) {
+    return jdbcTemplate.query(
+        """
+        select segment.segment_id, segment.conversation_id, segment.summary_text,
+               segment.item_payload, segment.window_start, segment.window_end,
+               segment.window_end as coverage_through, segment.corpus_hash
+          from conversation_summary_segments segment
+          join conversation_summary_audiences audience
+            on audience.summary_type = 'SEGMENT' and audience.summary_id = segment.segment_id
+         where segment.conversation_id = ? and audience.account_id = ?
+           and segment.window_end >= ? and segment.window_start < ?
+         order by segment.window_start, segment.segment_id
+        """,
+        (resultSet, rowNumber) ->
+            summaryMaterial(resultSet, "SEGMENT", "segment_id", "window_start", "window_end"),
+        conversationId,
+        accountId,
+        fromInclusive,
+        toExclusive);
+  }
+
+  @Transactional(readOnly = true)
+  public List<String> findAuthorizedDecisions(
+      String conversationId,
+      String accountId,
+      Instant fromInclusive,
+      Instant toExclusive,
+      Instant now) {
+    return jdbcTemplate.query(
+        """
+        select artifact.artifact_text
+          from conversation_memory_artifacts artifact
+          join conversation_memory_audiences audience
+            on audience.artifact_id = artifact.artifact_id
+         where artifact.conversation_id = ? and audience.account_id = ?
+           and artifact.kind = 'GROUP_DECISION' and artifact.status = 'CONFIRMED'
+           and artifact.sensitivity = 'NORMAL' and artifact.confidence >= 0.85
+           and artifact.occurred_at >= ? and artifact.occurred_at < ?
+           and (artifact.expires_at is null or artifact.expires_at > ?)
+         order by artifact.occurred_at, artifact.artifact_id
+        """,
+        (resultSet, rowNumber) -> resultSet.getString(1),
+        conversationId,
+        accountId,
+        fromInclusive,
+        toExclusive,
+        now);
+  }
+
+  @Transactional(readOnly = true)
+  public List<ConversationRecord> findMemoryEnabledConversations() {
+    return jdbcTemplate.query(
+        """
+        select conversation_id, transport, external_conversation_id, is_group, display_name,
+               memory_enabled_at, memory_enabled_by_account_id, last_observed_at
+          from agent_conversations
+         where is_group = true and memory_enabled_at is not null
+         order by conversation_id
+        """,
+        (resultSet, rowNumber) ->
+            new ConversationRecord(
+                resultSet.getString("conversation_id"),
+                resultSet.getString("transport"),
+                resultSet.getString("external_conversation_id"),
+                resultSet.getBoolean("is_group"),
+                resultSet.getString("display_name"),
+                toInstant(resultSet.getTimestamp("memory_enabled_at")),
+                resultSet.getString("memory_enabled_by_account_id"),
+                resultSet.getTimestamp("last_observed_at").toInstant()));
+  }
+
+  @Transactional(readOnly = true)
+  public List<SummaryMaterial> findSegments(
+      String conversationId, Instant periodStart, Instant periodEnd) {
+    return jdbcTemplate.query(
+        """
+        select segment_id, conversation_id, summary_text, item_payload, window_start, window_end,
+               window_end as coverage_through, corpus_hash
+          from conversation_summary_segments
+         where conversation_id = ? and window_end >= ? and window_start < ?
+         order by window_start, segment_id
+        """,
+        (resultSet, rowNumber) ->
+            summaryMaterial(resultSet, "SEGMENT", "segment_id", "window_start", "window_end"),
+        conversationId,
+        periodStart,
+        periodEnd);
+  }
+
+  @Transactional
+  public void seedDigestWork(
+      String conversationId, Instant periodStart, Instant periodEnd, Instant availableAt) {
+    Integer existing =
+        jdbcTemplate.queryForObject(
+            """
+            select count(*) from conversation_digest_work
+             where conversation_id = ? and period_start = ? and period_end = ?
+            """,
+            Integer.class,
+            conversationId,
+            periodStart,
+            periodEnd);
+    if (existing != null && existing > 0) {
+      return;
+    }
+    jdbcTemplate.update(
+        """
+        insert into conversation_digest_work
+          (conversation_id, period_start, period_end, available_at, attempt_count, updated_at)
+        values (?, ?, ?, ?, 0, ?)
+        """,
+        conversationId,
+        periodStart,
+        periodEnd,
+        availableAt,
+        availableAt);
+  }
+
+  @Transactional
+  public List<DigestWorkClaim> claimDueDigestWork(String workerId, Instant now, int limit) {
+    if (limit <= 0) {
+      return List.of();
+    }
+    Instant claimedUntil = now.plus(Duration.ofMinutes(5));
+    List<DigestKey> candidates =
+        jdbcTemplate.query(
+            """
+            select conversation_id, period_start, period_end
+              from conversation_digest_work
+             where available_at <= ? and (claimed_until is null or claimed_until < ?)
+             order by available_at, conversation_id, period_start
+             limit ?
+            """,
+            (resultSet, rowNumber) ->
+                new DigestKey(
+                    resultSet.getString("conversation_id"),
+                    resultSet.getTimestamp("period_start").toInstant(),
+                    resultSet.getTimestamp("period_end").toInstant()),
+            now,
+            now,
+            limit);
+    List<DigestWorkClaim> claims = new ArrayList<>();
+    for (DigestKey candidate : candidates) {
+      int updated =
+          jdbcTemplate.update(
+              """
+              update conversation_digest_work
+                 set claimed_by = ?, claimed_until = ?, attempt_count = attempt_count + 1,
+                     updated_at = ?
+               where conversation_id = ? and period_start = ? and period_end = ?
+                 and available_at <= ? and (claimed_until is null or claimed_until < ?)
+              """,
+              workerId,
+              claimedUntil,
+              now,
+              candidate.conversationId(),
+              candidate.periodStart(),
+              candidate.periodEnd(),
+              now,
+              now);
+      if (updated == 1) {
+        claims.add(
+            new DigestWorkClaim(
+                candidate.conversationId(),
+                candidate.periodStart(),
+                candidate.periodEnd(),
+                workerId,
+                claimedUntil));
+      }
+    }
+    return List.copyOf(claims);
+  }
+
+  @Transactional
+  public void saveDigest(DigestWorkClaim claim, DigestBatch batch) {
+    if (!claim.conversationId().equals(batch.conversationId())
+        || !claim.periodStart().equals(batch.periodStart())
+        || !claim.periodEnd().equals(batch.periodEnd())) {
+      throw new IllegalArgumentException("digest claim and batch do not match");
+    }
+    Integer owned =
+        jdbcTemplate.queryForObject(
+            """
+            select count(*) from conversation_digest_work
+             where conversation_id = ? and period_start = ? and period_end = ?
+               and claimed_by = ? and claimed_until >= ?
+            """,
+            Integer.class,
+            claim.conversationId(),
+            claim.periodStart(),
+            claim.periodEnd(),
+            claim.workerId(),
+            batch.processedAt());
+    if (owned == null || owned != 1) {
+      throw new IllegalStateException("digest work lease is not owned by this worker");
+    }
+    List<String> existingIds =
+        jdbcTemplate.query(
+            """
+            select digest_id from conversation_daily_digests
+             where conversation_id = ? and period_start = ? and period_end = ?
+            """,
+            (resultSet, rowNumber) -> resultSet.getString(1),
+            batch.conversationId(),
+            batch.periodStart(),
+            batch.periodEnd());
+    String digestId = existingIds.isEmpty() ? UUID.randomUUID().toString() : existingIds.getFirst();
+    if (existingIds.isEmpty()) {
+      jdbcTemplate.update(
+          """
+          insert into conversation_daily_digests
+            (digest_id, conversation_id, period_start, period_end, summary_text, item_payload,
+             corpus_hash, coverage_through, created_at, updated_at)
+          values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          """,
+          digestId,
+          batch.conversationId(),
+          batch.periodStart(),
+          batch.periodEnd(),
+          batch.summary(),
+          batch.itemPayload(),
+          batch.corpusHash(),
+          batch.coverageThrough(),
+          batch.processedAt(),
+          batch.processedAt());
+    } else {
+      jdbcTemplate.update(
+          """
+          update conversation_daily_digests
+             set summary_text = ?, item_payload = ?, corpus_hash = ?, coverage_through = ?,
+                 updated_at = ?
+           where digest_id = ?
+          """,
+          batch.summary(),
+          batch.itemPayload(),
+          batch.corpusHash(),
+          batch.coverageThrough(),
+          batch.processedAt(),
+          digestId);
+      jdbcTemplate.update(
+          "delete from conversation_summary_audiences where summary_type = 'DIGEST' and summary_id = ?",
+          digestId);
+    }
+    for (String accountId : intersectSegmentAudiences(batch.sourceSegmentIds())) {
+      jdbcTemplate.update(
+          """
+          insert into conversation_summary_audiences
+            (summary_type, summary_id, account_id, granted_at)
+          values ('DIGEST', ?, ?, ?)
+          """,
+          digestId,
+          accountId,
+          batch.processedAt());
+    }
+    jdbcTemplate.update(
+        """
+        delete from conversation_digest_work
+         where conversation_id = ? and period_start = ? and period_end = ? and claimed_by = ?
+        """,
+        claim.conversationId(),
+        claim.periodStart(),
+        claim.periodEnd(),
+        claim.workerId());
+  }
+
+  @Transactional
+  public void failDigestWork(DigestWorkClaim claim, Instant failedAt, String errorCode) {
+    jdbcTemplate.update(
+        """
+        update conversation_digest_work
+           set available_at = ?, claimed_by = null, claimed_until = null, last_error_code = ?,
+               updated_at = ?
+         where conversation_id = ? and period_start = ? and period_end = ? and claimed_by = ?
+           and claimed_until >= ?
+        """,
+        failedAt.plus(Duration.ofMinutes(10)),
+        StringUtils.truncate(errorCode, 64),
+        failedAt,
+        claim.conversationId(),
+        claim.periodStart(),
+        claim.periodEnd(),
+        claim.workerId(),
+        failedAt);
+  }
+
   @Transactional
   public void recordCanonicalMemory(
       String canonicalScope, String mem0MemoryId, String contentHash, Instant recordedAt) {
@@ -1085,11 +1424,8 @@ public class ConversationMemoryStore {
         StringUtils.defaultString(batch.itemPayload(), "[]"),
         batch.corpusHash(),
         batch.processedAt());
-    Set<String> audienceAccountIds = new HashSet<>();
-    for (JournalMessage sourceMessage : batch.sourceMessages()) {
-      audienceAccountIds.addAll(
-          activeMembershipAccountIds(batch.conversationId(), sourceMessage.sourceTimestamp()));
-    }
+    Set<String> audienceAccountIds =
+        new HashSet<>(activeMembershipAccountIds(batch.conversationId(), windowEnd));
     for (String accountId : audienceAccountIds) {
       jdbcTemplate.update(
           """
@@ -1175,6 +1511,46 @@ public class ConversationMemoryStore {
         toInstant(resultSet.getTimestamp("expires_at")));
   }
 
+  private SummaryMaterial summaryMaterial(
+      java.sql.ResultSet resultSet,
+      String summaryType,
+      String idColumn,
+      String startColumn,
+      String endColumn)
+      throws java.sql.SQLException {
+    return new SummaryMaterial(
+        resultSet.getString(idColumn),
+        summaryType,
+        resultSet.getString("conversation_id"),
+        resultSet.getString("summary_text"),
+        resultSet.getString("item_payload"),
+        resultSet.getTimestamp(startColumn).toInstant(),
+        resultSet.getTimestamp(endColumn).toInstant(),
+        resultSet.getTimestamp("coverage_through").toInstant(),
+        resultSet.getString("corpus_hash"));
+  }
+
+  private Set<String> intersectSegmentAudiences(List<String> segmentIds) {
+    Set<String> intersection = null;
+    for (String segmentId : segmentIds) {
+      Set<String> audience =
+          new HashSet<>(
+              jdbcTemplate.query(
+                  """
+                  select account_id from conversation_summary_audiences
+                   where summary_type = 'SEGMENT' and summary_id = ?
+                  """,
+                  (resultSet, rowNumber) -> resultSet.getString(1),
+                  segmentId));
+      if (intersection == null) {
+        intersection = audience;
+      } else {
+        intersection.retainAll(audience);
+      }
+    }
+    return intersection == null ? Set.of() : Set.copyOf(intersection);
+  }
+
   private Duration projectionRetryDelay(int attempts) {
     if (attempts <= 1) {
       return Duration.ofSeconds(30);
@@ -1217,6 +1593,8 @@ public class ConversationMemoryStore {
       String artifactId, String accountId, ProjectionOperation operation, String projectionHash) {}
 
   private record ActiveMembership(String membershipId, String accountId) {}
+
+  private record DigestKey(String conversationId, Instant periodStart, Instant periodEnd) {}
 
   private record ScopeKey(String type, String id) {}
 }

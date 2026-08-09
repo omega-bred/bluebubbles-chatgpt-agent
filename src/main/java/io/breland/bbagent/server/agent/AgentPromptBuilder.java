@@ -34,6 +34,7 @@ import io.breland.bbagent.server.agent.tools.gcal.UpdateEventAgentTool;
 import io.breland.bbagent.server.agent.tools.giphy.SendGiphyAgentTool;
 import io.breland.bbagent.server.agent.tools.limits.GetUsageLimitsAgentTool;
 import io.breland.bbagent.server.agent.tools.memory.ConfigureGroupMemoryAgentTool;
+import io.breland.bbagent.server.agent.tools.memory.GetGroupCatchupAgentTool;
 import io.breland.bbagent.server.agent.tools.memory.MemoryDeleteAgentTool;
 import io.breland.bbagent.server.agent.tools.memory.MemoryGetAgentTool;
 import io.breland.bbagent.server.agent.tools.memory.MemorySaveAgentTool;
@@ -302,6 +303,11 @@ public final class AgentPromptBuilder {
                   + SendTextAgentTool.TOOL_NAME
                   + " when you specifically need to send an extra message; plain text is fine otherwise. "
                   + "Use available tools for tasks like calendars, memory, scheduled follow-ups, or lookups when asked. "
+                  + "Use "
+                  + GetGroupCatchupAgentTool.TOOL_NAME
+                  + " for questions like what happened, what did I miss, or summaries of a group over a time range. Use "
+                  + MemoryGetAgentTool.TOOL_NAME
+                  + " for semantic facts and decisions; its limited search results are not proof of complete time-range coverage. "
                   + "When the user asks about quota, usage limits, monthly messages, or remaining messages, call "
                   + GetUsageLimitsAgentTool.TOOL_NAME
                   + " before answering. "
@@ -350,6 +356,11 @@ public final class AgentPromptBuilder {
                 + " when asked to read poll results, count votes, summarize choices, or inspect a poll by message GUID. "
                 + "When sending a text, you may optionally apply a BlueChat effect via the effect parameter, but use effects sparingly (e.g. happy_birthday for birthday wishes). "
                 + "Use available tools for tasks like calendars or lookups when asked. "
+                + "In a one-to-one chat, use "
+                + GetGroupCatchupAgentTool.TOOL_NAME
+                + " for questions like what happened, what did I miss, or summaries of a group over a time range. Use "
+                + MemoryGetAgentTool.TOOL_NAME
+                + " for semantic facts and decisions; its limited search results are not proof of complete time-range coverage. "
                 + "Use web_search for current info or external lookups when relevant. "
                 + "When the user asks about quota, usage limits, monthly messages, or remaining messages, call "
                 + GetUsageLimitsAgentTool.TOOL_NAME

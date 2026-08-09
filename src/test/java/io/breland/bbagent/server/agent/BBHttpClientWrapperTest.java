@@ -1,5 +1,6 @@
 package io.breland.bbagent.server.agent;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -26,6 +27,7 @@ import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
+import java.time.Instant;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
@@ -243,6 +245,51 @@ class BBHttpClientWrapperTest {
               null);
 
       assertEquals(largeText, wrapper.getMessagesInChat("chat-guid").getFirst().getText());
+    } finally {
+      server.stop(0);
+    }
+  }
+
+  @Test
+  void getMessagesInChatSupportsBoundedAscendingPagination() throws IOException {
+    java.util.concurrent.atomic.AtomicReference<String> query =
+        new java.util.concurrent.atomic.AtomicReference<>();
+    HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+    server.createContext(
+        "/api/v1/chat/chat-guid/message",
+        exchange -> {
+          query.set(exchange.getRequestURI().getRawQuery());
+          byte[] response =
+              "{\"status\":200,\"message\":\"ok\",\"data\":[]}".getBytes(StandardCharsets.UTF_8);
+          exchange.getResponseHeaders().set("Content-Type", "application/json");
+          exchange.sendResponseHeaders(200, response.length);
+          exchange.getResponseBody().write(response);
+          exchange.close();
+        });
+    server.start();
+    try {
+      BBHttpClientWrapper wrapper =
+          new BBHttpClientWrapper(
+              "http://127.0.0.1:" + server.getAddress().getPort(),
+              "pw",
+              30,
+              new ObjectMapper(),
+              null);
+
+      wrapper.getMessagesInChat(
+          "chat-guid",
+          Instant.parse("2026-08-07T00:00:00Z"),
+          Instant.parse("2026-08-08T00:00:00Z"),
+          500,
+          500,
+          "ASC");
+
+      assertThat(query.get())
+          .contains("after=1786060800")
+          .contains("before=1786147200")
+          .contains("offset=500")
+          .contains("limit=500")
+          .contains("sort=ASC");
     } finally {
       server.stop(0);
     }

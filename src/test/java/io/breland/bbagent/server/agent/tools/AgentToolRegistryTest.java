@@ -13,10 +13,12 @@ import com.openai.client.OpenAIClient;
 import io.breland.bbagent.server.agent.BBMessageAgent;
 import io.breland.bbagent.server.agent.IncomingMessage;
 import io.breland.bbagent.server.agent.cadence.CadenceWorkflowLauncher;
+import io.breland.bbagent.server.agent.memory.MemoryScopeResolver;
 import io.breland.bbagent.server.agent.tools.gcal.GcalClient;
 import io.breland.bbagent.server.agent.tools.giphy.GiphyClient;
 import io.breland.bbagent.server.agent.tools.kubernetes.KubernetesPodLogsAgentTool;
 import io.breland.bbagent.server.agent.tools.kubernetes.KubernetesReadOnlyAgentTool;
+import io.breland.bbagent.server.agent.tools.memory.GetGroupCatchupAgentTool;
 import io.breland.bbagent.server.agent.tools.memory.Mem0Client;
 import io.breland.bbagent.server.agent.tools.search.ToolSearchAgentTool;
 import io.breland.bbagent.server.agent.transport.MessageTransportRegistry;
@@ -125,7 +127,25 @@ class AgentToolRegistryTest {
     }
   }
 
+  @Test
+  void groupCatchupToolIsAvailableOnlyInDirectChats() {
+    AgentToolRegistry registry = registryForAccount("account-1", mock(MemoryScopeResolver.class));
+
+    assertTrue(
+        toolNames(registry.availableTools(directMessage("person")))
+            .contains(GetGroupCatchupAgentTool.TOOL_NAME));
+    assertFalse(
+        toolNames(registry.availableTools(groupMessage()))
+            .contains(GetGroupCatchupAgentTool.TOOL_NAME));
+    assertNull(registry.resolveTool(GetGroupCatchupAgentTool.TOOL_NAME, groupMessage()).tool());
+  }
+
   private static AgentToolRegistry registryForAccount(String accountId) {
+    return registryForAccount(accountId, null);
+  }
+
+  private static AgentToolRegistry registryForAccount(
+      String accountId, MemoryScopeResolver memoryScopeResolver) {
     BBHttpClientWrapper bbHttpClientWrapper = mock(BBHttpClientWrapper.class);
     return new AgentToolRegistry(
         bbHttpClientWrapper,
@@ -139,7 +159,11 @@ class AgentToolRegistryTest {
         null,
         null,
         mock(CadenceWorkflowLauncher.class),
-        message -> Optional.ofNullable(accountId));
+        message -> Optional.ofNullable(accountId),
+        null,
+        null,
+        null,
+        memoryScopeResolver);
   }
 
   private static Set<String> toolNames(List<AgentTool> tools) {

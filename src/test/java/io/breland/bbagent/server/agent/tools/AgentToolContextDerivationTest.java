@@ -14,10 +14,12 @@ import io.breland.bbagent.server.agent.AgentWorkflowContext;
 import io.breland.bbagent.server.agent.BBMessageAgent;
 import io.breland.bbagent.server.agent.IncomingMessage;
 import io.breland.bbagent.server.agent.cadence.CadenceWorkflowLauncher;
+import io.breland.bbagent.server.agent.memory.MemoryScopeResolver;
 import io.breland.bbagent.server.agent.profile.AgentProfile;
 import io.breland.bbagent.server.agent.tools.bb.GetThreadContextAgentTool;
 import io.breland.bbagent.server.agent.tools.bb.SendPollAgentTool;
 import io.breland.bbagent.server.agent.tools.bb.SendReactionAgentTool;
+import io.breland.bbagent.server.agent.tools.memory.GetGroupCatchupAgentTool;
 import io.breland.bbagent.server.agent.tools.scheduled.ScheduledEventDeleteTool;
 import io.breland.bbagent.server.agent.tools.scheduled.ScheduledEventListTool;
 import io.breland.bbagent.server.agent.transport.bb.BBHttpClientWrapper;
@@ -43,6 +45,12 @@ class AgentToolContextDerivationTest {
     assertSchemaExcludes(
         new GetThreadContextAgentTool(Mockito.mock(BBHttpClientWrapper.class)).getTool(),
         "thread_root_guid");
+    assertSchemaExcludes(
+        new GetGroupCatchupAgentTool(Mockito.mock(MemoryScopeResolver.class)).getTool(),
+        "chatGuid",
+        "chat_guid",
+        "conversation_id",
+        "account_id");
     assertSchemaExcludes(
         new ScheduledEventListTool(Mockito.mock(CadenceWorkflowLauncher.class)).getTool(),
         "chatGuid",

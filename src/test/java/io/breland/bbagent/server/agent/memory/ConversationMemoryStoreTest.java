@@ -8,6 +8,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import io.breland.bbagent.server.agent.IncomingMessage;
 import io.breland.bbagent.server.agent.account.AgentAccountResolver;
+import io.breland.bbagent.server.agent.memory.ConversationMemoryModels.DigestBatch;
 import io.breland.bbagent.server.agent.memory.ConversationMemoryModels.ExtractionBatch;
 import io.breland.bbagent.server.agent.memory.ConversationMemoryModels.ExtractionCandidate;
 import io.breland.bbagent.server.agent.memory.ConversationMemoryModels.JournalMessage;
@@ -106,6 +107,92 @@ class ConversationMemoryStoreTest {
 
     assertThat(store.isInArtifactAudience(artifactId, originalAccountId)).isTrue();
     assertThat(store.isInArtifactAudience(artifactId, laterAccountId)).isFalse();
+  }
+
+  @Test
+  void digestAudienceIsIntersectionOfSourceSegmentAudiences() {
+    String originalAccountId = createAccount("digest-original@example.com");
+    String laterAccountId = createAccount("digest-later@example.com");
+    String conversationId =
+        store.upsertConversation(
+            "bluebubbles", "iMessage;+;digest-audience", true, "Digest", OBSERVED_AT);
+    store.recordMembership(conversationId, originalAccountId, OBSERVED_AT.minusSeconds(30));
+
+    JournalMessage firstSource =
+        new JournalMessage(
+            "digest-source-1",
+            conversationId,
+            originalAccountId,
+            "First development",
+            OBSERVED_AT,
+            false,
+            false,
+            "digest-source-hash-1");
+    store.recordMessage(firstSource);
+    store.scheduleExtraction(conversationId, OBSERVED_AT);
+    WorkClaim firstClaim =
+        store.claimDueExtractionWork("digest-worker-1", OBSERVED_AT, 10).getFirst();
+    store.saveExtraction(
+        firstClaim,
+        new ExtractionBatch(
+            conversationId,
+            List.of(firstSource),
+            List.of(),
+            "First development.",
+            "[]",
+            "digest-corpus-1",
+            OBSERVED_AT));
+
+    Instant laterAt = OBSERVED_AT.plusSeconds(120);
+    store.recordMembership(conversationId, laterAccountId, laterAt);
+    JournalMessage secondSource =
+        new JournalMessage(
+            "digest-source-2",
+            conversationId,
+            originalAccountId,
+            "Second development",
+            laterAt.plusSeconds(1),
+            false,
+            false,
+            "digest-source-hash-2");
+    store.recordMessage(secondSource);
+    store.scheduleExtraction(conversationId, laterAt.plusSeconds(1));
+    WorkClaim secondClaim =
+        store.claimDueExtractionWork("digest-worker-2", laterAt.plusSeconds(1), 10).getFirst();
+    store.saveExtraction(
+        secondClaim,
+        new ExtractionBatch(
+            conversationId,
+            List.of(secondSource),
+            List.of(),
+            "Second development.",
+            "[]",
+            "digest-corpus-2",
+            laterAt.plusSeconds(1)));
+
+    Instant periodStart = OBSERVED_AT.minusSeconds(60);
+    Instant periodEnd = laterAt.plusSeconds(60);
+    var segments = store.findSegments(conversationId, periodStart, periodEnd);
+    store.seedDigestWork(conversationId, periodStart, periodEnd, periodEnd);
+    var digestClaim = store.claimDueDigestWork("digest-worker", periodEnd, 10).getFirst();
+    store.saveDigest(
+        digestClaim,
+        new DigestBatch(
+            conversationId,
+            periodStart,
+            periodEnd,
+            "Both developments.",
+            "[]",
+            "daily-corpus-hash",
+            laterAt.plusSeconds(1),
+            segments.stream().map(ConversationMemoryModels.SummaryMaterial::summaryId).toList(),
+            periodEnd));
+
+    assertThat(
+            store.findAuthorizedDigests(conversationId, originalAccountId, periodStart, periodEnd))
+        .hasSize(1);
+    assertThat(store.findAuthorizedDigests(conversationId, laterAccountId, periodStart, periodEnd))
+        .isEmpty();
   }
 
   @Test
