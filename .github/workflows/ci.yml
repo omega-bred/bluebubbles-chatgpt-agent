@@ -105,7 +105,7 @@ jobs:
           enable-cachix-push: ${{ github.ref == 'refs/heads/main' }}
 
       - name: Log in to container registry
-        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
@@ -113,7 +113,7 @@ jobs:
 
       - name: Extract app metadata (tags, labels)
         id: app_meta
-        uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051
+        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302
         with:
           images: ${{ env.REGISTRY }}/${{ env.APP_IMAGE_NAME }}
           tags: |
@@ -139,7 +139,7 @@ jobs:
 
       - name: Extract LXMF bridge metadata (tags, labels)
         id: lxmf_bridge_meta
-        uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051
+        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302
         with:
           images: ${{ env.REGISTRY }}/${{ env.LXMF_BRIDGE_IMAGE_NAME }}
           tags: |
@@ -246,7 +246,7 @@ jobs:
           fetch-depth: 0
 
       - name: Sync Linear release
-        uses: linear/linear-release-action@ad7da502eec3a93dd17e2e249e6c1cd84e3ee588
+        uses: linear/linear-release-action@17b8c24f8ceb2b98cabaf1965ff83c55dd596fac
         with:
           access_key: ${{ secrets.LINEAR_ACCESS_KEY }}
           version: ${{ github.sha }}-${{ github.run_number }}
