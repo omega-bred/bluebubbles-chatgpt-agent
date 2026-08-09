@@ -9,6 +9,8 @@ import io.breland.bbagent.server.agent.account.AgentAccountResolver.ResolvedAcco
 import io.breland.bbagent.server.agent.memory.ConversationMemoryModels.JournalMessage;
 import io.breland.bbagent.server.agent.memory.ConversationQuestionAnsweringModels.QuestionMessage;
 import io.breland.bbagent.server.agent.reactions.MessageReactionSupport;
+import java.util.LinkedHashMap;
+import java.util.Map;
 import java.util.Optional;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.stereotype.Component;
@@ -26,6 +28,16 @@ public class ConversationHistoryMessageMapper {
 
   public Optional<QuestionMessage> fromBlueBubbles(
       ApiV1ChatChatGuidMessageGet200ResponseDataInner rawMessage, String requestingAccountId) {
+    return fromBlueBubbles(rawMessage, requestingAccountId, new MappingSession());
+  }
+
+  public Optional<QuestionMessage> fromBlueBubbles(
+      ApiV1ChatChatGuidMessageGet200ResponseDataInner rawMessage,
+      String requestingAccountId,
+      MappingSession session) {
+    if (session == null) {
+      throw new IllegalArgumentException("mapping session must not be null");
+    }
     IncomingMessage incoming = IncomingMessage.create(rawMessage);
     if (!eligible(incoming)
         || StringUtils.isBlank(incoming.messageGuid())
@@ -35,12 +47,20 @@ public class ConversationHistoryMessageMapper {
     return Optional.of(
         new QuestionMessage(
             incoming.messageGuid(),
-            participantLabel(incoming, requestingAccountId),
+            participantLabel(incoming, requestingAccountId, session),
             incoming.timestamp(),
             incoming.text().trim()));
   }
 
   public Optional<QuestionMessage> fromJournal(JournalMessage message, String requestingAccountId) {
+    return fromJournal(message, requestingAccountId, new MappingSession());
+  }
+
+  public Optional<QuestionMessage> fromJournal(
+      JournalMessage message, String requestingAccountId, MappingSession session) {
+    if (session == null) {
+      throw new IllegalArgumentException("mapping session must not be null");
+    }
     if (message == null
         || message.fromAgent()
         || message.systemMessage()
@@ -53,7 +73,7 @@ public class ConversationHistoryMessageMapper {
     return Optional.of(
         new QuestionMessage(
             message.messageGuid(),
-            participantLabel(message.senderAccountId(), requestingAccountId),
+            participantLabel(message.senderAccountId(), requestingAccountId, session),
             message.sourceTimestamp(),
             message.text().trim()));
   }
@@ -74,8 +94,19 @@ public class ConversationHistoryMessageMapper {
     return message.isLxmfTransport();
   }
 
-  private String participantLabel(IncomingMessage message, String requestingAccountId) {
-    Optional<ResolvedAccount> account = accountResolver.resolve(message);
+  private String participantLabel(
+      IncomingMessage message, String requestingAccountId, MappingSession session) {
+    Optional<AgentAccountIdentifiers.NormalizedIdentifier> normalizedIdentity =
+        AgentAccountIdentifiers.normalizeMessageIdentity(
+            message.transportOrDefault(), message.sender());
+    if (normalizedIdentity.isEmpty()) {
+      return maskedIdentity(message);
+    }
+    AgentAccountIdentifiers.NormalizedIdentifier identity = normalizedIdentity.get();
+    String cacheKey = identity.type() + '\0' + identity.value();
+    Optional<ResolvedAccount> account =
+        session.identityAccounts.computeIfAbsent(
+            cacheKey, ignored -> accountResolver.resolve(message));
     if (account.isPresent()) {
       return participantLabel(account.get(), requestingAccountId)
           .orElseGet(() -> maskedIdentity(message));
@@ -83,12 +114,14 @@ public class ConversationHistoryMessageMapper {
     return maskedIdentity(message);
   }
 
-  private String participantLabel(String senderAccountId, String requestingAccountId) {
+  private String participantLabel(
+      String senderAccountId, String requestingAccountId, MappingSession session) {
     if (StringUtils.equals(senderAccountId, requestingAccountId)) {
       return YOU;
     }
-    return accountResolver
-        .resolveById(senderAccountId)
+    Optional<ResolvedAccount> resolved =
+        session.accountIds.computeIfAbsent(senderAccountId, accountResolver::resolveById);
+    return resolved
         .flatMap(account -> participantLabel(account, requestingAccountId))
         .orElse(UNKNOWN_PARTICIPANT);
   }
@@ -121,5 +154,10 @@ public class ConversationHistoryMessageMapper {
       return UNKNOWN_PARTICIPANT;
     }
     return "participant ending " + alphanumeric.substring(alphanumeric.length() - 4);
+  }
+
+  public static final class MappingSession {
+    private final Map<String, Optional<ResolvedAccount>> identityAccounts = new LinkedHashMap<>();
+    private final Map<String, Optional<ResolvedAccount>> accountIds = new LinkedHashMap<>();
   }
 }

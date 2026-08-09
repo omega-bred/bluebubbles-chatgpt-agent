@@ -330,10 +330,51 @@ class BBHttpClientWrapperTest {
     assertThat(request.getBefore()).isEqualTo(1767225600L);
     assertThat(request.getLimit()).isEqualTo(500);
     assertThat(request.getOffset()).isEqualTo(1000);
+    assertThat(request.getWith())
+        .containsExactlyInAnyOrder(
+            ApiV1MessageQueryPostRequest.WithEnum.HANDLE,
+            ApiV1MessageQueryPostRequest.WithEnum.CHAT);
     assertThat(request.getWhere().getFirst().getStatement())
         .isEqualTo("message.text LIKE :text ESCAPE '\\'");
     assertThat(request.getWhere().getFirst().getArgs().get("text"))
         .isEqualTo("%100\\%\\_Wordle\\\\%");
+  }
+
+  @Test
+  void legacySearchConversationHistoryReturnsNullForBlankChatWithoutSourceAccess() {
+    V1MessageApi messageApi = Mockito.mock(V1MessageApi.class);
+    BBHttpClientWrapper wrapper =
+        new BBHttpClientWrapper("pw", messageApi, Mockito.mock(V1ContactApi.class));
+
+    assertThat(wrapper.searchConversationHistory(" ", "Wordle", null, null)).isNull();
+
+    verifyNoInteractions(messageApi);
+  }
+
+  @Test
+  void legacySearchConversationHistoryTreatsBlankQueryAsNoTextFilter() {
+    V1MessageApi messageApi = Mockito.mock(V1MessageApi.class);
+    BBHttpClientWrapper wrapper =
+        new BBHttpClientWrapper("pw", messageApi, Mockito.mock(V1ContactApi.class));
+    when(messageApi.apiV1MessageQueryPost(Mockito.eq("pw"), Mockito.any()))
+        .thenReturn(
+            Mono.just(
+                ApiV1MessageQueryPost200Response.builder()
+                    .status(200)
+                    .message("Successfully queried messages")
+                    .data(List.of())
+                    .build()));
+
+    wrapper.searchConversationHistory("group-guid", " ", null, null);
+
+    ArgumentCaptor<ApiV1MessageQueryPostRequest> requestCaptor =
+        ArgumentCaptor.forClass(ApiV1MessageQueryPostRequest.class);
+    verify(messageApi).apiV1MessageQueryPost(Mockito.eq("pw"), requestCaptor.capture());
+    ApiV1MessageQueryPostRequest request = requestCaptor.getValue();
+    assertThat(request.getChatGuid()).isEqualTo("group-guid");
+    assertThat(request.getWhere()).isEmpty();
+    assertThat(request.getLimit()).isEqualTo(20);
+    assertThat(request.getOffset()).isZero();
   }
 
   @Test

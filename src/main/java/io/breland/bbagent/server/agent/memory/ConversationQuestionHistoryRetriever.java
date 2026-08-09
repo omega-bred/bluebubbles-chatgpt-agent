@@ -5,6 +5,7 @@ import io.breland.bbagent.generated.bluebubblesclient.model.ApiV1ChatChatGuidMes
 import io.breland.bbagent.generated.bluebubblesclient.model.ApiV1ChatChatGuidMessageGet200ResponseDataInnerHandle;
 import io.breland.bbagent.generated.bluebubblesclient.model.Message;
 import io.breland.bbagent.server.TimeSupport;
+import io.breland.bbagent.server.agent.IncomingMessage;
 import io.breland.bbagent.server.agent.memory.ConversationMemoryModels.JournalMessage;
 import io.breland.bbagent.server.agent.memory.ConversationQuestionAnsweringModels.CoverageStatus;
 import io.breland.bbagent.server.agent.memory.ConversationQuestionAnsweringModels.QuestionMessage;
@@ -14,18 +15,22 @@ import io.breland.bbagent.server.agent.memory.ConversationQuestionAnsweringModel
 import io.breland.bbagent.server.agent.memory.ConversationQuestionAnsweringModels.SearchPlan;
 import io.breland.bbagent.server.agent.transport.bb.BBHttpClientWrapper;
 import java.time.Clock;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.lang.Nullable;
 import org.springframework.stereotype.Service;
 
 @Service
@@ -108,50 +113,74 @@ public class ConversationQuestionHistoryRetriever {
     Objects.requireNonNull(request, "request");
     validatePlan(plan);
     Bounds bounds = exactBounds(request, plan);
-    if (!bounds.from().isBefore(bounds.to())) {
+    List<Bounds> sourceBounds = authorizedBounds(request, bounds);
+    if (sourceBounds.isEmpty()) {
       return completeResult(
           List.of(), RetrievalMode.EXACT_SEARCH, bounds.to(), 0, plan.senderHint());
+    }
+
+    if (!isBlueBubbles(request)) {
+      if (plan.terms().isEmpty()) {
+        return partialResult(
+            List.of(), RetrievalMode.EXACT_SEARCH, bounds.from(), SOURCE_UNAVAILABLE, 0, null);
+      }
+      return journalOnly(
+          request,
+          bounds,
+          sourceBounds,
+          RetrievalMode.EXACT_SEARCH,
+          plan.terms(),
+          plan.senderHint());
     }
 
     CandidateAccumulator candidates = new CandidateAccumulator();
     CallBudget budget = new CallBudget();
     Set<String> contextualizedHits = new HashSet<>();
+    RawGuidTracker seenRawGuids = new RawGuidTracker();
     try {
       boolean stop = false;
       for (String term : plan.terms()) {
-        for (int offset = 0; !stop; offset += pageSize) {
-          if (!budget.reserve(request.deadline())) {
-            stop = true;
-            break;
-          }
-          List<Message> page =
-              Objects.requireNonNull(
-                  bb.searchConversationHistory(
-                      request.conversation().externalConversationId(),
-                      term,
-                      bounds.from(),
-                      bounds.to(),
-                      pageSize,
-                      offset),
-                  "history search returned no page");
-          for (Message raw : page) {
-            Optional<QuestionMessage> mapped = mapAuthorized(raw, request, bounds);
-            if (mapped.isEmpty()) {
-              continue;
-            }
-            QuestionMessage hit = mapped.get();
-            if (!candidates.add(hit)) {
-              budget.limit(HISTORY_LIMIT);
+        for (Bounds sourceBound : sourceBounds) {
+          for (int offset = 0; !stop; offset += pageSize) {
+            Duration remaining = budget.reserve(request.deadline());
+            if (remaining == null) {
               stop = true;
               break;
             }
-            if (contextualizedHits.add(hit.messageGuid())
-                && !addNeighbors(hit, request, bounds, candidates, budget)) {
-              stop = true;
+            List<Message> page =
+                Objects.requireNonNull(
+                    bb.searchConversationHistoryForQuestion(
+                        request.conversation().externalConversationId(),
+                        term,
+                        sourceBound.from(),
+                        sourceBound.to(),
+                        pageSize,
+                        offset,
+                        remaining),
+                    "history search returned no page");
+            for (Message raw : page) {
+              Optional<QuestionMessage> mapped =
+                  mapAuthorized(raw, request, sourceBound, seenRawGuids);
+              if (mapped.isEmpty()) {
+                continue;
+              }
+              QuestionMessage hit = mapped.get();
+              if (!candidates.add(hit)) {
+                budget.limit(HISTORY_LIMIT);
+                stop = true;
+                break;
+              }
+              if (contextualizedHits.add(hit.messageGuid())
+                  && !addNeighbors(hit, request, sourceBound, candidates, budget, seenRawGuids)) {
+                stop = true;
+                break;
+              }
+            }
+            if (page.size() < pageSize) {
               break;
             }
           }
-          if (page.size() < pageSize) {
+          if (stop) {
             break;
           }
         }
@@ -173,76 +202,106 @@ public class ConversationQuestionHistoryRetriever {
   public RetrievalResult retrieveChronological(RetrievalRequest request) {
     Objects.requireNonNull(request, "request");
     Bounds bounds = new Bounds(request.from(), request.to());
+    List<Bounds> sourceBounds = authorizedBounds(request, bounds);
+    if (sourceBounds.isEmpty()) {
+      return completeResult(List.of(), RetrievalMode.CHRONOLOGICAL, bounds.to(), 0, null);
+    }
+    if (!isBlueBubbles(request)) {
+      return journalOnly(
+          request, bounds, sourceBounds, RetrievalMode.CHRONOLOGICAL, List.of(), null);
+    }
     CandidateAccumulator candidates = new CandidateAccumulator();
     CallBudget budget = new CallBudget();
-    for (int offset = 0; ; offset += pageSize) {
-      if (!budget.reserve(request.deadline())) {
-        break;
-      }
-      List<ApiV1ChatChatGuidMessageGet200ResponseDataInner> page;
-      try {
-        page =
-            Objects.requireNonNull(
-                bb.getMessagesInChat(
-                    request.conversation().externalConversationId(),
-                    bounds.from(),
-                    bounds.to(),
-                    offset,
-                    pageSize,
-                    "ASC"),
-                "chronological history returned no page");
-      } catch (RuntimeException sourceFailure) {
+    RawGuidTracker seenRawGuids = new RawGuidTracker();
+    boolean stop = false;
+    for (Bounds sourceBound : sourceBounds) {
+      for (int offset = 0; !stop; offset += pageSize) {
+        Duration remaining = budget.reserve(request.deadline());
+        if (remaining == null) {
+          stop = true;
+          break;
+        }
+        List<ApiV1ChatChatGuidMessageGet200ResponseDataInner> page;
         try {
-          return journalFallback(request, bounds, candidates, budget);
-        } catch (RuntimeException journalFailure) {
+          page =
+              Objects.requireNonNull(
+                  bb.getMessagesInChatForQuestion(
+                      request.conversation().externalConversationId(),
+                      sourceBound.from(),
+                      sourceBound.to(),
+                      offset,
+                      pageSize,
+                      "ASC",
+                      remaining),
+                  "chronological history returned no page");
+        } catch (RuntimeException sourceFailure) {
+          try {
+            return journalFallback(request, bounds, sourceBounds, candidates, budget, seenRawGuids);
+          } catch (RuntimeException journalFailure) {
+            budget.limit(SOURCE_UNAVAILABLE);
+            throw new PartialRetrievalException(
+                result(candidates.values(), RetrievalMode.CHRONOLOGICAL, bounds, budget, null),
+                journalFailure);
+          }
+        }
+        try {
+          for (ApiV1ChatChatGuidMessageGet200ResponseDataInner raw : page) {
+            Optional<QuestionMessage> mapped =
+                mapAuthorized(raw, request, sourceBound, seenRawGuids);
+            if (mapped.isPresent() && !candidates.add(mapped.get())) {
+              budget.limit(HISTORY_LIMIT);
+              break;
+            }
+          }
+        } catch (RuntimeException processingFailure) {
           budget.limit(SOURCE_UNAVAILABLE);
           throw new PartialRetrievalException(
               result(candidates.values(), RetrievalMode.CHRONOLOGICAL, bounds, budget, null),
-              journalFailure);
+              processingFailure);
         }
-      }
-      try {
-        for (ApiV1ChatChatGuidMessageGet200ResponseDataInner raw : page) {
-          Optional<QuestionMessage> mapped = mapAuthorized(raw, request, bounds);
-          if (mapped.isPresent() && !candidates.add(mapped.get())) {
-            budget.limit(HISTORY_LIMIT);
-            break;
-          }
+        if (budget.partialReason() != null) {
+          stop = true;
+          break;
         }
-      } catch (RuntimeException processingFailure) {
-        budget.limit(SOURCE_UNAVAILABLE);
-        throw new PartialRetrievalException(
-            result(candidates.values(), RetrievalMode.CHRONOLOGICAL, bounds, budget, null),
-            processingFailure);
-      }
-      if (budget.partialReason() != null || page.size() < pageSize) {
-        break;
+        if (page.size() < pageSize) {
+          break;
+        }
       }
     }
     return result(candidates.values(), RetrievalMode.CHRONOLOGICAL, bounds, budget, null);
   }
 
   private RetrievalResult journalFallback(
-      RetrievalRequest request, Bounds bounds, CandidateAccumulator candidates, CallBudget budget) {
-    if (!budget.reserve(request.deadline())) {
-      return result(candidates.values(), RetrievalMode.CHRONOLOGICAL, bounds, budget, null);
-    }
-    List<JournalMessage> journal =
-        Objects.requireNonNull(
-            store.findMessages(
-                request.conversation().conversationId(), bounds.from(), bounds.to().minusNanos(1)),
-            "journal returned no messages");
+      RetrievalRequest request,
+      Bounds bounds,
+      List<Bounds> sourceBounds,
+      CandidateAccumulator candidates,
+      CallBudget budget,
+      RawGuidTracker seenRawGuids) {
     Instant journalCoverageThrough = bounds.from();
-    for (JournalMessage raw : journal) {
-      Optional<QuestionMessage> mapped = mapAuthorized(raw, request, bounds);
-      if (mapped.isPresent()) {
-        journalCoverageThrough =
-            journalCoverageThrough.isAfter(mapped.get().timestamp())
-                ? journalCoverageThrough
-                : mapped.get().timestamp();
-        if (!candidates.add(mapped.get())) {
-          break;
+    for (Bounds sourceBound : sourceBounds) {
+      if (budget.reserve(request.deadline()) == null) {
+        return result(candidates.values(), RetrievalMode.CHRONOLOGICAL, bounds, budget, null);
+      }
+      List<JournalMessage> journal =
+          Objects.requireNonNull(
+              store.findMessages(
+                  request.conversation().conversationId(),
+                  sourceBound.from(),
+                  sourceBound.to().minusNanos(1)),
+              "journal returned no messages");
+      for (JournalMessage raw : journal) {
+        Optional<QuestionMessage> mapped = mapAuthorized(raw, request, sourceBound, seenRawGuids);
+        if (mapped.isPresent()) {
+          journalCoverageThrough = max(journalCoverageThrough, mapped.get().timestamp());
+          if (!candidates.add(mapped.get())) {
+            budget.limit(HISTORY_LIMIT);
+            break;
+          }
         }
+      }
+      if (budget.partialReason() != null) {
+        break;
       }
     }
     budget.limit(SOURCE_UNAVAILABLE);
@@ -256,21 +315,82 @@ public class ConversationQuestionHistoryRetriever {
         budget.pages());
   }
 
+  private RetrievalResult journalOnly(
+      RetrievalRequest request,
+      Bounds bounds,
+      List<Bounds> sourceBounds,
+      RetrievalMode mode,
+      List<String> requiredTerms,
+      String senderHint) {
+    CandidateAccumulator candidates = new CandidateAccumulator();
+    CallBudget budget = new CallBudget();
+    RawGuidTracker seenRawGuids = new RawGuidTracker();
+    Instant coverageThrough = bounds.from();
+    for (Bounds sourceBound : sourceBounds) {
+      if (budget.reserve(request.deadline()) == null) {
+        break;
+      }
+      List<JournalMessage> journal =
+          Objects.requireNonNull(
+              store.findMessages(
+                  request.conversation().conversationId(),
+                  sourceBound.from(),
+                  sourceBound.to().minusNanos(1)),
+              "journal returned no messages");
+      for (JournalMessage raw : journal) {
+        if (raw == null
+            || (!requiredTerms.isEmpty()
+                && requiredTerms.stream()
+                    .noneMatch(term -> StringUtils.containsIgnoreCase(raw.text(), term)))) {
+          continue;
+        }
+        Optional<QuestionMessage> mapped = mapAuthorized(raw, request, sourceBound, seenRawGuids);
+        if (mapped.isEmpty()) {
+          continue;
+        }
+        coverageThrough = max(coverageThrough, mapped.get().timestamp());
+        if (!candidates.add(mapped.get())) {
+          budget.limit(HISTORY_LIMIT);
+          break;
+        }
+      }
+      if (budget.partialReason() != null) {
+        break;
+      }
+    }
+    budget.limit(SOURCE_UNAVAILABLE);
+    return partialResult(
+        sort(candidates.values(), senderHint),
+        mode,
+        coverageThrough,
+        budget.partialReason(),
+        budget.pages(),
+        senderHint);
+  }
+
   private boolean addNeighbors(
       QuestionMessage hit,
       RetrievalRequest request,
       Bounds bounds,
       CandidateAccumulator candidates,
-      CallBudget budget) {
+      CallBudget budget,
+      RawGuidTracker seenRawGuids) {
     if (bounds.from().isBefore(hit.timestamp())) {
       if (!addNeighborPage(
-          request, bounds, candidates, budget, bounds.from(), hit.timestamp(), "DESC")) {
+          request,
+          bounds,
+          candidates,
+          budget,
+          seenRawGuids,
+          bounds.from(),
+          hit.timestamp(),
+          "DESC")) {
         return false;
       }
     }
     if (hit.timestamp().isBefore(bounds.to())) {
       return addNeighborPage(
-          request, bounds, candidates, budget, hit.timestamp(), bounds.to(), "ASC");
+          request, bounds, candidates, budget, seenRawGuids, hit.timestamp(), bounds.to(), "ASC");
     }
     return true;
   }
@@ -280,24 +400,27 @@ public class ConversationQuestionHistoryRetriever {
       Bounds bounds,
       CandidateAccumulator candidates,
       CallBudget budget,
+      RawGuidTracker seenRawGuids,
       Instant from,
       Instant to,
       String sort) {
-    if (!budget.reserve(request.deadline())) {
+    Duration remaining = budget.reserve(request.deadline());
+    if (remaining == null) {
       return false;
     }
     List<ApiV1ChatChatGuidMessageGet200ResponseDataInner> neighbors =
         Objects.requireNonNull(
-            bb.getMessagesInChat(
+            bb.getMessagesInChatForQuestion(
                 request.conversation().externalConversationId(),
                 from,
                 to,
                 0,
                 neighborMessageCount + 1,
-                sort),
+                sort,
+                remaining),
             "neighbor history returned no page");
     for (ApiV1ChatChatGuidMessageGet200ResponseDataInner raw : neighbors) {
-      Optional<QuestionMessage> mapped = mapAuthorized(raw, request, bounds);
+      Optional<QuestionMessage> mapped = mapAuthorized(raw, request, bounds, seenRawGuids);
       if (mapped.isPresent() && !candidates.add(mapped.get())) {
         budget.limit(HISTORY_LIMIT);
         return false;
@@ -307,12 +430,20 @@ public class ConversationQuestionHistoryRetriever {
   }
 
   private Optional<QuestionMessage> mapAuthorized(
-      Message raw, RetrievalRequest request, Bounds bounds) {
-    if (raw == null || raw.getGuid() == null || raw.getDateCreated() == null) {
+      Message raw, RetrievalRequest request, Bounds bounds, RawGuidTracker seenRawGuids) {
+    if (raw == null
+        || raw.getGuid() == null
+        || raw.getDateCreated() == null
+        || !belongsToConversation(
+            raw.getChats(), request.conversation().externalConversationId())) {
       return Optional.empty();
     }
     Instant timestamp = TimeSupport.epochSecondsOrMillisOrNow(raw.getDateCreated());
     if (!authorized(timestamp, request, bounds)) {
+      return Optional.empty();
+    }
+    if (!seenRawGuids.accept(
+        raw.getGuid().toString(), raw.getHandle() == null ? null : raw.getHandle().getAddress())) {
       return Optional.empty();
     }
     ApiV1ChatChatGuidMessageGet200ResponseDataInner normalized =
@@ -329,32 +460,68 @@ public class ConversationQuestionHistoryRetriever {
                     : new ApiV1ChatChatGuidMessageGet200ResponseDataInnerHandle()
                         .address(raw.getHandle().getAddress()))
             .chats(
-                List.of(
-                    new ApiV1ChatChatGuidMessageGet200ResponseDataInnerChatsInner()
-                        .guid(request.conversation().externalConversationId())));
-    return mapper.fromBlueBubbles(normalized, request.accountId());
+                raw.getChats().stream()
+                    .map(
+                        chat ->
+                            new ApiV1ChatChatGuidMessageGet200ResponseDataInnerChatsInner()
+                                .guid(chat.getGuid()))
+                    .toList());
+    return mapper.fromBlueBubbles(normalized, request.accountId(), request.mappingSession());
   }
 
   private Optional<QuestionMessage> mapAuthorized(
       ApiV1ChatChatGuidMessageGet200ResponseDataInner raw,
       RetrievalRequest request,
-      Bounds bounds) {
-    if (raw == null || raw.getDateCreated() == null) {
+      Bounds bounds,
+      RawGuidTracker seenRawGuids) {
+    if (raw == null
+        || StringUtils.isBlank(raw.getGuid())
+        || raw.getDateCreated() == null
+        || !belongsToConversation(
+            raw.getChats(), request.conversation().externalConversationId())) {
       return Optional.empty();
     }
     Instant timestamp = TimeSupport.epochSecondsOrMillisOrNow(raw.getDateCreated());
     if (!authorized(timestamp, request, bounds)) {
       return Optional.empty();
     }
-    return mapper.fromBlueBubbles(raw, request.accountId());
+    if (!seenRawGuids.accept(
+        raw.getGuid(), raw.getHandle() == null ? null : raw.getHandle().getAddress())) {
+      return Optional.empty();
+    }
+    return mapper.fromBlueBubbles(raw, request.accountId(), request.mappingSession());
   }
 
   private Optional<QuestionMessage> mapAuthorized(
-      JournalMessage raw, RetrievalRequest request, Bounds bounds) {
-    if (raw == null || !authorized(raw.sourceTimestamp(), request, bounds)) {
+      JournalMessage raw, RetrievalRequest request, Bounds bounds, RawGuidTracker seenRawGuids) {
+    if (raw == null
+        || StringUtils.isBlank(raw.messageGuid())
+        || !authorized(raw.sourceTimestamp(), request, bounds)) {
       return Optional.empty();
     }
-    return mapper.fromJournal(raw, request.accountId());
+    if (!seenRawGuids.accept(raw.messageGuid(), raw.senderAccountId())) {
+      return Optional.empty();
+    }
+    return mapper.fromJournal(raw, request.accountId(), request.mappingSession());
+  }
+
+  private static String normalizeGuid(String guid) {
+    return guid.trim().toLowerCase(Locale.ROOT);
+  }
+
+  private static final class RawGuidTracker {
+    private final Map<String, Integer> identityQualityByGuid = new LinkedHashMap<>();
+
+    private boolean accept(String guid, @Nullable String identity) {
+      String normalizedGuid = normalizeGuid(guid);
+      int quality = StringUtils.isBlank(identity) ? 0 : 1;
+      Integer priorQuality = identityQualityByGuid.get(normalizedGuid);
+      if (priorQuality != null && priorQuality >= quality) {
+        return false;
+      }
+      identityQualityByGuid.put(normalizedGuid, quality);
+      return true;
+    }
   }
 
   private boolean authorized(Instant timestamp, RetrievalRequest request, Bounds bounds) {
@@ -362,6 +529,37 @@ public class ConversationQuestionHistoryRetriever {
         && !timestamp.isBefore(bounds.from())
         && timestamp.isBefore(bounds.to())
         && request.memberships().stream().anyMatch(interval -> interval.contains(timestamp));
+  }
+
+  private static boolean isBlueBubbles(RetrievalRequest request) {
+    return IncomingMessage.TRANSPORT_BLUEBUBBLES.equalsIgnoreCase(
+        request.conversation().transport());
+  }
+
+  private static boolean belongsToConversation(List<?> chats, String expectedChatGuid) {
+    if (chats == null || StringUtils.isBlank(expectedChatGuid)) {
+      return false;
+    }
+    return chats.stream()
+        .filter(Objects::nonNull)
+        .anyMatch(
+            chat -> {
+              if (chat instanceof io.breland.bbagent.generated.bluebubblesclient.model.Chat value) {
+                return StringUtils.equals(value.getGuid(), expectedChatGuid);
+              }
+              if (chat instanceof ApiV1ChatChatGuidMessageGet200ResponseDataInnerChatsInner value) {
+                return StringUtils.equals(value.getGuid(), expectedChatGuid);
+              }
+              return false;
+            });
+  }
+
+  private static Instant max(Instant left, Instant right) {
+    return left.isAfter(right) ? left : right;
+  }
+
+  private static Instant min(Instant left, Instant right) {
+    return left.isBefore(right) ? left : right;
   }
 
   private RetrievalResult result(
@@ -398,6 +596,17 @@ public class ConversationQuestionHistoryRetriever {
         sort(candidates, senderHint), mode, CoverageStatus.COMPLETE, coverageThrough, null, pages);
   }
 
+  private RetrievalResult partialResult(
+      List<QuestionMessage> candidates,
+      RetrievalMode mode,
+      Instant coverageThrough,
+      String reason,
+      int pages,
+      String senderHint) {
+    return new RetrievalResult(
+        sort(candidates, senderHint), mode, CoverageStatus.PARTIAL, coverageThrough, reason, pages);
+  }
+
   private List<QuestionMessage> sort(List<QuestionMessage> messages, String senderHint) {
     String safeHint = StringUtils.trimToNull(senderHint);
     Comparator<QuestionMessage> comparator = Comparator.comparing(QuestionMessage::timestamp);
@@ -422,6 +631,36 @@ public class ConversationQuestionHistoryRetriever {
     return new Bounds(from, to);
   }
 
+  private List<Bounds> authorizedBounds(RetrievalRequest request, Bounds outer) {
+    List<Bounds> clipped =
+        request.memberships().stream()
+            .filter(Objects::nonNull)
+            .map(
+                interval -> {
+                  Instant from = max(outer.from(), interval.startedAt());
+                  Instant to =
+                      interval.endedAt() == null ? outer.to() : min(outer.to(), interval.endedAt());
+                  return new Bounds(from, to);
+                })
+            .filter(bounds -> bounds.from().isBefore(bounds.to()))
+            .sorted(Comparator.comparing(Bounds::from).thenComparing(Bounds::to))
+            .toList();
+    List<Bounds> merged = new ArrayList<>();
+    for (Bounds next : clipped) {
+      if (merged.isEmpty()) {
+        merged.add(next);
+        continue;
+      }
+      Bounds current = merged.getLast();
+      if (next.from().isAfter(current.to())) {
+        merged.add(next);
+      } else {
+        merged.set(merged.size() - 1, new Bounds(current.from(), max(current.to(), next.to())));
+      }
+    }
+    return List.copyOf(merged);
+  }
+
   private void validatePlan(SearchPlan plan) {
     Objects.requireNonNull(plan, "plan");
     if (plan.terms().size() > maxSearchTerms) {
@@ -430,10 +669,6 @@ public class ConversationQuestionHistoryRetriever {
     if (plan.terms().stream().anyMatch(StringUtils::isBlank)) {
       throw new IllegalArgumentException("search plan terms must not be blank");
     }
-  }
-
-  private boolean deadlineReached(Instant deadline) {
-    return !clock.instant().isBefore(deadline);
   }
 
   private record Bounds(Instant from, Instant to) {}
@@ -455,17 +690,18 @@ public class ConversationQuestionHistoryRetriever {
     private int pages;
     private String partialReason;
 
-    private boolean reserve(Instant deadline) {
-      if (deadlineReached(deadline)) {
+    private @Nullable Duration reserve(Instant deadline) {
+      Duration remaining = Duration.between(clock.instant(), deadline);
+      if (remaining.isZero() || remaining.isNegative()) {
         limit(TIME_LIMIT);
-        return false;
+        return null;
       }
       if (pages >= maxHistoryPages) {
         limit(HISTORY_LIMIT);
-        return false;
+        return null;
       }
       pages++;
-      return true;
+      return remaining;
     }
 
     private void limit(String reason) {

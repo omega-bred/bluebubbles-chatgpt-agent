@@ -138,6 +138,26 @@ public class BBHttpClientWrapper {
     this.operationalMetricsService = operationalMetricsService;
   }
 
+  BBHttpClientWrapper(
+      String password,
+      V1MessageApi messageApi,
+      V1ContactApi contactApi,
+      V1ChatApi chatApi,
+      ObjectMapper objectMapper,
+      Duration apiTimeout) {
+    this.password = password;
+    this.apiTimeout = Objects.requireNonNull(apiTimeout, "apiTimeout");
+    this.apiClient = blueBubblesApiClient();
+    this.messageApi = Objects.requireNonNull(messageApi, "messageApi");
+    this.contactApi = Objects.requireNonNull(contactApi, "contactApi");
+    this.attachmentApi = new V1AttachmentApi(apiClient);
+    this.chatApi = Objects.requireNonNull(chatApi, "chatApi");
+    this.otherApi = new V1OtherApi(apiClient);
+    this.icloudApi = new V1ICloudApi(apiClient);
+    this.objectMapper = Objects.requireNonNull(objectMapper, "objectMapper");
+    this.operationalMetricsService = null;
+  }
+
   private static ApiClient blueBubblesApiClient() {
     return new ApiClient(
         ApiClient.buildWebClientBuilder()
@@ -564,18 +584,56 @@ public class BBHttpClientWrapper {
 
   public List<Message> searchConversationHistory(
       String chatGuid, String query, Integer limit, Integer offset) {
-    Instant now = Instant.now();
-    return searchConversationHistory(
-        chatGuid,
-        query,
-        now.minus(30, ChronoUnit.DAYS),
-        now,
-        limit != null && limit > 0 ? limit : 20,
-        offset != null && offset >= 0 ? offset : 0);
+    if (StringUtils.isBlank(chatGuid)) {
+      return null;
+    }
+    ApiV1MessageQueryPostRequest.Builder request =
+        ApiV1MessageQueryPostRequest.builder()
+            .chatGuid(chatGuid)
+            .sort(ApiV1MessageQueryPostRequest.SortEnum.DESC)
+            .after(Instant.now().minus(30, ChronoUnit.DAYS).getEpochSecond())
+            .offset(offset != null && offset >= 0 ? offset : 0)
+            .limit(limit != null && limit > 0 ? limit : 20)
+            .with(Set.of(ApiV1MessageQueryPostRequest.WithEnum.HANDLE));
+    List<WhereClause> where = new ArrayList<>();
+    if (StringUtils.isNotBlank(query)) {
+      where.add(
+          WhereClause.builder()
+              .statement("message.text LIKE :text")
+              .args(Map.of("text", "%" + query + "%"))
+              .build());
+    }
+    request.where(where);
+    return executeMessageQuery(
+        request.build(), "search conversation history", Duration.of(120, ChronoUnit.SECONDS));
   }
 
   public List<Message> searchConversationHistory(
       String chatGuid, String literalQuery, Instant after, Instant before, int limit, int offset) {
+    return searchConversationHistory(
+        chatGuid, literalQuery, after, before, limit, offset, Duration.of(120, ChronoUnit.SECONDS));
+  }
+
+  public List<Message> searchConversationHistoryForQuestion(
+      String chatGuid,
+      String literalQuery,
+      Instant after,
+      Instant before,
+      int limit,
+      int offset,
+      Duration remaining) {
+    return searchConversationHistory(
+        chatGuid, literalQuery, after, before, limit, offset, questionHistoryTimeout(remaining));
+  }
+
+  private List<Message> searchConversationHistory(
+      String chatGuid,
+      String literalQuery,
+      Instant after,
+      Instant before,
+      int limit,
+      int offset,
+      Duration timeout) {
     validateHistorySearch(chatGuid, literalQuery, after, before, limit, offset);
     String escaped =
         literalQuery.trim().replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_");
@@ -592,11 +650,14 @@ public class BBHttpClientWrapper {
             .before(before.getEpochSecond())
             .offset(offset)
             .limit(limit)
-            .with(Set.of(ApiV1MessageQueryPostRequest.WithEnum.HANDLE))
+            .with(
+                Set.of(
+                    ApiV1MessageQueryPostRequest.WithEnum.HANDLE,
+                    ApiV1MessageQueryPostRequest.WithEnum.CHAT))
             .where(List.of(textClause))
             .build();
 
-    return executeMessageQuery(request, "search conversation history");
+    return executeMessageQuery(request, "search conversation history", timeout);
   }
 
   private static void validateHistorySearch(
@@ -621,14 +682,12 @@ public class BBHttpClientWrapper {
   }
 
   private List<Message> executeMessageQuery(
-      ApiV1MessageQueryPostRequest request, String operation) {
+      ApiV1MessageQueryPostRequest request, String operation, Duration timeout) {
     return measuredOperation(
         "search_conversation_history",
         () -> {
           ApiV1MessageQueryPost200Response response =
-              this.messageApi
-                  .apiV1MessageQueryPost(password, request)
-                  .block(Duration.of(120, ChronoUnit.SECONDS));
+              this.messageApi.apiV1MessageQueryPost(password, request).block(timeout);
           response = requirePresent(response, operation);
           requireSuccessfulResponse(response.getStatus(), response.getMessage(), operation);
           return requirePresent(response.getData(), operation);
@@ -1153,6 +1212,29 @@ public class BBHttpClientWrapper {
       int offset,
       int limit,
       String sort) {
+    return getMessagesInChat(chatGuid, after, before, offset, limit, sort, apiTimeout);
+  }
+
+  public List<ApiV1ChatChatGuidMessageGet200ResponseDataInner> getMessagesInChatForQuestion(
+      String chatGuid,
+      @Nullable Instant after,
+      @Nullable Instant before,
+      int offset,
+      int limit,
+      String sort,
+      Duration remaining) {
+    return getMessagesInChat(
+        chatGuid, after, before, offset, limit, sort, questionHistoryTimeout(remaining));
+  }
+
+  private List<ApiV1ChatChatGuidMessageGet200ResponseDataInner> getMessagesInChat(
+      String chatGuid,
+      @Nullable Instant after,
+      @Nullable Instant before,
+      int offset,
+      int limit,
+      String sort,
+      Duration timeout) {
     if (limit < 1 || limit > 1_000) {
       throw new IllegalArgumentException("message history limit must be between 1 and 1000");
     }
@@ -1177,10 +1259,17 @@ public class BBHttpClientWrapper {
                       offset,
                       limit,
                       normalizedSort)
-                  .block(apiTimeout);
+                  .block(timeout);
           response = requirePresent(response, "get messages in chat");
           return requirePresent(response.getData(), "get messages in chat");
         });
+  }
+
+  private Duration questionHistoryTimeout(Duration remaining) {
+    if (remaining == null || remaining.isZero() || remaining.isNegative()) {
+      throw new IllegalArgumentException("question history remaining time must be positive");
+    }
+    return remaining.compareTo(apiTimeout) < 0 ? remaining : apiTimeout;
   }
 
   public boolean ping() {

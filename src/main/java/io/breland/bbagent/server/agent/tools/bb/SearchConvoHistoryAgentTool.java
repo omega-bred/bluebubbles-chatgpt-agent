@@ -59,7 +59,7 @@ public class SearchConvoHistoryAgentTool implements ToolProvider {
                 entry.put("guid", msg.getGuid());
                 entry.put("text", msg.getText());
                 entry.put("dateCreated", msg.getDateCreated());
-                entry.put("sender", msg.getHandle());
+                entry.put("sender", msg.getHandle() == null ? null : msg.getHandle().getAddress());
                 messages.add(entry);
               });
 

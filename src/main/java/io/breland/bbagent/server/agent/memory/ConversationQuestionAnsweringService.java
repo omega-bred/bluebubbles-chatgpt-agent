@@ -161,6 +161,9 @@ public class ConversationQuestionAnsweringService {
       Instant to,
       ModelBudget budget,
       QuestionAnswerWork work) {
+    if (question.length() > ConversationQuestionAnsweringModelClient.MAX_QUESTION_LENGTH) {
+      return insufficient(from, to, RetrievalMode.CHRONOLOGICAL, CHARACTER_LIMIT, from);
+    }
     Instant deadline = clock.instant().plus(requestTimeout);
     try {
       Optional<ConversationRecord> conversationValue =
@@ -194,8 +197,13 @@ public class ConversationQuestionAnsweringService {
           }
         }
       } catch (ConversationQuestionHistoryRetriever.PartialRetrievalException partialFailure) {
-        work.observe(partialFailure.partialResult());
-        exactSynthesis = Synthesis.unavailable(from, SOURCE_UNAVAILABLE);
+        exact = partialFailure.partialResult();
+        work.observe(exact);
+        if (!exact.messages().isEmpty() && !deadlineReached(deadline)) {
+          exactSynthesis = synthesize(question, exact.messages(), from, deadline, budget, true);
+        } else {
+          exactSynthesis = Synthesis.unavailable(from, SOURCE_UNAVAILABLE);
+        }
       } catch (RuntimeException ignored) {
         exactSynthesis = Synthesis.unavailable(from, SOURCE_UNAVAILABLE);
       }
@@ -212,7 +220,26 @@ public class ConversationQuestionAnsweringService {
         chronological = retriever.retrieveChronological(request);
         work.observe(chronological);
       } catch (ConversationQuestionHistoryRetriever.PartialRetrievalException partialFailure) {
-        work.observe(partialFailure.partialResult());
+        chronological = partialFailure.partialResult();
+        work.observe(chronological);
+        Synthesis partialSynthesis =
+            synthesize(question, chronological.messages(), from, deadline, budget, false);
+        if (partialSynthesis.supported()) {
+          return finalAnswer(
+              partialSynthesis, chronological, fallbackMode, from, to, SOURCE_UNAVAILABLE);
+        }
+        if (exactSynthesis != null && exactSynthesis.supported()) {
+          return finalAnswer(
+              exactSynthesis,
+              exact,
+              fallbackMode,
+              from,
+              to,
+              dominantReason(
+                  SOURCE_UNAVAILABLE,
+                  chronological.partialReason(),
+                  partialSynthesis.partialReason()));
+        }
         return supportedBackupOrUnavailable(
             exactSynthesis, exact, fallbackMode, from, to, SOURCE_UNAVAILABLE);
       } catch (RuntimeException ignored) {
@@ -285,7 +312,7 @@ public class ConversationQuestionAnsweringService {
         break;
       }
 
-      Batch batch = nextBatch(messages, nextIndex, aggregateRemaining);
+      Batch batch = nextBatch(question, messages, nextIndex, aggregateRemaining);
       if (batch.messages().isEmpty()) {
         partialReason = CHARACTER_LIMIT;
         break;
@@ -299,7 +326,11 @@ public class ConversationQuestionAnsweringService {
         partialReason = MODEL_UNAVAILABLE;
         break;
       }
-      ModelAnswer validated = validateAnswer(routed, messageGuids(batch.messages()));
+      ModelAnswer validated =
+          validateAnswer(
+              routed,
+              messageGuids(batch.messages()),
+              batch.messages().stream().map(QuestionMessage::text).toList());
       if (validated == null) {
         partialReason = MODEL_INVALID;
         break;
@@ -384,7 +415,11 @@ public class ConversationQuestionAnsweringService {
     Set<String> submittedEvidence = findingGuids(questionFindings);
     try {
       RoutedModelAnswer reduced = model.reduce(question, questionFindings, deadline);
-      ModelAnswer validated = validateAnswer(reduced, submittedEvidence);
+      ModelAnswer validated =
+          validateAnswer(
+              reduced,
+              submittedEvidence,
+              questionFindings.stream().map(QuestionFinding::answer).toList());
       if (validated == null) {
         return bestFinding(findings, processedThrough, firstReason(MODEL_INVALID, partialReason));
       }
@@ -415,30 +450,33 @@ public class ConversationQuestionAnsweringService {
   }
 
   private Batch nextBatch(
-      List<QuestionMessage> messages, int startIndex, int aggregateCharactersRemaining) {
+      String question,
+      List<QuestionMessage> messages,
+      int startIndex,
+      int aggregateCharactersRemaining) {
     List<QuestionMessage> batch = new ArrayList<>();
     int characters = 0;
     int nextIndex = startIndex;
     while (nextIndex < messages.size() && batch.size() < maxBatchMessages) {
       QuestionMessage message = messages.get(nextIndex);
-      int messageCharacters = message.text().length();
-      if (messageCharacters > maxBatchCharacters
-          || messageCharacters > aggregateCharactersRemaining) {
-        break;
-      }
-      if (characters + messageCharacters > maxBatchCharacters
-          || characters + messageCharacters > aggregateCharactersRemaining) {
+      List<QuestionMessage> candidate = new ArrayList<>(batch);
+      candidate.add(message);
+      int candidateCharacters = model.answerInputCharacters(question, candidate);
+      if (candidateCharacters > maxBatchCharacters
+          || candidateCharacters > aggregateCharactersRemaining) {
         break;
       }
       batch.add(message);
-      characters += messageCharacters;
+      characters = candidateCharacters;
       nextIndex++;
     }
     return new Batch(List.copyOf(batch), characters, nextIndex);
   }
 
   private ModelAnswer validateAnswer(
-      @Nullable RoutedModelAnswer routed, Set<String> submittedEvidence) {
+      @Nullable RoutedModelAnswer routed,
+      Set<String> submittedEvidence,
+      List<String> submittedSourceTexts) {
     if (routed == null || routed.answer() == null) {
       return null;
     }
@@ -449,6 +487,10 @@ public class ConversationQuestionAnsweringService {
       return null;
     }
     if (!submittedEvidence.containsAll(answer.evidenceMessageGuids())) {
+      return null;
+    }
+    if (!ConversationQuestionAnswerOutputValidator.isSafe(
+        answer.answer(), submittedEvidence, submittedSourceTexts)) {
       return null;
     }
     return answer;

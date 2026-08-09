@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatIllegalArgumentException;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -68,6 +69,10 @@ class ConversationQuestionAnsweringServiceTest {
       mock(ConversationQuestionHistoryRetriever.class);
   private final ConversationQuestionAnsweringModelClient model =
       mock(ConversationQuestionAnsweringModelClient.class);
+  private final ConversationQuestionAnsweringModelClient payloadSizer =
+      new ConversationQuestionAnsweringModelClient(
+          mock(ConversationMemoryResponsesClient.class),
+          new com.fasterxml.jackson.databind.ObjectMapper().findAndRegisterModules());
   private final MutableClock clock = new MutableClock(NOW);
   private final SimpleMeterRegistry registry = new SimpleMeterRegistry();
   private final OperationalMetricsService metrics = new OperationalMetricsService(registry);
@@ -80,6 +85,65 @@ class ConversationQuestionAnsweringServiceTest {
     when(store.findMembershipIntervals(CONVERSATION_ID, ACCOUNT, FROM, TO))
         .thenReturn(List.of(new MembershipInterval(FROM, null)));
     when(model.plan(QUESTION, FROM, TO, DEADLINE)).thenReturn(WORDLE_PLAN);
+    when(model.answerInputCharacters(anyString(), anyList()))
+        .thenAnswer(
+            invocation ->
+                payloadSizer.answerInputCharacters(
+                    invocation.getArgument(0), invocation.getArgument(1)));
+  }
+
+  @Test
+  void overlongQuestionReturnsSafeTerminalResultWithoutSourceOrModelAccess() {
+    String overlongQuestion = "q".repeat(4_001);
+
+    GroupQuestionAnswer result = service.answer(ACCOUNT, GROUP, overlongQuestion, FROM, TO);
+
+    assertThat(result.status()).isEqualTo(AnswerStatus.INSUFFICIENT_EVIDENCE);
+    assertThat(result.answer()).doesNotContain(overlongQuestion);
+    assertThat(result.coverageStatus()).isEqualTo(CoverageStatus.PARTIAL);
+    assertThat(result.partialReason()).isEqualTo("character_limit");
+    verifyNoInteractions(store, retriever);
+    verify(model, never()).plan(anyString(), any(), any(), any());
+    verify(model, never()).answer(anyString(), anyList(), any());
+    assertThat(totalQuestionAnswers()).isEqualTo(1.0);
+  }
+
+  @Test
+  void serializedEscapingOverheadCannotCrossBatchCharacterLimit() {
+    String escapedText = "\"\\\n\t123456";
+    QuestionMessage escaped = message("escaped", "Dom", escapedText, 1);
+    int rawCharacters = QUESTION.length() + escapedText.length();
+    service = service(100, rawCharacters, 5, rawCharacters);
+    when(retriever.retrieveExact(any(), eq(WORDLE_PLAN)))
+        .thenReturn(completeExact(List.of(escaped)));
+    when(retriever.retrieveChronological(any()))
+        .thenReturn(completeChronological(List.of(escaped)));
+
+    GroupQuestionAnswer result = service.answer(ACCOUNT, GROUP, QUESTION, FROM, TO);
+
+    assertThat(result.status()).isEqualTo(AnswerStatus.INSUFFICIENT_EVIDENCE);
+    assertThat(result.partialReason()).isEqualTo("character_limit");
+    verify(model, never()).answer(anyString(), anyList(), any());
+  }
+
+  @Test
+  void repeatedQuestionAndSerializationOverheadCountAgainstAggregateBudget() {
+    QuestionMessage first = message("first", "Dom", "Wordle 1,877 4/6", 1);
+    QuestionMessage second = message("second", "Alice", "Wordle 1,877 3/6", 2);
+    int onePayloadCharacters = payloadSizer.answerInputCharacters(QUESTION, List.of(first));
+    service = service(1, onePayloadCharacters, 5, onePayloadCharacters);
+    when(retriever.retrieveExact(any(), eq(WORDLE_PLAN)))
+        .thenReturn(completeExact(List.of(first, second)));
+    when(model.answer(QUESTION, List.of(first), DEADLINE))
+        .thenReturn(routed(answered("Dom only reported 4/6.", "first")));
+
+    GroupQuestionAnswer result = service.answer(ACCOUNT, GROUP, QUESTION, FROM, TO);
+
+    assertThat(result.status()).isEqualTo(AnswerStatus.ANSWERED);
+    assertThat(result.coverageStatus()).isEqualTo(CoverageStatus.PARTIAL);
+    assertThat(result.partialReason()).isEqualTo("character_limit");
+    verify(model, times(1)).answer(QUESTION, List.of(first), DEADLINE);
+    verify(retriever, never()).retrieveChronological(any());
   }
 
   @Test
@@ -337,8 +401,8 @@ class ConversationQuestionAnsweringServiceTest {
     assertThat(result.status()).isEqualTo(AnswerStatus.ANSWERED);
     assertThat(result.coverageStatus()).isEqualTo(CoverageStatus.PARTIAL);
     assertThat(result.partialReason()).isEqualTo("character_limit");
-    assertThat(result.coverageThrough()).isEqualTo(messages.get(1).timestamp());
-    verify(model, times(2)).answer(eq(QUESTION), anyList(), eq(DEADLINE));
+    assertThat(result.coverageThrough()).isEqualTo(messages.get(0).timestamp());
+    verify(model, times(1)).answer(eq(QUESTION), anyList(), eq(DEADLINE));
   }
 
   @Test
@@ -366,7 +430,7 @@ class ConversationQuestionAnsweringServiceTest {
   }
 
   @Test
-  void exactAggregateCharacterEqualityIsCompleteWhenAllEvidenceWasProcessed() {
+  void rawTextAggregateEqualityIsPartialWhenSerializedPayloadExceedsTheLimit() {
     service = service(100, 60_000, 5, 100_000);
     List<QuestionMessage> messages = messages(2, 50_000);
     when(retriever.retrieveExact(any(), eq(WORDLE_PLAN))).thenReturn(completeExact(messages));
@@ -377,9 +441,10 @@ class ConversationQuestionAnsweringServiceTest {
     GroupQuestionAnswer result = service.answer(ACCOUNT, GROUP, QUESTION, FROM, TO);
 
     assertThat(result.status()).isEqualTo(AnswerStatus.ANSWERED);
-    assertThat(result.coverageStatus()).isEqualTo(CoverageStatus.COMPLETE);
-    assertThat(result.partialReason()).isNull();
-    verify(model, times(2)).answer(eq(QUESTION), anyList(), eq(DEADLINE));
+    assertThat(result.coverageStatus()).isEqualTo(CoverageStatus.PARTIAL);
+    assertThat(result.partialReason()).isEqualTo("character_limit");
+    verify(model, times(1)).answer(eq(QUESTION), anyList(), eq(DEADLINE));
+    verify(model, never()).reduce(eq(QUESTION), anyList(), eq(DEADLINE));
   }
 
   @Test
@@ -516,7 +581,7 @@ class ConversationQuestionAnsweringServiceTest {
   }
 
   @Test
-  void lateExactFailureRecordsPartialWorkOnceWithoutFallbackMessageDuplication() {
+  void lateExactFailureRetainsSupportedPartialAnswerAndRecordsWorkOnce() {
     QuestionMessage duplicate =
         message("duplicate", "participant ending 0199", "Wordle 1,877 4/6", 1);
     RetrievalResult partialExact =
@@ -532,36 +597,27 @@ class ConversationQuestionAnsweringServiceTest {
             new ConversationQuestionHistoryRetriever.PartialRetrievalException(
                 partialExact, new IllegalStateException("late source failure")));
     when(retriever.retrieveChronological(any()))
-        .thenReturn(
-            new RetrievalResult(
-                List.of(duplicate),
-                RetrievalMode.CHRONOLOGICAL,
-                CoverageStatus.PARTIAL,
-                duplicate.timestamp(),
-                "source_unavailable",
-                2));
+        .thenThrow(new IllegalStateException("chronological source unavailable"));
     when(model.answer(QUESTION, List.of(duplicate), DEADLINE))
-        .thenReturn(
-            routed(
-                new ModelAnswer(
-                    AnswerStatus.UNAVAILABLE,
-                    "The answer provider is unavailable.",
-                    Confidence.LOW,
-                    List.of(),
-                    false)));
+        .thenReturn(routed(answered("The only reported score is 4/6.", "duplicate")));
 
     GroupQuestionAnswer result = service.answer(ACCOUNT, GROUP, QUESTION, FROM, TO);
 
-    assertThat(result.status()).isEqualTo(AnswerStatus.UNAVAILABLE);
+    assertThat(result.status()).isEqualTo(AnswerStatus.ANSWERED);
+    assertThat(result.answer()).isEqualTo("The only reported score is 4/6.");
+    assertThat(result.coverageStatus()).isEqualTo(CoverageStatus.PARTIAL);
+    assertThat(result.partialReason()).isEqualTo("source_unavailable");
+    assertThat(result.evidenceMessageCount()).isEqualTo(1);
     assertThat(totalQuestionAnswers()).isEqualTo(1.0);
     assertThat(registry.get("bbagent.memory.question.answer.message.count").counter().count())
         .isEqualTo(1.0);
     assertThat(registry.get("bbagent.memory.question.answer.page.count").counter().count())
-        .isEqualTo(6.0);
+        .isEqualTo(4.0);
+    verify(model, times(1)).answer(QUESTION, List.of(duplicate), DEADLINE);
   }
 
   @Test
-  void lateChronologicalProcessingFailureRecordsAccumulatedWorkOnce() {
+  void lateChronologicalProcessingFailureSynthesizesPartialMessagesAndRecordsWorkOnce() {
     QuestionMessage completed =
         message("completed", "participant ending 0199", "Wordle 1,877 4/6", 1);
     when(retriever.retrieveExact(any(), eq(WORDLE_PLAN))).thenReturn(completeExact(List.of()));
@@ -576,15 +632,22 @@ class ConversationQuestionAnsweringServiceTest {
                     "source_unavailable",
                     2),
                 new IllegalStateException("late processing failure")));
+    when(model.answer(QUESTION, List.of(completed), DEADLINE))
+        .thenReturn(routed(answered("The only reported score is 4/6.", "completed")));
 
     GroupQuestionAnswer result = service.answer(ACCOUNT, GROUP, QUESTION, FROM, TO);
 
-    assertThat(result.status()).isEqualTo(AnswerStatus.UNAVAILABLE);
+    assertThat(result.status()).isEqualTo(AnswerStatus.ANSWERED);
+    assertThat(result.answer()).isEqualTo("The only reported score is 4/6.");
+    assertThat(result.coverageStatus()).isEqualTo(CoverageStatus.PARTIAL);
+    assertThat(result.partialReason()).isEqualTo("source_unavailable");
+    assertThat(result.evidenceMessageCount()).isEqualTo(1);
     assertThat(totalQuestionAnswers()).isEqualTo(1.0);
     assertThat(registry.get("bbagent.memory.question.answer.message.count").counter().count())
         .isEqualTo(1.0);
     assertThat(registry.get("bbagent.memory.question.answer.page.count").counter().count())
         .isEqualTo(3.0);
+    verify(model, times(1)).answer(QUESTION, List.of(completed), DEADLINE);
   }
 
   @Test
@@ -605,6 +668,26 @@ class ConversationQuestionAnsweringServiceTest {
     assertThat(result.status()).isEqualTo(AnswerStatus.INSUFFICIENT_EVIDENCE);
     assertThat(result.evidenceMessageCount()).isZero();
     verify(retriever, times(1)).retrieveChronological(any());
+  }
+
+  @Test
+  void unsafeModelOutputCannotBecomeAGroupQuestionAnswer() {
+    QuestionMessage score = message("score", "Dom", "Wordle 1,877 3/6", 1);
+    when(retriever.retrieveExact(any(), eq(WORDLE_PLAN))).thenReturn(completeExact(List.of(score)));
+    when(model.answer(QUESTION, List.of(score), DEADLINE))
+        .thenReturn(
+            routed(
+                answered(
+                    "Dom reported Wordle 1,877 in 3/6; call +1 (555) 555-0199 for details.",
+                    "score")));
+    when(retriever.retrieveChronological(any()))
+        .thenThrow(new IllegalStateException("source unavailable"));
+
+    GroupQuestionAnswer result = service.answer(ACCOUNT, GROUP, QUESTION, FROM, TO);
+
+    assertThat(result.status()).isNotEqualTo(AnswerStatus.ANSWERED);
+    assertThat(result.answer()).doesNotContain("555-0199", "Wordle 1,877");
+    assertThat(totalQuestionAnswers()).isEqualTo(1.0);
   }
 
   @Test
@@ -708,7 +791,7 @@ class ConversationQuestionAnsweringServiceTest {
             invocation -> {
               List<QuestionMessage> batch = invocation.getArgument(1);
               String evidenceGuid = batch.get(0).messageGuid();
-              return routed(answered("Supported finding for " + evidenceGuid + ".", evidenceGuid));
+              return routed(answered("A supported factual finding.", evidenceGuid));
             });
   }
 
@@ -721,7 +804,7 @@ class ConversationQuestionAnsweringServiceTest {
         .allSatisfy(
             batch -> {
               assertThat(batch).hasSizeLessThanOrEqualTo(maxMessages);
-              assertThat(batch.stream().mapToInt(message -> message.text().length()).sum())
+              assertThat(payloadSizer.answerInputCharacters(QUESTION, batch))
                   .isLessThanOrEqualTo(maxCharacters);
             });
   }

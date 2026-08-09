@@ -92,7 +92,25 @@ public final class ConversationQuestionAnsweringModels {
       List<MembershipInterval> memberships,
       Instant from,
       Instant to,
-      Instant deadline) {
+      Instant deadline,
+      ConversationHistoryMessageMapper.MappingSession mappingSession) {
+    public RetrievalRequest(
+        String accountId,
+        ConversationRecord conversation,
+        List<MembershipInterval> memberships,
+        Instant from,
+        Instant to,
+        Instant deadline) {
+      this(
+          accountId,
+          conversation,
+          memberships,
+          from,
+          to,
+          deadline,
+          new ConversationHistoryMessageMapper.MappingSession());
+    }
+
     public RetrievalRequest {
       requireNotBlank(accountId, "account id");
       if (conversation == null) {
@@ -104,6 +122,9 @@ public final class ConversationQuestionAnsweringModels {
       }
       if (deadline == null) {
         throw new IllegalArgumentException("retrieval deadline must not be null");
+      }
+      if (mappingSession == null) {
+        throw new IllegalArgumentException("mapping session must not be null");
       }
     }
   }

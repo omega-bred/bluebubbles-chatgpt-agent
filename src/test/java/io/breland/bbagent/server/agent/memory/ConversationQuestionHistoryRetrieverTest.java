@@ -6,7 +6,9 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
@@ -29,6 +31,7 @@ import io.breland.bbagent.server.agent.memory.ConversationQuestionAnsweringModel
 import io.breland.bbagent.server.agent.memory.ConversationQuestionAnsweringModels.SearchPlan;
 import io.breland.bbagent.server.agent.transport.bb.BBHttpClientWrapper;
 import java.time.Clock;
+import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
@@ -54,11 +57,33 @@ class ConversationQuestionHistoryRetrieverTest {
   private final ConversationMemoryStore store = Mockito.mock(ConversationMemoryStore.class);
   private final AgentAccountResolver accountResolver = Mockito.mock(AgentAccountResolver.class);
   private final ConversationHistoryMessageMapper mapper =
-      new ConversationHistoryMessageMapper(accountResolver);
+      Mockito.spy(new ConversationHistoryMessageMapper(accountResolver));
   private ConversationQuestionHistoryRetriever retriever;
 
   @BeforeEach
   void setUp() {
+    when(bb.searchConversationHistoryForQuestion(
+            anyString(), anyString(), any(), any(), anyInt(), anyInt(), any(Duration.class)))
+        .thenAnswer(
+            invocation ->
+                bb.searchConversationHistory(
+                    invocation.getArgument(0),
+                    invocation.getArgument(1),
+                    invocation.getArgument(2),
+                    invocation.getArgument(3),
+                    invocation.getArgument(4),
+                    invocation.getArgument(5)));
+    when(bb.getMessagesInChatForQuestion(
+            anyString(), any(), any(), anyInt(), anyInt(), anyString(), any(Duration.class)))
+        .thenAnswer(
+            invocation ->
+                bb.getMessagesInChat(
+                    invocation.getArgument(0),
+                    invocation.getArgument(1),
+                    invocation.getArgument(2),
+                    invocation.getArgument(3),
+                    invocation.getArgument(4),
+                    invocation.getArgument(5)));
     retriever = retriever(5, 500, 100, 3, 300_000, NOW);
   }
 
@@ -66,10 +91,11 @@ class ConversationQuestionHistoryRetrieverTest {
   void searchesEveryLiteralTermAndAddsAuthorizedNeighborContext() {
     Message hit = searchMessage(HIT_GUID, "Wordle 1,877 4/6", at("12:00"));
     Message duplicateHit = searchMessage(HIT_GUID, "Wordle 1,877 4/6", at("12:00"));
-    when(bb.searchConversationHistory(GUID, "Wordle", FROM, TO, 500, 0)).thenReturn(List.of(hit));
-    when(bb.searchConversationHistory(GUID, "1,877", FROM, TO, 500, 0))
+    when(bb.searchConversationHistory(GUID, "Wordle", at("11:00"), TO, 500, 0))
+        .thenReturn(List.of(hit));
+    when(bb.searchConversationHistory(GUID, "1,877", at("11:00"), TO, 500, 0))
         .thenReturn(List.of(duplicateHit));
-    when(bb.getMessagesInChat(GUID, FROM, at("12:00"), 0, 4, "DESC"))
+    when(bb.getMessagesInChat(GUID, at("11:00"), at("12:00"), 0, 4, "DESC"))
         .thenReturn(
             List.of(
                 raw("before", "good luck", at("11:59")),
@@ -276,6 +302,73 @@ class ConversationQuestionHistoryRetrieverTest {
   }
 
   @Test
+  void nonBlueBubblesExactRetrievalUsesAuthorizedJournalOnly() {
+    when(store.findMessages(CONVERSATION_ID, FROM, TO.minusNanos(1)))
+        .thenReturn(
+            List.of(
+                journal("matching", "account-2", "Wordle 1,877 3/6", at("12:00")),
+                journal("other", "account-2", "Dinner is at seven", at("12:01"))));
+
+    RetrievalResult result =
+        retriever.retrieveExact(request("lxmf", activeFrom("10:00")), plan("wordle"));
+
+    assertThat(result.messages())
+        .extracting(QuestionMessage::messageGuid)
+        .containsExactly("matching");
+    assertThat(result.coverageStatus()).isEqualTo(CoverageStatus.PARTIAL);
+    assertThat(result.partialReason()).isEqualTo("source_unavailable");
+    verifyNoInteractions(bb);
+  }
+
+  @Test
+  void nonBlueBubblesChronologicalRetrievalUsesAuthorizedJournalOnly() {
+    when(store.findMessages(CONVERSATION_ID, FROM, TO.minusNanos(1)))
+        .thenReturn(List.of(journal("journal", "account-2", "available", at("12:00"))));
+
+    RetrievalResult result =
+        retriever.retrieveChronological(request("future-transport", activeFrom("10:00")));
+
+    assertThat(result.messages())
+        .extracting(QuestionMessage::messageGuid)
+        .containsExactly("journal");
+    assertThat(result.coverageStatus()).isEqualTo(CoverageStatus.PARTIAL);
+    assertThat(result.partialReason()).isEqualTo("source_unavailable");
+    verifyNoInteractions(bb);
+  }
+
+  @Test
+  void exactRetrievalRejectsReturnedMessageFromAnotherChatBeforeMapping() {
+    Message mismatched =
+        searchMessage(HIT_GUID, "Wordle 1,877 3/6", at("12:00"))
+            .chats(List.of(new Chat().guid("other-chat")));
+    when(bb.searchConversationHistory(GUID, "Wordle", FROM, TO, 500, 0))
+        .thenReturn(List.of(mismatched));
+
+    RetrievalResult result = retriever.retrieveExact(request(activeFrom("10:00")), plan("Wordle"));
+
+    assertThat(result.messages()).isEmpty();
+    verifyNoInteractions(accountResolver);
+    verify(bb, never())
+        .getMessagesInChat(anyString(), any(), any(), anyInt(), anyInt(), anyString());
+  }
+
+  @Test
+  void chronologicalRetrievalRejectsReturnedMessageFromAnotherChatBeforeMapping() {
+    ApiV1ChatChatGuidMessageGet200ResponseDataInner mismatched =
+        raw("other-chat-message", "private", at("12:00"))
+            .chats(
+                List.of(
+                    new ApiV1ChatChatGuidMessageGet200ResponseDataInnerChatsInner()
+                        .guid("other-chat")));
+    when(bb.getMessagesInChat(GUID, FROM, TO, 0, 500, "ASC")).thenReturn(List.of(mismatched));
+
+    RetrievalResult result = retriever.retrieveChronological(request(activeFrom("10:00")));
+
+    assertThat(result.messages()).isEmpty();
+    verifyNoInteractions(accountResolver);
+  }
+
+  @Test
   void rejectsInvalidSearchPlansWithoutSourceAccess() {
     assertThatIllegalArgumentException()
         .isThrownBy(
@@ -295,8 +388,8 @@ class ConversationQuestionHistoryRetrieverTest {
   void chronologicallyPagesAndFiltersEveryCandidateByMembership() {
     List<ApiV1ChatChatGuidMessageGet200ResponseDataInner> firstPage =
         new ArrayList<>(Collections.nCopies(500, raw("duplicate", "first", at("11:30"))));
-    when(bb.getMessagesInChat(GUID, FROM, TO, 0, 500, "ASC")).thenReturn(firstPage);
-    when(bb.getMessagesInChat(GUID, FROM, TO, 500, 500, "ASC"))
+    when(bb.getMessagesInChat(GUID, at("11:00"), at("13:00"), 0, 500, "ASC")).thenReturn(firstPage);
+    when(bb.getMessagesInChat(GUID, at("11:00"), at("13:00"), 500, 500, "ASC"))
         .thenReturn(
             List.of(raw("later", "second", at("12:00")), raw("outside", "secret", at("13:30"))));
 
@@ -312,10 +405,64 @@ class ConversationQuestionHistoryRetrieverTest {
   }
 
   @Test
-  void fallsBackToJournalOnlyWhenBlueBubblesFails() {
+  void deduplicatesRawGuidsBeforeMapping() {
+    ApiV1ChatChatGuidMessageGet200ResponseDataInner duplicate =
+        raw("duplicate", "available", at("11:30"));
+    when(bb.getMessagesInChat(GUID, FROM, TO, 0, 500, "ASC"))
+        .thenReturn(List.of(duplicate, duplicate));
+
+    RetrievalRequest request = request(activeFrom("10:00"));
+    RetrievalResult result = retriever.retrieveChronological(request);
+
+    assertThat(result.messages())
+        .extracting(QuestionMessage::messageGuid)
+        .containsExactly("duplicate");
+    verify(mapper, times(1)).fromBlueBubbles(any(), eq(ACCOUNT_ID), eq(request.mappingSession()));
+  }
+
+  @Test
+  void cachesNormalizedBlueBubblesIdentityResolutionWithinOneRequest() {
+    when(bb.getMessagesInChat(GUID, FROM, TO, 0, 500, "ASC"))
+        .thenReturn(
+            List.of(
+                raw("first", "first", at("11:30"), "+1 (555) 555-0199"),
+                raw("second", "second", at("11:31"), "+15555550199")));
+    when(accountResolver.resolve(any(IncomingMessage.class)))
+        .thenReturn(Optional.of(TestAccounts.resolved("account-dom", "Dom")));
+
+    RetrievalResult result = retriever.retrieveChronological(request(activeFrom("10:00")));
+
+    assertThat(result.messages())
+        .extracting(QuestionMessage::participant)
+        .containsExactly("Dom", "Dom");
+    verify(accountResolver, times(1)).resolve(any(IncomingMessage.class));
+  }
+
+  @Test
+  void cachesJournalAccountResolutionWithinOneRequest() {
     when(bb.getMessagesInChat(GUID, FROM, TO, 0, 500, "ASC"))
         .thenThrow(new IllegalStateException("unavailable"));
     when(store.findMessages(CONVERSATION_ID, FROM, TO.minusNanos(1)))
+        .thenReturn(
+            List.of(
+                journal("first", "account-2", "first", at("11:30")),
+                journal("second", "account-2", "second", at("11:31"))));
+    when(accountResolver.resolveById("account-2"))
+        .thenReturn(Optional.of(TestAccounts.resolved("account-2", "Dom")));
+
+    RetrievalResult result = retriever.retrieveChronological(request(activeFrom("10:00")));
+
+    assertThat(result.messages())
+        .extracting(QuestionMessage::participant)
+        .containsExactly("Dom", "Dom");
+    verify(accountResolver, times(1)).resolveById("account-2");
+  }
+
+  @Test
+  void fallsBackToJournalOnlyWhenBlueBubblesFails() {
+    when(bb.getMessagesInChat(GUID, at("11:00"), at("13:00"), 0, 500, "ASC"))
+        .thenThrow(new IllegalStateException("unavailable"));
+    when(store.findMessages(CONVERSATION_ID, at("11:00"), at("13:00").minusNanos(1)))
         .thenReturn(
             List.of(
                 journal("m-1", "account-2", "available", at("12:00")),
@@ -440,6 +587,77 @@ class ConversationQuestionHistoryRetrieverTest {
   }
 
   @Test
+  void pagesOnlyClippedAuthorizedIntervalsAcrossMembershipGaps() {
+    Instant firstEnd = at("10:30");
+    Instant secondStart = at("13:30");
+    when(bb.searchConversationHistory(GUID, "Wordle", FROM, firstEnd, 500, 0))
+        .thenReturn(List.of());
+    when(bb.searchConversationHistory(GUID, "Wordle", secondStart, TO, 500, 0))
+        .thenReturn(List.of());
+
+    RetrievalResult result =
+        retriever.retrieveExact(
+            request(
+                new MembershipInterval(FROM, firstEnd), new MembershipInterval(secondStart, TO)),
+            plan("Wordle"));
+
+    assertThat(result.coverageStatus()).isEqualTo(CoverageStatus.COMPLETE);
+    assertThat(result.pageCount()).isEqualTo(2);
+    verify(bb, never()).searchConversationHistory(GUID, "Wordle", FROM, TO, 500, 0);
+  }
+
+  @Test
+  void chronologicalPagingResetsInsideEachAuthorizedInterval() {
+    Instant firstEnd = at("10:30");
+    Instant secondStart = at("13:30");
+    when(bb.getMessagesInChat(GUID, FROM, firstEnd, 0, 500, "ASC"))
+        .thenReturn(List.of(raw("first", "first", at("10:15"))));
+    when(bb.getMessagesInChat(GUID, secondStart, TO, 0, 500, "ASC"))
+        .thenReturn(List.of(raw("second", "second", at("13:45"))));
+
+    RetrievalResult result =
+        retriever.retrieveChronological(
+            request(
+                new MembershipInterval(FROM, firstEnd), new MembershipInterval(secondStart, TO)));
+
+    assertThat(result.messages())
+        .extracting(QuestionMessage::messageGuid)
+        .containsExactly("first", "second");
+    assertThat(result.pageCount()).isEqualTo(2);
+    verify(bb, never()).getMessagesInChat(GUID, FROM, TO, 0, 500, "ASC");
+  }
+
+  @Test
+  void neighborQueriesStayInsideTheHitsAuthorizedInterval() {
+    Instant membershipStart = at("11:00");
+    Instant membershipEnd = at("13:00");
+    when(bb.searchConversationHistory(GUID, "Wordle", membershipStart, membershipEnd, 500, 0))
+        .thenReturn(List.of(searchMessage(HIT_GUID, "Wordle", at("12:00"))));
+    when(bb.getMessagesInChat(GUID, membershipStart, at("12:00"), 0, 4, "DESC"))
+        .thenReturn(List.of());
+    when(bb.getMessagesInChat(GUID, at("12:00"), membershipEnd, 0, 4, "ASC")).thenReturn(List.of());
+
+    retriever.retrieveExact(
+        request(new MembershipInterval(membershipStart, membershipEnd)), plan("Wordle"));
+
+    verify(bb).getMessagesInChat(GUID, membershipStart, at("12:00"), 0, 4, "DESC");
+    verify(bb).getMessagesInChat(GUID, at("12:00"), membershipEnd, 0, 4, "ASC");
+    verify(bb, never()).getMessagesInChat(GUID, FROM, at("12:00"), 0, 4, "DESC");
+    verify(bb, never()).getMessagesInChat(GUID, at("12:00"), TO, 0, 4, "ASC");
+  }
+
+  @Test
+  void passesTheOperationRemainingDurationToEveryQaSourceCall() {
+    when(bb.searchConversationHistory(GUID, "Wordle", FROM, TO, 500, 0)).thenReturn(List.of());
+
+    retriever.retrieveExact(request(activeFrom("10:00")), plan("Wordle"));
+
+    verify(bb)
+        .searchConversationHistoryForQuestion(
+            GUID, "Wordle", FROM, TO, 500, 0, Duration.ofMinutes(30));
+  }
+
+  @Test
   void journalFallbackCoverageEndsAtTheLastAvailableJournalMessage() {
     when(bb.getMessagesInChat(GUID, FROM, TO, 0, 500, "ASC"))
         .thenReturn(Collections.nCopies(500, raw("bluebubbles", "newer", at("12:30"))));
@@ -492,10 +710,14 @@ class ConversationQuestionHistoryRetrieverTest {
   }
 
   private RetrievalRequest request(MembershipInterval... memberships) {
+    return request("bluebubbles", memberships);
+  }
+
+  private RetrievalRequest request(String transport, MembershipInterval... memberships) {
     return new RetrievalRequest(
         ACCOUNT_ID,
         new ConversationRecord(
-            CONVERSATION_ID, "bluebubbles", GUID, true, "Group", FROM, ACCOUNT_ID, TO),
+            CONVERSATION_ID, transport, GUID, true, "Group", FROM, ACCOUNT_ID, TO),
         List.of(memberships),
         FROM,
         TO,
