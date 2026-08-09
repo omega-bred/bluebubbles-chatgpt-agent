@@ -693,6 +693,26 @@ class ConversationQuestionAnsweringServiceTest {
   }
 
   @Test
+  void wrongParticipantScoreTupleCannotBypassTheServiceValidationBoundary() {
+    QuestionMessage dom = message("m-dom", "Dom", "Wordle 1877 was 5/6", 1);
+    QuestionMessage eve = message("m-eve", "Eve", "Wordle 1877 was 3/6", 2);
+    when(retriever.retrieveExact(any(), eq(WORDLE_PLAN)))
+        .thenReturn(completeExact(List.of(dom, eve)));
+    when(model.answer(QUESTION, List.of(dom, eve), DEADLINE))
+        .thenReturn(
+            routed(
+                answered("Dom reported puzzle 1877 in 3/6", dom.messageGuid(), eve.messageGuid())));
+    when(retriever.retrieveChronological(any()))
+        .thenThrow(new IllegalStateException("source unavailable"));
+
+    GroupQuestionAnswer result = service.answer(ACCOUNT, GROUP, QUESTION, FROM, TO);
+
+    assertThat(result.status()).isNotEqualTo(AnswerStatus.ANSWERED);
+    assertThat(result.answer()).doesNotContain("Dom reported puzzle 1877 in 3/6");
+    assertThat(totalQuestionAnswers()).isEqualTo(1.0);
+  }
+
+  @Test
   void emptyMembershipReturnsInsufficientEvidenceWithoutHistoryOrModelAccess() {
     when(store.findMembershipIntervals(CONVERSATION_ID, ACCOUNT, FROM, TO)).thenReturn(List.of());
 

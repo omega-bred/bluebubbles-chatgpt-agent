@@ -248,30 +248,87 @@ public final class ConversationQuestionAnsweringModels {
     }
   }
 
-  public record QuestionFinding(
-      String answer,
-      Confidence confidence,
-      List<String> evidenceMessageGuids,
-      Instant coverageThrough,
-      Set<String> trustedParticipantLabels) {
+  public static final class QuestionFinding {
+    private final String answer;
+    private final Confidence confidence;
+    private final List<String> evidenceMessageGuids;
+    private final Instant coverageThrough;
+    private final List<TrustedQuestionFact> trustedFacts;
+
     public QuestionFinding(
         String answer,
         Confidence confidence,
         List<String> evidenceMessageGuids,
         Instant coverageThrough) {
-      this(answer, confidence, evidenceMessageGuids, coverageThrough, Set.of());
+      this(answer, confidence, evidenceMessageGuids, coverageThrough, List.of());
     }
 
-    public QuestionFinding {
+    private QuestionFinding(
+        String answer,
+        Confidence confidence,
+        List<String> evidenceMessageGuids,
+        Instant coverageThrough,
+        List<TrustedQuestionFact> trustedFacts) {
       requireNotBlank(answer, "answer");
       if (confidence == null) {
         throw new IllegalArgumentException("confidence must not be null");
       }
-      evidenceMessageGuids = List.copyOf(evidenceMessageGuids);
       if (coverageThrough == null) {
         throw new IllegalArgumentException("coverage through must not be null");
       }
-      trustedParticipantLabels = Set.copyOf(trustedParticipantLabels);
+      this.answer = answer;
+      this.confidence = confidence;
+      this.evidenceMessageGuids = List.copyOf(evidenceMessageGuids);
+      this.coverageThrough = coverageThrough;
+      this.trustedFacts = List.copyOf(trustedFacts);
+      Set<String> evidence = Set.copyOf(this.evidenceMessageGuids);
+      if (this.trustedFacts.stream()
+          .anyMatch(fact -> !evidence.contains(fact.evidenceMessageGuid()))) {
+        throw new IllegalArgumentException("trusted fact evidence must belong to finding");
+      }
+    }
+
+    static QuestionFinding trusted(
+        String answer,
+        Confidence confidence,
+        List<String> evidenceMessageGuids,
+        Instant coverageThrough,
+        List<TrustedQuestionFact> trustedFacts) {
+      return new QuestionFinding(
+          answer, confidence, evidenceMessageGuids, coverageThrough, trustedFacts);
+    }
+
+    public String answer() {
+      return answer;
+    }
+
+    public Confidence confidence() {
+      return confidence;
+    }
+
+    public List<String> evidenceMessageGuids() {
+      return evidenceMessageGuids;
+    }
+
+    public Instant coverageThrough() {
+      return coverageThrough;
+    }
+
+    List<TrustedQuestionFact> trustedFacts() {
+      return trustedFacts;
+    }
+  }
+
+  record TrustedQuestionFact(
+      String evidenceMessageGuid,
+      String participantLabel,
+      @Nullable String puzzleId,
+      String score) {
+    TrustedQuestionFact {
+      requireNotBlank(evidenceMessageGuid, "trusted fact evidence");
+      requireNotBlank(participantLabel, "trusted fact participant");
+      puzzleId = StringUtils.trimToNull(puzzleId);
+      requireNotBlank(score, "trusted fact score");
     }
   }
 

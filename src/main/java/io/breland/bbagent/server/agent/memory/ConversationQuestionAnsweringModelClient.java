@@ -12,6 +12,7 @@ import io.breland.bbagent.server.agent.memory.ConversationQuestionAnsweringModel
 import io.breland.bbagent.server.agent.memory.ConversationQuestionAnsweringModels.QuestionMessage;
 import io.breland.bbagent.server.agent.memory.ConversationQuestionAnsweringModels.RoutedModelAnswer;
 import io.breland.bbagent.server.agent.memory.ConversationQuestionAnsweringModels.SearchPlan;
+import io.breland.bbagent.server.agent.memory.ConversationQuestionAnsweringModels.TrustedQuestionFact;
 import java.time.Instant;
 import java.time.format.DateTimeParseException;
 import java.util.LinkedHashMap;
@@ -135,9 +136,7 @@ public class ConversationQuestionAnsweringModelClient {
             providerInput.messageGuids(),
             providerInput.evidenceAliases(),
             submittedMessages.stream().map(QuestionMessage::text).toList(),
-            submittedMessages.stream()
-                .map(QuestionMessage::participant)
-                .collect(java.util.stream.Collectors.toUnmodifiableSet())),
+            ConversationQuestionAnswerOutputValidator.trustedFacts(submittedMessages)),
         routed.model(),
         routed.fallbackUsed());
   }
@@ -168,8 +167,8 @@ public class ConversationQuestionAnsweringModelClient {
             providerInput.evidenceAliases(),
             submittedFindings.stream().map(QuestionFinding::answer).toList(),
             submittedFindings.stream()
-                .flatMap(finding -> finding.trustedParticipantLabels().stream())
-                .collect(java.util.stream.Collectors.toUnmodifiableSet())),
+                .flatMap(finding -> finding.trustedFacts().stream())
+                .toList()),
         routed.model(),
         routed.fallbackUsed());
   }
@@ -263,7 +262,7 @@ public class ConversationQuestionAnsweringModelClient {
       Set<String> forbiddenIdentifiers,
       Set<String> opaqueEvidenceAliases,
       List<String> submittedSourceTexts,
-      Set<String> trustedParticipantLabels) {
+      List<TrustedQuestionFact> trustedFacts) {
     if (raw == null) {
       throw new IllegalStateException("invalid question answer response");
     }
@@ -293,7 +292,8 @@ public class ConversationQuestionAnsweringModelClient {
         forbiddenIdentifiers,
         opaqueEvidenceAliases,
         submittedSourceTexts,
-        trustedParticipantLabels);
+        trustedFacts,
+        Set.copyOf(evidence));
     return new ModelAnswer(
         status, answer, confidence, List.copyOf(evidence), raw.needsMoreContext());
   }

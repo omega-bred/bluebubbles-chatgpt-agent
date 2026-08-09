@@ -50,6 +50,44 @@ class ConversationHistoryMessageMapperTest {
   }
 
   @Test
+  void fallsBackToMaskedIdentityForAnOverlongGlobalContactNameWithoutMutatingIt() {
+    String overlongName = "D".repeat(161);
+    AgentAccountEntity account = account("account-2", overlongName);
+    when(accountResolver.resolve(any(IncomingMessage.class)))
+        .thenReturn(Optional.of(new ResolvedAccount(account, List.of())));
+
+    QuestionMessage mapped =
+        mapper.fromBlueBubbles(rawMessage("+15555550199"), "account-1").orElseThrow();
+
+    assertThat(mapped.participant()).isEqualTo("participant ending 0199");
+    assertThat(account.getGlobalContactName()).isEqualTo(overlongName);
+    verify(accountResolver, never()).resolveOrCreate(any(IncomingMessage.class));
+  }
+
+  @Test
+  void fallsBackToUnknownForAGlobalContactNameWithMoreThanEightTokens() {
+    String unsafeName = "one two three four five six seven eight nine";
+    AgentAccountEntity account = account("account-2", unsafeName);
+    when(accountResolver.resolveById("account-2"))
+        .thenReturn(Optional.of(new ResolvedAccount(account, List.of())));
+    JournalMessage message =
+        new JournalMessage(
+            "journal-1",
+            "conversation-1",
+            "account-2",
+            "We chose Saturday",
+            Instant.parse("2026-08-09T10:00:00Z"),
+            false,
+            false,
+            "hash");
+
+    QuestionMessage mapped = mapper.fromJournal(message, "account-1").orElseThrow();
+
+    assertThat(mapped.participant()).isEqualTo("unknown participant");
+    assertThat(account.getGlobalContactName()).isEqualTo(unsafeName);
+  }
+
+  @Test
   void masksUnknownIdentityAndRejectsIneligibleEvents() {
     when(accountResolver.resolve(any(IncomingMessage.class))).thenReturn(Optional.empty());
 
@@ -143,9 +181,13 @@ class ConversationHistoryMessageMapperTest {
   }
 
   private ResolvedAccount resolved(String accountId, String globalContactName) {
+    return new ResolvedAccount(account(accountId, globalContactName), List.of());
+  }
+
+  private AgentAccountEntity account(String accountId, String globalContactName) {
     Instant now = Instant.parse("2026-08-09T10:00:00Z");
     AgentAccountEntity account = new AgentAccountEntity(accountId, now, now);
     account.setGlobalContactName(globalContactName);
-    return new ResolvedAccount(account, List.of());
+    return account;
   }
 }

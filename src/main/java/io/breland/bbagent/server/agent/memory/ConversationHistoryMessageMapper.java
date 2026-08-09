@@ -133,7 +133,10 @@ public class ConversationHistoryMessageMapper {
     if (StringUtils.equals(account.account().getAccountId(), requestingAccountId)) {
       return Optional.of(YOU);
     }
-    return Optional.ofNullable(StringUtils.trimToNull(account.account().getGlobalContactName()));
+    String globalContactName = StringUtils.trimToNull(account.account().getGlobalContactName());
+    return ConversationQuestionAnswerOutputValidator.isSafeParticipantLabel(globalContactName)
+        ? Optional.of(globalContactName)
+        : Optional.empty();
   }
 
   private String maskedIdentity(IncomingMessage message) {

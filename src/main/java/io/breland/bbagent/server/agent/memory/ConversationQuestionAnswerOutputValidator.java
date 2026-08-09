@@ -1,5 +1,7 @@
 package io.breland.bbagent.server.agent.memory;
 
+import io.breland.bbagent.server.agent.memory.ConversationQuestionAnsweringModels.QuestionMessage;
+import io.breland.bbagent.server.agent.memory.ConversationQuestionAnsweringModels.TrustedQuestionFact;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeFormatterBuilder;
@@ -29,6 +31,7 @@ final class ConversationQuestionAnswerOutputValidator {
   private static final int MIN_SHORT_MESSAGE_CHARACTERS = 16;
   private static final int MAX_COMPLETE_TINY_MESSAGE_MATCHES = 1;
   private static final int MAX_COMPLETE_TINY_MESSAGE_TOKENS = 4;
+  private static final int MAX_SAFE_GLOBAL_UNIGRAM_MATCHES = 16;
   private static final int MAX_SENSITIVE_SOURCE_IDENTIFIERS = 20_000;
   private static final int MAX_PARTICIPANT_LABEL_TOKENS = 8;
   private static final int MAX_PARTICIPANT_LABEL_CHARACTERS = 160;
@@ -42,7 +45,8 @@ final class ConversationQuestionAnswerOutputValidator {
   private static final Pattern PATH_IDENTIFIER =
       Pattern.compile("(?i)(?<![a-z0-9])/[a-z0-9._~!$&'()*+,;=:@%/-]+");
   private static final Pattern NUMBER_CANDIDATE =
-      Pattern.compile("(?<![\\p{L}\\p{N}])\\+?\\d[\\d\\s().-]{5,}\\d(?![\\p{L}\\p{N}])");
+      Pattern.compile(
+          "(?<![\\p{L}\\p{N}])\\+?\\d[\\d\\s()./\\-\\u2010-\\u2015\\u2212\\uFE58\\uFE63\\uFF0D]{5,}\\d(?![\\p{L}\\p{N}])");
   private static final Pattern BARE_LONG_NUMBER =
       Pattern.compile("(?<![\\p{L}\\p{N}])\\d{7,}(?![\\p{L}\\p{N}])");
   private static final Pattern GROUPED_LONG_NUMBER =
@@ -62,6 +66,29 @@ final class ConversationQuestionAnswerOutputValidator {
   private static final Set<String> SCORE_CONNECTORS = Set.of("in", "with");
   private static final Set<String> SAFE_SCORE_RENDERING_TOKENS =
       Set.of("reported", "puzzle", "wordle", "in", "with", "score", "scores");
+  private static final Set<String> SAFE_GENERATED_TOKENS =
+      Set.of(
+          "a",
+          "an",
+          "and",
+          "according",
+          "evidence",
+          "in",
+          "is",
+          "of",
+          "only",
+          "puzzle",
+          "reported",
+          "result",
+          "results",
+          "score",
+          "scores",
+          "the",
+          "to",
+          "was",
+          "were",
+          "with",
+          "wordle");
   private static final DateTimeFormatter US_DASH_DATE =
       new DateTimeFormatterBuilder()
           .appendPattern("MM-dd-uuuu")
@@ -88,7 +115,8 @@ final class ConversationQuestionAnswerOutputValidator {
 
   static void requireSafe(
       String answer, Set<String> forbiddenEvidenceIdentifiers, List<String> submittedSourceTexts) {
-    requireSafe(answer, forbiddenEvidenceIdentifiers, Set.of(), submittedSourceTexts, Set.of());
+    requireSafe(
+        answer, forbiddenEvidenceIdentifiers, Set.of(), submittedSourceTexts, List.of(), Set.of());
   }
 
   static void requireSafe(
@@ -101,6 +129,7 @@ final class ConversationQuestionAnswerOutputValidator {
         forbiddenEvidenceIdentifiers,
         opaqueEvidenceAliases,
         submittedSourceTexts,
+        List.of(),
         Set.of());
   }
 
@@ -109,33 +138,38 @@ final class ConversationQuestionAnswerOutputValidator {
       Set<String> forbiddenEvidenceIdentifiers,
       Set<String> opaqueEvidenceAliases,
       List<String> submittedSourceTexts,
-      Set<String> trustedParticipantLabels) {
+      List<TrustedQuestionFact> trustedFacts,
+      Set<String> citedEvidenceIdentifiers) {
     if (!isSafe(
         answer,
         forbiddenEvidenceIdentifiers,
         opaqueEvidenceAliases,
         submittedSourceTexts,
-        trustedParticipantLabels)) {
+        trustedFacts,
+        citedEvidenceIdentifiers)) {
       throw new IllegalStateException("unsafe question answer response");
     }
   }
 
   static boolean isSafe(
       String answer, Set<String> forbiddenEvidenceIdentifiers, List<String> submittedSourceTexts) {
-    return isSafe(answer, forbiddenEvidenceIdentifiers, Set.of(), submittedSourceTexts, Set.of());
+    return isSafe(
+        answer, forbiddenEvidenceIdentifiers, Set.of(), submittedSourceTexts, List.of(), Set.of());
   }
 
   static boolean isSafe(
       String answer,
       Set<String> forbiddenEvidenceIdentifiers,
       List<String> submittedSourceTexts,
-      Set<String> trustedParticipantLabels) {
+      List<TrustedQuestionFact> trustedFacts,
+      Set<String> citedEvidenceIdentifiers) {
     return isSafe(
         answer,
         forbiddenEvidenceIdentifiers,
         Set.of(),
         submittedSourceTexts,
-        trustedParticipantLabels);
+        trustedFacts,
+        citedEvidenceIdentifiers);
   }
 
   private static boolean isSafe(
@@ -143,14 +177,16 @@ final class ConversationQuestionAnswerOutputValidator {
       Set<String> forbiddenEvidenceIdentifiers,
       Set<String> opaqueEvidenceAliases,
       List<String> submittedSourceTexts,
-      Set<String> trustedParticipantLabels) {
+      List<TrustedQuestionFact> trustedFacts,
+      Set<String> citedEvidenceIdentifiers) {
     try {
       return evaluate(
           answer,
           forbiddenEvidenceIdentifiers,
           opaqueEvidenceAliases,
           submittedSourceTexts,
-          trustedParticipantLabels);
+          trustedFacts,
+          citedEvidenceIdentifiers);
     } catch (RuntimeException ignored) {
       return false;
     }
@@ -161,7 +197,8 @@ final class ConversationQuestionAnswerOutputValidator {
       Set<String> forbiddenEvidenceIdentifiers,
       Set<String> opaqueEvidenceAliases,
       List<String> submittedSourceTexts,
-      Set<String> trustedParticipantLabels) {
+      List<TrustedQuestionFact> trustedFactMetadata,
+      Set<String> citedEvidenceIdentifiers) {
     String normalizedAnswer = StringUtils.trimToNull(answer);
     List<String> sources = submittedSourceTexts == null ? List.of() : submittedSourceTexts;
     if (normalizedAnswer == null
@@ -175,8 +212,9 @@ final class ConversationQuestionAnswerOutputValidator {
     }
 
     List<TokenValue> answerTokens = tokens(normalizedAnswer);
-    TrustedFacts trustedFacts = new TrustedFacts(trustedParticipantLabels);
+    TrustedFacts trustedFacts = new TrustedFacts(trustedFactMetadata, citedEvidenceIdentifiers);
     Set<NgramKey> sourceNgrams = new HashSet<>();
+    Map<String, Integer> sourceUnigrams = new HashMap<>();
     Map<Integer, Set<NgramKey>> wholeShortMessages = new HashMap<>();
     Map<Integer, Set<NgramKey>> completeTinyMessages = new HashMap<>();
     SourceIdentifiers sourceIdentifiers = new SourceIdentifiers();
@@ -192,12 +230,12 @@ final class ConversationQuestionAnswerOutputValidator {
       }
       collectSourceIdentifiers(sourceText, sourceIdentifiers);
       List<TokenValue> values = tokens(sourceText);
-      trustedFacts.collectSourceFacts(values);
       sourceTokens = Math.addExact(sourceTokens, values.size());
       if (sourceTokens > MAX_SOURCE_TOKENS) {
         return false;
       }
       addNgrams(sourceNgrams, values, MATCH_NGRAM_TOKENS);
+      addUnigrams(sourceUnigrams, values);
       int phraseCharacters = phraseCharacters(values, 0, values.size());
       if (!values.isEmpty()) {
         if (values.size() <= 2) {
@@ -222,7 +260,8 @@ final class ConversationQuestionAnswerOutputValidator {
         || containsSourceIdentifier(normalizedAnswer, sourceIdentifiers)
         || reproducesWholeShortMessage(answerTokens, wholeShortMessages)
         || hasUnsafeCompleteTinyMessageMontage(
-            answerTokens, supportedAnswerFacts, completeTinyMessages)) {
+            answerTokens, supportedAnswerFacts, completeTinyMessages)
+        || hasUnsafeGlobalUnigramMontage(answerTokens, supportedAnswerFacts, sourceUnigrams)) {
       return false;
     }
     return !hasUnsafeCumulativeOverlap(answerTokens, supportedAnswerFacts, sourceNgrams);
@@ -390,7 +429,7 @@ final class ConversationQuestionAnswerOutputValidator {
   }
 
   private static boolean isRealisticPhone(String candidate) {
-    String normalized = candidate.strip();
+    String normalized = normalizePhoneCandidate(candidate);
     int digitCount = digits(normalized).length();
     if (digitCount < 7 || digitCount > 15 || isValidCalendarDate(normalized)) {
       return false;
@@ -399,6 +438,24 @@ final class ConversationQuestionAnswerOutputValidator {
         || normalized.indexOf('(') >= 0
         || normalized.indexOf(')') >= 0
         || PHONE_FORMAT.matcher(normalized).matches();
+  }
+
+  private static String normalizePhoneCandidate(String candidate) {
+    StringBuilder normalized = new StringBuilder(candidate.length());
+    for (int index = 0; index < candidate.length(); index++) {
+      char value = candidate.charAt(index);
+      if (value == '/'
+          || (value >= '\u2010' && value <= '\u2015')
+          || value == '\u2212'
+          || value == '\uFE58'
+          || value == '\uFE63'
+          || value == '\uFF0D') {
+        normalized.append('-');
+      } else {
+        normalized.append(value);
+      }
+    }
+    return normalized.toString().strip();
   }
 
   private static boolean isValidCalendarDate(String value) {
@@ -511,7 +568,7 @@ final class ConversationQuestionAnswerOutputValidator {
       return new EndpointValue(endpointKey("[" + host + "]", suffix), suffix.path());
     }
 
-    int pathStart = value.indexOf('/');
+    int pathStart = firstEndpointSuffixIndex(value, 0);
     String authority = pathStart < 0 ? value : value.substring(0, pathStart);
     String rawPath = pathStart < 0 ? "" : value.substring(pathStart);
     if (authority.isEmpty()) {
@@ -539,15 +596,16 @@ final class ConversationQuestionAnswerOutputValidator {
     }
     String normalizedHost = host.toLowerCase(Locale.ROOT);
     String normalizedPath = normalizePath(rawPath);
-    boolean hasPath = normalizedPath.length() > 1;
+    boolean hasPathOrQuery = !rawPath.isEmpty();
     boolean validHost =
         isValidIpv4(normalizedHost)
             || isValidDomain(normalizedHost)
-            || ("localhost".equals(normalizedHost) && (port != null || hasPath))
+            || ("localhost".equals(normalizedHost) && (port != null || hasPathOrQuery))
             || (port != null
                 && containsAsciiLetter(normalizedHost)
                 && isValidHostnameLabel(normalizedHost));
-    if (!validHost || isAllowedBareCodeToken(normalizedHost, port, normalizedPath)) {
+    if (!validHost
+        || isAllowedBareCodeToken(normalizedHost, port, normalizedPath, hasPathOrQuery)) {
       return null;
     }
     EndpointSuffix suffix = new EndpointSuffix(port, normalizedPath);
@@ -589,18 +647,27 @@ final class ConversationQuestionAnswerOutputValidator {
     Integer port = null;
     int pathStart = 0;
     if (suffix.charAt(0) == ':') {
-      pathStart = suffix.indexOf('/');
+      pathStart = firstEndpointSuffixIndex(suffix, 1);
       String rawPort = pathStart < 0 ? suffix.substring(1) : suffix.substring(1, pathStart);
       port = parsePort(rawPort);
       if (port == null) {
         return null;
       }
     }
-    if (pathStart == 0 && suffix.charAt(0) != '/') {
+    if (pathStart == 0 && "/?#".indexOf(suffix.charAt(0)) < 0) {
       return null;
     }
     String path = pathStart < 0 ? "" : normalizePath(suffix.substring(pathStart));
     return new EndpointSuffix(port, path);
+  }
+
+  private static int firstEndpointSuffixIndex(String value, int from) {
+    for (int index = Math.max(0, from); index < value.length(); index++) {
+      if ("/?#".indexOf(value.charAt(index)) >= 0) {
+        return index;
+      }
+    }
+    return -1;
   }
 
   private static Integer parsePort(String value) {
@@ -624,8 +691,10 @@ final class ConversationQuestionAnswerOutputValidator {
         + StringUtils.trimToEmpty(suffix.path());
   }
 
-  private static boolean isAllowedBareCodeToken(String host, Integer port, String normalizedPath) {
+  private static boolean isAllowedBareCodeToken(
+      String host, Integer port, String normalizedPath, boolean hasPathOrQuery) {
     return port == null
+        && !hasPathOrQuery
         && StringUtils.isEmpty(normalizedPath)
         && ("node.js".equals(host) || "package.json".equals(host));
   }
@@ -653,15 +722,27 @@ final class ConversationQuestionAnswerOutputValidator {
   }
 
   private static boolean isValidIpv6(String value) {
-    if (value.length() < 2 || value.length() > 45) {
+    if (value.length() < 2 || value.length() > 80) {
       return false;
     }
-    int compression = value.indexOf("::");
-    if (compression >= 0 && value.indexOf("::", compression + 2) >= 0) {
+    int zoneStart = value.indexOf('%');
+    String address = value;
+    if (zoneStart >= 0) {
+      if (value.indexOf('%', zoneStart + 1) >= 0
+          || !isValidIpv6Zone(value.substring(zoneStart + 1))) {
+        return false;
+      }
+      address = value.substring(0, zoneStart);
+    }
+    int compression = address.indexOf("::");
+    if (compression >= 0 && address.indexOf("::", compression + 2) >= 0) {
       return false;
     }
-    String left = compression < 0 ? value : value.substring(0, compression);
-    String right = compression < 0 ? "" : value.substring(compression + 2);
+    String left = compression < 0 ? address : address.substring(0, compression);
+    String right = compression < 0 ? "" : address.substring(compression + 2);
+    if (compression >= 0 && left.indexOf('.') >= 0) {
+      return false;
+    }
     int groups = validIpv6Groups(left);
     if (groups < 0) {
       return false;
@@ -673,27 +754,52 @@ final class ConversationQuestionAnswerOutputValidator {
     return groups == 8;
   }
 
+  private static boolean isValidIpv6Zone(String zone) {
+    if (zone.isEmpty() || zone.length() > 32) {
+      return false;
+    }
+    for (int index = 0; index < zone.length(); index++) {
+      char value = zone.charAt(index);
+      if (!Character.isLetterOrDigit(value) && "._-".indexOf(value) < 0) {
+        return false;
+      }
+    }
+    return true;
+  }
+
   private static int validIpv6Groups(String value) {
     if (value.isEmpty()) {
       return 0;
     }
-    int groups = 1;
-    int groupLength = 0;
+    int groups = 0;
+    int groupStart = 0;
     for (int index = 0; index <= value.length(); index++) {
       if (index == value.length() || value.charAt(index) == ':') {
-        if (groupLength == 0 || groupLength > 4) {
+        if (index == groupStart) {
           return -1;
         }
-        groups++;
-        groupLength = 0;
+        String group = value.substring(groupStart, index);
+        if (group.indexOf('.') >= 0) {
+          if (index != value.length() || !isValidIpv4(group)) {
+            return -1;
+          }
+          groups += 2;
+        } else {
+          if (group.length() > 4) {
+            return -1;
+          }
+          for (int character = 0; character < group.length(); character++) {
+            if (Character.digit(group.charAt(character), 16) < 0) {
+              return -1;
+            }
+          }
+          groups++;
+        }
+        groupStart = index + 1;
         continue;
       }
-      if (Character.digit(value.charAt(index), 16) < 0) {
-        return -1;
-      }
-      groupLength++;
     }
-    return groups - 1;
+    return groups;
   }
 
   private static boolean isValidDomain(String value) {
@@ -773,6 +879,39 @@ final class ConversationQuestionAnswerOutputValidator {
     for (int index = 0; index + size <= values.size(); index++) {
       target.add(hash(values, index, size));
     }
+  }
+
+  private static void addUnigrams(Map<String, Integer> target, List<TokenValue> values) {
+    for (TokenValue value : values) {
+      target.merge(value.normalized(), 1, Math::addExact);
+    }
+  }
+
+  private static boolean hasUnsafeGlobalUnigramMontage(
+      List<TokenValue> answerTokens,
+      boolean[] supportedFacts,
+      Map<String, Integer> sourceUnigrams) {
+    if (answerTokens.isEmpty() || sourceUnigrams.isEmpty()) {
+      return false;
+    }
+    Map<String, Integer> used = new HashMap<>();
+    int matched = 0;
+    for (int index = 0; index < answerTokens.size(); index++) {
+      String token = answerTokens.get(index).normalized();
+      if (supportedFacts[index] || SAFE_GENERATED_TOKENS.contains(token)) {
+        continue;
+      }
+      int available = sourceUnigrams.getOrDefault(token, 0);
+      int consumed = used.getOrDefault(token, 0);
+      if (consumed >= available) {
+        continue;
+      }
+      used.put(token, consumed + 1);
+      if (++matched > MAX_SAFE_GLOBAL_UNIGRAM_MATCHES) {
+        return true;
+      }
+    }
+    return false;
   }
 
   private static boolean reproducesWholeShortMessage(
@@ -913,6 +1052,8 @@ final class ConversationQuestionAnswerOutputValidator {
       int start = index++;
       boolean clauseBoundaryBefore =
           tokens.isEmpty() || hasClauseBoundary(value, previousEnd, start);
+      boolean statementBoundaryBefore =
+          tokens.isEmpty() || hasStatementBoundary(value, previousEnd, start);
       while (index < value.length()) {
         char character = value.charAt(index);
         if (Character.isLetterOrDigit(character)) {
@@ -937,7 +1078,13 @@ final class ConversationQuestionAnswerOutputValidator {
         secondHash = Long.rotateLeft(secondHash ^ character, 7) * 0x9e3779b185ebca87L;
       }
       tokens.add(
-          new TokenValue(token.length(), normalized, firstHash, secondHash, clauseBoundaryBefore));
+          new TokenValue(
+              token.length(),
+              normalized,
+              firstHash,
+              secondHash,
+              clauseBoundaryBefore,
+              statementBoundaryBefore));
       previousEnd = index;
     }
     return List.copyOf(tokens);
@@ -956,99 +1103,267 @@ final class ConversationQuestionAnswerOutputValidator {
     return false;
   }
 
-  private static final class TrustedFacts {
-    private static final Set<String> SAFE_SUBJECT_RENDERING_TOKENS =
-        Set.of("a", "an", "of", "only", "the");
-
-    private final Map<Integer, Set<NgramKey>> participantLabels = new HashMap<>();
-    private final Set<String> supportedScores = new HashSet<>();
-    private final Set<String> supportedPuzzleIds = new HashSet<>();
-
-    private TrustedFacts(Set<String> trustedParticipantLabels) {
-      Set<String> labels = trustedParticipantLabels == null ? Set.of() : trustedParticipantLabels;
-      if (labels.size() > MAX_SOURCE_COUNT) {
-        throw new IllegalStateException("trusted participant budget exceeded");
-      }
-      for (String label : labels) {
-        String normalized = StringUtils.trimToNull(label);
-        if (normalized == null || normalized.length() > MAX_PARTICIPANT_LABEL_CHARACTERS) {
-          throw new IllegalStateException("trusted participant label is invalid");
-        }
-        List<TokenValue> values = tokens(normalized);
-        if (values.isEmpty() || values.size() > MAX_PARTICIPANT_LABEL_TOKENS) {
-          throw new IllegalStateException("trusted participant label is invalid");
-        }
-        participantLabels
-            .computeIfAbsent(values.size(), ignored -> new HashSet<>())
-            .add(hash(values, 0, values.size()));
+  private static boolean hasStatementBoundary(String value, int from, int to) {
+    for (int index = from; index < to; index++) {
+      if (";.!?\n\r".indexOf(value.charAt(index)) >= 0) {
+        return true;
       }
     }
+    return false;
+  }
 
-    private void collectSourceFacts(List<TokenValue> values) {
+  static boolean isSafeParticipantLabel(String label) {
+    String normalized = StringUtils.trimToNull(label);
+    if (normalized == null || normalized.length() > MAX_PARTICIPANT_LABEL_CHARACTERS) {
+      return false;
+    }
+    List<TokenValue> values = tokens(normalized);
+    return !values.isEmpty() && values.size() <= MAX_PARTICIPANT_LABEL_TOKENS;
+  }
+
+  static List<TrustedQuestionFact> trustedFacts(List<QuestionMessage> messages) {
+    List<QuestionMessage> submitted = messages == null ? List.of() : messages;
+    if (submitted.size() > MAX_SOURCE_COUNT) {
+      throw new IllegalStateException("trusted fact message budget exceeded");
+    }
+    List<TrustedQuestionFact> facts = new ArrayList<>();
+    int sourceCharacters = 0;
+    int sourceTokens = 0;
+    for (QuestionMessage message : submitted) {
+      if (message == null || !isSafeParticipantLabel(message.participant())) {
+        throw new IllegalStateException("trusted participant label is invalid");
+      }
+      sourceCharacters = Math.addExact(sourceCharacters, message.text().length());
+      if (sourceCharacters > MAX_SOURCE_CHARACTERS) {
+        throw new IllegalStateException("trusted fact character budget exceeded");
+      }
+      List<TokenValue> values = tokens(message.text());
+      sourceTokens = Math.addExact(sourceTokens, values.size());
+      if (sourceTokens > MAX_SOURCE_TOKENS) {
+        throw new IllegalStateException("trusted fact token budget exceeded");
+      }
       for (int scoreIndex = 0; scoreIndex < values.size(); scoreIndex++) {
         if (!isScoreToken(values.get(scoreIndex))) {
           continue;
         }
-        supportedScores.add(values.get(scoreIndex).normalized());
-        int earliest = Math.max(0, scoreIndex - 5);
-        for (int index = earliest; index + 1 < scoreIndex; index++) {
-          if (SCORE_PUZZLE_MARKERS.contains(values.get(index).normalized())
-              && isPuzzleId(values.get(index + 1))) {
-            supportedPuzzleIds.add(values.get(index + 1).normalized());
-          }
-        }
-        if (scoreIndex >= 2
-            && SCORE_CONNECTORS.contains(values.get(scoreIndex - 1).normalized())
-            && isPuzzleId(values.get(scoreIndex - 2))) {
-          supportedPuzzleIds.add(values.get(scoreIndex - 2).normalized());
-        } else if (scoreIndex >= 1 && isPuzzleId(values.get(scoreIndex - 1))) {
-          supportedPuzzleIds.add(values.get(scoreIndex - 1).normalized());
+        PuzzleReference puzzle = findPuzzleReference(values, scoreIndex, null);
+        facts.add(
+            new TrustedQuestionFact(
+                message.messageGuid(),
+                message.participant().trim(),
+                puzzle == null ? null : puzzle.puzzleId(),
+                values.get(scoreIndex).normalized()));
+        if (facts.size() > MAX_SENSITIVE_SOURCE_IDENTIFIERS) {
+          throw new IllegalStateException("trusted fact count budget exceeded");
         }
       }
+    }
+    return List.copyOf(facts);
+  }
+
+  private static PuzzleReference findPuzzleReference(
+      List<TokenValue> values, int scoreIndex, boolean[] participantTokens) {
+    PuzzleReference result = null;
+    int earliest = Math.max(0, scoreIndex - 12);
+    for (int index = scoreIndex; index > earliest; index--) {
+      if (values.get(index).statementBoundaryBefore()) {
+        earliest = index;
+        break;
+      }
+    }
+    for (int index = earliest; index + 1 < scoreIndex; index++) {
+      if (SCORE_PUZZLE_MARKERS.contains(values.get(index).normalized())
+          && isPuzzleId(values.get(index + 1))
+          && !isMarked(participantTokens, index + 1)) {
+        result =
+            new PuzzleReference(index + 1, canonicalPuzzleId(values.get(index + 1).normalized()));
+      }
+    }
+    if (result != null) {
+      return result;
+    }
+    if (scoreIndex - 2 >= earliest
+        && SCORE_CONNECTORS.contains(values.get(scoreIndex - 1).normalized())
+        && isPuzzleId(values.get(scoreIndex - 2))
+        && !isMarked(participantTokens, scoreIndex - 2)) {
+      return new PuzzleReference(
+          scoreIndex - 2, canonicalPuzzleId(values.get(scoreIndex - 2).normalized()));
+    }
+    if (scoreIndex - 1 >= earliest
+        && isPuzzleId(values.get(scoreIndex - 1))
+        && !isMarked(participantTokens, scoreIndex - 1)) {
+      return new PuzzleReference(
+          scoreIndex - 1, canonicalPuzzleId(values.get(scoreIndex - 1).normalized()));
+    }
+    int latest = Math.min(values.size() - 1, scoreIndex + 8);
+    for (int index = scoreIndex + 1; index < latest; index++) {
+      if (values.get(index).statementBoundaryBefore()) {
+        break;
+      }
+      if (SCORE_PUZZLE_MARKERS.contains(values.get(index).normalized())
+          && isPuzzleId(values.get(index + 1))
+          && !isMarked(participantTokens, index + 1)) {
+        return new PuzzleReference(
+            index + 1, canonicalPuzzleId(values.get(index + 1).normalized()));
+      }
+    }
+    return null;
+  }
+
+  private static boolean isMarked(boolean[] marks, int index) {
+    return marks != null && marks[index];
+  }
+
+  private static String canonicalPuzzleId(String value) {
+    return digits(value);
+  }
+
+  private static final class TrustedFacts {
+    private static final Set<String> SAFE_SUBJECT_RENDERING_TOKENS =
+        Set.of("a", "an", "of", "only", "the");
+
+    private final ParticipantNode participantLabels = new ParticipantNode();
+    private final Set<String> supportedScores = new HashSet<>();
+    private final Set<ScorePuzzle> supportedScorePuzzles = new HashSet<>();
+    private final Set<ScoreParticipant> supportedScoreParticipants = new HashSet<>();
+    private final Set<FactTuple> supportedTuples = new HashSet<>();
+
+    private TrustedFacts(
+        List<TrustedQuestionFact> trustedFactMetadata, Set<String> citedEvidenceIdentifiers) {
+      List<TrustedQuestionFact> metadata =
+          trustedFactMetadata == null ? List.of() : trustedFactMetadata;
+      Set<String> cited = citedEvidenceIdentifiers == null ? Set.of() : citedEvidenceIdentifiers;
+      if (metadata.size() > MAX_SENSITIVE_SOURCE_IDENTIFIERS || cited.size() > MAX_SOURCE_COUNT) {
+        throw new IllegalStateException("trusted fact budget exceeded");
+      }
+      for (TrustedQuestionFact fact : metadata) {
+        if (fact == null || !cited.contains(fact.evidenceMessageGuid())) {
+          continue;
+        }
+        if (!isSafeParticipantLabel(fact.participantLabel())) {
+          throw new IllegalStateException("trusted participant label is invalid");
+        }
+        List<TokenValue> participantTokens = tokens(fact.participantLabel());
+        String participantKey = participantKey(participantTokens);
+        String score = StringUtils.trimToEmpty(fact.score()).toLowerCase(Locale.ROOT);
+        if (!SCORE_TOKEN.matcher(score).matches()) {
+          throw new IllegalStateException("trusted score is invalid");
+        }
+        String puzzle = fact.puzzleId() == null ? null : canonicalPuzzleId(fact.puzzleId());
+        if (puzzle != null && puzzle.isEmpty()) {
+          throw new IllegalStateException("trusted puzzle is invalid");
+        }
+        addParticipant(participantTokens, participantKey);
+        supportedScores.add(score);
+        supportedScoreParticipants.add(new ScoreParticipant(score, participantKey));
+        if (puzzle != null) {
+          supportedScorePuzzles.add(new ScorePuzzle(score, puzzle));
+        }
+        supportedTuples.add(new FactTuple(score, participantKey, puzzle));
+      }
+    }
+
+    private void addParticipant(List<TokenValue> values, String participantKey) {
+      ParticipantNode node = participantLabels;
+      for (TokenValue value : values) {
+        node = node.children.computeIfAbsent(value.normalized(), ignored -> new ParticipantNode());
+      }
+      if (node.participantKey != null && !node.participantKey.equals(participantKey)) {
+        throw new IllegalStateException("ambiguous trusted participant label");
+      }
+      node.participantKey = participantKey;
     }
 
     private boolean[] validateAndMaskAnswer(List<TokenValue> values) {
       boolean[] allowed = new boolean[values.size()];
-      boolean[] participant = new boolean[values.size()];
-      markParticipantLabels(values, allowed, participant);
+      ParticipantMatches participants = markParticipantLabels(values, allowed);
+      String currentParticipant = null;
       for (int index = 0; index < values.size(); index++) {
+        if (values.get(index).statementBoundaryBefore()) {
+          currentParticipant = null;
+        }
+        if (participants.endingAt()[index] != null) {
+          currentParticipant = participants.endingAt()[index];
+        }
         String token = values.get(index).normalized();
-        if (SAFE_SCORE_RENDERING_TOKENS.contains(token)
+        if (SAFE_GENERATED_TOKENS.contains(token)
+            || SAFE_SCORE_RENDERING_TOKENS.contains(token)
             || SAFE_SUBJECT_RENDERING_TOKENS.contains(token)) {
           allowed[index] = true;
         }
-        if (isScoreToken(values.get(index))) {
-          if (!supportedScores.contains(token)) {
-            return null;
-          }
-          allowed[index] = true;
+        if (!isScoreToken(values.get(index))) {
+          continue;
         }
-        if (!participant[index]
-            && isPuzzleId(values.get(index))
-            && isScorePuzzleId(values, index)) {
-          if (!supportedPuzzleIds.contains(token)) {
-            return null;
-          }
-          allowed[index] = true;
+        String participant =
+            currentParticipant != null
+                ? currentParticipant
+                : nextParticipant(values, participants.startingAt(), index + 1);
+        PuzzleReference puzzle =
+            findPuzzleReference(values, index, participants.participantTokens());
+        String puzzleId = puzzle == null ? null : puzzle.puzzleId();
+        if (!isSupported(token, participant, puzzleId)) {
+          return null;
+        }
+        allowed[index] = true;
+        if (puzzle != null) {
+          allowed[puzzle.tokenIndex()] = true;
         }
       }
-      return hasUntrustedCanonicalScoreSubject(values, participant) ? null : allowed;
+      return hasUntrustedCanonicalScoreSubject(values, participants.participantTokens())
+          ? null
+          : allowed;
     }
 
-    private void markParticipantLabels(
-        List<TokenValue> values, boolean[] allowed, boolean[] participant) {
-      for (Map.Entry<Integer, Set<NgramKey>> entry : participantLabels.entrySet()) {
-        int size = entry.getKey();
-        for (int index = 0; index + size <= values.size(); index++) {
-          if (!entry.getValue().contains(hash(values, index, size))) {
-            continue;
+    private boolean isSupported(String score, String participant, String puzzle) {
+      if (participant != null && puzzle != null) {
+        return supportedTuples.contains(new FactTuple(score, participant, puzzle));
+      }
+      if (participant != null) {
+        return supportedScoreParticipants.contains(new ScoreParticipant(score, participant));
+      }
+      if (puzzle != null) {
+        return supportedScorePuzzles.contains(new ScorePuzzle(score, puzzle));
+      }
+      return supportedScores.contains(score);
+    }
+
+    private ParticipantMatches markParticipantLabels(List<TokenValue> values, boolean[] allowed) {
+      boolean[] participant = new boolean[values.size()];
+      String[] endingAt = new String[values.size()];
+      String[] startingAt = new String[values.size()];
+      for (int start = 0; start < values.size(); start++) {
+        ParticipantNode node = participantLabels;
+        int end = start;
+        while (end < values.size() && end - start < MAX_PARTICIPANT_LABEL_TOKENS) {
+          node = node.children.get(values.get(end).normalized());
+          if (node == null) {
+            break;
           }
-          for (int tokenIndex = index; tokenIndex < index + size; tokenIndex++) {
-            allowed[tokenIndex] = true;
-            participant[tokenIndex] = true;
+          if (node.participantKey != null) {
+            startingAt[start] = node.participantKey;
+            endingAt[end] = node.participantKey;
+            for (int tokenIndex = start; tokenIndex <= end; tokenIndex++) {
+              allowed[tokenIndex] = true;
+              participant[tokenIndex] = true;
+            }
           }
+          end++;
         }
       }
+      return new ParticipantMatches(participant, endingAt, startingAt);
+    }
+
+    private String nextParticipant(List<TokenValue> values, String[] startingAt, int startIndex) {
+      int end = Math.min(values.size(), startIndex + MAX_PARTICIPANT_LABEL_TOKENS + 2);
+      for (int index = startIndex; index < end; index++) {
+        if (values.get(index).statementBoundaryBefore()) {
+          break;
+        }
+        if (startingAt[index] != null) {
+          return startingAt[index];
+        }
+      }
+      return null;
     }
 
     private boolean hasUntrustedCanonicalScoreSubject(
@@ -1088,6 +1403,9 @@ final class ConversationQuestionAnswerOutputValidator {
     private boolean hasScoreAfter(List<TokenValue> values, int verbIndex) {
       int end = Math.min(values.size(), verbIndex + 9);
       for (int index = verbIndex + 1; index < end; index++) {
+        if (values.get(index).statementBoundaryBefore()) {
+          return false;
+        }
         if (isScoreToken(values.get(index))) {
           return true;
         }
@@ -1095,16 +1413,33 @@ final class ConversationQuestionAnswerOutputValidator {
       return false;
     }
 
-    private boolean isScorePuzzleId(List<TokenValue> values, int index) {
-      int end = Math.min(values.size(), index + 4);
-      for (int next = index + 1; next < end; next++) {
-        if (isScoreToken(values.get(next))) {
-          return true;
+    private static String participantKey(List<TokenValue> values) {
+      StringBuilder key = new StringBuilder();
+      for (TokenValue value : values) {
+        if (!key.isEmpty()) {
+          key.append('\0');
         }
+        key.append(value.normalized());
       }
-      return false;
+      return key.toString();
     }
+
+    private static final class ParticipantNode {
+      private final Map<String, ParticipantNode> children = new HashMap<>();
+      private String participantKey;
+    }
+
+    private record ParticipantMatches(
+        boolean[] participantTokens, String[] endingAt, String[] startingAt) {}
+
+    private record ScorePuzzle(String score, String puzzle) {}
+
+    private record ScoreParticipant(String score, String participant) {}
+
+    private record FactTuple(String score, String participant, String puzzle) {}
   }
+
+  private record PuzzleReference(int tokenIndex, String puzzleId) {}
 
   private static final class SourceIdentifiers {
     private final Set<String> textIdentifiers = new HashSet<>();
@@ -1193,7 +1528,8 @@ final class ConversationQuestionAnswerOutputValidator {
       String normalized,
       long firstHash,
       long secondHash,
-      boolean clauseBoundaryBefore) {}
+      boolean clauseBoundaryBefore,
+      boolean statementBoundaryBefore) {}
 
   private record NgramKey(long first, long second) {}
 

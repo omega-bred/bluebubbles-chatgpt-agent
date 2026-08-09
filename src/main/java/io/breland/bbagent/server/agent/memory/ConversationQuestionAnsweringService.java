@@ -15,6 +15,7 @@ import io.breland.bbagent.server.agent.memory.ConversationQuestionAnsweringModel
 import io.breland.bbagent.server.agent.memory.ConversationQuestionAnsweringModels.RetrievalResult;
 import io.breland.bbagent.server.agent.memory.ConversationQuestionAnsweringModels.RoutedModelAnswer;
 import io.breland.bbagent.server.agent.memory.ConversationQuestionAnsweringModels.SearchPlan;
+import io.breland.bbagent.server.agent.memory.ConversationQuestionAnsweringModels.TrustedQuestionFact;
 import io.breland.bbagent.server.metrics.OperationalMetricsService;
 import java.time.Clock;
 import java.time.Duration;
@@ -326,12 +327,14 @@ public class ConversationQuestionAnsweringService {
         partialReason = MODEL_UNAVAILABLE;
         break;
       }
+      List<TrustedQuestionFact> batchFacts =
+          ConversationQuestionAnswerOutputValidator.trustedFacts(batch.messages());
       ModelAnswer validated =
           validateAnswer(
               routed,
               messageGuids(batch.messages()),
               batch.messages().stream().map(QuestionMessage::text).toList(),
-              participantLabels(batch.messages()));
+              batchFacts);
       if (validated == null) {
         partialReason = MODEL_INVALID;
         break;
@@ -341,13 +344,16 @@ public class ConversationQuestionAnsweringService {
       nextIndex = batch.nextIndex();
       boolean completedAtDeadline = deadlineReached(deadline);
       if (validated.status() == AnswerStatus.ANSWERED) {
+        Set<String> citedEvidence = Set.copyOf(validated.evidenceMessageGuids());
         QuestionFinding finding =
-            new QuestionFinding(
+            QuestionFinding.trusted(
                 validated.answer(),
                 validated.confidence(),
                 validated.evidenceMessageGuids(),
                 processedThrough,
-                participantLabels(batch.messages()));
+                batchFacts.stream()
+                    .filter(fact -> citedEvidence.contains(fact.evidenceMessageGuid()))
+                    .toList());
         findings.add(new SupportedFinding(finding, routed));
       } else {
         lastUnsupported = routed;
@@ -423,8 +429,8 @@ public class ConversationQuestionAnsweringService {
               submittedEvidence,
               questionFindings.stream().map(QuestionFinding::answer).toList(),
               questionFindings.stream()
-                  .flatMap(finding -> finding.trustedParticipantLabels().stream())
-                  .collect(java.util.stream.Collectors.toUnmodifiableSet()));
+                  .flatMap(finding -> finding.trustedFacts().stream())
+                  .toList());
       if (validated == null) {
         return bestFinding(findings, processedThrough, firstReason(MODEL_INVALID, partialReason));
       }
@@ -482,7 +488,7 @@ public class ConversationQuestionAnsweringService {
       @Nullable RoutedModelAnswer routed,
       Set<String> submittedEvidence,
       List<String> submittedSourceTexts,
-      Set<String> trustedParticipantLabels) {
+      List<TrustedQuestionFact> trustedFacts) {
     if (routed == null || routed.answer() == null) {
       return null;
     }
@@ -496,16 +502,14 @@ public class ConversationQuestionAnsweringService {
       return null;
     }
     if (!ConversationQuestionAnswerOutputValidator.isSafe(
-        answer.answer(), submittedEvidence, submittedSourceTexts, trustedParticipantLabels)) {
+        answer.answer(),
+        submittedEvidence,
+        submittedSourceTexts,
+        trustedFacts,
+        Set.copyOf(answer.evidenceMessageGuids()))) {
       return null;
     }
     return answer;
-  }
-
-  private static Set<String> participantLabels(List<QuestionMessage> messages) {
-    return messages.stream()
-        .map(QuestionMessage::participant)
-        .collect(java.util.stream.Collectors.toUnmodifiableSet());
   }
 
   private GroupQuestionAnswer finalAnswer(
