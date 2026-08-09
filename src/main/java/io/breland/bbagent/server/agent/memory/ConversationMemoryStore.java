@@ -1,0 +1,623 @@
+package io.breland.bbagent.server.agent.memory;
+
+import static io.breland.bbagent.server.agent.memory.ConversationMemoryModels.ArtifactSensitivity.NORMAL;
+import static io.breland.bbagent.server.agent.memory.ConversationMemoryModels.ArtifactStatus.CONFIRMED;
+import static io.breland.bbagent.server.agent.memory.ConversationMemoryModels.ProjectionOperation.UPSERT;
+
+import io.breland.bbagent.server.agent.memory.ConversationMemoryModels.ExtractionBatch;
+import io.breland.bbagent.server.agent.memory.ConversationMemoryModels.ExtractionCandidate;
+import io.breland.bbagent.server.agent.memory.ConversationMemoryModels.JournalMessage;
+import io.breland.bbagent.server.agent.memory.ConversationMemoryModels.ProjectionClaim;
+import io.breland.bbagent.server.agent.memory.ConversationMemoryModels.ProjectionOperation;
+import io.breland.bbagent.server.agent.memory.ConversationMemoryModels.WorkClaim;
+import java.time.Duration;
+import java.time.Instant;
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Objects;
+import java.util.Set;
+import java.util.UUID;
+import org.apache.commons.lang3.StringUtils;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.stereotype.Repository;
+import org.springframework.transaction.annotation.Transactional;
+
+@Repository
+public class ConversationMemoryStore {
+  private static final Duration EXTRACTION_LEASE = Duration.ofMinutes(5);
+  private static final Duration PROJECTION_LEASE = Duration.ofMinutes(5);
+
+  private final JdbcTemplate jdbcTemplate;
+
+  public ConversationMemoryStore(JdbcTemplate jdbcTemplate) {
+    this.jdbcTemplate = jdbcTemplate;
+  }
+
+  @Transactional
+  public String upsertConversation(
+      String transport,
+      String externalConversationId,
+      boolean group,
+      String displayName,
+      Instant observedAt) {
+    requireText(transport, "transport");
+    requireText(externalConversationId, "external conversation id");
+    Objects.requireNonNull(observedAt, "observedAt");
+    List<String> existingIds =
+        jdbcTemplate.query(
+            """
+            select conversation_id
+              from agent_conversations
+             where transport = ? and external_conversation_id = ?
+            """,
+            (resultSet, rowNumber) -> resultSet.getString(1),
+            transport,
+            externalConversationId);
+    Instant now = observedAt;
+    if (!existingIds.isEmpty()) {
+      String conversationId = existingIds.getFirst();
+      jdbcTemplate.update(
+          """
+          update agent_conversations
+             set is_group = ?,
+                 display_name = coalesce(?, display_name),
+                 last_observed_at = ?,
+                 updated_at = ?
+           where conversation_id = ?
+          """,
+          group,
+          StringUtils.trimToNull(displayName),
+          observedAt,
+          now,
+          conversationId);
+      return conversationId;
+    }
+
+    String conversationId = UUID.randomUUID().toString();
+    jdbcTemplate.update(
+        """
+        insert into agent_conversations
+          (conversation_id, transport, external_conversation_id, is_group, display_name,
+           last_observed_at, created_at, updated_at)
+        values (?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        conversationId,
+        transport,
+        externalConversationId,
+        group,
+        StringUtils.trimToNull(displayName),
+        observedAt,
+        now,
+        now);
+    return conversationId;
+  }
+
+  @Transactional
+  public void recordMembership(String conversationId, String accountId, Instant observedAt) {
+    requireText(conversationId, "conversation id");
+    requireText(accountId, "account id");
+    Objects.requireNonNull(observedAt, "observedAt");
+    List<String> activeMemberships =
+        jdbcTemplate.query(
+            """
+            select membership_id
+              from agent_conversation_memberships
+             where conversation_id = ? and account_id = ? and ended_at is null
+            """,
+            (resultSet, rowNumber) -> resultSet.getString(1),
+            conversationId,
+            accountId);
+    if (!activeMemberships.isEmpty()) {
+      jdbcTemplate.update(
+          "update agent_conversation_memberships set updated_at = ? where membership_id = ?",
+          observedAt,
+          activeMemberships.getFirst());
+      return;
+    }
+    jdbcTemplate.update(
+        """
+        insert into agent_conversation_memberships
+          (membership_id, conversation_id, account_id, started_at, created_at, updated_at)
+        values (?, ?, ?, ?, ?, ?)
+        """,
+        UUID.randomUUID().toString(),
+        conversationId,
+        accountId,
+        observedAt,
+        observedAt,
+        observedAt);
+  }
+
+  @Transactional
+  public void recordMessage(JournalMessage message) {
+    Objects.requireNonNull(message, "message");
+    requireText(message.messageGuid(), "message guid");
+    requireText(message.conversationId(), "conversation id");
+    requireText(message.contentHash(), "content hash");
+    Objects.requireNonNull(message.sourceTimestamp(), "sourceTimestamp");
+    Integer existing =
+        jdbcTemplate.queryForObject(
+            "select count(*) from agent_conversation_messages where message_guid = ?",
+            Integer.class,
+            message.messageGuid());
+    Instant now = message.sourceTimestamp();
+    if (existing != null && existing > 0) {
+      jdbcTemplate.update(
+          """
+          update agent_conversation_messages
+             set conversation_id = ?, sender_account_id = ?, message_text = ?, content_hash = ?,
+                 source_timestamp = ?, from_agent = ?, system_message = ?, removed = false,
+                 updated_at = ?
+           where message_guid = ?
+          """,
+          message.conversationId(),
+          StringUtils.trimToNull(message.senderAccountId()),
+          message.text(),
+          message.contentHash(),
+          message.sourceTimestamp(),
+          message.fromAgent(),
+          message.systemMessage(),
+          now,
+          message.messageGuid());
+      return;
+    }
+    jdbcTemplate.update(
+        """
+        insert into agent_conversation_messages
+          (message_guid, conversation_id, sender_account_id, message_text, content_hash,
+           source_timestamp, from_agent, system_message, removed, first_seen_at, updated_at)
+        values (?, ?, ?, ?, ?, ?, ?, ?, false, ?, ?)
+        """,
+        message.messageGuid(),
+        message.conversationId(),
+        StringUtils.trimToNull(message.senderAccountId()),
+        message.text(),
+        message.contentHash(),
+        message.sourceTimestamp(),
+        message.fromAgent(),
+        message.systemMessage(),
+        now,
+        now);
+  }
+
+  @Transactional(readOnly = true)
+  public List<JournalMessage> findMessages(
+      String conversationId, Instant fromInclusive, Instant toInclusive) {
+    return jdbcTemplate.query(
+        """
+        select message_guid, conversation_id, sender_account_id, message_text, source_timestamp,
+               from_agent, system_message, content_hash
+          from agent_conversation_messages
+         where conversation_id = ? and source_timestamp >= ? and source_timestamp <= ?
+           and removed = false
+         order by source_timestamp, message_guid
+        """,
+        (resultSet, rowNumber) ->
+            new JournalMessage(
+                resultSet.getString("message_guid"),
+                resultSet.getString("conversation_id"),
+                resultSet.getString("sender_account_id"),
+                resultSet.getString("message_text"),
+                resultSet.getTimestamp("source_timestamp").toInstant(),
+                resultSet.getBoolean("from_agent"),
+                resultSet.getBoolean("system_message"),
+                resultSet.getString("content_hash")),
+        conversationId,
+        fromInclusive,
+        toInclusive);
+  }
+
+  @Transactional(readOnly = true)
+  public List<String> activeMembershipAccountIds(String conversationId, Instant at) {
+    return jdbcTemplate.query(
+        """
+        select distinct account_id
+          from agent_conversation_memberships
+         where conversation_id = ? and started_at <= ?
+           and (ended_at is null or ended_at > ?)
+         order by account_id
+        """,
+        (resultSet, rowNumber) -> resultSet.getString(1),
+        conversationId,
+        at,
+        at);
+  }
+
+  @Transactional
+  public void scheduleExtraction(String conversationId, Instant availableAt) {
+    Integer existing =
+        jdbcTemplate.queryForObject(
+            "select count(*) from conversation_memory_work where conversation_id = ?",
+            Integer.class,
+            conversationId);
+    if (existing != null && existing > 0) {
+      jdbcTemplate.update(
+          """
+          update conversation_memory_work
+             set available_at = ?, last_error_code = null, updated_at = ?
+           where conversation_id = ?
+          """,
+          availableAt,
+          availableAt,
+          conversationId);
+      return;
+    }
+    jdbcTemplate.update(
+        """
+        insert into conversation_memory_work
+          (conversation_id, available_at, attempt_count, updated_at)
+        values (?, ?, 0, ?)
+        """,
+        conversationId,
+        availableAt,
+        availableAt);
+  }
+
+  @Transactional
+  public List<WorkClaim> claimDueExtractionWork(String workerId, Instant now, int limit) {
+    if (limit <= 0) {
+      return List.of();
+    }
+    Instant claimedUntil = now.plus(EXTRACTION_LEASE);
+    List<String> candidates =
+        jdbcTemplate.query(
+            """
+            select conversation_id
+              from conversation_memory_work
+             where available_at <= ? and (claimed_until is null or claimed_until < ?)
+             order by available_at, conversation_id
+             limit ?
+            """,
+            (resultSet, rowNumber) -> resultSet.getString(1),
+            now,
+            now,
+            limit);
+    List<WorkClaim> claims = new ArrayList<>();
+    for (String conversationId : candidates) {
+      int updated =
+          jdbcTemplate.update(
+              """
+              update conversation_memory_work
+                 set claimed_by = ?, claimed_until = ?, attempt_count = attempt_count + 1,
+                     updated_at = ?
+               where conversation_id = ? and available_at <= ?
+                 and (claimed_until is null or claimed_until < ?)
+              """,
+              workerId,
+              claimedUntil,
+              now,
+              conversationId,
+              now,
+              now);
+      if (updated == 1) {
+        claims.add(new WorkClaim(conversationId, workerId, claimedUntil));
+      }
+    }
+    return List.copyOf(claims);
+  }
+
+  @Transactional
+  public List<String> saveExtraction(WorkClaim claim, ExtractionBatch batch) {
+    Objects.requireNonNull(claim, "claim");
+    Objects.requireNonNull(batch, "batch");
+    if (!claim.conversationId().equals(batch.conversationId())) {
+      throw new IllegalArgumentException("claim and extraction conversation do not match");
+    }
+    Integer ownedClaim =
+        jdbcTemplate.queryForObject(
+            """
+            select count(*) from conversation_memory_work
+             where conversation_id = ? and claimed_by = ? and claimed_until >= ?
+            """,
+            Integer.class,
+            claim.conversationId(),
+            claim.workerId(),
+            batch.processedAt());
+    if (ownedClaim == null || ownedClaim != 1) {
+      throw new IllegalStateException("extraction work lease is not owned by this worker");
+    }
+
+    Set<String> submittedMessageGuids = new HashSet<>();
+    for (JournalMessage sourceMessage : batch.sourceMessages()) {
+      if (!batch.conversationId().equals(sourceMessage.conversationId())) {
+        throw new IllegalArgumentException("source message belongs to another conversation");
+      }
+      submittedMessageGuids.add(sourceMessage.messageGuid());
+    }
+
+    List<String> savedArtifactIds = new ArrayList<>();
+    for (ExtractionCandidate candidate : batch.candidates()) {
+      validateCandidateEvidence(candidate, submittedMessageGuids);
+      List<String> existingArtifactIds =
+          jdbcTemplate.query(
+              """
+              select artifact_id from conversation_memory_artifacts
+               where conversation_id = ? and content_hash = ? and occurred_at = ?
+              """,
+              (resultSet, rowNumber) -> resultSet.getString(1),
+              batch.conversationId(),
+              candidate.contentHash(),
+              candidate.occurredAt());
+      if (!existingArtifactIds.isEmpty()) {
+        savedArtifactIds.add(existingArtifactIds.getFirst());
+        continue;
+      }
+
+      String artifactId = UUID.randomUUID().toString();
+      Instant now = batch.processedAt();
+      jdbcTemplate.update(
+          """
+          insert into conversation_memory_artifacts
+            (artifact_id, conversation_id, kind, artifact_text, status, sensitivity, confidence,
+             occurred_at, expires_at, superseded_by_artifact_id, content_hash, created_at, updated_at)
+          values (?, ?, ?, ?, ?, ?, ?, ?, ?, null, ?, ?, ?)
+          """,
+          artifactId,
+          batch.conversationId(),
+          candidate.kind().name(),
+          candidate.text(),
+          candidate.status().name(),
+          candidate.sensitivity().name(),
+          candidate.confidence(),
+          candidate.occurredAt(),
+          candidate.expiresAt(),
+          candidate.contentHash(),
+          now,
+          now);
+      for (String messageGuid : candidate.evidenceMessageGuids()) {
+        jdbcTemplate.update(
+            "insert into conversation_memory_evidence (artifact_id, message_guid) values (?, ?)",
+            artifactId,
+            messageGuid);
+      }
+      List<String> audienceAccountIds =
+          activeMembershipAccountIds(batch.conversationId(), candidate.occurredAt());
+      for (String accountId : audienceAccountIds) {
+        jdbcTemplate.update(
+            """
+            insert into conversation_memory_audiences (artifact_id, account_id, granted_at)
+            values (?, ?, ?)
+            """,
+            artifactId,
+            accountId,
+            now);
+        if (isProjectionEligible(candidate)) {
+          jdbcTemplate.update(
+              """
+              insert into conversation_memory_projections
+                (artifact_id, account_id, operation, state, projection_hash, available_at,
+                 attempt_count, updated_at)
+              values (?, ?, ?, 'PENDING', ?, ?, 0, ?)
+              """,
+              artifactId,
+              accountId,
+              UPSERT.name(),
+              candidate.contentHash(),
+              now,
+              now);
+        }
+      }
+      if (StringUtils.isNotBlank(candidate.supersedesArtifactId())) {
+        jdbcTemplate.update(
+            """
+            update conversation_memory_artifacts
+               set status = 'SUPERSEDED', superseded_by_artifact_id = ?, updated_at = ?
+             where artifact_id = ? and conversation_id = ?
+            """,
+            artifactId,
+            now,
+            candidate.supersedesArtifactId(),
+            batch.conversationId());
+      }
+      savedArtifactIds.add(artifactId);
+    }
+
+    saveSummarySegment(batch);
+    saveCheckpoint(batch);
+    jdbcTemplate.update(
+        "delete from conversation_memory_work where conversation_id = ? and claimed_by = ?",
+        claim.conversationId(),
+        claim.workerId());
+    return List.copyOf(savedArtifactIds);
+  }
+
+  @Transactional
+  public List<ProjectionClaim> claimDueProjections(String workerId, Instant now, int limit) {
+    if (limit <= 0) {
+      return List.of();
+    }
+    Instant claimedUntil = now.plus(PROJECTION_LEASE);
+    List<ProjectionCandidate> candidates =
+        jdbcTemplate.query(
+            """
+            select artifact_id, account_id, operation, projection_hash
+              from conversation_memory_projections
+             where state in ('PENDING', 'FAILED') and available_at <= ?
+               and (claimed_until is null or claimed_until < ?)
+             order by available_at, artifact_id, account_id
+             limit ?
+            """,
+            (resultSet, rowNumber) ->
+                new ProjectionCandidate(
+                    resultSet.getString("artifact_id"),
+                    resultSet.getString("account_id"),
+                    ProjectionOperation.valueOf(resultSet.getString("operation")),
+                    resultSet.getString("projection_hash")),
+            now,
+            now,
+            limit);
+    List<ProjectionClaim> claims = new ArrayList<>();
+    for (ProjectionCandidate candidate : candidates) {
+      int updated =
+          jdbcTemplate.update(
+              """
+              update conversation_memory_projections
+                 set claimed_by = ?, claimed_until = ?, attempt_count = attempt_count + 1,
+                     updated_at = ?
+               where artifact_id = ? and account_id = ? and state in ('PENDING', 'FAILED')
+                 and available_at <= ? and (claimed_until is null or claimed_until < ?)
+              """,
+              workerId,
+              claimedUntil,
+              now,
+              candidate.artifactId(),
+              candidate.accountId(),
+              now,
+              now);
+      if (updated == 1) {
+        claims.add(
+            new ProjectionClaim(
+                candidate.artifactId(),
+                candidate.accountId(),
+                candidate.operation(),
+                candidate.projectionHash(),
+                workerId,
+                claimedUntil));
+      }
+    }
+    return List.copyOf(claims);
+  }
+
+  @Transactional(readOnly = true)
+  public boolean isInArtifactAudience(String artifactId, String accountId) {
+    Integer count =
+        jdbcTemplate.queryForObject(
+            """
+            select count(*) from conversation_memory_audiences
+             where artifact_id = ? and account_id = ?
+            """,
+            Integer.class,
+            artifactId,
+            accountId);
+    return count != null && count > 0;
+  }
+
+  private void validateCandidateEvidence(
+      ExtractionCandidate candidate, Set<String> submittedMessageGuids) {
+    Objects.requireNonNull(candidate, "candidate");
+    requireText(candidate.text(), "artifact text");
+    requireText(candidate.contentHash(), "artifact content hash");
+    if (candidate.evidenceMessageGuids().isEmpty()
+        || !submittedMessageGuids.containsAll(candidate.evidenceMessageGuids())) {
+      throw new IllegalArgumentException("artifact evidence is outside the submitted batch");
+    }
+  }
+
+  private boolean isProjectionEligible(ExtractionCandidate candidate) {
+    return candidate.status() == CONFIRMED
+        && candidate.sensitivity() == NORMAL
+        && candidate.confidence() >= 0.85;
+  }
+
+  private void saveSummarySegment(ExtractionBatch batch) {
+    if (StringUtils.isBlank(batch.summary()) || batch.sourceMessages().isEmpty()) {
+      return;
+    }
+    Integer existing =
+        jdbcTemplate.queryForObject(
+            """
+            select count(*) from conversation_summary_segments
+             where conversation_id = ? and corpus_hash = ?
+            """,
+            Integer.class,
+            batch.conversationId(),
+            batch.corpusHash());
+    if (existing != null && existing > 0) {
+      return;
+    }
+    Instant windowStart =
+        batch.sourceMessages().stream()
+            .map(JournalMessage::sourceTimestamp)
+            .min(Instant::compareTo)
+            .orElse(batch.processedAt());
+    Instant windowEnd =
+        batch.sourceMessages().stream()
+            .map(JournalMessage::sourceTimestamp)
+            .max(Instant::compareTo)
+            .orElse(batch.processedAt());
+    String segmentId = UUID.randomUUID().toString();
+    jdbcTemplate.update(
+        """
+        insert into conversation_summary_segments
+          (segment_id, conversation_id, window_start, window_end, summary_text, item_payload,
+           corpus_hash, created_at)
+        values (?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        segmentId,
+        batch.conversationId(),
+        windowStart,
+        windowEnd,
+        batch.summary(),
+        StringUtils.defaultString(batch.itemPayload(), "[]"),
+        batch.corpusHash(),
+        batch.processedAt());
+    Set<String> audienceAccountIds = new HashSet<>();
+    for (JournalMessage sourceMessage : batch.sourceMessages()) {
+      audienceAccountIds.addAll(
+          activeMembershipAccountIds(batch.conversationId(), sourceMessage.sourceTimestamp()));
+    }
+    for (String accountId : audienceAccountIds) {
+      jdbcTemplate.update(
+          """
+          insert into conversation_summary_audiences
+            (summary_type, summary_id, account_id, granted_at)
+          values ('SEGMENT', ?, ?, ?)
+          """,
+          segmentId,
+          accountId,
+          batch.processedAt());
+    }
+  }
+
+  private void saveCheckpoint(ExtractionBatch batch) {
+    String lastMessageGuid =
+        batch.sourceMessages().stream()
+            .max(
+                java.util.Comparator.comparing(JournalMessage::sourceTimestamp)
+                    .thenComparing(JournalMessage::messageGuid))
+            .map(JournalMessage::messageGuid)
+            .orElse(null);
+    Integer existing =
+        jdbcTemplate.queryForObject(
+            "select count(*) from conversation_memory_checkpoints where conversation_id = ?",
+            Integer.class,
+            batch.conversationId());
+    if (existing != null && existing > 0) {
+      jdbcTemplate.update(
+          """
+          update conversation_memory_checkpoints
+             set last_processed_at = ?, last_processed_message_guid = ?, last_corpus_hash = ?,
+                 updated_at = ?
+           where conversation_id = ?
+          """,
+          batch.processedAt(),
+          lastMessageGuid,
+          batch.corpusHash(),
+          batch.processedAt(),
+          batch.conversationId());
+      return;
+    }
+    jdbcTemplate.update(
+        """
+        insert into conversation_memory_checkpoints
+          (conversation_id, last_processed_at, last_processed_message_guid, last_corpus_hash,
+           updated_at)
+        values (?, ?, ?, ?, ?)
+        """,
+        batch.conversationId(),
+        batch.processedAt(),
+        lastMessageGuid,
+        batch.corpusHash(),
+        batch.processedAt());
+  }
+
+  private void requireText(String value, String label) {
+    if (StringUtils.isBlank(value)) {
+      throw new IllegalArgumentException("missing " + label);
+    }
+  }
+
+  private record ProjectionCandidate(
+      String artifactId, String accountId, ProjectionOperation operation, String projectionHash) {}
+}
