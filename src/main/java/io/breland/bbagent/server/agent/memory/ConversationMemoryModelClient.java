@@ -7,6 +7,7 @@ import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.openai.client.OpenAIClient;
 import com.openai.client.okhttp.OpenAIOkHttpClient;
+import com.openai.core.JsonValue;
 import com.openai.models.responses.EasyInputMessage;
 import com.openai.models.responses.ResponseCreateParams;
 import com.openai.models.responses.ResponseInputItem;
@@ -39,7 +40,10 @@ import org.springframework.stereotype.Service;
 
 @Service
 public class ConversationMemoryModelClient {
-  static final String DEFAULT_EXTRACTION_MODEL = "openai/gpt-4.1-mini";
+  static final String DEFAULT_EXTRACTION_MODEL = "openrouter/z-ai/glm-5.2";
+  static final String DEFAULT_FALLBACK_MODEL = "openai/gpt-4.1-mini";
+  static final double DEFAULT_MAX_PROMPT_PRICE = 0.40;
+  static final double DEFAULT_MAX_COMPLETION_PRICE = 1.60;
   private static final int MAX_ITEMS = 20;
   private static final int MAX_ARTIFACT_LENGTH = 500;
   private static final int MAX_SUMMARY_LENGTH = 2_000;
@@ -57,6 +61,9 @@ public class ConversationMemoryModelClient {
   private final Supplier<OpenAIClient> openAiSupplier;
   private final ObjectMapper objectMapper;
   private final String extractionModel;
+  private final String fallbackModel;
+  private final double maxPromptPrice;
+  private final double maxCompletionPrice;
   private final @Nullable OperationalMetricsService metrics;
 
   @Autowired
@@ -65,6 +72,18 @@ public class ConversationMemoryModelClient {
       ObjectMapper objectMapper,
       @Value("${bbagent.memory.group.responses-model:" + DEFAULT_EXTRACTION_MODEL + "}")
           String extractionModel,
+      @Value("${bbagent.memory.group.fallback-responses-model:" + DEFAULT_FALLBACK_MODEL + "}")
+          String fallbackModel,
+      @Value(
+              "${bbagent.memory.group.max-prompt-price-per-million:"
+                  + DEFAULT_MAX_PROMPT_PRICE
+                  + "}")
+          double maxPromptPrice,
+      @Value(
+              "${bbagent.memory.group.max-completion-price-per-million:"
+                  + DEFAULT_MAX_COMPLETION_PRICE
+                  + "}")
+          double maxCompletionPrice,
       @Nullable OperationalMetricsService metrics) {
     this(
         () ->
@@ -74,6 +93,9 @@ public class ConversationMemoryModelClient {
                     .withOptions(builder -> builder.timeout(Duration.ofSeconds(120))),
         objectMapper,
         extractionModel,
+        fallbackModel,
+        maxPromptPrice,
+        maxCompletionPrice,
         metrics);
   }
 
@@ -82,15 +104,62 @@ public class ConversationMemoryModelClient {
       ObjectMapper objectMapper,
       String extractionModel,
       @Nullable OperationalMetricsService metrics) {
+    this(
+        openAiSupplier,
+        objectMapper,
+        extractionModel,
+        DEFAULT_FALLBACK_MODEL,
+        DEFAULT_MAX_PROMPT_PRICE,
+        DEFAULT_MAX_COMPLETION_PRICE,
+        metrics);
+  }
+
+  ConversationMemoryModelClient(
+      Supplier<OpenAIClient> openAiSupplier,
+      ObjectMapper objectMapper,
+      String extractionModel,
+      String fallbackModel,
+      double maxPromptPrice,
+      double maxCompletionPrice,
+      @Nullable OperationalMetricsService metrics) {
     this.openAiSupplier = openAiSupplier;
     this.objectMapper = objectMapper;
     this.extractionModel = StringUtils.defaultIfBlank(extractionModel, DEFAULT_EXTRACTION_MODEL);
+    this.fallbackModel = StringUtils.defaultIfBlank(fallbackModel, DEFAULT_FALLBACK_MODEL);
+    this.maxPromptPrice = requirePositivePrice(maxPromptPrice, "max prompt price");
+    this.maxCompletionPrice = requirePositivePrice(maxCompletionPrice, "max completion price");
     this.metrics = metrics;
   }
 
   public ModelExtraction extract(
       List<JournalMessage> messages, List<ExistingArtifact> activeArtifacts) {
-    var response = openAiSupplier.get().responses().create(buildRequest(messages, activeArtifacts));
+    RuntimeException primaryFailure;
+    try {
+      return extractWithModel(messages, activeArtifacts, extractionModel, true);
+    } catch (RuntimeException e) {
+      primaryFailure = e;
+    }
+    if (extractionModel.equals(fallbackModel)) {
+      throw primaryFailure;
+    }
+    try {
+      return extractWithModel(messages, activeArtifacts, fallbackModel, false);
+    } catch (RuntimeException fallbackFailure) {
+      fallbackFailure.addSuppressed(primaryFailure);
+      throw fallbackFailure;
+    }
+  }
+
+  private ModelExtraction extractWithModel(
+      List<JournalMessage> messages,
+      List<ExistingArtifact> activeArtifacts,
+      String model,
+      boolean applyPriceCeiling) {
+    var response =
+        openAiSupplier
+            .get()
+            .responses()
+            .create(buildRequest(messages, activeArtifacts, model, applyPriceCeiling));
     RawExtractionOutput output =
         response.output().stream()
             .flatMap(item -> item.message().stream())
@@ -103,6 +172,14 @@ public class ConversationMemoryModelClient {
 
   StructuredResponseCreateParams<RawExtractionOutput> buildRequest(
       List<JournalMessage> messages, List<ExistingArtifact> activeArtifacts) {
+    return buildRequest(messages, activeArtifacts, extractionModel, true);
+  }
+
+  private StructuredResponseCreateParams<RawExtractionOutput> buildRequest(
+      List<JournalMessage> messages,
+      List<ExistingArtifact> activeArtifacts,
+      String model,
+      boolean applyPriceCeiling) {
     String quotedInput;
     try {
       Map<String, String> participantLabels = pseudonymousParticipantLabels(messages);
@@ -145,26 +222,40 @@ public class ConversationMemoryModelClient {
       throw new IllegalStateException("could not serialize memory extraction input", e);
     }
 
-    return ResponseCreateParams.builder()
-        .model(extractionModel)
-        .temperature(0.0)
-        .maxOutputTokens(1_200)
-        .tools(List.of())
-        .parallelToolCalls(false)
-        .inputOfResponse(
-            List.of(
-                ResponseInputItem.ofEasyInputMessage(
-                    EasyInputMessage.builder()
-                        .role(EasyInputMessage.Role.DEVELOPER)
-                        .content(EXTRACTION_INSTRUCTIONS)
-                        .build()),
-                ResponseInputItem.ofEasyInputMessage(
-                    EasyInputMessage.builder()
-                        .role(EasyInputMessage.Role.USER)
-                        .content("Untrusted quoted extraction input JSON:\n" + quotedInput)
-                        .build())))
-        .text(RawExtractionOutput.class)
-        .build();
+    ResponseCreateParams.Builder requestBuilder =
+        ResponseCreateParams.builder()
+            .model(model)
+            .temperature(0.0)
+            .maxOutputTokens(1_200)
+            .tools(List.of())
+            .parallelToolCalls(false)
+            .inputOfResponse(
+                List.of(
+                    ResponseInputItem.ofEasyInputMessage(
+                        EasyInputMessage.builder()
+                            .role(EasyInputMessage.Role.DEVELOPER)
+                            .content(EXTRACTION_INSTRUCTIONS)
+                            .build()),
+                    ResponseInputItem.ofEasyInputMessage(
+                        EasyInputMessage.builder()
+                            .role(EasyInputMessage.Role.USER)
+                            .content("Untrusted quoted extraction input JSON:\n" + quotedInput)
+                            .build())));
+    if (applyPriceCeiling && model.startsWith("openrouter/")) {
+      requestBuilder.putAdditionalBodyProperty(
+          "extra_body",
+          JsonValue.from(
+              Map.of(
+                  "provider",
+                  Map.of(
+                      "sort",
+                      "price",
+                      "require_parameters",
+                      true,
+                      "max_price",
+                      Map.of("prompt", maxPromptPrice, "completion", maxCompletionPrice)))));
+    }
+    return requestBuilder.text(RawExtractionOutput.class).build();
   }
 
   ModelExtraction parseExtraction(
@@ -336,6 +427,13 @@ public class ConversationMemoryModelClient {
     } catch (NoSuchAlgorithmException e) {
       throw new IllegalStateException("SHA-256 unavailable", e);
     }
+  }
+
+  private static double requirePositivePrice(double value, String name) {
+    if (!Double.isFinite(value) || value <= 0.0) {
+      throw new IllegalArgumentException(name + " must be a positive finite value");
+    }
+    return value;
   }
 
   private record ParsedCandidate(ExtractionCandidate candidate, ObjectNode payload) {}

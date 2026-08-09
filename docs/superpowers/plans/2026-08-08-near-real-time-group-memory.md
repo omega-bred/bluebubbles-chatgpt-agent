@@ -976,7 +976,10 @@
   bbagent.memory.group.reconciliation-cron=${BBAGENT_GROUP_MEMORY_RECONCILIATION_CRON:0 15 3 * * *}
   bbagent.memory.group.cleanup-cron=${BBAGENT_GROUP_MEMORY_CLEANUP_CRON:0 45 3 * * *}
   bbagent.memory.group.proactive-poll-interval=${BBAGENT_GROUP_MEMORY_PROACTIVE_POLL_INTERVAL:PT15M}
-  bbagent.memory.group.responses-model=${BBAGENT_GROUP_MEMORY_RESPONSES_MODEL:openai/gpt-4.1-mini}
+  bbagent.memory.group.responses-model=${BBAGENT_GROUP_MEMORY_RESPONSES_MODEL:openrouter/z-ai/glm-5.2}
+  bbagent.memory.group.fallback-responses-model=${BBAGENT_GROUP_MEMORY_FALLBACK_RESPONSES_MODEL:openai/gpt-4.1-mini}
+  bbagent.memory.group.max-prompt-price-per-million=${BBAGENT_GROUP_MEMORY_MAX_PROMPT_PRICE_PER_MILLION:0.40}
+  bbagent.memory.group.max-completion-price-per-million=${BBAGENT_GROUP_MEMORY_MAX_COMPLETION_PRICE_PER_MILLION:1.60}
   bbagent.memory.group.raw-retention=${BBAGENT_GROUP_MEMORY_RAW_RETENTION:P30D}
   bbagent.memory.group.segment-retention=${BBAGENT_GROUP_MEMORY_SEGMENT_RETENTION:P90D}
   bbagent.memory.group.minimum-confidence=${BBAGENT_GROUP_MEMORY_MINIMUM_CONFIDENCE:0.85}

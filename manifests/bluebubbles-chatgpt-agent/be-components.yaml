@@ -197,6 +197,14 @@ spec:
               value: "false"
             - name: BBAGENT_GROUP_MEMORY_PROACTIVE_ENABLED
               value: "false"
+            - name: BBAGENT_GROUP_MEMORY_RESPONSES_MODEL
+              value: "openrouter/z-ai/glm-5.2"
+            - name: BBAGENT_GROUP_MEMORY_FALLBACK_RESPONSES_MODEL
+              value: "openai/gpt-4.1-mini"
+            - name: BBAGENT_GROUP_MEMORY_MAX_PROMPT_PRICE_PER_MILLION
+              value: "0.40"
+            - name: BBAGENT_GROUP_MEMORY_MAX_COMPLETION_PRICE_PER_MILLION
+              value: "1.60"
             - name: BBAGENT_GROUP_MEMORY_DEBOUNCE
               value: "PT60S"
             - name: BBAGENT_GROUP_MEMORY_POLL_INTERVAL

@@ -2,12 +2,23 @@ package io.breland.bbagent.server.agent.memory;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.openai.client.OpenAIClient;
+import com.openai.models.responses.StructuredResponse;
+import com.openai.models.responses.StructuredResponseCreateParams;
+import com.openai.models.responses.StructuredResponseOutputItem;
+import com.openai.models.responses.StructuredResponseOutputMessage;
+import com.openai.services.blocking.ResponseService;
 import io.breland.bbagent.server.agent.memory.ConversationMemoryModels.ExistingArtifact;
 import io.breland.bbagent.server.agent.memory.ConversationMemoryModels.JournalMessage;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 import org.junit.jupiter.api.Test;
 
 class ConversationMemoryModelClientTest {
@@ -149,6 +160,71 @@ class ConversationMemoryModelClientTest {
     assertThat(request.toString()).containsIgnoringCase("untrusted");
     assertThat(request.toString()).contains("participant-1", "participant-2");
     assertThat(request.toString()).doesNotContain("account-1", "account-2");
+  }
+
+  @Test
+  void capsOpenRouterPricingAtTheConfiguredFallbackCost() {
+    var priceGuardedClient =
+        new ConversationMemoryModelClient(
+            () -> null,
+            new ObjectMapper().findAndRegisterModules(),
+            "openrouter/z-ai/glm-5.2",
+            null);
+
+    var request = priceGuardedClient.buildRequest(messages(), List.of()).rawParams();
+
+    assertThat(request._additionalBodyProperties().toString())
+        .contains("extra_body", "provider", "max_price", "prompt", "0.4", "completion", "1.6");
+  }
+
+  @Test
+  @SuppressWarnings({"unchecked", "rawtypes"})
+  void fallsBackToGpt41MiniWhenTheGuardedGlmRequestIsRejected() {
+    OpenAIClient openAIClient = mock(OpenAIClient.class);
+    ResponseService responseService = mock(ResponseService.class);
+    StructuredResponse<ConversationMemoryModelClient.RawExtractionOutput> successfulResponse =
+        mock(StructuredResponse.class);
+    StructuredResponseOutputItem<ConversationMemoryModelClient.RawExtractionOutput> outputItem =
+        mock(StructuredResponseOutputItem.class);
+    StructuredResponseOutputMessage<ConversationMemoryModelClient.RawExtractionOutput>
+        outputMessage = mock(StructuredResponseOutputMessage.class);
+    StructuredResponseOutputMessage.Content<ConversationMemoryModelClient.RawExtractionOutput>
+        outputContent = mock(StructuredResponseOutputMessage.Content.class);
+    List<StructuredResponseCreateParams<?>> requests = new ArrayList<>();
+
+    when(openAIClient.responses()).thenReturn(responseService);
+    when(successfulResponse.output()).thenReturn(List.of(outputItem));
+    when(outputItem.message()).thenReturn(Optional.of(outputMessage));
+    when(outputMessage.content()).thenReturn(List.of(outputContent));
+    when(outputContent.outputText())
+        .thenReturn(
+            Optional.of(
+                new ConversationMemoryModelClient.RawExtractionOutput(
+                    "Fallback extraction succeeded.", List.of())));
+    when(responseService.create(any(StructuredResponseCreateParams.class)))
+        .thenAnswer(
+            invocation -> {
+              StructuredResponseCreateParams<?> request = invocation.getArgument(0);
+              requests.add(request);
+              if (requests.size() == 1) {
+                throw new IllegalStateException("OpenRouter price ceiling rejected the request");
+              }
+              return successfulResponse;
+            });
+
+    var priceGuardedClient =
+        new ConversationMemoryModelClient(
+            () -> openAIClient,
+            new ObjectMapper().findAndRegisterModules(),
+            "openrouter/z-ai/glm-5.2",
+            null);
+
+    var extraction = priceGuardedClient.extract(messages(), List.of());
+
+    assertThat(extraction.summary()).isEqualTo("Fallback extraction succeeded.");
+    assertThat(requests)
+        .extracting(request -> request.rawParams().model().orElseThrow().asString())
+        .containsExactly("openrouter/z-ai/glm-5.2", "openai/gpt-4.1-mini");
   }
 
   private static List<JournalMessage> messages() {
