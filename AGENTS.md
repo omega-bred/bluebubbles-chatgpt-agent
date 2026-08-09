@@ -12,7 +12,7 @@ Nix/dev dependencies:
 - If you are invoking one command from outside the shell, use `nix develop --command <command>`,
   for example `nix develop --command ./gradlew test` or
   `nix develop --command ./gradlew spotlessApply`.
-- The flake provides OpenJDK 25, Gradle, Node 20/npm, Python 3.13 with LXMF/RNS, Postgres,
+- The flake provides OpenJDK 25, Gradle, Node 24/npm, Python 3.13 with LXMF/RNS, Postgres,
   Docker/Kubernetes helpers, Keycloak admin tooling, OpenAPI/Flyway CLIs, 1Password CLI, and
   Darwin-only App Clip helpers (`swiftformat`, `xcbeautify`) plus the real upstream App Store
   Connect CLI (`asc`).

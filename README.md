@@ -24,7 +24,7 @@ Google Calendar + other tools. Built with Spring Boot + OpenAPI.
 
 ## Requirements
 - Java 25 (project uses Gradle toolchains; use `nix develop` for the pinned toolchain)
-- Node 20+ (for frontend)
+- Node 24.11+ (for the Babel 8 frontend toolchain)
 - Postgres (for app data + Google OAuth tokens)
 - BlueChat/BlueBubbles relay server reachable by the agent
 - OpenAI API key

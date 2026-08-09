@@ -154,7 +154,7 @@ def npmPath = System.getenv('NPM_PATH') ?: ['bash', 'zsh']
                 null
             }
         }
-        .find { it } ?: "${System.getProperty('user.home')}/.nvm/versions/node/v24.6.0/bin/npm"
+        .find { it } ?: "${System.getProperty('user.home')}/.nvm/versions/node/v24.15.0/bin/npm"
 
 def isTruthy = { value ->
     value != null && ['1', 'true', 'yes', 'on'].contains(value.toString().toLowerCase(Locale.ROOT))
