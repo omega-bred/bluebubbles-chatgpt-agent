@@ -21,6 +21,7 @@ import java.util.Optional;
 import java.util.UUID;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.lang.Nullable;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
@@ -39,20 +40,23 @@ public class ConversationMemoryWorker {
   private final @Nullable OperationalMetricsService metrics;
   private final Clock clock;
   private final String workerId;
+  private final boolean globallyEnabled;
 
   @Autowired
   public ConversationMemoryWorker(
       ConversationMemoryStore store,
       ConversationMembershipService membershipService,
       ConversationMemoryModelClient modelClient,
-      @Nullable OperationalMetricsService metrics) {
+      @Nullable OperationalMetricsService metrics,
+      @Value("${bbagent.memory.group.enabled:false}") boolean globallyEnabled) {
     this(
         store,
         membershipService,
         modelClient,
         metrics,
         Clock.systemUTC(),
-        UUID.randomUUID().toString());
+        UUID.randomUUID().toString(),
+        globallyEnabled);
   }
 
   ConversationMemoryWorker(
@@ -62,18 +66,33 @@ public class ConversationMemoryWorker {
       @Nullable OperationalMetricsService metrics,
       Clock clock,
       String workerId) {
+    this(store, membershipService, modelClient, metrics, clock, workerId, true);
+  }
+
+  ConversationMemoryWorker(
+      ConversationMemoryStore store,
+      ConversationMembershipService membershipService,
+      ConversationMemoryModelClient modelClient,
+      @Nullable OperationalMetricsService metrics,
+      Clock clock,
+      String workerId,
+      boolean globallyEnabled) {
     this.store = store;
     this.membershipService = membershipService;
     this.modelClient = modelClient;
     this.metrics = metrics;
     this.clock = clock == null ? Clock.systemUTC() : clock;
     this.workerId = workerId;
+    this.globallyEnabled = globallyEnabled;
   }
 
   @Scheduled(
       fixedDelayString = "${bbagent.memory.group.worker-poll-interval:PT5S}",
       initialDelayString = "${bbagent.memory.group.worker-initial-delay:PT15S}")
   public void processDueConversationMemory() {
+    if (!globallyEnabled) {
+      return;
+    }
     Instant now = clock.instant();
     for (WorkClaim claim : store.claimDueExtractionWork(workerId, now, CLAIM_LIMIT)) {
       process(claim);

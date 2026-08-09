@@ -14,9 +14,11 @@ import io.breland.bbagent.server.agent.memory.ConversationMemoryModels.CatchupRe
 import io.breland.bbagent.server.agent.memory.ConversationMemoryModels.DirectConversationRoute;
 import io.breland.bbagent.server.agent.memory.ConversationMemoryModels.ProactiveDelivery;
 import io.breland.bbagent.server.agent.transport.bb.BBHttpClientWrapper;
+import io.breland.bbagent.server.metrics.OperationalMetricsService;
 import io.breland.bbagent.server.ratelimit.MessageResponseRateLimitService;
 import io.breland.bbagent.server.ratelimit.RateLimitDecision;
 import java.time.Clock;
+import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.List;
@@ -34,6 +36,7 @@ class ProactiveCatchupServiceTest {
   private final BBHttpClientWrapper blueBubbles = Mockito.mock(BBHttpClientWrapper.class);
   private final MessageResponseRateLimitService responseQuota =
       Mockito.mock(MessageResponseRateLimitService.class);
+  private final OperationalMetricsService metrics = Mockito.mock(OperationalMetricsService.class);
 
   @Test
   void globalDefaultOffDoesNotClaimPreferences() {
@@ -104,6 +107,7 @@ class ProactiveCatchupServiceTest {
     verify(store)
         .completeCatchupPreferenceClaim(
             claim, NOW.plus(java.time.Duration.ofMinutes(15)), NOW, null);
+    verify(metrics).recordMemoryProactiveDelivery("scheduled", true, null, Duration.ZERO);
   }
 
   @Test
@@ -145,6 +149,8 @@ class ProactiveCatchupServiceTest {
 
     verify(store).completeCatchupDelivery("delivery-1", "UNKNOWN", NOW);
     verify(blueBubbles).sendTextDirect(any());
+    verify(metrics)
+        .recordMemoryProactiveDelivery("scheduled", false, "send_unconfirmed", Duration.ZERO);
   }
 
   private ProactiveCatchupService service(boolean globallyEnabled) {
@@ -154,7 +160,7 @@ class ProactiveCatchupServiceTest {
         blueBubbles,
         responseQuota,
         new ObjectMapper(),
-        null,
+        metrics,
         Clock.fixed(NOW, ZoneOffset.UTC),
         "proactive-worker",
         globallyEnabled);

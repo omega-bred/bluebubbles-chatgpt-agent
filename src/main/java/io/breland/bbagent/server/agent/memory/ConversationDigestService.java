@@ -32,6 +32,7 @@ import java.util.Optional;
 import java.util.UUID;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.lang.Nullable;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
@@ -47,6 +48,8 @@ public class ConversationDigestService {
   private final @Nullable ConversationJournalService journalService;
   private final Clock clock;
   private final String workerId;
+  private final @Nullable OperationalMetricsService metrics;
+  private final boolean globallyEnabled;
 
   @Autowired
   public ConversationDigestService(
@@ -54,14 +57,18 @@ public class ConversationDigestService {
       ObjectMapper objectMapper,
       @Nullable BBHttpClientWrapper bbHttpClientWrapper,
       @Nullable ConversationJournalService journalService,
-      @Nullable Clock clock) {
+      @Nullable Clock clock,
+      @Nullable OperationalMetricsService metrics,
+      @Value("${bbagent.memory.group.enabled:false}") boolean globallyEnabled) {
     this(
         store,
         objectMapper,
         bbHttpClientWrapper,
         journalService,
         clock == null ? Clock.systemUTC() : clock,
-        UUID.randomUUID().toString());
+        UUID.randomUUID().toString(),
+        metrics,
+        globallyEnabled);
   }
 
   ConversationDigestService(
@@ -71,16 +78,46 @@ public class ConversationDigestService {
       @Nullable ConversationJournalService journalService,
       Clock clock,
       String workerId) {
+    this(store, objectMapper, bbHttpClientWrapper, journalService, clock, workerId, null, true);
+  }
+
+  ConversationDigestService(
+      ConversationMemoryStore store,
+      ObjectMapper objectMapper,
+      @Nullable BBHttpClientWrapper bbHttpClientWrapper,
+      @Nullable ConversationJournalService journalService,
+      Clock clock,
+      String workerId,
+      @Nullable OperationalMetricsService metrics,
+      boolean globallyEnabled) {
     this.store = store;
     this.objectMapper = objectMapper;
     this.bbHttpClientWrapper = bbHttpClientWrapper;
     this.journalService = journalService;
     this.clock = clock == null ? Clock.systemUTC() : clock;
     this.workerId = workerId;
+    this.metrics = metrics;
+    this.globallyEnabled = globallyEnabled;
   }
 
   public CatchupResult catchUp(
       String accountId, @Nullable String groupHint, Instant requestedFrom, Instant requestedTo) {
+    Instant startedAt = clock.instant();
+    try {
+      CatchupResult result = catchUpInternal(accountId, groupHint, requestedFrom, requestedTo);
+      recordCatchup(true, null, startedAt);
+      return result;
+    } catch (RuntimeException e) {
+      recordCatchup(false, OperationalMetricsService.failureType(e), startedAt);
+      throw e;
+    }
+  }
+
+  private CatchupResult catchUpInternal(
+      String accountId, @Nullable String groupHint, Instant requestedFrom, Instant requestedTo) {
+    if (!globallyEnabled) {
+      return new CatchupResult(List.of(), List.of());
+    }
     if (StringUtils.isBlank(accountId) || requestedFrom == null || requestedTo == null) {
       throw new IllegalArgumentException("account and catch-up range are required");
     }
@@ -108,8 +145,33 @@ public class ConversationDigestService {
 
   public CatchupResult catchUpForConversation(
       String accountId, String conversationId, Instant requestedFrom, Instant requestedTo) {
+    Instant startedAt = clock.instant();
+    try {
+      CatchupResult result =
+          catchUpForConversationInternal(accountId, conversationId, requestedFrom, requestedTo);
+      recordCatchup(true, null, startedAt);
+      return result;
+    } catch (RuntimeException e) {
+      recordCatchup(false, OperationalMetricsService.failureType(e), startedAt);
+      throw e;
+    }
+  }
+
+  private CatchupResult catchUpForConversationInternal(
+      String accountId, String conversationId, Instant requestedFrom, Instant requestedTo) {
+    if (!globallyEnabled) {
+      return new CatchupResult(List.of(), List.of());
+    }
     if (StringUtils.isBlank(conversationId)) {
       throw new IllegalArgumentException("conversation is required");
+    }
+    Instant now = clock.instant();
+    if (StringUtils.isBlank(accountId)
+        || requestedFrom == null
+        || requestedTo == null
+        || requestedTo.isAfter(now)
+        || !requestedFrom.isBefore(requestedTo)) {
+      throw new IllegalArgumentException("catch-up range must be ordered and not in the future");
     }
     Instant from = requestedFrom;
     if (Duration.between(from, requestedTo).compareTo(MAX_CATCHUP_RANGE) > 0) {
@@ -133,17 +195,39 @@ public class ConversationDigestService {
 
   @Scheduled(cron = "${bbagent.memory.group.reconciliation-cron:0 15 3 * * *}", zone = "UTC")
   public void reconcilePreviousDay() {
-    Instant now = clock.instant();
-    LocalDate previousDay = LocalDate.ofInstant(now, ZoneOffset.UTC).minusDays(1);
-    Instant periodStart = previousDay.atStartOfDay().toInstant(ZoneOffset.UTC);
-    Instant periodEnd = previousDay.plusDays(1).atStartOfDay().toInstant(ZoneOffset.UTC);
-    for (ConversationRecord conversation : store.findMemoryEnabledConversations()) {
-      if (conversation.memoryEnabledAt().isBefore(periodEnd)) {
-        store.seedDigestWork(conversation.conversationId(), periodStart, periodEnd, now);
-      }
+    if (!globallyEnabled) {
+      return;
     }
-    for (DigestWorkClaim claim : store.claimDueDigestWork(workerId, now, DIGEST_CLAIM_LIMIT)) {
-      reconcile(claim, now);
+    Instant now = clock.instant();
+    boolean success = true;
+    try {
+      LocalDate previousDay = LocalDate.ofInstant(now, ZoneOffset.UTC).minusDays(1);
+      Instant periodStart = previousDay.atStartOfDay().toInstant(ZoneOffset.UTC);
+      Instant periodEnd = previousDay.plusDays(1).atStartOfDay().toInstant(ZoneOffset.UTC);
+      for (ConversationRecord conversation : store.findMemoryEnabledConversations()) {
+        if (conversation.memoryEnabledAt().isBefore(periodEnd)) {
+          store.seedDigestWork(conversation.conversationId(), periodStart, periodEnd, now);
+        }
+      }
+      for (DigestWorkClaim claim : store.claimDueDigestWork(workerId, now, DIGEST_CLAIM_LIMIT)) {
+        success = reconcile(claim, now) && success;
+      }
+      if (metrics != null) {
+        metrics.recordMemoryDigest(
+            "reconcile",
+            success,
+            success ? null : "digest_work_failed",
+            Duration.between(now, clock.instant()));
+      }
+    } catch (RuntimeException e) {
+      if (metrics != null) {
+        metrics.recordMemoryDigest(
+            "reconcile",
+            false,
+            OperationalMetricsService.failureType(e),
+            Duration.between(now, clock.instant()));
+      }
+      throw e;
     }
   }
 
@@ -276,7 +360,7 @@ public class ConversationDigestService {
     return questions.stream().distinct().toList();
   }
 
-  private void reconcile(DigestWorkClaim claim, Instant now) {
+  private boolean reconcile(DigestWorkClaim claim, Instant now) {
     try {
       refreshJournalFromBlueBubbles(claim);
       List<JournalMessage> messages =
@@ -297,7 +381,7 @@ public class ConversationDigestService {
       if (journalCoverage.isAfter(segmentCoverage)) {
         store.scheduleExtraction(claim.conversationId(), now);
         store.failDigestWork(claim, now, "segment_coverage_gap");
-        return;
+        return false;
       }
       String summary =
           segments.isEmpty()
@@ -323,8 +407,17 @@ public class ConversationDigestService {
               coverageThrough,
               segments.stream().map(SummaryMaterial::summaryId).toList(),
               now));
+      return true;
     } catch (RuntimeException e) {
       store.failDigestWork(claim, now, OperationalMetricsService.failureType(e));
+      return false;
+    }
+  }
+
+  private void recordCatchup(boolean success, @Nullable String failureType, Instant startedAt) {
+    if (metrics != null) {
+      metrics.recordMemoryCatchup(
+          success, failureType, Duration.between(startedAt, clock.instant()));
     }
   }
 

@@ -12,6 +12,7 @@ import java.time.Instant;
 import java.util.HexFormat;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
@@ -21,14 +22,23 @@ public class ConversationJournalService {
   private final ConversationMemoryStore store;
   private final AgentAccountResolver accountResolver;
   private final Duration debounce;
+  private final boolean globallyEnabled;
 
+  @Autowired
   public ConversationJournalService(
       ConversationMemoryStore store,
       AgentAccountResolver accountResolver,
-      @Value("${bbagent.memory.group.debounce:PT60S}") Duration debounce) {
+      @Value("${bbagent.memory.group.debounce:PT60S}") Duration debounce,
+      @Value("${bbagent.memory.group.enabled:false}") boolean globallyEnabled) {
     this.store = store;
     this.accountResolver = accountResolver;
     this.debounce = debounce == null ? Duration.ofSeconds(60) : debounce;
+    this.globallyEnabled = globallyEnabled;
+  }
+
+  ConversationJournalService(
+      ConversationMemoryStore store, AgentAccountResolver accountResolver, Duration debounce) {
+    this(store, accountResolver, debounce, true);
   }
 
   public boolean recordEligibleMessage(IncomingMessage message) {
@@ -48,7 +58,8 @@ public class ConversationJournalService {
         store.upsertConversation(
             message.transportOrDefault(), message.chatGuid(), message.isGroup(), null, observedAt);
     store.recordMembership(conversationId, accountId, observedAt);
-    if (!message.isGroup()
+    if (!globallyEnabled
+        || !message.isGroup()
         || store
             .findEnabledConversationId(message.transportOrDefault(), message.chatGuid())
             .isEmpty()

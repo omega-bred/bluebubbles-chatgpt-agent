@@ -16,6 +16,8 @@ import io.breland.bbagent.server.agent.memory.ConversationMemoryModels.Extractio
 import io.breland.bbagent.server.agent.memory.ConversationMemoryModels.ExtractionCandidate;
 import io.breland.bbagent.server.agent.memory.ConversationMemoryModels.ExtractionCheckpoint;
 import io.breland.bbagent.server.agent.memory.ConversationMemoryModels.JournalMessage;
+import io.breland.bbagent.server.agent.memory.ConversationMemoryModels.MemoryBacklog;
+import io.breland.bbagent.server.agent.memory.ConversationMemoryModels.MemoryCleanupResult;
 import io.breland.bbagent.server.agent.memory.ConversationMemoryModels.ProactiveDelivery;
 import io.breland.bbagent.server.agent.memory.ConversationMemoryModels.ProjectedArtifact;
 import io.breland.bbagent.server.agent.memory.ConversationMemoryModels.ProjectionArtifact;
@@ -33,6 +35,8 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import org.apache.commons.lang3.StringUtils;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.lang.Nullable;
 import org.springframework.stereotype.Repository;
@@ -45,9 +49,18 @@ public class ConversationMemoryStore {
   private static final Duration CATCHUP_LEASE = Duration.ofMinutes(5);
 
   private final JdbcTemplate jdbcTemplate;
+  private final double minimumConfidence;
+
+  @Autowired
+  public ConversationMemoryStore(
+      JdbcTemplate jdbcTemplate,
+      @Value("${bbagent.memory.group.minimum-confidence:0.85}") double minimumConfidence) {
+    this.jdbcTemplate = jdbcTemplate;
+    this.minimumConfidence = minimumConfidence;
+  }
 
   public ConversationMemoryStore(JdbcTemplate jdbcTemplate) {
-    this.jdbcTemplate = jdbcTemplate;
+    this(jdbcTemplate, 0.85);
   }
 
   @Transactional
@@ -1075,7 +1088,7 @@ public class ConversationMemoryStore {
             on audience.artifact_id = artifact.artifact_id
          where artifact.conversation_id = ? and audience.account_id = ?
            and artifact.kind = 'GROUP_DECISION' and artifact.status = 'CONFIRMED'
-           and artifact.sensitivity = 'NORMAL' and artifact.confidence >= 0.85
+           and artifact.sensitivity = 'NORMAL' and artifact.confidence >= ?
            and artifact.occurred_at >= ? and artifact.occurred_at < ?
            and (artifact.expires_at is null or artifact.expires_at > ?)
          order by artifact.occurred_at, artifact.artifact_id
@@ -1083,6 +1096,7 @@ public class ConversationMemoryStore {
         (resultSet, rowNumber) -> resultSet.getString(1),
         conversationId,
         accountId,
+        minimumConfidence,
         fromInclusive,
         toExclusive,
         now);
@@ -1322,6 +1336,123 @@ public class ConversationMemoryStore {
         claim.periodEnd(),
         claim.workerId(),
         failedAt);
+  }
+
+  @Transactional
+  public MemoryCleanupResult cleanupMemory(
+      Instant now, Instant rawMessageBefore, Instant segmentBefore) {
+    Objects.requireNonNull(now, "now");
+    Objects.requireNonNull(rawMessageBefore, "rawMessageBefore");
+    Objects.requireNonNull(segmentBefore, "segmentBefore");
+    int rawMessagesCleared =
+        jdbcTemplate.update(
+            """
+            update agent_conversation_messages
+               set message_text = null, updated_at = ?
+             where message_text is not null and source_timestamp < ?
+            """,
+            now,
+            rawMessageBefore);
+    jdbcTemplate.update(
+        """
+        delete from conversation_summary_audiences
+         where summary_type = 'SEGMENT' and summary_id in (
+           select segment.segment_id
+             from conversation_summary_segments segment
+            where segment.window_end < ? and exists (
+              select 1 from conversation_daily_digests digest
+               where digest.conversation_id = segment.conversation_id
+                 and digest.period_start <= segment.window_start
+                 and digest.period_end >= segment.window_end
+            )
+         )
+        """,
+        segmentBefore);
+    int segmentsDeleted =
+        jdbcTemplate.update(
+            """
+            delete from conversation_summary_segments
+             where segment_id in (
+               select segment.segment_id
+                 from conversation_summary_segments segment
+                where segment.window_end < ? and exists (
+                  select 1 from conversation_daily_digests digest
+                   where digest.conversation_id = segment.conversation_id
+                     and digest.period_start <= segment.window_start
+                     and digest.period_end >= segment.window_end
+                )
+             )
+            """,
+            segmentBefore);
+    List<String> expiredArtifactIds =
+        jdbcTemplate.query(
+            """
+            select artifact_id from conversation_memory_artifacts
+             where expires_at is not null and expires_at <= ?
+               and status not in ('DELETED', 'SUPERSEDED')
+            """,
+            (resultSet, rowNumber) -> resultSet.getString(1),
+            now);
+    int artifactsExpired = 0;
+    if (!expiredArtifactIds.isEmpty()) {
+      String placeholders =
+          String.join(",", java.util.Collections.nCopies(expiredArtifactIds.size(), "?"));
+      List<Object> artifactUpdateArguments = new ArrayList<>();
+      artifactUpdateArguments.add(now);
+      artifactUpdateArguments.addAll(expiredArtifactIds);
+      artifactsExpired =
+          jdbcTemplate.update(
+              "update conversation_memory_artifacts set status = 'DELETED', updated_at = ? "
+                  + "where artifact_id in ("
+                  + placeholders
+                  + ")",
+              artifactUpdateArguments.toArray());
+      List<Object> projectionArguments = new ArrayList<>();
+      projectionArguments.add(now);
+      projectionArguments.add(now);
+      projectionArguments.addAll(expiredArtifactIds);
+      jdbcTemplate.update(
+          "update conversation_memory_projections set operation = 'DELETE', state = 'PENDING', "
+              + "available_at = ?, claimed_by = null, claimed_until = null, "
+              + "last_error_code = null, updated_at = ? where artifact_id in ("
+              + placeholders
+              + ")",
+          projectionArguments.toArray());
+    }
+    return new MemoryCleanupResult(rawMessagesCleared, segmentsDeleted, artifactsExpired);
+  }
+
+  @Transactional(readOnly = true)
+  public MemoryBacklog memoryBacklog(Instant now) {
+    Objects.requireNonNull(now, "now");
+    List<Instant> extractionRows =
+        jdbcTemplate.query(
+            "select min(available_at) from conversation_memory_work where available_at <= ?",
+            (resultSet, rowNumber) -> toInstant(resultSet.getTimestamp(1)),
+            now);
+    Instant oldestExtraction = extractionRows.isEmpty() ? null : extractionRows.getFirst();
+    List<Instant> projectionRows =
+        jdbcTemplate.query(
+            """
+            select min(available_at) from conversation_memory_projections
+             where state in ('PENDING', 'FAILED') and available_at <= ?
+            """,
+            (resultSet, rowNumber) -> toInstant(resultSet.getTimestamp(1)),
+            now);
+    Instant oldestProjection = projectionRows.isEmpty() ? null : projectionRows.getFirst();
+    Long failedWorkCount =
+        jdbcTemplate.queryForObject(
+            """
+            select
+              (select count(*) from conversation_memory_work where last_error_code is not null)
+              + (select count(*) from conversation_memory_projections where state = 'FAILED')
+              + (select count(*) from conversation_digest_work where last_error_code is not null)
+            """,
+            Long.class);
+    return new MemoryBacklog(
+        backlogAge(oldestExtraction, now),
+        backlogAge(oldestProjection, now),
+        failedWorkCount == null ? 0L : failedWorkCount);
   }
 
   @Transactional(readOnly = true)
@@ -1723,7 +1854,13 @@ public class ConversationMemoryStore {
   private boolean isProjectionEligible(ExtractionCandidate candidate) {
     return candidate.status() == CONFIRMED
         && candidate.sensitivity() == NORMAL
-        && candidate.confidence() >= 0.85;
+        && candidate.confidence() >= minimumConfidence;
+  }
+
+  private Duration backlogAge(@Nullable Instant availableAt, Instant now) {
+    return availableAt == null || availableAt.isAfter(now)
+        ? Duration.ZERO
+        : Duration.between(availableAt, now);
   }
 
   private void saveSummarySegment(ExtractionBatch batch) {

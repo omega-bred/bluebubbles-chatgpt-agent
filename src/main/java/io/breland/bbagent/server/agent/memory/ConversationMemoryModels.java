@@ -1,5 +1,6 @@
 package io.breland.bbagent.server.agent.memory;
 
+import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 
@@ -257,4 +258,10 @@ public final class ConversationMemoryModels {
       String directConversationId,
       String digestHash,
       Instant coverageThrough) {}
+
+  public record MemoryCleanupResult(
+      int rawMessagesCleared, int segmentsDeleted, int artifactsExpired) {}
+
+  public record MemoryBacklog(
+      Duration oldestExtractionAge, Duration oldestProjectionAge, long failedWorkCount) {}
 }

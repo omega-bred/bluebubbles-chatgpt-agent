@@ -193,6 +193,40 @@ spec:
               value: "gemini/gemini-3.5-flash"
             - name: BBAGENT_TERMS_ACCEPTANCE_RESPONSES_MODEL
               value: "openai/gpt-4.1-mini"
+            - name: BBAGENT_GROUP_MEMORY_ENABLED
+              value: "false"
+            - name: BBAGENT_GROUP_MEMORY_PROACTIVE_ENABLED
+              value: "false"
+            - name: BBAGENT_GROUP_MEMORY_DEBOUNCE
+              value: "PT60S"
+            - name: BBAGENT_GROUP_MEMORY_POLL_INTERVAL
+              value: "PT5S"
+            - name: BBAGENT_GROUP_MEMORY_INITIAL_DELAY
+              value: "PT15S"
+            - name: BBAGENT_GROUP_MEMORY_RECONCILIATION_CRON
+              value: "0 15 3 * * *"
+            - name: BBAGENT_GROUP_MEMORY_CLEANUP_CRON
+              value: "0 45 3 * * *"
+            - name: BBAGENT_GROUP_MEMORY_PROACTIVE_POLL_INTERVAL
+              value: "PT15M"
+            - name: BBAGENT_GROUP_MEMORY_METRICS_POLL_INTERVAL
+              value: "PT1M"
+            - name: BBAGENT_GROUP_MEMORY_METRICS_INITIAL_DELAY
+              value: "PT30S"
+            - name: BBAGENT_GROUP_MEMORY_RESPONSES_MODEL
+              value: "openai/gpt-4.1-mini"
+            - name: BBAGENT_GROUP_MEMORY_RAW_RETENTION
+              value: "P30D"
+            - name: BBAGENT_GROUP_MEMORY_SEGMENT_RETENTION
+              value: "P90D"
+            - name: BBAGENT_GROUP_MEMORY_MINIMUM_CONFIDENCE
+              value: "0.85"
+            - name: BBAGENT_MEMORY_PROJECTION_POLL_INTERVAL
+              value: "PT5S"
+            - name: BBAGENT_MEMORY_PROJECTION_INITIAL_DELAY
+              value: "PT15S"
+            - name: BBAGENT_MEMORY_LEGACY_SCOPE_READ_ENABLED
+              value: "true"
             - name: "BLUEBUBBLES_PATH"
               valueFrom:
                 secretKeyRef:

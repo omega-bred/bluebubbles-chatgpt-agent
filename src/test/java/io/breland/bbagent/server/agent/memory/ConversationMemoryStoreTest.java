@@ -196,6 +196,116 @@ class ConversationMemoryStoreTest {
   }
 
   @Test
+  void cleanupClearsRawTextDeletesCoveredSegmentsAndQueuesExpiredArtifactDeletion() {
+    String accountId = createAccount("retention@example.com");
+    String conversationId =
+        store.upsertConversation(
+            "bluebubbles", "iMessage;+;retention", true, "Retention", OBSERVED_AT);
+    Instant oldAt = OBSERVED_AT.minus(Duration.ofDays(100));
+    store.recordMembership(conversationId, accountId, oldAt.minusSeconds(1));
+    JournalMessage oldSource =
+        new JournalMessage(
+            "retention-old",
+            conversationId,
+            accountId,
+            "Old source text",
+            oldAt,
+            false,
+            false,
+            "retention-old-hash");
+    store.recordMessage(oldSource);
+    store.scheduleExtraction(conversationId, oldAt);
+    WorkClaim extractionClaim =
+        store.claimDueExtractionWork("retention-extract", oldAt, 10).getFirst();
+    String artifactId =
+        store
+            .saveExtraction(
+                extractionClaim,
+                new ExtractionBatch(
+                    conversationId,
+                    List.of(oldSource),
+                    List.of(
+                        new ExtractionCandidate(
+                            GROUP_DECISION,
+                            "The old decision expired.",
+                            CONFIRMED,
+                            NORMAL,
+                            0.95,
+                            oldAt,
+                            OBSERVED_AT.minusSeconds(1),
+                            List.of(oldSource.messageGuid()),
+                            null,
+                            "retention-artifact-hash")),
+                    "An old summary.",
+                    "[]",
+                    "retention-segment-hash",
+                    oldAt))
+            .getFirst();
+    store.recordMessage(
+        new JournalMessage(
+            "retention-new",
+            conversationId,
+            accountId,
+            "Recent source text",
+            OBSERVED_AT,
+            false,
+            false,
+            "retention-new-hash"));
+
+    Instant periodStart = oldAt.minusSeconds(60);
+    Instant periodEnd = oldAt.plusSeconds(60);
+    var oldSegments = store.findSegments(conversationId, periodStart, periodEnd);
+    store.seedDigestWork(conversationId, periodStart, periodEnd, OBSERVED_AT);
+    var digestClaim = store.claimDueDigestWork("retention-digest", OBSERVED_AT, 10).getFirst();
+    store.saveDigest(
+        digestClaim,
+        new DigestBatch(
+            conversationId,
+            periodStart,
+            periodEnd,
+            "Preserved daily digest.",
+            "[]",
+            "retention-digest-hash",
+            oldAt,
+            oldSegments.stream().map(ConversationMemoryModels.SummaryMaterial::summaryId).toList(),
+            OBSERVED_AT));
+
+    var result =
+        store.cleanupMemory(
+            OBSERVED_AT,
+            OBSERVED_AT.minus(Duration.ofDays(30)),
+            OBSERVED_AT.minus(Duration.ofDays(90)));
+
+    assertThat(result.rawMessagesCleared()).isEqualTo(1);
+    assertThat(result.segmentsDeleted()).isEqualTo(1);
+    assertThat(result.artifactsExpired()).isEqualTo(1);
+    assertThat(store.findMessages(conversationId, oldAt.minusSeconds(1), oldAt.plusSeconds(1)))
+        .singleElement()
+        .extracting(JournalMessage::text)
+        .isNull();
+    assertThat(
+            store.findMessages(
+                conversationId, OBSERVED_AT.minusSeconds(1), OBSERVED_AT.plusSeconds(1)))
+        .singleElement()
+        .extracting(JournalMessage::text)
+        .isEqualTo("Recent source text");
+    assertThat(store.findSegments(conversationId, periodStart, periodEnd)).isEmpty();
+    assertThat(store.findProjectionArtifact(artifactId))
+        .hasValueSatisfying(
+            artifact ->
+                assertThat(artifact.status())
+                    .isEqualTo(ConversationMemoryModels.ArtifactStatus.DELETED));
+    assertThat(store.claimDueProjections("retention-project", OBSERVED_AT, 10))
+        .singleElement()
+        .satisfies(
+            claim -> {
+              assertThat(claim.artifactId()).isEqualTo(artifactId);
+              assertThat(claim.operation())
+                  .isEqualTo(ConversationMemoryModels.ProjectionOperation.DELETE);
+            });
+  }
+
+  @Test
   void onlyOneWorkerCanClaimDueConversation() {
     String conversationId =
         store.upsertConversation("bluebubbles", "iMessage;+;group-4", true, "Claim", OBSERVED_AT);

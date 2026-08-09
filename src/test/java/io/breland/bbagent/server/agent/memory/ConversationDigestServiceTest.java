@@ -3,6 +3,7 @@ package io.breland.bbagent.server.agent.memory;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -168,6 +169,26 @@ class ConversationDigestServiceTest {
     assertThat(batch.getValue().summary()).isEqualTo("The group selected Friday.");
     assertThat(batch.getValue().coverageThrough()).isEqualTo(periodStart.plusSeconds(200));
     assertThat(batch.getValue().sourceSegmentIds()).containsExactly("segment-1");
+  }
+
+  @Test
+  void globalFeatureGuardSkipsReconciliationAndCatchupReads() {
+    ConversationDigestService disabled =
+        new ConversationDigestService(
+            store,
+            mapper,
+            null,
+            null,
+            Clock.fixed(NOW, ZoneOffset.UTC),
+            "digest-worker",
+            null,
+            false);
+
+    assertThat(disabled.catchUp("account-1", null, FROM, NOW).groups()).isEmpty();
+    disabled.reconcilePreviousDay();
+
+    verify(store, never()).findAuthorizedGroups(any(), any(), any());
+    verify(store, never()).findMemoryEnabledConversations();
   }
 
   private static SummaryMaterial material(

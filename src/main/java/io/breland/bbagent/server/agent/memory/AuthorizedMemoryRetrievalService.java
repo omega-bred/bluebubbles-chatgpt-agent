@@ -12,6 +12,8 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import org.apache.commons.lang3.StringUtils;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.lang.Nullable;
 import org.springframework.stereotype.Service;
 
@@ -20,16 +22,30 @@ public class AuthorizedMemoryRetrievalService {
   private final ConversationMemoryStore store;
   private final Mem0Client mem0Client;
   private final Clock clock;
+  private final double minimumConfidence;
+  private final boolean globallyEnabled;
 
+  @Autowired
   public AuthorizedMemoryRetrievalService(
-      ConversationMemoryStore store, Mem0Client mem0Client, @Nullable Clock clock) {
+      ConversationMemoryStore store,
+      Mem0Client mem0Client,
+      @Nullable Clock clock,
+      @Value("${bbagent.memory.group.minimum-confidence:0.85}") double minimumConfidence,
+      @Value("${bbagent.memory.group.enabled:false}") boolean globallyEnabled) {
     this.store = store;
     this.mem0Client = mem0Client;
     this.clock = clock == null ? Clock.systemUTC() : clock;
+    this.minimumConfidence = minimumConfidence;
+    this.globallyEnabled = globallyEnabled;
+  }
+
+  public AuthorizedMemoryRetrievalService(
+      ConversationMemoryStore store, Mem0Client mem0Client, @Nullable Clock clock) {
+    this(store, mem0Client, clock, 0.85, true);
   }
 
   public List<AuthorizedMemory> search(ToolContext context, String query) {
-    if (context == null || StringUtils.isBlank(query)) {
+    if (!globallyEnabled || context == null || StringUtils.isBlank(query)) {
       return List.of();
     }
     Optional<String> accountIdValue = context.canonicalAccountId();
@@ -70,7 +86,7 @@ public class AuthorizedMemoryRetrievalService {
   private boolean isAuthorized(ProjectedArtifact artifact, String accountId, Instant now) {
     return artifact.status() == ArtifactStatus.CONFIRMED
         && artifact.sensitivity() == ArtifactSensitivity.NORMAL
-        && artifact.confidence() >= 0.85
+        && artifact.confidence() >= minimumConfidence
         && store.isInArtifactAudience(artifact.artifactId(), accountId)
         && (artifact.expiresAt() == null || artifact.expiresAt().isAfter(now));
   }

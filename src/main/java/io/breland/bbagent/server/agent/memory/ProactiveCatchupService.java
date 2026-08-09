@@ -69,7 +69,8 @@ public class ProactiveCatchupService {
       ObjectMapper objectMapper,
       @Nullable OperationalMetricsService operationalMetricsService,
       @Nullable Clock clock,
-      @Value("${bbagent.memory.group.proactive-enabled:false}") boolean globallyEnabled) {
+      @Value("${bbagent.memory.group.enabled:false}") boolean groupMemoryEnabled,
+      @Value("${bbagent.memory.group.proactive-enabled:false}") boolean proactiveEnabled) {
     this(
         store,
         digestService,
@@ -79,7 +80,7 @@ public class ProactiveCatchupService {
         operationalMetricsService,
         clock == null ? Clock.systemUTC() : clock,
         UUID.randomUUID().toString(),
-        globallyEnabled);
+        groupMemoryEnabled && proactiveEnabled);
   }
 
   ProactiveCatchupService(
@@ -218,7 +219,27 @@ public class ProactiveCatchupService {
       request.setChatGuid(directRoute.get().externalConversationId());
       request.setMessage(message);
       request.setTempGuid(UUID.randomUUID().toString());
-      boolean sent = blueBubbles.sendTextDirect(request);
+      Instant deliveryStartedAt = clock.instant();
+      boolean sent;
+      try {
+        sent = blueBubbles.sendTextDirect(request);
+        if (operationalMetricsService != null) {
+          operationalMetricsService.recordMemoryProactiveDelivery(
+              "scheduled",
+              sent,
+              sent ? null : "send_unconfirmed",
+              Duration.between(deliveryStartedAt, clock.instant()));
+        }
+      } catch (RuntimeException e) {
+        if (operationalMetricsService != null) {
+          operationalMetricsService.recordMemoryProactiveDelivery(
+              "scheduled",
+              false,
+              OperationalMetricsService.failureType(e),
+              Duration.between(deliveryStartedAt, clock.instant()));
+        }
+        throw e;
+      }
       store.completeCatchupDelivery(delivery.get().deliveryId(), sent ? "SENT" : "UNKNOWN", now);
       completeClaim(claim, now, POLL_INTERVAL, sent ? null : "unknown_send");
     } catch (RuntimeException e) {
@@ -296,7 +317,7 @@ public class ProactiveCatchupService {
       List<AuthorizedGroup> authorizedGroups, @Nullable String groupHint) {
     String hint = StringUtils.trimToNull(groupHint);
     if (hint == null) {
-      return authorizedGroups.size() == 1 ? authorizedGroups : authorizedGroups;
+      return authorizedGroups;
     }
     int suffix = hint.indexOf(" (last active ");
     if (suffix > 0) {

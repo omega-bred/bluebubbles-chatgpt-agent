@@ -1,7 +1,10 @@
 package io.breland.bbagent.server.agent.memory;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import io.breland.bbagent.server.agent.memory.ConversationMemoryModels.ArtifactKind;
@@ -77,6 +80,17 @@ class AuthorizedMemoryRetrievalServiceTest {
               assertThat(memory.memoryId()).isEqualTo("personal-1");
               assertThat(memory.readOnly()).isFalse();
             });
+  }
+
+  @Test
+  void globalFeatureGuardPreventsMemoryReads() {
+    AuthorizedMemoryRetrievalService disabled =
+        new AuthorizedMemoryRetrievalService(
+            store, mem0Client, Clock.fixed(NOW, ZoneOffset.UTC), 0.85, false);
+
+    assertThat(disabled.search(context, "Saturday")).isEmpty();
+
+    verify(mem0Client, never()).searchMemories(anyString(), anyString());
   }
 
   private static ProjectedArtifact projectedArtifact() {

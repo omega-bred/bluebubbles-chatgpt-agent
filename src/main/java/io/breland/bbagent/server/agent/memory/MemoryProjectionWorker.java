@@ -8,6 +8,7 @@ import io.breland.bbagent.server.agent.memory.ConversationMemoryModels.Projectio
 import io.breland.bbagent.server.agent.tools.memory.Mem0Client;
 import io.breland.bbagent.server.metrics.OperationalMetricsService;
 import java.time.Clock;
+import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
@@ -17,6 +18,7 @@ import java.util.Optional;
 import java.util.UUID;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.lang.Nullable;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
@@ -32,13 +34,24 @@ public class MemoryProjectionWorker {
   private final @Nullable OperationalMetricsService metrics;
   private final Clock clock;
   private final String workerId;
+  private final double minimumConfidence;
+  private final boolean globallyEnabled;
 
   @Autowired
   public MemoryProjectionWorker(
       ConversationMemoryStore store,
       Mem0Client mem0Client,
-      @Nullable OperationalMetricsService metrics) {
-    this(store, mem0Client, metrics, Clock.systemUTC(), UUID.randomUUID().toString());
+      @Nullable OperationalMetricsService metrics,
+      @Value("${bbagent.memory.group.minimum-confidence:0.85}") double minimumConfidence,
+      @Value("${bbagent.memory.group.enabled:false}") boolean globallyEnabled) {
+    this(
+        store,
+        mem0Client,
+        metrics,
+        Clock.systemUTC(),
+        UUID.randomUUID().toString(),
+        minimumConfidence,
+        globallyEnabled);
   }
 
   MemoryProjectionWorker(
@@ -47,11 +60,24 @@ public class MemoryProjectionWorker {
       @Nullable OperationalMetricsService metrics,
       Clock clock,
       String workerId) {
+    this(store, mem0Client, metrics, clock, workerId, 0.85, true);
+  }
+
+  MemoryProjectionWorker(
+      ConversationMemoryStore store,
+      Mem0Client mem0Client,
+      @Nullable OperationalMetricsService metrics,
+      Clock clock,
+      String workerId,
+      double minimumConfidence,
+      boolean globallyEnabled) {
     this.store = store;
     this.mem0Client = mem0Client;
     this.metrics = metrics;
     this.clock = clock == null ? Clock.systemUTC() : clock;
     this.workerId = workerId;
+    this.minimumConfidence = minimumConfidence;
+    this.globallyEnabled = globallyEnabled;
   }
 
   @Scheduled(
@@ -65,28 +91,49 @@ public class MemoryProjectionWorker {
   }
 
   private void process(ProjectionClaim claim, Instant now) {
+    Instant startedAt = clock.instant();
     try {
+      String failureType;
       if (claim.operation() == ProjectionOperation.DELETE) {
-        deleteProjection(claim, now);
+        failureType = deleteProjection(claim, now);
       } else {
-        upsertProjection(claim, now);
+        failureType = upsertProjection(claim, now);
+      }
+      if (metrics != null) {
+        metrics.recordMemoryProjection(
+            claim.operation().name(),
+            failureType == null,
+            failureType,
+            Duration.between(startedAt, clock.instant()));
       }
     } catch (RuntimeException e) {
-      store.failProjection(claim, now, OperationalMetricsService.failureType(e));
+      String failureType = OperationalMetricsService.failureType(e);
+      store.failProjection(claim, now, failureType);
+      if (metrics != null) {
+        metrics.recordMemoryProjection(
+            claim.operation().name(),
+            false,
+            failureType,
+            Duration.between(startedAt, clock.instant()));
+      }
     }
   }
 
-  private void upsertProjection(ProjectionClaim claim, Instant now) {
+  private @Nullable String upsertProjection(ProjectionClaim claim, Instant now) {
+    if (!globallyEnabled) {
+      store.failProjection(claim, now, "group_memory_disabled");
+      return "group_memory_disabled";
+    }
     Optional<ProjectionArtifact> artifactValue = store.findProjectionArtifact(claim.artifactId());
     if (artifactValue.isEmpty()) {
       store.completeProjection(claim, null, now);
-      return;
+      return null;
     }
     ProjectionArtifact artifact = artifactValue.get();
     if (!isEligible(artifact, now)
         || !store.isInArtifactAudience(claim.artifactId(), claim.accountId())) {
       store.completeProjection(claim, null, now);
-      return;
+      return null;
     }
     Map<String, Object> metadata = new LinkedHashMap<>();
     metadata.put("artifact_id", artifact.artifactId());
@@ -98,24 +145,26 @@ public class MemoryProjectionWorker {
         mem0Client.addMemory("account:" + claim.accountId(), projectionText(artifact), metadata);
     if (!result.success() || StringUtils.isBlank(result.memoryId())) {
       store.failProjection(claim, now, "mem0_write_failed");
-      return;
+      return "mem0_write_failed";
     }
     store.completeProjection(claim, result.memoryId(), now);
+    return null;
   }
 
-  private void deleteProjection(ProjectionClaim claim, Instant now) {
+  private @Nullable String deleteProjection(ProjectionClaim claim, Instant now) {
     Optional<String> memoryId = store.projectionMemoryId(claim.artifactId(), claim.accountId());
     if (memoryId.isPresent() && !mem0Client.deleteMemory(memoryId.get())) {
       store.failProjection(claim, now, "mem0_delete_failed");
-      return;
+      return "mem0_delete_failed";
     }
     store.completeProjection(claim, null, now);
+    return null;
   }
 
   private boolean isEligible(ProjectionArtifact artifact, Instant now) {
     return artifact.status() == ArtifactStatus.CONFIRMED
         && artifact.sensitivity() == ArtifactSensitivity.NORMAL
-        && artifact.confidence() >= 0.85
+        && artifact.confidence() >= minimumConfidence
         && (artifact.expiresAt() == null || artifact.expiresAt().isAfter(now));
   }
 

@@ -63,7 +63,7 @@ public class ConversationMemoryModelClient {
   public ConversationMemoryModelClient(
       @Nullable OpenAIClient openAIClient,
       ObjectMapper objectMapper,
-      @Value("${bbagent.memory.group.extraction-model:" + DEFAULT_EXTRACTION_MODEL + "}")
+      @Value("${bbagent.memory.group.responses-model:" + DEFAULT_EXTRACTION_MODEL + "}")
           String extractionModel,
       @Nullable OperationalMetricsService metrics) {
     this(

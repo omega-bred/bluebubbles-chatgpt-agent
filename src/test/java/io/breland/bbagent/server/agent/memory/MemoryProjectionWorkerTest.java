@@ -2,6 +2,7 @@ package io.breland.bbagent.server.agent.memory;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.anyMap;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -14,7 +15,9 @@ import io.breland.bbagent.server.agent.memory.ConversationMemoryModels.Projectio
 import io.breland.bbagent.server.agent.memory.ConversationMemoryModels.ProjectionClaim;
 import io.breland.bbagent.server.agent.memory.ConversationMemoryModels.ProjectionOperation;
 import io.breland.bbagent.server.agent.tools.memory.Mem0Client;
+import io.breland.bbagent.server.metrics.OperationalMetricsService;
 import java.time.Clock;
+import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.List;
@@ -27,6 +30,7 @@ class MemoryProjectionWorkerTest {
   private static final Instant NOW = Instant.parse("2026-08-08T18:00:00Z");
   private final ConversationMemoryStore store = mock(ConversationMemoryStore.class);
   private final Mem0Client mem0Client = mock(Mem0Client.class);
+  private final OperationalMetricsService metrics = mock(OperationalMetricsService.class);
   private final ProjectionClaim upsertClaim =
       new ProjectionClaim(
           "artifact-1",
@@ -37,7 +41,7 @@ class MemoryProjectionWorkerTest {
           NOW.plusSeconds(300));
   private final MemoryProjectionWorker worker =
       new MemoryProjectionWorker(
-          store, mem0Client, null, Clock.fixed(NOW, ZoneOffset.UTC), "worker-1");
+          store, mem0Client, metrics, Clock.fixed(NOW, ZoneOffset.UTC), "worker-1");
 
   @Test
   void projectsAConfirmedArtifactToTheSnapshottedAccount() {
@@ -69,6 +73,7 @@ class MemoryProjectionWorkerTest {
     assertThat(metadata.getValue().toString())
         .doesNotContain("iMessage", "account-1", "+1555", "Meet Saturday");
     verify(store).completeProjection(upsertClaim, "memory-1", NOW);
+    verify(metrics).recordMemoryProjection("UPSERT", true, null, Duration.ZERO);
   }
 
   @Test
@@ -85,6 +90,7 @@ class MemoryProjectionWorkerTest {
     worker.processDueProjections();
 
     verify(store).failProjection(upsertClaim, NOW, "mem0_write_failed");
+    verify(metrics).recordMemoryProjection("UPSERT", false, "mem0_write_failed", Duration.ZERO);
     verify(store, never()).completeProjection(upsertClaim, null, NOW);
   }
 
@@ -106,6 +112,20 @@ class MemoryProjectionWorkerTest {
 
     verify(mem0Client).deleteMemory("memory-1");
     verify(store).completeProjection(deleteClaim, null, NOW);
+  }
+
+  @Test
+  void globalFeatureGuardKeepsUpsertsRetryableWithoutCallingMem0() {
+    when(store.claimDueProjections("worker-1", NOW, 25)).thenReturn(List.of(upsertClaim));
+    MemoryProjectionWorker disabled =
+        new MemoryProjectionWorker(
+            store, mem0Client, metrics, Clock.fixed(NOW, ZoneOffset.UTC), "worker-1", 0.85, false);
+
+    disabled.processDueProjections();
+
+    verify(store).failProjection(upsertClaim, NOW, "group_memory_disabled");
+    verify(mem0Client, never()).addMemory(anyString(), anyString(), anyMap());
+    verify(metrics).recordMemoryProjection("UPSERT", false, "group_memory_disabled", Duration.ZERO);
   }
 
   private static ProjectionArtifact artifact() {

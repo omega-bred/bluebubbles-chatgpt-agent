@@ -10,6 +10,8 @@ import java.time.Instant;
 import java.util.Optional;
 import java.util.UUID;
 import org.apache.commons.lang3.StringUtils;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.lang.Nullable;
 import org.springframework.stereotype.Service;
 
@@ -24,20 +26,34 @@ public class ConversationMemorySettingsService {
   private final ConversationMemoryStore store;
   private final BBHttpClientWrapper bbHttpClientWrapper;
   private final Clock clock;
+  private final boolean globallyEnabled;
+
+  @Autowired
+  public ConversationMemorySettingsService(
+      ConversationMemoryStore store,
+      BBHttpClientWrapper bbHttpClientWrapper,
+      @Nullable Clock clock,
+      @Value("${bbagent.memory.group.enabled:false}") boolean globallyEnabled) {
+    this.store = store;
+    this.bbHttpClientWrapper = bbHttpClientWrapper;
+    this.clock = clock == null ? Clock.systemUTC() : clock;
+    this.globallyEnabled = globallyEnabled;
+  }
 
   public ConversationMemorySettingsService(
       ConversationMemoryStore store,
       BBHttpClientWrapper bbHttpClientWrapper,
       @Nullable Clock clock) {
-    this.store = store;
-    this.bbHttpClientWrapper = bbHttpClientWrapper;
-    this.clock = clock == null ? Clock.systemUTC() : clock;
+    this(store, bbHttpClientWrapper, clock, true);
   }
 
   public GroupMemorySetting getGroupMemory(String chatGuid) {
     Optional<ConversationRecord> conversation = findOrRegisterConversation(chatGuid);
     if (conversation.isEmpty() || !conversation.get().group()) {
       return unavailableSetting();
+    }
+    if (!globallyEnabled) {
+      return globallyDisabledSetting();
     }
     return toSetting(conversation.get());
   }
@@ -55,6 +71,9 @@ public class ConversationMemorySettingsService {
     if (StringUtils.isBlank(accountId) || StringUtils.isBlank(chatGuid)) {
       return failure(
           "A linked account and current conversation are required.", unavailableSetting());
+    }
+    if (!globallyEnabled) {
+      return failure("Group memory is not enabled for this deployment.", globallyDisabledSetting());
     }
     Optional<ConversationRecord> conversation = findOrRegisterConversation(chatGuid);
     if (conversation.isEmpty() || !conversation.get().group()) {
@@ -146,6 +165,11 @@ public class ConversationMemorySettingsService {
   private GroupMemorySetting unavailableSetting() {
     return new GroupMemorySetting(
         false, false, "Memory", "Group memory is unavailable for direct conversations.", null);
+  }
+
+  private GroupMemorySetting globallyDisabledSetting() {
+    return new GroupMemorySetting(
+        false, false, "Memory", "Group memory is not enabled for this deployment.", null);
   }
 
   private GroupMemoryUpdateResult success(String message, GroupMemorySetting setting) {
