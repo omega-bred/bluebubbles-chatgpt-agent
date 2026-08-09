@@ -3,16 +3,19 @@ package io.breland.bbagent.server.agent.tools.memory;
 import static io.breland.bbagent.server.agent.tools.JsonSchemaUtilities.jsonSchema;
 
 import io.breland.bbagent.server.agent.IncomingMessage;
+import io.breland.bbagent.server.agent.memory.MemoryScopeResolver;
 import io.breland.bbagent.server.agent.tools.AgentTool;
 import io.breland.bbagent.server.agent.tools.ToolProvider;
 import io.swagger.v3.oas.annotations.media.Schema;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import org.springframework.lang.Nullable;
 
 public class MemorySaveAgentTool implements ToolProvider {
 
   public static final String TOOL_NAME = "memory_save";
   private final Mem0Client mem0Client;
+  private final @Nullable MemoryScopeResolver scopeResolver;
 
   @Schema(description = "Save a memory for the current user or conversation.")
   public record MemorySaveRequest(
@@ -20,7 +23,12 @@ public class MemorySaveAgentTool implements ToolProvider {
           String memory) {}
 
   public MemorySaveAgentTool(Mem0Client mem0Client) {
+    this(mem0Client, null);
+  }
+
+  public MemorySaveAgentTool(Mem0Client mem0Client, @Nullable MemoryScopeResolver scopeResolver) {
     this.mem0Client = mem0Client;
+    this.scopeResolver = scopeResolver;
   }
 
   public AgentTool getTool() {
@@ -33,9 +41,14 @@ public class MemorySaveAgentTool implements ToolProvider {
         false,
         (context, args) -> {
           IncomingMessage message = context.message();
-          String userIdOrGroupChatId = AgentTool.resolveUserIdOrGroupChatId(message);
-          if (userIdOrGroupChatId == null || userIdOrGroupChatId.isBlank()) {
-            return "no sender";
+          if (scopeResolver == null) {
+            return "memory scope unavailable";
+          }
+          String canonicalScope = scopeResolver.primaryScope(context).orElse(null);
+          if (canonicalScope == null) {
+            return message != null && message.isGroup()
+                ? "group memory is not enabled"
+                : "memory scope unavailable";
           }
           if (!mem0Client.isConfigured()) {
             return "not configured";
@@ -46,9 +59,14 @@ public class MemorySaveAgentTool implements ToolProvider {
           if (memory == null || memory.isBlank()) {
             return "no memory";
           }
-          boolean saved =
-              mem0Client.addMemory(userIdOrGroupChatId, memory.trim(), buildMetadata(message));
-          return saved ? "saved" : "failed";
+          String normalizedMemory = memory.trim();
+          Mem0Client.MemoryMutationResult saved =
+              mem0Client.addMemory(canonicalScope, normalizedMemory, buildMetadata(message));
+          if (!saved.success() || saved.memoryId() == null || saved.memoryId().isBlank()) {
+            return "failed";
+          }
+          scopeResolver.recordOwnership(canonicalScope, saved.memoryId(), normalizedMemory);
+          return "saved";
         });
   }
 
@@ -58,17 +76,11 @@ public class MemorySaveAgentTool implements ToolProvider {
     if (message == null) {
       return metadata;
     }
-    String chatGuid = IncomingMessage.chatGuidOrNull(message);
-    if (chatGuid != null) {
-      metadata.put("chat_guid", chatGuid);
-    }
     if (message.messageGuid() != null && !message.messageGuid().isBlank()) {
       metadata.put("message_guid", message.messageGuid());
     }
     metadata.put("is_group", message.isGroup());
-    if (message.sender() != null && !message.sender().isBlank()) {
-      metadata.put("sender", message.sender());
-    }
+    metadata.put("transport", message.transportOrDefault());
     return metadata;
   }
 }

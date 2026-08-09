@@ -6,6 +6,7 @@ import com.openai.models.responses.ResponseInputItem;
 import io.breland.bbagent.server.agent.IncomingMessage;
 import io.breland.bbagent.server.agent.cadence.CadenceWorkflowLauncher;
 import io.breland.bbagent.server.agent.memory.ConversationMemorySettingsService;
+import io.breland.bbagent.server.agent.memory.MemoryScopeResolver;
 import io.breland.bbagent.server.agent.model_picker.ModelAccessService;
 import io.breland.bbagent.server.agent.tools.assistant.AssistantNameAgentTool;
 import io.breland.bbagent.server.agent.tools.assistant.AssistantResponsivenessAgentTool;
@@ -167,6 +168,8 @@ public final class AgentToolRegistry {
         cadenceWorkflowLauncher,
         accountIdResolver,
         null,
+        null,
+        null,
         null);
   }
 
@@ -200,6 +203,7 @@ public final class AgentToolRegistry {
         accountIdResolver,
         operationalMetricsService,
         modelAccessService,
+        null,
         null);
   }
 
@@ -218,7 +222,8 @@ public final class AgentToolRegistry {
       Function<IncomingMessage, Optional<String>> accountIdResolver,
       @Nullable OperationalMetricsService operationalMetricsService,
       @Nullable ModelAccessService modelAccessService,
-      @Nullable ConversationMemorySettingsService conversationMemorySettingsService) {
+      @Nullable ConversationMemorySettingsService conversationMemorySettingsService,
+      @Nullable MemoryScopeResolver memoryScopeResolver) {
     this.transportRegistry = transportRegistry;
     this.accountIdResolver = accountIdResolver;
     this.objectMapper = objectMapper;
@@ -235,7 +240,8 @@ public final class AgentToolRegistry {
         cadenceWorkflowLauncher,
         operationalMetricsService,
         modelAccessService,
-        conversationMemorySettingsService);
+        conversationMemorySettingsService,
+        memoryScopeResolver);
   }
 
   public List<AgentTool> availableTools(IncomingMessage message) {
@@ -449,7 +455,8 @@ public final class AgentToolRegistry {
       CadenceWorkflowLauncher cadenceWorkflowLauncher,
       @Nullable OperationalMetricsService operationalMetricsService,
       @Nullable ModelAccessService modelAccessService,
-      @Nullable ConversationMemorySettingsService conversationMemorySettingsService) {
+      @Nullable ConversationMemorySettingsService conversationMemorySettingsService,
+      @Nullable MemoryScopeResolver memoryScopeResolver) {
     registerTool(new SendTextAgentTool().getTool());
     registerTool(new SendReactionAgentTool().getTool());
     registerTool(new SendPollAgentTool(bbHttpClientWrapper).getTool());
@@ -467,10 +474,10 @@ public final class AgentToolRegistry {
     if (modelAccessService != null) {
       registerTool(new SetPreferredModelAgentTool(modelAccessService).getTool());
     }
-    registerTool(new MemorySaveAgentTool(mem0Client).getTool());
-    registerTool(new MemoryGetAgentTool(mem0Client).getTool());
-    registerTool(new MemoryUpdateAgentTool(mem0Client).getTool());
-    registerTool(new MemoryDeleteAgentTool(mem0Client).getTool());
+    registerTool(new MemorySaveAgentTool(mem0Client, memoryScopeResolver).getTool());
+    registerTool(new MemoryGetAgentTool(mem0Client, memoryScopeResolver).getTool());
+    registerTool(new MemoryUpdateAgentTool(mem0Client, memoryScopeResolver).getTool());
+    registerTool(new MemoryDeleteAgentTool(mem0Client, memoryScopeResolver).getTool());
     if (conversationMemorySettingsService != null) {
       registerTool(new ConfigureGroupMemoryAgentTool(conversationMemorySettingsService).getTool());
     }

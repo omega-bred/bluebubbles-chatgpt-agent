@@ -4,6 +4,7 @@ import static io.breland.bbagent.server.agent.memory.ConversationMemoryModels.Ar
 import static io.breland.bbagent.server.agent.memory.ConversationMemoryModels.ArtifactSensitivity.NORMAL;
 import static io.breland.bbagent.server.agent.memory.ConversationMemoryModels.ArtifactStatus.CONFIRMED;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import io.breland.bbagent.server.agent.IncomingMessage;
 import io.breland.bbagent.server.agent.account.AgentAccountResolver;
@@ -123,6 +124,25 @@ class ConversationMemoryStoreTest {
     assertThat(firstClaims.getFirst().claimedUntil())
         .isAfter(OBSERVED_AT.plus(Duration.ofMinutes(1)));
     assertThat(secondClaims).isEmpty();
+  }
+
+  @Test
+  void canonicalMemoryOwnershipCannotMoveAcrossScopes() {
+    String accountId = createAccount("memory-owner@example.com");
+    String canonicalScope = "account:" + accountId;
+    store.recordCanonicalMemory(canonicalScope, "memory-1", "hash-1", OBSERVED_AT);
+
+    assertThat(store.ownsCanonicalMemory(canonicalScope, "memory-1")).isTrue();
+    assertThat(store.ownsCanonicalMemory("account:another-account", "memory-1")).isFalse();
+    assertThatThrownBy(
+            () ->
+                store.recordCanonicalMemory(
+                    "account:another-account", "memory-1", "hash-2", OBSERVED_AT))
+        .hasMessageContaining("already owned by another canonical scope");
+
+    store.updateCanonicalMemory(canonicalScope, "memory-1", "hash-2", OBSERVED_AT.plusSeconds(1));
+    store.deleteCanonicalMemory(canonicalScope, "memory-1");
+    assertThat(store.ownsCanonicalMemory(canonicalScope, "memory-1")).isFalse();
   }
 
   private String createAccount(String email) {

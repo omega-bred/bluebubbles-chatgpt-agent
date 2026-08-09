@@ -7,6 +7,7 @@ import io.breland.bbagent.server.agent.IncomingMessage;
 import io.breland.bbagent.server.agent.profile.AgentProfile;
 import io.breland.bbagent.server.agent.profile.AssistantResponsiveness;
 import io.breland.bbagent.server.agent.transport.OutgoingTextMessage;
+import java.util.Optional;
 import org.springframework.lang.Nullable;
 
 public class ToolContext {
@@ -51,6 +52,17 @@ public class ToolContext {
     }
     java.util.Optional<String> accountId = profile.resolveOrCreateAccountId(message);
     return accountId.orElse(message == null ? null : message.sender());
+  }
+
+  public Optional<String> canonicalAccountId() {
+    if (profile == null || message == null) {
+      return Optional.empty();
+    }
+    Optional<String> accountId = profile.resolveCanonicalAccountId(message);
+    if (accountId == null) {
+      return Optional.empty();
+    }
+    return accountId.filter(value -> !value.isBlank());
   }
 
   public void setAssistantResponsiveness(AssistantResponsiveness responsiveness) {

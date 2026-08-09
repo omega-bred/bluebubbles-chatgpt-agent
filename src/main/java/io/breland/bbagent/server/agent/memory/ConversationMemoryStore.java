@@ -681,6 +681,105 @@ public class ConversationMemoryStore {
     return count != null && count > 0;
   }
 
+  @Transactional
+  public void recordCanonicalMemory(
+      String canonicalScope, String mem0MemoryId, String contentHash, Instant recordedAt) {
+    ScopeKey scope = parseCanonicalScope(canonicalScope);
+    requireText(mem0MemoryId, "Mem0 memory id");
+    requireText(contentHash, "memory content hash");
+    Objects.requireNonNull(recordedAt, "recordedAt");
+    List<ScopeKey> existingScopes =
+        jdbcTemplate.query(
+            "select scope_type, scope_id from canonical_memory_records where mem0_memory_id = ?",
+            (resultSet, rowNumber) ->
+                new ScopeKey(resultSet.getString("scope_type"), resultSet.getString("scope_id")),
+            mem0MemoryId);
+    if (!existingScopes.isEmpty()) {
+      ScopeKey existing = existingScopes.getFirst();
+      if (!existing.equals(scope)) {
+        throw new IllegalStateException("memory id is already owned by another canonical scope");
+      }
+      jdbcTemplate.update(
+          """
+          update canonical_memory_records
+             set content_hash = ?, updated_at = ?
+           where mem0_memory_id = ? and scope_type = ? and scope_id = ?
+          """,
+          contentHash,
+          recordedAt,
+          mem0MemoryId,
+          scope.type(),
+          scope.id());
+      return;
+    }
+    jdbcTemplate.update(
+        """
+        insert into canonical_memory_records
+          (memory_record_id, scope_type, scope_id, mem0_memory_id, content_hash, created_at,
+           updated_at)
+        values (?, ?, ?, ?, ?, ?, ?)
+        """,
+        UUID.randomUUID().toString(),
+        scope.type(),
+        scope.id(),
+        mem0MemoryId,
+        contentHash,
+        recordedAt,
+        recordedAt);
+  }
+
+  @Transactional(readOnly = true)
+  public boolean ownsCanonicalMemory(String canonicalScope, String mem0MemoryId) {
+    ScopeKey scope = parseCanonicalScope(canonicalScope);
+    if (StringUtils.isBlank(mem0MemoryId)) {
+      return false;
+    }
+    Integer count =
+        jdbcTemplate.queryForObject(
+            """
+            select count(*) from canonical_memory_records
+             where scope_type = ? and scope_id = ? and mem0_memory_id = ?
+            """,
+            Integer.class,
+            scope.type(),
+            scope.id(),
+            mem0MemoryId);
+    return count != null && count > 0;
+  }
+
+  @Transactional
+  public void updateCanonicalMemory(
+      String canonicalScope, String mem0MemoryId, String contentHash, Instant updatedAt) {
+    ScopeKey scope = parseCanonicalScope(canonicalScope);
+    int updated =
+        jdbcTemplate.update(
+            """
+            update canonical_memory_records set content_hash = ?, updated_at = ?
+             where scope_type = ? and scope_id = ? and mem0_memory_id = ?
+            """,
+            contentHash,
+            updatedAt,
+            scope.type(),
+            scope.id(),
+            mem0MemoryId);
+    if (updated != 1) {
+      throw new IllegalStateException("canonical memory ownership changed");
+    }
+  }
+
+  @Transactional
+  public void deleteCanonicalMemory(String canonicalScope, String mem0MemoryId) {
+    ScopeKey scope = parseCanonicalScope(canonicalScope);
+    jdbcTemplate.update(
+        """
+        delete from canonical_memory_records
+         where scope_type = ? and scope_id = ? and mem0_memory_id = ?
+        """,
+        scope.type(),
+        scope.id(),
+        mem0MemoryId);
+  }
+
   private void validateCandidateEvidence(
       ExtractionCandidate candidate, Set<String> submittedMessageGuids) {
     Objects.requireNonNull(candidate, "candidate");
@@ -806,6 +905,21 @@ public class ConversationMemoryStore {
     }
   }
 
+  private ScopeKey parseCanonicalScope(String canonicalScope) {
+    requireText(canonicalScope, "canonical scope");
+    String[] parts = canonicalScope.split(":", 2);
+    if (parts.length != 2 || StringUtils.isBlank(parts[1])) {
+      throw new IllegalArgumentException("invalid canonical memory scope");
+    }
+    String type =
+        switch (parts[0]) {
+          case "account" -> "ACCOUNT";
+          case "conversation" -> "CONVERSATION";
+          default -> throw new IllegalArgumentException("invalid canonical memory scope");
+        };
+    return new ScopeKey(type, parts[1]);
+  }
+
   private Instant toInstant(java.sql.Timestamp timestamp) {
     return timestamp == null ? null : timestamp.toInstant();
   }
@@ -814,4 +928,6 @@ public class ConversationMemoryStore {
       String artifactId, String accountId, ProjectionOperation operation, String projectionHash) {}
 
   private record ActiveMembership(String membershipId, String accountId) {}
+
+  private record ScopeKey(String type, String id) {}
 }

@@ -12,6 +12,7 @@ import io.breland.bbagent.server.agent.llm.LlmProvider;
 import io.breland.bbagent.server.agent.llm.OpenAiResponsesLlmProvider;
 import io.breland.bbagent.server.agent.memory.ConversationJournalService;
 import io.breland.bbagent.server.agent.memory.ConversationMemorySettingsService;
+import io.breland.bbagent.server.agent.memory.MemoryScopeResolver;
 import io.breland.bbagent.server.agent.model_picker.ModelPicker;
 import io.breland.bbagent.server.agent.profile.AgentProfileService;
 import io.breland.bbagent.server.agent.terms.TermsAgreementValidator;
@@ -105,6 +106,7 @@ public class BBMessageAgent {
       @Nullable NativeAppSessionService nativeAppSessionService,
       @Nullable ConversationJournalService conversationJournalService,
       @Nullable ConversationMemorySettingsService conversationMemorySettingsService,
+      @Nullable MemoryScopeResolver memoryScopeResolver,
       ModelPicker modelPicker) {
     if (openAiClient != null) {
       this.openAIClient = openAiClient;
@@ -143,7 +145,8 @@ public class BBMessageAgent {
             profileService::resolveOrCreateAccountId,
             operationalMetricsService,
             modelPicker.modelAccessService(),
-            conversationMemorySettingsService);
+            conversationMemorySettingsService,
+            memoryScopeResolver);
     this.responseCreator =
         new AgentResponseCreator(
             modelPicker, toolRegistry, llmProvider, operationalMetricsService, profileService);
@@ -201,6 +204,7 @@ public class BBMessageAgent {
         nativeAppSessionService,
         null,
         null,
+        null,
         modelPicker);
   }
 
@@ -235,6 +239,7 @@ public class BBMessageAgent {
         agentMetricsService,
         feedbackService,
         messageResponseRateLimitService,
+        null,
         null,
         null,
         null,

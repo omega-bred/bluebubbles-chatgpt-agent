@@ -6,6 +6,10 @@ import java.util.Optional;
 public interface AgentProfile {
   Optional<String> resolveOrCreateAccountId(IncomingMessage message);
 
+  default Optional<String> resolveCanonicalAccountId(IncomingMessage message) {
+    return Optional.empty();
+  }
+
   void setAssistantResponsiveness(String chatGuid, AssistantResponsiveness responsiveness);
 
   void setGlobalNameForSender(String sender, String name);

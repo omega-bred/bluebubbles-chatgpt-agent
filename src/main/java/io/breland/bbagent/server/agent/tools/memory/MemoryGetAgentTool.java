@@ -3,6 +3,7 @@ package io.breland.bbagent.server.agent.tools.memory;
 import static io.breland.bbagent.server.agent.tools.JsonSchemaUtilities.jsonSchema;
 
 import io.breland.bbagent.server.agent.IncomingMessage;
+import io.breland.bbagent.server.agent.memory.MemoryScopeResolver;
 import io.breland.bbagent.server.agent.tools.AgentTool;
 import io.breland.bbagent.server.agent.tools.ToolJson;
 import io.breland.bbagent.server.agent.tools.ToolProvider;
@@ -10,17 +11,25 @@ import io.swagger.v3.oas.annotations.media.Schema;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
+import org.springframework.lang.Nullable;
 
 public class MemoryGetAgentTool implements ToolProvider {
   public static final String TOOL_NAME = "memory_get";
   private final Mem0Client mem0Client;
+  private final @Nullable MemoryScopeResolver scopeResolver;
 
   @Schema(description = "Query memory for the current user or conversation.")
   public record MemoryGetRequest(
       @Schema(description = "Query text to search memories.") String query) {}
 
   public MemoryGetAgentTool(Mem0Client mem0Client) {
+    this(mem0Client, null);
+  }
+
+  public MemoryGetAgentTool(Mem0Client mem0Client, @Nullable MemoryScopeResolver scopeResolver) {
     this.mem0Client = mem0Client;
+    this.scopeResolver = scopeResolver;
   }
 
   public AgentTool getTool() {
@@ -36,9 +45,8 @@ public class MemoryGetAgentTool implements ToolProvider {
         false,
         (context, args) -> {
           IncomingMessage message = context.message();
-          String userIdOrGroupChatId = AgentTool.resolveUserIdOrGroupChatId(message);
-          if (userIdOrGroupChatId == null || userIdOrGroupChatId.isBlank()) {
-            return "no sender";
+          if (scopeResolver == null) {
+            return "memory scope unavailable";
           }
           if (!mem0Client.isConfigured()) {
             return "not configured";
@@ -52,8 +60,19 @@ public class MemoryGetAgentTool implements ToolProvider {
           if (query == null || query.isBlank()) {
             query = "What do you know about me?";
           }
-          List<Mem0Client.StoredMemory> memories =
-              mem0Client.searchMemories(userIdOrGroupChatId, query);
+          Optional<String> canonicalScope = scopeResolver.primaryScope(context);
+          List<Mem0Client.StoredMemory> memories = List.of();
+          if (canonicalScope.isPresent()) {
+            memories = mem0Client.searchMemories(canonicalScope.get(), query);
+          }
+          boolean legacy = false;
+          if (memories.isEmpty()) {
+            Optional<String> legacyScope = scopeResolver.legacyReadScope(context);
+            if (legacyScope.isPresent()) {
+              memories = mem0Client.searchMemories(legacyScope.get(), query);
+              legacy = !memories.isEmpty();
+            }
+          }
           if (memories.isEmpty()) {
             return "not found";
           }
@@ -70,6 +89,7 @@ public class MemoryGetAgentTool implements ToolProvider {
             if (memory.memory() != null && !memory.memory().isBlank()) {
               entry.put("memory", memory.memory());
             }
+            entry.put("legacy", legacy);
             if (!entry.isEmpty()) {
               formatted.add(entry);
             }

@@ -87,6 +87,14 @@ public final class AgentProfileService implements AgentProfile {
     return resolveOrCreateAccount(message).map(resolved -> resolved.account().getAccountId());
   }
 
+  @Override
+  public Optional<String> resolveCanonicalAccountId(IncomingMessage message) {
+    if (accountResolver == null || message == null) {
+      return Optional.empty();
+    }
+    return resolveOrCreateAccount(message).map(resolved -> resolved.account().getAccountId());
+  }
+
   public Optional<AgentAccountResolver.ResolvedAccount> resolveOrCreateAccount(
       IncomingMessage message) {
     if (accountResolver == null || message == null) {
