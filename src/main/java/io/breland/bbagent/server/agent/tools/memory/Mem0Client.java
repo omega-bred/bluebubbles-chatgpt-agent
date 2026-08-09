@@ -51,12 +51,15 @@ public class Mem0Client {
 
   public record StoredMemory(String memoryId, String memory) {}
 
-  public boolean addMemory(String userId, String memory, Map<String, Object> metadata) {
+  public record MemoryMutationResult(boolean success, String memoryId) {}
+
+  public MemoryMutationResult addMemory(
+      String userId, String memory, Map<String, Object> metadata) {
     if (!configured) {
-      return false;
+      return new MemoryMutationResult(false, null);
     }
     if (userId == null || userId.isBlank() || memory == null || memory.isBlank()) {
-      return false;
+      return new MemoryMutationResult(false, null);
     }
     Map<String, Object> body = new LinkedHashMap<>();
     body.put("user_id", userId);
@@ -66,15 +69,24 @@ public class Mem0Client {
       body.put("metadata", metadata);
     }
     applyWorkspace(body);
-    return executeMutation(
-        "add memory",
-        () ->
-            webClient
-                .post()
-                .uri("/v1/memories/")
-                .contentType(MediaType.APPLICATION_JSON)
-                .bodyValue(body)
-                .retrieve());
+    try {
+      JsonNode response =
+          webClient
+              .post()
+              .uri("/v1/memories/")
+              .contentType(MediaType.APPLICATION_JSON)
+              .bodyValue(body)
+              .retrieve()
+              .bodyToMono(JsonNode.class)
+              .block(API_TIMEOUT);
+      return new MemoryMutationResult(true, findMemoryId(response));
+    } catch (WebClientResponseException e) {
+      log.warn("Mem0 add memory failed: status={}", e.getStatusCode());
+      return new MemoryMutationResult(false, null);
+    } catch (Exception e) {
+      log.warn("Mem0 add memory failed", e);
+      return new MemoryMutationResult(false, null);
+    }
   }
 
   @SneakyThrows
@@ -158,6 +170,37 @@ public class Mem0Client {
     if (projectId != null && !projectId.isBlank()) {
       body.put("project_id", projectId);
     }
+  }
+
+  private String findMemoryId(JsonNode node) {
+    if (node == null || node.isNull()) {
+      return null;
+    }
+    if (node.isArray()) {
+      for (JsonNode item : node) {
+        String memoryId = findMemoryId(item);
+        if (memoryId != null) {
+          return memoryId;
+        }
+      }
+      return null;
+    }
+    if (!node.isObject()) {
+      return null;
+    }
+    for (String field : List.of("id", "memory_id")) {
+      JsonNode value = node.get(field);
+      if (value != null && !value.isNull() && !value.asText().isBlank()) {
+        return value.asText();
+      }
+    }
+    for (String field : List.of("results", "result", "data")) {
+      String memoryId = findMemoryId(node.get(field));
+      if (memoryId != null) {
+        return memoryId;
+      }
+    }
+    return null;
   }
 
   public boolean updateMemory(String memoryId, String text, Map<String, Object> metadata) {

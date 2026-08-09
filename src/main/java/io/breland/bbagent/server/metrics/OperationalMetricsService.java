@@ -31,10 +31,14 @@ public class OperationalMetricsService {
   private final AtomicLong blueBubblesLastCheckEpochSeconds = new AtomicLong(0L);
   private final AtomicLong blueBubblesLastSuccessEpochSeconds = new AtomicLong(0L);
   private final AtomicLong blueBubblesConsecutiveFailures = new AtomicLong(0L);
+  private final AtomicLong memoryOldestExtractionAgeSeconds = new AtomicLong(0L);
+  private final AtomicLong memoryOldestProjectionAgeSeconds = new AtomicLong(0L);
+  private final AtomicLong memoryFailedWorkCount = new AtomicLong(0L);
 
   public OperationalMetricsService(@Nullable MeterRegistry meterRegistry) {
     this.meterRegistry = meterRegistry;
     registerBlueBubblesHealthGauges();
+    registerMemoryBacklogGauges();
   }
 
   public void recordAcceptedMessage(
@@ -194,6 +198,134 @@ public class OperationalMetricsService {
     return "exception";
   }
 
+  public void recordMemoryExtraction(
+      boolean success, @Nullable String failureType, Duration duration) {
+    Tags tags =
+        Tags.of("outcome", outcome(success), "failure_type", failureTag(success, failureType));
+    recordTimer(
+        "bbagent.memory.extraction.duration",
+        "Conversation memory extraction duration",
+        duration,
+        tags);
+    incrementCounter(
+        "bbagent.memory.extraction.count", "Conversation memory extraction count", tags);
+  }
+
+  public void recordMemoryExtractionCandidate(String kind, String status, boolean accepted) {
+    Tags tags =
+        Tags.of(
+            "kind",
+            memoryCandidateKindTag(kind),
+            "status",
+            memoryCandidateStatusTag(status),
+            "accepted",
+            Boolean.toString(accepted));
+    incrementCounter(
+        "bbagent.memory.extraction.candidate.count",
+        "Conversation memory extraction candidate count",
+        tags);
+  }
+
+  public void recordMemoryWorkLag(Duration lag) {
+    recordTimer("bbagent.memory.work.lag", "Conversation memory work lag", lag, Tags.empty());
+  }
+
+  public void recordMemoryProjection(
+      String operation, boolean success, @Nullable String failureType, Duration duration) {
+    recordMemoryOperation(
+        "projection", "Conversation memory projection", operation, success, failureType, duration);
+  }
+
+  public void recordMemoryDigest(
+      String operation, boolean success, @Nullable String failureType, Duration duration) {
+    recordMemoryOperation(
+        "digest", "Conversation memory digest", operation, success, failureType, duration);
+  }
+
+  public void recordMemoryCatchup(
+      boolean success, @Nullable String failureType, Duration duration) {
+    Tags tags =
+        Tags.of("outcome", outcome(success), "failure_type", failureTag(success, failureType));
+    recordTimer(
+        "bbagent.memory.catchup.duration", "Conversation memory catch-up duration", duration, tags);
+    incrementCounter("bbagent.memory.catchup.count", "Conversation memory catch-up count", tags);
+  }
+
+  public void recordMemoryProactiveDelivery(
+      String deliveryMode, boolean success, @Nullable String failureType, Duration duration) {
+    Tags tags =
+        Tags.of(
+            "delivery_mode",
+            tagValue(deliveryMode, "unknown"),
+            "outcome",
+            outcome(success),
+            "failure_type",
+            failureTag(success, failureType));
+    recordTimer(
+        "bbagent.memory.proactive.delivery.duration",
+        "Proactive conversation memory delivery duration",
+        duration,
+        tags);
+    incrementCounter(
+        "bbagent.memory.proactive.delivery.count",
+        "Proactive conversation memory delivery count",
+        tags);
+  }
+
+  public void recordMemoryCleanup(
+      String operation,
+      long itemCount,
+      boolean success,
+      @Nullable String failureType,
+      Duration duration) {
+    Tags tags =
+        Tags.of(
+            "operation",
+            tagValue(operation, "unknown"),
+            "outcome",
+            outcome(success),
+            "failure_type",
+            failureTag(success, failureType));
+    recordTimer(
+        "bbagent.memory.cleanup.duration", "Conversation memory cleanup duration", duration, tags);
+    incrementCounter("bbagent.memory.cleanup.count", "Conversation memory cleanup count", tags);
+    incrementCounter(
+        "bbagent.memory.cleanup.item.count",
+        "Conversation memory cleanup item count",
+        Tags.of("operation", tagValue(operation, "unknown")),
+        Math.max(0L, itemCount));
+  }
+
+  public void updateMemoryBacklog(
+      Duration oldestExtractionAge, Duration oldestProjectionAge, long failedWorkCount) {
+    memoryOldestExtractionAgeSeconds.set(normalizedDuration(oldestExtractionAge).toSeconds());
+    memoryOldestProjectionAgeSeconds.set(normalizedDuration(oldestProjectionAge).toSeconds());
+    memoryFailedWorkCount.set(Math.max(0L, failedWorkCount));
+  }
+
+  private void recordMemoryOperation(
+      String metricComponent,
+      String description,
+      String operation,
+      boolean success,
+      @Nullable String failureType,
+      Duration duration) {
+    Tags tags =
+        Tags.of(
+            "operation",
+            tagValue(operation, "unknown"),
+            "outcome",
+            outcome(success),
+            "failure_type",
+            failureTag(success, failureType));
+    recordTimer(
+        "bbagent.memory." + metricComponent + ".duration",
+        description + " duration",
+        duration,
+        tags);
+    incrementCounter("bbagent.memory." + metricComponent + ".count", description + " count", tags);
+  }
+
   private void registerBlueBubblesHealthGauges() {
     if (meterRegistry == null) {
       return;
@@ -227,6 +359,27 @@ public class OperationalMetricsService {
         .register(meterRegistry);
   }
 
+  private void registerMemoryBacklogGauges() {
+    if (meterRegistry == null) {
+      return;
+    }
+    Gauge.builder(
+            "bbagent.memory.backlog.extraction.age.seconds",
+            memoryOldestExtractionAgeSeconds,
+            AtomicLong::get)
+        .description("Age in seconds of the oldest due conversation memory extraction")
+        .register(meterRegistry);
+    Gauge.builder(
+            "bbagent.memory.backlog.projection.age.seconds",
+            memoryOldestProjectionAgeSeconds,
+            AtomicLong::get)
+        .description("Age in seconds of the oldest due conversation memory projection")
+        .register(meterRegistry);
+    Gauge.builder("bbagent.memory.backlog.failed.work", memoryFailedWorkCount, AtomicLong::get)
+        .description("Conversation memory work items with a recorded failure")
+        .register(meterRegistry);
+  }
+
   private void recordTimer(String name, String description, Duration duration, Tags tags) {
     if (meterRegistry == null) {
       return;
@@ -239,10 +392,18 @@ public class OperationalMetricsService {
   }
 
   private void incrementCounter(String name, String description, Tags tags) {
+    incrementCounter(name, description, tags, 1.0);
+  }
+
+  private void incrementCounter(String name, String description, Tags tags, double amount) {
     if (meterRegistry == null) {
       return;
     }
-    Counter.builder(name).description(description).tags(tags).register(meterRegistry).increment();
+    Counter.builder(name)
+        .description(description)
+        .tags(tags)
+        .register(meterRegistry)
+        .increment(amount);
   }
 
   private static Duration normalizedDuration(Duration duration) {
@@ -294,6 +455,23 @@ public class OperationalMetricsService {
   private static String modelTagValue(@Nullable String value) {
     String trimmed = StringUtils.trimToNull(value);
     return trimmed == null ? "unknown" : StringUtils.truncate(trimmed, MAX_TAG_VALUE_LENGTH);
+  }
+
+  private static String memoryCandidateKindTag(@Nullable String value) {
+    String normalized = tagValue(value, "unknown");
+    return normalized.equals("group_decision") || normalized.equals("group_fact")
+        ? normalized
+        : "unknown";
+  }
+
+  private static String memoryCandidateStatusTag(@Nullable String value) {
+    String normalized = tagValue(value, "unknown");
+    return normalized.equals("provisional")
+            || normalized.equals("confirmed")
+            || normalized.equals("superseded")
+            || normalized.equals("deleted")
+        ? normalized
+        : "unknown";
   }
 
   private static boolean hasCause(Throwable throwable, Class<? extends Throwable> type) {

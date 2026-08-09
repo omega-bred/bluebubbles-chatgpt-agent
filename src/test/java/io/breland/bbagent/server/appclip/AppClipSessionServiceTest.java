@@ -148,7 +148,7 @@ class AppClipSessionServiceTest {
                 .plans(List.of())
                 .subscriptions(List.of()));
     when(subscriptionService.storeKitProductIds()).thenReturn(List.of());
-    when(conversationSettingsService.getSettings("chat-guid"))
+    when(conversationSettingsService.getSettings(accountId, "chat-guid"))
         .thenReturn(
             new ConversationSettingsResponse()
                 .conversation(

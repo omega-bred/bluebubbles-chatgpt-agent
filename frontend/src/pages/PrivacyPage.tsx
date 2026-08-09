@@ -1,7 +1,7 @@
 import type { AuthState } from "../auth/useKeycloak";
 import { SiteNav } from "../components/SiteNav";
 
-const lastUpdated = "May 18, 2026";
+const lastUpdated = "August 8, 2026";
 
 export function PrivacyPage({ auth }: { auth: AuthState }) {
   return (
@@ -70,6 +70,27 @@ export function PrivacyPage({ auth }: { auth: AuthState }) {
           </section>
 
           <section>
+            <h2>Optional Group Memory and Catch-Ups</h2>
+            <p>
+              Group memory is off unless an eligible participant enables it for a specific group.
+              The service announces that change in the group and prospectively processes messages
+              sent after collection begins. It creates rolling summaries and may identify
+              collective decisions, facts, and open questions. Access is based on the participant
+              membership observed when the source material was created, so someone who joins later
+              does not receive earlier group memory through this feature.
+            </p>
+            <p>
+              Eligible group memory may be indexed for each authorized participant using an opaque
+              account identifier so it can inform that participant's personal chat. Opted-in group
+              messages and pseudonymous participant labels may be sent to configured AI providers
+              for summarization. Personal proactive catch-ups require a separate per-account,
+              per-group opt-in and can be turned off without disabling the group's shared memory.
+              Disabling group memory stops future collection and removes active group memory from
+              supported retrieval indexes.
+            </p>
+          </section>
+
+          <section>
             <h2>Legal Bases and Consent</h2>
             <p>
               Where privacy law requires a legal basis, we process information to provide the
@@ -95,9 +116,13 @@ export function PrivacyPage({ auth }: { auth: AuthState }) {
             <p>
               We keep information for as long as needed to operate the service, preserve account and
               integration state, maintain security, debug issues, enforce limits, comply with legal
-              obligations, and resolve disputes. Some information may remain in backups, logs,
-              generated artifacts, or third-party systems for a limited period after deletion from
-              active systems.
+              obligations, and resolve disputes. For optional group memory, raw source text is
+              cleared from the memory journal after 30 days by default. Rolling summary segments
+              are removed after 90 days by default once a daily digest covers the same period.
+              Active decisions, facts, and daily digests may be kept longer until they expire, are
+              superseded, are deleted, or group memory is disabled. Some information may remain in
+              backups, logs, generated artifacts, or third-party systems for a limited period after
+              deletion from active systems.
             </p>
           </section>
 

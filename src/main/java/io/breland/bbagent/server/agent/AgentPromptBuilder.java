@@ -33,6 +33,9 @@ import io.breland.bbagent.server.agent.tools.gcal.SearchEventsAgentTool;
 import io.breland.bbagent.server.agent.tools.gcal.UpdateEventAgentTool;
 import io.breland.bbagent.server.agent.tools.giphy.SendGiphyAgentTool;
 import io.breland.bbagent.server.agent.tools.limits.GetUsageLimitsAgentTool;
+import io.breland.bbagent.server.agent.tools.memory.ConfigureGroupCatchupAgentTool;
+import io.breland.bbagent.server.agent.tools.memory.ConfigureGroupMemoryAgentTool;
+import io.breland.bbagent.server.agent.tools.memory.GetGroupCatchupAgentTool;
 import io.breland.bbagent.server.agent.tools.memory.MemoryDeleteAgentTool;
 import io.breland.bbagent.server.agent.tools.memory.MemoryGetAgentTool;
 import io.breland.bbagent.server.agent.tools.memory.MemorySaveAgentTool;
@@ -301,6 +304,14 @@ public final class AgentPromptBuilder {
                   + SendTextAgentTool.TOOL_NAME
                   + " when you specifically need to send an extra message; plain text is fine otherwise. "
                   + "Use available tools for tasks like calendars, memory, scheduled follow-ups, or lookups when asked. "
+                  + "Use "
+                  + GetGroupCatchupAgentTool.TOOL_NAME
+                  + " for questions like what happened, what did I miss, or summaries of a group over a time range. Use "
+                  + MemoryGetAgentTool.TOOL_NAME
+                  + " for semantic facts and decisions; its limited search results are not proof of complete time-range coverage. "
+                  + "When the user asks to enable, disable, or schedule proactive summaries from a group into this one-to-one chat, call "
+                  + ConfigureGroupCatchupAgentTool.TOOL_NAME
+                  + ". "
                   + "When the user asks about quota, usage limits, monthly messages, or remaining messages, call "
                   + GetUsageLimitsAgentTool.TOOL_NAME
                   + " before answering. "
@@ -349,6 +360,14 @@ public final class AgentPromptBuilder {
                 + " when asked to read poll results, count votes, summarize choices, or inspect a poll by message GUID. "
                 + "When sending a text, you may optionally apply a BlueChat effect via the effect parameter, but use effects sparingly (e.g. happy_birthday for birthday wishes). "
                 + "Use available tools for tasks like calendars or lookups when asked. "
+                + "In a one-to-one chat, use "
+                + GetGroupCatchupAgentTool.TOOL_NAME
+                + " for questions like what happened, what did I miss, or summaries of a group over a time range. Use "
+                + MemoryGetAgentTool.TOOL_NAME
+                + " for semantic facts and decisions; its limited search results are not proof of complete time-range coverage. "
+                + "When the user asks to enable, disable, or schedule proactive summaries from a group into this one-to-one chat, call "
+                + ConfigureGroupCatchupAgentTool.TOOL_NAME
+                + ". "
                 + "Use web_search for current info or external lookups when relevant. "
                 + "When the user asks about quota, usage limits, monthly messages, or remaining messages, call "
                 + GetUsageLimitsAgentTool.TOOL_NAME
@@ -381,6 +400,9 @@ public final class AgentPromptBuilder {
                 + ". "
                 + feedbackInstruction()
                 + "For group chats, you can rename the conversation or set a group icon when requested. "
+                + "When a participant explicitly asks to enable or disable collective group memory for the current group, call "
+                + ConfigureGroupMemoryAgentTool.TOOL_NAME
+                + ". Enabling is prospective: collection starts only after the visible group notice succeeds, and older messages are not collected. Collective group context may later help participants catch up in their one-on-one chats, but it remains read-only there and must not reveal content to anyone who is not a verified current participant. "
                 + "When the user asks to log in, sign up, manage their web account, connect the current chat identity to the website, or see linked integrations on the website, call "
                 + LinkWebsiteAccountAgentTool.TOOL_NAME
                 + " and send the returned user_facing_text. Do not invent account links manually. "

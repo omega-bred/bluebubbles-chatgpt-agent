@@ -1,5 +1,6 @@
 package io.breland.bbagent.server.agent.tools;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -13,15 +14,19 @@ import io.breland.bbagent.server.agent.AgentWorkflowContext;
 import io.breland.bbagent.server.agent.BBMessageAgent;
 import io.breland.bbagent.server.agent.IncomingMessage;
 import io.breland.bbagent.server.agent.cadence.CadenceWorkflowLauncher;
+import io.breland.bbagent.server.agent.memory.MemoryScopeResolver;
+import io.breland.bbagent.server.agent.profile.AgentProfile;
 import io.breland.bbagent.server.agent.tools.bb.GetThreadContextAgentTool;
 import io.breland.bbagent.server.agent.tools.bb.SendPollAgentTool;
 import io.breland.bbagent.server.agent.tools.bb.SendReactionAgentTool;
+import io.breland.bbagent.server.agent.tools.memory.GetGroupCatchupAgentTool;
 import io.breland.bbagent.server.agent.tools.scheduled.ScheduledEventDeleteTool;
 import io.breland.bbagent.server.agent.tools.scheduled.ScheduledEventListTool;
 import io.breland.bbagent.server.agent.transport.bb.BBHttpClientWrapper;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
 
@@ -40,6 +45,12 @@ class AgentToolContextDerivationTest {
     assertSchemaExcludes(
         new GetThreadContextAgentTool(Mockito.mock(BBHttpClientWrapper.class)).getTool(),
         "thread_root_guid");
+    assertSchemaExcludes(
+        new GetGroupCatchupAgentTool(Mockito.mock(MemoryScopeResolver.class)).getTool(),
+        "chatGuid",
+        "chat_guid",
+        "conversation_id",
+        "account_id");
     assertSchemaExcludes(
         new ScheduledEventListTool(Mockito.mock(CadenceWorkflowLauncher.class)).getTool(),
         "chatGuid",
@@ -80,6 +91,18 @@ class AgentToolContextDerivationTest {
             eq("love"),
             Mockito.<Integer>isNull(),
             Mockito.<AgentWorkflowContext>isNull());
+  }
+
+  @Test
+  void canonicalAccountIdDoesNotFallBackToTheRawSender() {
+    IncomingMessage message = message("iMessage;-;+15555550123", "message-1");
+
+    assertThat(new ToolContext(agentWithMapper(), message, null).canonicalAccountId()).isEmpty();
+
+    AgentProfile profile = Mockito.mock(AgentProfile.class);
+    when(profile.resolveCanonicalAccountId(message)).thenReturn(Optional.of("account-1"));
+    assertThat(new ToolContext(agentWithMapper(), profile, message, null).canonicalAccountId())
+        .contains("account-1");
   }
 
   @Test

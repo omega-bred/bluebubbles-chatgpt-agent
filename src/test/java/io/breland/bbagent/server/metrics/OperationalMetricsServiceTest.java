@@ -93,4 +93,100 @@ class OperationalMetricsServiceTest {
             .counter()
             .count());
   }
+
+  @Test
+  void recordsConversationMemoryExtractionMetricsWithoutIdentifiers() {
+    SimpleMeterRegistry registry = new SimpleMeterRegistry();
+    OperationalMetricsService service = new OperationalMetricsService(registry);
+
+    service.recordMemoryExtraction(false, "membership_refresh", Duration.ofMillis(75));
+    service.recordMemoryExtractionCandidate("GROUP_DECISION", "CONFIRMED", true);
+    service.recordMemoryWorkLag(Duration.ofSeconds(12));
+
+    assertEquals(
+        1.0,
+        registry
+            .get("bbagent.memory.extraction.count")
+            .tag("outcome", "failure")
+            .tag("failure_type", "membership_refresh")
+            .counter()
+            .count());
+    assertEquals(
+        1.0,
+        registry
+            .get("bbagent.memory.extraction.candidate.count")
+            .tag("kind", "group_decision")
+            .tag("status", "confirmed")
+            .tag("accepted", "true")
+            .counter()
+            .count());
+    assertEquals(1L, registry.get("bbagent.memory.work.lag").timer().count());
+  }
+
+  @Test
+  void recordsConversationMemoryPipelineMetricsAndBacklogWithoutIdentifiers() {
+    SimpleMeterRegistry registry = new SimpleMeterRegistry();
+    OperationalMetricsService service = new OperationalMetricsService(registry);
+
+    service.recordMemoryProjection("upsert", false, "mem0_write_failed", Duration.ofMillis(20));
+    service.recordMemoryDigest("reconcile", true, null, Duration.ofMillis(30));
+    service.recordMemoryCatchup(true, null, Duration.ofMillis(40));
+    service.recordMemoryProactiveDelivery(
+        "scheduled", false, "send_unconfirmed", Duration.ofMillis(50));
+    service.recordMemoryCleanup("raw_message", 3, true, null, Duration.ofMillis(60));
+    service.updateMemoryBacklog(Duration.ofSeconds(70), Duration.ofSeconds(80), 2);
+
+    assertEquals(
+        1.0,
+        registry
+            .get("bbagent.memory.projection.count")
+            .tag("operation", "upsert")
+            .tag("outcome", "failure")
+            .tag("failure_type", "mem0_write_failed")
+            .counter()
+            .count());
+    assertEquals(
+        1.0,
+        registry
+            .get("bbagent.memory.digest.count")
+            .tag("operation", "reconcile")
+            .tag("outcome", "success")
+            .counter()
+            .count());
+    assertEquals(
+        1.0,
+        registry.get("bbagent.memory.catchup.count").tag("outcome", "success").counter().count());
+    assertEquals(
+        1.0,
+        registry
+            .get("bbagent.memory.proactive.delivery.count")
+            .tag("delivery_mode", "scheduled")
+            .tag("outcome", "failure")
+            .counter()
+            .count());
+    assertEquals(
+        3.0,
+        registry
+            .get("bbagent.memory.cleanup.item.count")
+            .tag("operation", "raw_message")
+            .counter()
+            .count());
+    assertEquals(
+        70.0, registry.get("bbagent.memory.backlog.extraction.age.seconds").gauge().value());
+    assertEquals(
+        80.0, registry.get("bbagent.memory.backlog.projection.age.seconds").gauge().value());
+    assertEquals(2.0, registry.get("bbagent.memory.backlog.failed.work").gauge().value());
+    registry
+        .getMeters()
+        .forEach(
+            meter ->
+                meter
+                    .getId()
+                    .getTags()
+                    .forEach(
+                        tag ->
+                            org.assertj.core.api.Assertions.assertThat(tag.getKey())
+                                .doesNotContain(
+                                    "account", "conversation", "message", "phone", "email")));
+  }
 }

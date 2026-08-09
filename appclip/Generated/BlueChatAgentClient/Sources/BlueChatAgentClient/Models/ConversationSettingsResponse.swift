@@ -22,12 +22,16 @@ public struct ConversationSettingsResponse: Codable, JSONEncodable, Hashable {
     public var currentResponsiveness: CurrentResponsiveness
     public var currentResponsivenessLabel: String
     public var options: [ConversationResponsivenessOption]
+    public var groupMemory: ConversationGroupMemorySetting
+    public var personalCatchups: ConversationPersonalCatchupSetting
 
-    public init(conversation: ConversationSummary, currentResponsiveness: CurrentResponsiveness, currentResponsivenessLabel: String, options: [ConversationResponsivenessOption]) {
+    public init(conversation: ConversationSummary, currentResponsiveness: CurrentResponsiveness, currentResponsivenessLabel: String, options: [ConversationResponsivenessOption], groupMemory: ConversationGroupMemorySetting, personalCatchups: ConversationPersonalCatchupSetting) {
         self.conversation = conversation
         self.currentResponsiveness = currentResponsiveness
         self.currentResponsivenessLabel = currentResponsivenessLabel
         self.options = options
+        self.groupMemory = groupMemory
+        self.personalCatchups = personalCatchups
     }
 
     public enum CodingKeys: String, CodingKey, CaseIterable {
@@ -35,6 +39,8 @@ public struct ConversationSettingsResponse: Codable, JSONEncodable, Hashable {
         case currentResponsiveness = "current_responsiveness"
         case currentResponsivenessLabel = "current_responsiveness_label"
         case options
+        case groupMemory = "group_memory"
+        case personalCatchups = "personal_catchups"
     }
 
     // Encodable protocol methods
@@ -45,5 +51,7 @@ public struct ConversationSettingsResponse: Codable, JSONEncodable, Hashable {
         try container.encode(currentResponsiveness, forKey: .currentResponsiveness)
         try container.encode(currentResponsivenessLabel, forKey: .currentResponsivenessLabel)
         try container.encode(options, forKey: .options)
+        try container.encode(groupMemory, forKey: .groupMemory)
+        try container.encode(personalCatchups, forKey: .personalCatchups)
     }
 }

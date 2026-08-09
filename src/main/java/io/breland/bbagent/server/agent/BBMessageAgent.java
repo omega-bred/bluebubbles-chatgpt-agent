@@ -10,6 +10,9 @@ import io.breland.bbagent.server.agent.cadence.CadenceIncomingMessageHandler;
 import io.breland.bbagent.server.agent.cadence.CadenceWorkflowLauncher;
 import io.breland.bbagent.server.agent.llm.LlmProvider;
 import io.breland.bbagent.server.agent.llm.OpenAiResponsesLlmProvider;
+import io.breland.bbagent.server.agent.memory.ConversationJournalService;
+import io.breland.bbagent.server.agent.memory.ConversationMemorySettingsService;
+import io.breland.bbagent.server.agent.memory.MemoryScopeResolver;
 import io.breland.bbagent.server.agent.model_picker.ModelPicker;
 import io.breland.bbagent.server.agent.profile.AgentProfileService;
 import io.breland.bbagent.server.agent.terms.TermsAgreementValidator;
@@ -101,6 +104,9 @@ public class BBMessageAgent {
       @Nullable MessageResponseRateLimitService messageResponseRateLimitService,
       @Nullable OperationalMetricsService operationalMetricsService,
       @Nullable NativeAppSessionService nativeAppSessionService,
+      @Nullable ConversationJournalService conversationJournalService,
+      @Nullable ConversationMemorySettingsService conversationMemorySettingsService,
+      @Nullable MemoryScopeResolver memoryScopeResolver,
       ModelPicker modelPicker) {
     if (openAiClient != null) {
       this.openAIClient = openAiClient;
@@ -138,7 +144,9 @@ public class BBMessageAgent {
             workflowLauncher,
             profileService::resolveOrCreateAccountId,
             operationalMetricsService,
-            modelPicker.modelAccessService());
+            modelPicker.modelAccessService(),
+            conversationMemorySettingsService,
+            memoryScopeResolver);
     this.responseCreator =
         new AgentResponseCreator(
             modelPicker, toolRegistry, llmProvider, operationalMetricsService, profileService);
@@ -155,7 +163,49 @@ public class BBMessageAgent {
             workflowLauncher,
             agentMetricsService,
             this::termsUrl,
-            termsAgreementValidator);
+            termsAgreementValidator,
+            conversationJournalService);
+  }
+
+  public BBMessageAgent(
+      @Nullable OpenAIClient openAiClient,
+      BBHttpClientWrapper bbHttpClientWrapper,
+      Mem0Client mem0Client,
+      GcalClient gcalClient,
+      WebsiteAccountService websiteAccountService,
+      GiphyClient giphyClient,
+      AgentProfileService profileService,
+      AgentAttachmentInputBuilder attachmentInputBuilder,
+      MessageTransportRegistry transportRegistry,
+      @Nullable ObjectMapper objectMapper,
+      CadenceWorkflowLauncher cadenceWorkflowLauncher,
+      @Nullable AgentMetricsService agentMetricsService,
+      @Nullable FeedbackService feedbackService,
+      @Nullable MessageResponseRateLimitService messageResponseRateLimitService,
+      @Nullable OperationalMetricsService operationalMetricsService,
+      @Nullable NativeAppSessionService nativeAppSessionService,
+      ModelPicker modelPicker) {
+    this(
+        openAiClient,
+        bbHttpClientWrapper,
+        mem0Client,
+        gcalClient,
+        websiteAccountService,
+        giphyClient,
+        profileService,
+        attachmentInputBuilder,
+        transportRegistry,
+        objectMapper,
+        cadenceWorkflowLauncher,
+        agentMetricsService,
+        feedbackService,
+        messageResponseRateLimitService,
+        operationalMetricsService,
+        nativeAppSessionService,
+        null,
+        null,
+        null,
+        modelPicker);
   }
 
   public BBMessageAgent(
@@ -189,6 +239,9 @@ public class BBMessageAgent {
         agentMetricsService,
         feedbackService,
         messageResponseRateLimitService,
+        null,
+        null,
+        null,
         null,
         null,
         modelPicker);

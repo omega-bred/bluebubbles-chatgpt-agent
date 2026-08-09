@@ -1109,13 +1109,40 @@ public class BBHttpClientWrapper {
   }
 
   public List<ApiV1ChatChatGuidMessageGet200ResponseDataInner> getMessagesInChat(String chatGuid) {
+    return getMessagesInChat(chatGuid, null, null, 0, 100, "DESC");
+  }
+
+  public List<ApiV1ChatChatGuidMessageGet200ResponseDataInner> getMessagesInChat(
+      String chatGuid,
+      @Nullable Instant after,
+      @Nullable Instant before,
+      int offset,
+      int limit,
+      String sort) {
+    if (limit < 1 || limit > 1_000) {
+      throw new IllegalArgumentException("message history limit must be between 1 and 1000");
+    }
+    if (offset < 0) {
+      throw new IllegalArgumentException("message history offset must not be negative");
+    }
+    String normalizedSort = StringUtils.defaultIfBlank(sort, "ASC").toUpperCase(Locale.ROOT);
+    if (!normalizedSort.equals("ASC") && !normalizedSort.equals("DESC")) {
+      throw new IllegalArgumentException("message history sort must be ASC or DESC");
+    }
     return measuredOperation(
         "get_messages_in_chat",
         () -> {
           ApiV1ChatChatGuidMessageGet200Response response =
               this.chatApi
                   .apiV1ChatChatGuidMessageGet(
-                      chatGuid, password, "handle", null, null, null, 100, "DESC")
+                      chatGuid,
+                      password,
+                      "handle,chats",
+                      after == null ? null : Long.toString(after.getEpochSecond()),
+                      before == null ? null : Long.toString(before.getEpochSecond()),
+                      offset,
+                      limit,
+                      normalizedSort)
                   .block(apiTimeout);
           response = requirePresent(response, "get messages in chat");
           return requirePresent(response.getData(), "get messages in chat");

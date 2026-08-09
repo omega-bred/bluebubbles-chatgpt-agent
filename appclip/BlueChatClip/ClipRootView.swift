@@ -66,7 +66,7 @@ struct ClipRootView: View {
                     colors: [
                         Color.green.opacity(0.18),
                         Color.blue.opacity(0.10),
-                        Color(.secondarySystemBackground)
+                        Color(.secondarySystemBackground),
                     ],
                     startPoint: .topLeading,
                     endPoint: .bottomTrailing
@@ -262,6 +262,103 @@ struct ClipRootView: View {
             }
             .appClipPanel()
 
+            if settings.groupMemory.available {
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("Collective Context")
+                        .font(.headline)
+                    Text(settings.groupMemory.label)
+                        .font(.title3.weight(.semibold))
+                    Text(settings.groupMemory.description)
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                    InfoRow(label: "Status", value: settings.groupMemory.enabled ? "On" : "Off")
+                    if let startedAt = settings.groupMemory.collectionStartedAt {
+                        InfoRow(label: "Collection started", value: model.formatDate(startedAt))
+                    }
+                    Button {
+                        Task {
+                            await model.updateGroupMemory(!settings.groupMemory.enabled)
+                        }
+                    } label: {
+                        HStack {
+                            Text(settings.groupMemory.enabled ? "Turn memory off" : "Turn memory on")
+                            Spacer()
+                            if model.groupMemoryUpdateInProgress {
+                                ProgressView()
+                            }
+                        }
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(model.groupMemoryUpdateInProgress)
+                    Text("The change is announced in this group. Enabling starts with new messages only.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                .appClipPanel()
+            }
+
+            VStack(alignment: .leading, spacing: 12) {
+                Text("Personal Catch-ups")
+                    .font(.headline)
+                Text(
+                    settings.personalCatchups.available
+                        ? (settings.personalCatchups.enabled ? "On" : "Off")
+                        : "Unavailable"
+                )
+                .font(.title3.weight(.semibold))
+                Text(
+                    settings.personalCatchups.available
+                        ? "Receive developments since your last catch-up in your personal chat."
+                        : "Personal summaries require group memory and current membership."
+                )
+                .font(.callout)
+                .foregroundStyle(.secondary)
+                if settings.personalCatchups.available {
+                    TextField("IANA timezone", text: $model.catchupTimezone)
+                        .textFieldStyle(.roundedBorder)
+                        .disabled(model.catchupUpdateInProgress)
+                    HStack {
+                        TextField("Quiet start (HH:mm)", text: $model.catchupQuietStart)
+                            .textFieldStyle(.roundedBorder)
+                        TextField("Quiet end (HH:mm)", text: $model.catchupQuietEnd)
+                            .textFieldStyle(.roundedBorder)
+                    }
+                    .disabled(model.catchupUpdateInProgress)
+                    Button {
+                        Task {
+                            await model.updateCatchups(!settings.personalCatchups.enabled)
+                        }
+                    } label: {
+                        HStack {
+                            Text(
+                                settings.personalCatchups.enabled
+                                    ? "Turn personal catch-ups off"
+                                    : "Turn personal catch-ups on"
+                            )
+                            Spacer()
+                            if model.catchupUpdateInProgress {
+                                ProgressView()
+                            }
+                        }
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(model.catchupUpdateInProgress)
+                    if settings.personalCatchups.enabled {
+                        Button("Save quiet hours") {
+                            Task {
+                                await model.updateCatchups(true)
+                            }
+                        }
+                        .buttonStyle(.bordered)
+                        .disabled(model.catchupUpdateInProgress)
+                    }
+                    Text("At most one summary per day for this group. Use an IANA timezone such as America/Los_Angeles.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .appClipPanel()
+
             VStack(alignment: .leading, spacing: 12) {
                 Text("Conversation")
                     .font(.headline)
@@ -439,6 +536,11 @@ final class ClipViewModel: ObservableObject {
     @Published var isLoading = false
     @Published var modelSelectionInProgress = false
     @Published var responsivenessSelectionInProgress: String?
+    @Published var groupMemoryUpdateInProgress = false
+    @Published var catchupUpdateInProgress = false
+    @Published var catchupTimezone = "UTC"
+    @Published var catchupQuietStart = "22:00"
+    @Published var catchupQuietEnd = "08:00"
     @Published var errorMessage: String?
     @Published var modelErrorMessage: String?
 
@@ -790,6 +892,92 @@ final class ClipViewModel: ObservableObject {
         }
     }
 
+    func updateGroupMemory(_ enabled: Bool) async {
+        guard let session else {
+            return
+        }
+        guard session.purpose == .conversationSettings else {
+            return
+        }
+        guard enabled != conversationSettings?.groupMemory.enabled else {
+            return
+        }
+        groupMemoryUpdateInProgress = true
+        modelErrorMessage = nil
+        defer {
+            groupMemoryUpdateInProgress = false
+        }
+        do {
+            trackAppClipEvent(
+                "appclip_group_memory_update_started",
+                properties: eventContext(for: session).merging(["enabled": enabled ? "true" : "false"]) { _, new in new }
+            )
+            let response = try await GeneratedAPIConfiguration.executeWithSession(session.sessionToken) {
+                ConversationSettingsAPI.conversationSettingsUpdateGroupMemoryWithRequestBuilder(
+                    conversationGroupMemoryUpdateRequest: ConversationGroupMemoryUpdateRequest(
+                        enabled: enabled
+                    )
+                )
+            }
+            let refreshed = session.replacing(conversationSettings: response.settings)
+            self.session = refreshed
+            syncCatchupDraft(from: refreshed)
+            trackAppClipEvent(
+                "appclip_group_memory_updated",
+                properties: eventContext(for: refreshed).merging(["enabled": enabled ? "true" : "false"]) { _, new in new }
+            )
+        } catch {
+            trackAppClipEvent(
+                "appclip_group_memory_update_failed",
+                properties: eventContext(for: session).merging(["enabled": enabled ? "true" : "false"]) { _, new in new }
+            )
+            modelErrorMessage = error.localizedDescription
+        }
+    }
+
+    func updateCatchups(_ enabled: Bool) async {
+        guard let session else {
+            return
+        }
+        guard session.purpose == .conversationSettings else {
+            return
+        }
+        catchupUpdateInProgress = true
+        modelErrorMessage = nil
+        defer {
+            catchupUpdateInProgress = false
+        }
+        do {
+            trackAppClipEvent(
+                "appclip_personal_catchups_update_started",
+                properties: eventContext(for: session).merging(["enabled": enabled ? "true" : "false"]) { _, new in new }
+            )
+            let response = try await GeneratedAPIConfiguration.executeWithSession(session.sessionToken) {
+                ConversationSettingsAPI.conversationSettingsUpdateCatchupsWithRequestBuilder(
+                    conversationCatchupPreferencesUpdateRequest: ConversationCatchupPreferencesUpdateRequest(
+                        enabled: enabled,
+                        timezone: catchupTimezone,
+                        quietStart: catchupQuietStart,
+                        quietEnd: catchupQuietEnd
+                    )
+                )
+            }
+            let refreshed = session.replacing(conversationSettings: response.settings)
+            self.session = refreshed
+            syncCatchupDraft(from: refreshed)
+            trackAppClipEvent(
+                "appclip_personal_catchups_updated",
+                properties: eventContext(for: refreshed).merging(["enabled": enabled ? "true" : "false"]) { _, new in new }
+            )
+        } catch {
+            trackAppClipEvent(
+                "appclip_personal_catchups_failed",
+                properties: eventContext(for: session).merging(["enabled": enabled ? "true" : "false"]) { _, new in new }
+            )
+            modelErrorMessage = error.localizedDescription
+        }
+    }
+
     private func createSession(linkToken: String) async {
         isLoading = true
         errorMessage = nil
@@ -804,6 +992,7 @@ final class ClipViewModel: ObservableObject {
             )
             UserDefaults.standard.set(session.sessionToken, forKey: sessionTokenKey)
             self.session = session
+            syncCatchupDraft(from: session)
             errorMessage = nil
             trackAppClipEvent(
                 "appclip_session_created",
@@ -827,6 +1016,7 @@ final class ClipViewModel: ObservableObject {
                 AppClipAPI.appClipGetSessionWithRequestBuilder()
             }
             self.session = session
+            syncCatchupDraft(from: session)
             errorMessage = nil
             trackAppClipEvent(
                 "appclip_session_restored",
@@ -839,6 +1029,15 @@ final class ClipViewModel: ObservableObject {
             }
             setBootstrapError(error, source: .stored)
         }
+    }
+
+    private func syncCatchupDraft(from session: AppClipSessionResponse) {
+        guard let settings = session.conversationSettings?.personalCatchups else {
+            return
+        }
+        catchupTimezone = settings.timezone
+        catchupQuietStart = settings.quietStart
+        catchupQuietEnd = settings.quietEnd
     }
 
     private func setBootstrapError(_ error: Error, source: BootstrapSource) {
@@ -875,7 +1074,7 @@ final class ClipViewModel: ObservableObject {
         let diagnostic = bootstrapDiagnostic(for: error)
         var properties = [
             "launch_source": source.rawValue,
-            "reason": diagnostic.reason
+            "reason": diagnostic.reason,
         ]
         if let status = diagnostic.status {
             properties["http_status"] = String(status)
@@ -948,7 +1147,7 @@ final class ClipViewModel: ObservableObject {
         var properties: [String: String] = [
             "purpose": session.purpose.rawValue,
             "is_premium": session.subscription.isPremium ? "true" : "false",
-            "billing_source": session.subscription.entitlementSource
+            "billing_source": session.subscription.entitlementSource,
         ]
         if let model = session.linkedAccounts.integrations.compactMap(\.modelAccess).first?.currentModel {
             properties["model"] = model
