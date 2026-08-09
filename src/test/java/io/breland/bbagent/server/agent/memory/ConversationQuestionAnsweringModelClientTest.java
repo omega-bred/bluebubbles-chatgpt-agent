@@ -393,6 +393,63 @@ class ConversationQuestionAnsweringModelClientTest {
   }
 
   @Test
+  void rejectsSixteenTokenFillerInterleavedGlobalUnigramMontage() {
+    String source =
+        "alpha beta gamma delta epsilon zeta eta theta iota kappa lambda mu nu xi omicron pi";
+    rawAnswer("m-1", String.join(" the ", source.split(" ")));
+
+    assertThatThrownBy(() -> client.answer("What was said?", List.of(message("m-1", source))))
+        .isInstanceOf(IllegalStateException.class)
+        .hasMessage("unsafe question answer response");
+  }
+
+  @Test
+  void rejectsAtTheFourArbitrarySourceTokenBoundary() {
+    assertThat(
+            ConversationQuestionAnswerOutputValidator.isSafe(
+                "ax the bx the cx", Set.of(), List.of("ax bx cx dx")))
+        .isTrue();
+    assertThat(
+            ConversationQuestionAnswerOutputValidator.isSafe(
+                "ax the bx the cx the dx", Set.of(), List.of("ax bx cx dx")))
+        .isFalse();
+  }
+
+  @Test
+  void rejectsAtTheThirtyTwoMatchedSourceCharacterBoundary() {
+    String source = "abcdefghij klmnopqrst uvwxyzabcdef";
+
+    assertThat(
+            ConversationQuestionAnswerOutputValidator.isSafe(
+                "abcdefghij the klmnopqrst", Set.of(), List.of(source)))
+        .isTrue();
+    assertThat(
+            ConversationQuestionAnswerOutputValidator.isSafe(
+                "abcdefghij the klmnopqrst the uvwxyzabcdef", Set.of(), List.of(source)))
+        .isFalse();
+  }
+
+  @Test
+  void rejectsOneThreeThousandCharacterMatchedSourceToken() {
+    String source = "x".repeat(3_000);
+    rawAnswer("m-1", source);
+
+    assertThatThrownBy(() -> client.answer("What was said?", List.of(message("m-1", source))))
+        .isInstanceOf(IllegalStateException.class)
+        .hasMessage("unsafe question answer response");
+  }
+
+  @Test
+  void rejectsSeveralMediumMatchedTokensThatExceedTheCharacterBudget() {
+    String source = "abcdefghijkl mnopqrstuvwx yzabcdefghij";
+    rawAnswer("m-1", String.join(" the ", source.split(" ")));
+
+    assertThatThrownBy(() -> client.answer("What was said?", List.of(message("m-1", source))))
+        .isInstanceOf(IllegalStateException.class)
+        .hasMessage("unsafe question answer response");
+  }
+
+  @Test
   void rejectsWholeSourceMessageShorterThanSixteenCharacters() {
     rawAnswer("m-1", "red key now");
 
@@ -524,6 +581,125 @@ class ConversationQuestionAnsweringModelClientTest {
                         message("m-eve", "Eve", "Wordle 1877 was 3/6"))))
         .isInstanceOf(IllegalStateException.class)
         .hasMessage("unsafe question answer response");
+  }
+
+  @ParameterizedTest
+  @ValueSource(strings = {"Dom's score was 3/6", "Dom/3/6", "Dom-9/9"})
+  void rejectsWrongTupleAttributionAcrossPossessiveOrJoinedForms(String answer) {
+    rawAnswer("ignored", answer);
+
+    assertThatThrownBy(
+            () ->
+                client.answer(
+                    "What scores were reported?",
+                    List.of(
+                        message("m-dom", "Dom", "Wordle 1877 was 5/6"),
+                        message("m-eve", "Eve", "Wordle 1877 was 3/6"))))
+        .isInstanceOf(IllegalStateException.class)
+        .hasMessage("unsafe question answer response");
+  }
+
+  @ParameterizedTest
+  @ValueSource(strings = {"Dom's score was 5/6", "DOM/5/6", "Dom-5/6"})
+  void allowsExactTupleAttributionAcrossPossessiveJoinedAndCaseForms(String answer) {
+    rawAnswer("ignored", answer);
+
+    var result =
+        client.answer(
+            "What scores were reported?",
+            List.of(
+                message("m-dom", "Dom", "Wordle 1877 was 5/6"),
+                message("m-eve", "Eve", "Wordle 1877 was 3/6")));
+
+    assertThat(result.answer().answer()).isEqualTo(answer);
+  }
+
+  @Test
+  void allowsMultipleExactPossessiveTuplesWithinOneStatement() {
+    String answer = "Dom's score was 5/6 and Eve's score was 3/6";
+    rawAnswer("ignored", answer);
+
+    var result =
+        client.answer(
+            "What scores were reported?",
+            List.of(
+                message("m-dom", "Dom", "Wordle 1877 was 5/6"),
+                message("m-eve", "Eve", "Wordle 1877 was 3/6")));
+
+    assertThat(result.answer().answer()).isEqualTo(answer);
+  }
+
+  @Test
+  void rejectsWrongTupleForDelimiterAwareMultiwordParticipantLabel() {
+    rawAnswer("ignored", "TEAM BLUE's score was 3/6");
+
+    assertThatThrownBy(
+            () ->
+                client.answer(
+                    "What scores were reported?",
+                    List.of(
+                        message("m-team", "Team Blue", "Wordle 1877 was 5/6"),
+                        message("m-eve", "Eve", "Wordle 1877 was 3/6"))))
+        .isInstanceOf(IllegalStateException.class)
+        .hasMessage("unsafe question answer response");
+  }
+
+  @Test
+  void allowsExactTupleForPunctuatedCaseInsensitiveMultiwordParticipantLabel() {
+    String answer = "According to TEAM BLUE, the score was 5/6";
+    rawAnswer("m-team", answer);
+
+    var result =
+        client.answer(
+            "What score did Team Blue report?",
+            List.of(message("m-team", "Team Blue", "Wordle 1877 was 5/6")));
+
+    assertThat(result.answer().answer()).isEqualTo(answer);
+  }
+
+  @Test
+  void doesNotMatchATrustedParticipantInsideALongerWord() {
+    String answer = "The annual score was 3/6";
+    rawAnswer("ignored", answer);
+
+    var result =
+        client.answer(
+            "What scores were reported?",
+            List.of(
+                message("m-ann", "Ann", "Wordle 1877 was 5/6"),
+                message("m-eve", "Eve", "Wordle 1877 was 3/6")));
+
+    assertThat(result.answer().answer()).isEqualTo(answer);
+  }
+
+  @Test
+  void rejectsDelimiterAmbiguousTrustedParticipantLabelsRatherThanFlatteningTheirTuples() {
+    rawAnswer("ignored", "A-B's score was 3/6");
+
+    assertThatThrownBy(
+            () ->
+                client.answer(
+                    "What scores were reported?",
+                    List.of(
+                        message("m-hyphen", "A-B", "Wordle 1877 was 5/6"),
+                        message("m-space", "A B", "Wordle 1877 was 3/6"))))
+        .isInstanceOf(IllegalStateException.class)
+        .hasMessage("unsafe question answer response");
+  }
+
+  @Test
+  void allowsSupportedUnattributedScoreWhenNoTrustedParticipantIsPresent() {
+    String answer = "The reported score was 3/6";
+    rawAnswer("ignored", answer);
+
+    var result =
+        client.answer(
+            "What scores were reported?",
+            List.of(
+                message("m-dom", "Dom", "Wordle 1877 was 5/6"),
+                message("m-eve", "Eve", "Wordle 1877 was 3/6")));
+
+    assertThat(result.answer().answer()).isEqualTo(answer);
   }
 
   @Test
