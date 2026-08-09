@@ -16,10 +16,10 @@ import io.breland.bbagent.server.config.SecurityConfig;
 import java.util.Optional;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
-import org.springframework.boot.test.mock.mockito.MockBean;
+import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
 @WebMvcTest({GcalOauthController.class, RootController.class})
@@ -27,9 +27,9 @@ import org.springframework.test.web.servlet.MockMvc;
 class OauthCallbackControllerTest {
   @Autowired private MockMvc mockMvc;
 
-  @MockBean private GcalClient gcalClient;
+  @MockitoBean private GcalClient gcalClient;
 
-  @MockBean private BBHttpClientWrapper bbHttpClientWrapper;
+  @MockitoBean private BBHttpClientWrapper bbHttpClientWrapper;
 
   @Test
   void oauthCallbackRouteServesFrontend() throws Exception {

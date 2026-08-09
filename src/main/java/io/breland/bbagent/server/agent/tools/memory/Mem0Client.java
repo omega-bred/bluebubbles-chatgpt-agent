@@ -2,6 +2,7 @@ package io.breland.bbagent.server.agent.tools.memory;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.breland.bbagent.server.config.Jackson2WebClientConfigurer;
 import java.time.Duration;
 import java.util.*;
 import java.util.function.Supplier;
@@ -38,7 +39,7 @@ public class Mem0Client {
     this.objectMapper = objectMapper;
     this.configured = apiKey != null && !apiKey.isBlank() && !"fake_key".equals(apiKey);
     this.webClient =
-        WebClient.builder()
+        Jackson2WebClientConfigurer.configure(WebClient.builder(), objectMapper)
             .baseUrl(baseUrl)
             .defaultHeader(HttpHeaders.AUTHORIZATION, "Token " + apiKey)
             .defaultHeader(HttpHeaders.ACCEPT, MediaType.APPLICATION_JSON_VALUE)

@@ -3,7 +3,6 @@ package io.breland.bbagent.server.agent.tools.bb;
 import static io.breland.bbagent.server.agent.tools.JsonSchemaUtilities.jsonSchema;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
-import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.databind.JsonNode;
 import io.breland.bbagent.server.agent.tools.AgentTool;
 import io.breland.bbagent.server.agent.tools.ToolProvider;
@@ -32,12 +31,7 @@ public class SendPollAgentTool implements ToolProvider {
       @Schema(
               description =
                   "Poll options. Provide at least two non-empty options, either as strings or objects with text.")
-          JsonNode options,
-      @Schema(
-              description =
-                  "Optional conversation/chat GUID. Defaults to the current conversation.")
-          @JsonProperty("conversation_id")
-          String conversationId) {}
+          JsonNode options) {}
 
   @Override
   public AgentTool getTool() {
@@ -61,8 +55,7 @@ public class SendPollAgentTool implements ToolProvider {
           if (!context.consumeMessageResponseQuota()) {
             return "skipped: quota exceeded or outdated workflow";
           }
-          String chatGuid =
-              StringUtils.defaultIfBlank(request.conversationId(), context.message().chatGuid());
+          String chatGuid = context.message().chatGuid();
           JsonNode data = bbHttpClientWrapper.sendPollJson(chatGuid, request.title(), options);
           context.recordAssistantTurn("Sent poll: " + request.title());
           return data.toString();
@@ -104,13 +97,7 @@ public class SendPollAgentTool implements ToolProvider {
                     "anyOf",
                     List.of(
                         Map.of("type", "string", "description", "Option text."),
-                        pollOptionObject))),
-            "conversation_id",
-            Map.of(
-                "type",
-                "string",
-                "description",
-                "Optional conversation/chat GUID. Defaults to the current conversation.")),
+                        pollOptionObject)))),
         "required",
         List.of("title", "options"),
         "additionalProperties",

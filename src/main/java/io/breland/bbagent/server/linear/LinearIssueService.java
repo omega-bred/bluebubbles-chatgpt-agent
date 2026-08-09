@@ -2,6 +2,7 @@ package io.breland.bbagent.server.linear;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.breland.bbagent.server.config.Jackson2WebClientConfigurer;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.OffsetDateTime;
@@ -80,7 +81,8 @@ public class LinearIssueService {
   public LinearIssueService(
       LinearProperties properties, WebClient.Builder webClientBuilder, ObjectMapper mapper) {
     this.properties = properties;
-    this.webClient = webClientBuilder.build();
+    this.webClient =
+        Jackson2WebClientConfigurer.configure(webClientBuilder.clone(), mapper).build();
     this.mapper = mapper;
   }
 

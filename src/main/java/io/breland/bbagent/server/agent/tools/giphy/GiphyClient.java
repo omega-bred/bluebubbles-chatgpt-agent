@@ -1,6 +1,8 @@
 package io.breland.bbagent.server.agent.tools.giphy;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import io.breland.bbagent.server.config.Jackson2WebClientConfigurer;
 import java.time.Duration;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
@@ -11,7 +13,6 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
-import org.springframework.web.reactive.function.client.ExchangeStrategies;
 import org.springframework.web.reactive.function.client.WebClient;
 import org.springframework.web.reactive.function.client.WebClientResponseException;
 import org.springframework.web.util.UriBuilder;
@@ -31,13 +32,14 @@ public class GiphyClient {
 
   public GiphyClient(
       @Value("${giphy.apiKey:}") String apiKey,
-      @Value("${giphy.baseUrl:https://api.giphy.com/v1}") String baseUrl) {
+      @Value("${giphy.baseUrl:https://api.giphy.com/v1}") String baseUrl,
+      ObjectMapper objectMapper) {
     this.apiKey = apiKey;
-    ExchangeStrategies strategies =
-        ExchangeStrategies.builder()
+    this.webClient =
+        Jackson2WebClientConfigurer.configure(WebClient.builder(), objectMapper)
+            .baseUrl(baseUrl)
             .codecs(configurer -> configurer.defaultCodecs().maxInMemorySize(MAX_IN_MEMORY_BYTES))
             .build();
-    this.webClient = WebClient.builder().baseUrl(baseUrl).exchangeStrategies(strategies).build();
   }
 
   public List<GiphyGif> searchGifs(String query, int limit, String rating, String lang) {

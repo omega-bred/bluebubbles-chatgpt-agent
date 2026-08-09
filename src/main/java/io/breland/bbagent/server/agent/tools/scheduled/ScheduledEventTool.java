@@ -219,6 +219,22 @@ public class ScheduledEventTool implements ToolProvider {
     return workflowId != null && workflowId.startsWith(WORKFLOW_ID_PREFIX + ":");
   }
 
+  static String buildWorkflowId(String chatGuid, String scheduledEventId) {
+    return buildWorkflowIdPrefix(chatGuid) + scheduledEventId;
+  }
+
+  static String scheduledEventId(String chatGuid, String workflowId) {
+    if (chatGuid == null || workflowId == null) {
+      return null;
+    }
+    String prefix = buildWorkflowIdPrefix(chatGuid);
+    if (!workflowId.startsWith(prefix)) {
+      return null;
+    }
+    String scheduledEventId = workflowId.substring(prefix.length());
+    return scheduledEventId.isBlank() ? null : scheduledEventId;
+  }
+
   private static String buildWorkflowId(String chatGuid) {
     return buildWorkflowIdPrefix(chatGuid) + UUID.randomUUID();
   }
