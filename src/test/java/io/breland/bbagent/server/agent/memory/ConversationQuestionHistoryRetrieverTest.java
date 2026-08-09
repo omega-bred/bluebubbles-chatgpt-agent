@@ -15,6 +15,7 @@ import io.breland.bbagent.generated.bluebubblesclient.model.ApiV1ChatChatGuidMes
 import io.breland.bbagent.generated.bluebubblesclient.model.ApiV1ChatChatGuidMessageGet200ResponseDataInnerHandle;
 import io.breland.bbagent.generated.bluebubblesclient.model.Chat;
 import io.breland.bbagent.generated.bluebubblesclient.model.Message;
+import io.breland.bbagent.generated.bluebubblesclient.model.MessageHandle;
 import io.breland.bbagent.server.agent.IncomingMessage;
 import io.breland.bbagent.server.agent.account.AgentAccountResolver;
 import io.breland.bbagent.server.agent.memory.ConversationMemoryModels.ConversationRecord;
@@ -188,7 +189,7 @@ class ConversationQuestionHistoryRetrieverTest {
   }
 
   @Test
-  void senderHintRanksOnlySafeParticipantLabelsAndRetainsOtherEvidence() {
+  void senderHintNeverOverridesChronologicalOrderingOrFiltersEvidence() {
     UUID domGuid = UUID.fromString("00000000-0000-0000-0000-000000000103");
     when(bb.searchConversationHistory(GUID, "Wordle", FROM, TO, 500, 0))
         .thenReturn(
@@ -220,10 +221,52 @@ class ConversationQuestionHistoryRetrieverTest {
 
     assertThat(result.messages())
         .extracting(QuestionMessage::participant)
-        .containsExactly("Dom", "Alice");
+        .containsExactly("Alice", "Dom");
     assertThat(result.messages())
         .extracting(QuestionMessage::messageGuid)
-        .containsExactly(domGuid.toString(), HIT_GUID.toString());
+        .containsExactly(HIT_GUID.toString(), domGuid.toString());
+  }
+
+  @Test
+  void senderHintOnlyTiebreaksEqualTimestampsUsingSafeLabels() {
+    retriever = retriever(5, 500, 100, 0, 300_000, NOW);
+    UUID domGuid = UUID.fromString("00000000-0000-0000-0000-000000000103");
+    when(bb.searchConversationHistory(GUID, "Wordle", FROM, TO, 500, 0))
+        .thenReturn(
+            List.of(
+                searchMessage(HIT_GUID, "first", at("12:00"), "+15555550199"),
+                searchMessage(domGuid, "preferred", at("12:00"), "+15555550200")));
+    when(accountResolver.resolve(any(IncomingMessage.class)))
+        .thenAnswer(
+            invocation -> {
+              IncomingMessage incoming = invocation.getArgument(0);
+              return Optional.of(
+                  "+15555550200".equals(incoming.sender())
+                      ? TestAccounts.resolved("account-dom", "Dom")
+                      : TestAccounts.resolved("account-alice", "Alice"));
+            });
+
+    RetrievalResult result =
+        retriever.retrieveExact(
+            request(activeFrom("10:00")), new SearchPlan(List.of("Wordle"), "dom", null, null));
+
+    assertThat(result.messages())
+        .extracting(QuestionMessage::participant)
+        .containsExactly("Dom", "Alice");
+  }
+
+  @Test
+  void directExactHitPreservesHandleForSafeMappingWithoutNeighborDuplicate() {
+    retriever = retriever(5, 500, 100, 0, 300_000, NOW);
+    when(bb.searchConversationHistory(GUID, "Wordle", FROM, TO, 500, 0))
+        .thenReturn(List.of(searchMessage(HIT_GUID, "Wordle", at("12:00"), "+15555550200")));
+    when(accountResolver.resolve(any(IncomingMessage.class)))
+        .thenReturn(Optional.of(TestAccounts.resolved("account-dom", "Dom")));
+
+    RetrievalResult result = retriever.retrieveExact(request(activeFrom("10:00")), plan("Wordle"));
+
+    assertThat(result.messages()).extracting(QuestionMessage::participant).containsExactly("Dom");
+    assertThat(result.pageCount()).isEqualTo(1);
   }
 
   @Test
@@ -279,7 +322,47 @@ class ConversationQuestionHistoryRetrieverTest {
     assertThat(result.coverageStatus()).isEqualTo(CoverageStatus.PARTIAL);
     assertThat(result.partialReason()).isEqualTo("source_unavailable");
     assertThat(result.coverageThrough()).isEqualTo(at("12:00"));
+    assertThat(result.pageCount()).isEqualTo(2);
+  }
+
+  @Test
+  void neverExceedsOneHundredSourceCallsIncludingJournalFallback() {
+    retriever = retriever(5, 500, 100, 0, 300_000, NOW);
+    ApiV1ChatChatGuidMessageGet200ResponseDataInner duplicate =
+        raw("duplicate", "available", at("11:30"));
+    for (int page = 0; page < 99; page++) {
+      when(bb.getMessagesInChat(GUID, FROM, TO, page * 500, 500, "ASC"))
+          .thenReturn(Collections.nCopies(500, duplicate));
+    }
+    when(bb.getMessagesInChat(GUID, FROM, TO, 99 * 500, 500, "ASC"))
+        .thenThrow(new IllegalStateException("unavailable"));
+
+    RetrievalResult result = retriever.retrieveChronological(request(activeFrom("10:00")));
+
+    assertThat(result.pageCount()).isEqualTo(100);
+    assertThat(result.partialReason()).isEqualTo("history_limit");
+    verifyNoInteractions(store);
+  }
+
+  @Test
+  void rejectsConfiguredSourceCallLimitAboveHardMaximum() {
+    assertThatIllegalArgumentException().isThrownBy(() -> retriever(5, 500, 101, 0, 300_000, NOW));
+  }
+
+  @Test
+  void checksAdvancingDeadlineBeforeEveryNeighborCall() {
+    retriever =
+        retriever(
+            5, 500, 100, 3, 300_000, new AdvancingClock(List.of(NOW, DEADLINE), ZoneOffset.UTC));
+    when(bb.searchConversationHistory(GUID, "Wordle", FROM, TO, 500, 0))
+        .thenReturn(List.of(searchMessage(HIT_GUID, "Wordle", at("12:00"))));
+
+    RetrievalResult result = retriever.retrieveExact(request(activeFrom("10:00")), plan("Wordle"));
+
     assertThat(result.pageCount()).isEqualTo(1);
+    assertThat(result.partialReason()).isEqualTo("time_limit");
+    verify(bb, never())
+        .getMessagesInChat(anyString(), any(), any(), anyInt(), anyInt(), anyString());
   }
 
   @Test
@@ -319,16 +402,19 @@ class ConversationQuestionHistoryRetrieverTest {
       int neighbors,
       int maxCharacters,
       Instant clockInstant) {
-    return new ConversationQuestionHistoryRetriever(
-        bb,
-        store,
-        mapper,
+    return retriever(
         maxTerms,
         pageSize,
         maxPages,
         neighbors,
         maxCharacters,
         Clock.fixed(clockInstant, ZoneOffset.UTC));
+  }
+
+  private ConversationQuestionHistoryRetriever retriever(
+      int maxTerms, int pageSize, int maxPages, int neighbors, int maxCharacters, Clock clock) {
+    return new ConversationQuestionHistoryRetriever(
+        bb, store, mapper, maxTerms, pageSize, maxPages, neighbors, maxCharacters, clock);
   }
 
   private RetrievalRequest request(MembershipInterval... memberships) {
@@ -361,6 +447,10 @@ class ConversationQuestionHistoryRetrieverTest {
   }
 
   private Message searchMessage(UUID guid, String text, Instant timestamp) {
+    return searchMessage(guid, text, timestamp, null);
+  }
+
+  private Message searchMessage(UUID guid, String text, Instant timestamp, String sender) {
     return new Message()
         .guid(guid)
         .text(text)
@@ -368,6 +458,7 @@ class ConversationQuestionHistoryRetrieverTest {
         .isFromMe(false)
         .isSystemMessage(false)
         .isServiceMessage(false)
+        .handle(sender == null ? null : new MessageHandle().address(sender))
         .chats(List.of(new Chat().guid(GUID)));
   }
 
@@ -409,6 +500,34 @@ class ConversationQuestionHistoryRetrieverTest {
               accountId, now, now);
       account.setGlobalContactName(name);
       return new AgentAccountResolver.ResolvedAccount(account, List.of());
+    }
+  }
+
+  private static final class AdvancingClock extends Clock {
+    private final List<Instant> instants;
+    private final java.time.ZoneId zone;
+    private int index;
+
+    private AdvancingClock(List<Instant> instants, java.time.ZoneId zone) {
+      this.instants = List.copyOf(instants);
+      this.zone = zone;
+    }
+
+    @Override
+    public java.time.ZoneId getZone() {
+      return zone;
+    }
+
+    @Override
+    public Clock withZone(java.time.ZoneId requestedZone) {
+      return new AdvancingClock(instants, requestedZone);
+    }
+
+    @Override
+    public Instant instant() {
+      Instant value = instants.get(Math.min(index, instants.size() - 1));
+      index++;
+      return value;
     }
   }
 }

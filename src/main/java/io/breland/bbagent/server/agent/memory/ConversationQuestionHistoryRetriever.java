@@ -2,6 +2,7 @@ package io.breland.bbagent.server.agent.memory;
 
 import io.breland.bbagent.generated.bluebubblesclient.model.ApiV1ChatChatGuidMessageGet200ResponseDataInner;
 import io.breland.bbagent.generated.bluebubblesclient.model.ApiV1ChatChatGuidMessageGet200ResponseDataInnerChatsInner;
+import io.breland.bbagent.generated.bluebubblesclient.model.ApiV1ChatChatGuidMessageGet200ResponseDataInnerHandle;
 import io.breland.bbagent.generated.bluebubblesclient.model.Message;
 import io.breland.bbagent.server.TimeSupport;
 import io.breland.bbagent.server.agent.memory.ConversationMemoryModels.JournalMessage;
@@ -30,6 +31,7 @@ import org.springframework.stereotype.Service;
 @Service
 public class ConversationQuestionHistoryRetriever {
   private static final int MAX_CANDIDATE_MESSAGES = 5_000;
+  private static final int MAX_SOURCE_CALLS = 100;
   private static final String HISTORY_LIMIT = "history_limit";
   private static final String TIME_LIMIT = "time_limit";
   private static final String SOURCE_UNAVAILABLE = "source_unavailable";
@@ -86,8 +88,8 @@ public class ConversationQuestionHistoryRetriever {
     if (pageSize <= 0 || pageSize > 500) {
       throw new IllegalArgumentException("history page size must be between 1 and 500");
     }
-    if (maxHistoryPages <= 0) {
-      throw new IllegalArgumentException("max history pages must be positive");
+    if (maxHistoryPages <= 0 || maxHistoryPages > MAX_SOURCE_CALLS) {
+      throw new IllegalArgumentException("max history pages must be between 1 and 100");
     }
     if (neighborMessageCount < 0) {
       throw new IllegalArgumentException("neighbor message count must not be negative");
@@ -201,8 +203,7 @@ public class ConversationQuestionHistoryRetriever {
 
   private RetrievalResult journalFallback(
       RetrievalRequest request, Bounds bounds, CandidateAccumulator candidates, CallBudget budget) {
-    if (deadlineReached(request.deadline())) {
-      budget.limit(TIME_LIMIT);
+    if (!budget.reserve(request.deadline())) {
       return result(candidates.values(), RetrievalMode.CHRONOLOGICAL, bounds, budget, null);
     }
     List<JournalMessage> journal =
@@ -304,6 +305,11 @@ public class ConversationQuestionHistoryRetriever {
             .isFromMe(raw.getIsFromMe())
             .isSystemMessage(raw.getIsSystemMessage())
             .isServiceMessage(raw.getIsServiceMessage())
+            .handle(
+                raw.getHandle() == null
+                    ? null
+                    : new ApiV1ChatChatGuidMessageGet200ResponseDataInnerHandle()
+                        .address(raw.getHandle().getAddress()))
             .chats(
                 List.of(
                     new ApiV1ChatChatGuidMessageGet200ResponseDataInnerChatsInner()
@@ -376,16 +382,13 @@ public class ConversationQuestionHistoryRetriever {
 
   private List<QuestionMessage> sort(List<QuestionMessage> messages, String senderHint) {
     String safeHint = StringUtils.trimToNull(senderHint);
-    Comparator<QuestionMessage> comparator =
-        Comparator.comparing(QuestionMessage::timestamp)
-            .thenComparing(QuestionMessage::messageGuid);
+    Comparator<QuestionMessage> comparator = Comparator.comparing(QuestionMessage::timestamp);
     if (safeHint != null) {
       comparator =
-          Comparator.comparingInt(
-                  (QuestionMessage message) ->
-                      message.participant().equalsIgnoreCase(safeHint) ? 0 : 1)
-              .thenComparing(comparator);
+          comparator.thenComparingInt(
+              message -> message.participant().equalsIgnoreCase(safeHint) ? 0 : 1);
     }
+    comparator = comparator.thenComparing(QuestionMessage::messageGuid);
     return messages.stream().sorted(comparator).toList();
   }
 
