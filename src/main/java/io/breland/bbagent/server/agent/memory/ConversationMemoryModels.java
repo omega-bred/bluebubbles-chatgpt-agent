@@ -83,6 +83,16 @@ public final class ConversationMemoryModels {
       boolean readOnly,
       String memoryId) {}
 
+  public record ConversationRecord(
+      String conversationId,
+      String transport,
+      String externalConversationId,
+      boolean group,
+      String displayName,
+      Instant memoryEnabledAt,
+      String memoryEnabledByAccountId,
+      Instant lastObservedAt) {}
+
   public record WorkClaim(String conversationId, String workerId, Instant claimedUntil) {}
 
   public record ProjectionClaim(

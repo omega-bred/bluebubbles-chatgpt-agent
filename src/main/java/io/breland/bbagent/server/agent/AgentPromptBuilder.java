@@ -33,6 +33,7 @@ import io.breland.bbagent.server.agent.tools.gcal.SearchEventsAgentTool;
 import io.breland.bbagent.server.agent.tools.gcal.UpdateEventAgentTool;
 import io.breland.bbagent.server.agent.tools.giphy.SendGiphyAgentTool;
 import io.breland.bbagent.server.agent.tools.limits.GetUsageLimitsAgentTool;
+import io.breland.bbagent.server.agent.tools.memory.ConfigureGroupMemoryAgentTool;
 import io.breland.bbagent.server.agent.tools.memory.MemoryDeleteAgentTool;
 import io.breland.bbagent.server.agent.tools.memory.MemoryGetAgentTool;
 import io.breland.bbagent.server.agent.tools.memory.MemorySaveAgentTool;
@@ -381,6 +382,9 @@ public final class AgentPromptBuilder {
                 + ". "
                 + feedbackInstruction()
                 + "For group chats, you can rename the conversation or set a group icon when requested. "
+                + "When a participant explicitly asks to enable or disable collective group memory for the current group, call "
+                + ConfigureGroupMemoryAgentTool.TOOL_NAME
+                + ". Enabling is prospective: collection starts only after the visible group notice succeeds, and older messages are not collected. Collective group context may later help participants catch up in their one-on-one chats, but it remains read-only there and must not reveal content to anyone who is not a verified current participant. "
                 + "When the user asks to log in, sign up, manage their web account, connect the current chat identity to the website, or see linked integrations on the website, call "
                 + LinkWebsiteAccountAgentTool.TOOL_NAME
                 + " and send the returned user_facing_text. Do not invent account links manually. "

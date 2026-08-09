@@ -4,6 +4,7 @@ import static io.breland.bbagent.server.agent.memory.ConversationMemoryModels.Ar
 import static io.breland.bbagent.server.agent.memory.ConversationMemoryModels.ArtifactStatus.CONFIRMED;
 import static io.breland.bbagent.server.agent.memory.ConversationMemoryModels.ProjectionOperation.UPSERT;
 
+import io.breland.bbagent.server.agent.memory.ConversationMemoryModels.ConversationRecord;
 import io.breland.bbagent.server.agent.memory.ConversationMemoryModels.ExtractionBatch;
 import io.breland.bbagent.server.agent.memory.ConversationMemoryModels.ExtractionCandidate;
 import io.breland.bbagent.server.agent.memory.ConversationMemoryModels.JournalMessage;
@@ -16,6 +17,7 @@ import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import org.apache.commons.lang3.StringUtils;
@@ -91,6 +93,139 @@ public class ConversationMemoryStore {
         now,
         now);
     return conversationId;
+  }
+
+  @Transactional(readOnly = true)
+  public Optional<String> findConversationId(String transport, String externalConversationId) {
+    return jdbcTemplate
+        .query(
+            """
+            select conversation_id from agent_conversations
+             where transport = ? and external_conversation_id = ?
+            """,
+            (resultSet, rowNumber) -> resultSet.getString(1),
+            transport,
+            externalConversationId)
+        .stream()
+        .findFirst();
+  }
+
+  @Transactional(readOnly = true)
+  public Optional<String> findEnabledConversationId(
+      String transport, String externalConversationId) {
+    return jdbcTemplate
+        .query(
+            """
+            select conversation_id from agent_conversations
+             where transport = ? and external_conversation_id = ? and memory_enabled_at is not null
+            """,
+            (resultSet, rowNumber) -> resultSet.getString(1),
+            transport,
+            externalConversationId)
+        .stream()
+        .findFirst();
+  }
+
+  @Transactional(readOnly = true)
+  public Optional<ConversationRecord> findConversation(String conversationId) {
+    return jdbcTemplate
+        .query(
+            """
+            select conversation_id, transport, external_conversation_id, is_group, display_name,
+                   memory_enabled_at, memory_enabled_by_account_id, last_observed_at
+              from agent_conversations where conversation_id = ?
+            """,
+            (resultSet, rowNumber) ->
+                new ConversationRecord(
+                    resultSet.getString("conversation_id"),
+                    resultSet.getString("transport"),
+                    resultSet.getString("external_conversation_id"),
+                    resultSet.getBoolean("is_group"),
+                    resultSet.getString("display_name"),
+                    toInstant(resultSet.getTimestamp("memory_enabled_at")),
+                    resultSet.getString("memory_enabled_by_account_id"),
+                    resultSet.getTimestamp("last_observed_at").toInstant()),
+            conversationId)
+        .stream()
+        .findFirst();
+  }
+
+  @Transactional(readOnly = true)
+  public Optional<ConversationRecord> findConversation(
+      String transport, String externalConversationId) {
+    return findConversationId(transport, externalConversationId).flatMap(this::findConversation);
+  }
+
+  @Transactional
+  public void enableMemory(String conversationId, String accountId, Instant enabledAt) {
+    requireText(accountId, "account id");
+    int updated =
+        jdbcTemplate.update(
+            """
+            update agent_conversations
+               set memory_enabled_at = ?, memory_enabled_by_account_id = ?, updated_at = ?
+             where conversation_id = ? and is_group = true
+            """,
+            enabledAt,
+            accountId,
+            enabledAt,
+            conversationId);
+    if (updated != 1) {
+      throw new IllegalArgumentException("group conversation not found");
+    }
+    jdbcTemplate.update(
+        "delete from agent_conversation_messages where conversation_id = ? and source_timestamp < ?",
+        conversationId,
+        enabledAt);
+    jdbcTemplate.update(
+        "delete from conversation_memory_work where conversation_id = ?", conversationId);
+  }
+
+  @Transactional
+  public void disableMemory(String conversationId, Instant disabledAt) {
+    jdbcTemplate.update(
+        """
+        update agent_conversations
+           set memory_enabled_at = null, memory_enabled_by_account_id = null, updated_at = ?
+         where conversation_id = ?
+        """,
+        disabledAt,
+        conversationId);
+    jdbcTemplate.update(
+        "delete from conversation_memory_work where conversation_id = ?", conversationId);
+    jdbcTemplate.update(
+        "delete from agent_conversation_messages where conversation_id = ?", conversationId);
+    jdbcTemplate.update(
+        """
+        update conversation_memory_artifacts
+           set status = 'DELETED', updated_at = ?
+         where conversation_id = ? and status <> 'DELETED'
+        """,
+        disabledAt,
+        conversationId);
+    jdbcTemplate.update(
+        """
+        update conversation_memory_projections
+           set operation = 'DELETE', state = 'PENDING', available_at = ?, claimed_by = null,
+               claimed_until = null, last_error_code = null, updated_at = ?
+         where artifact_id in (
+           select artifact_id from conversation_memory_artifacts where conversation_id = ?
+         )
+        """,
+        disabledAt,
+        disabledAt,
+        conversationId);
+  }
+
+  @Transactional(readOnly = true)
+  public Optional<Instant> extractionAvailableAt(String conversationId) {
+    return jdbcTemplate
+        .query(
+            "select available_at from conversation_memory_work where conversation_id = ?",
+            (resultSet, rowNumber) -> resultSet.getTimestamp(1).toInstant(),
+            conversationId)
+        .stream()
+        .findFirst();
   }
 
   @Transactional
@@ -222,6 +357,59 @@ public class ConversationMemoryStore {
         conversationId,
         at,
         at);
+  }
+
+  @Transactional
+  public void replaceActiveMemberships(
+      String conversationId, Set<String> accountIds, Instant observedAt) {
+    Set<String> desiredAccountIds = accountIds == null ? Set.of() : Set.copyOf(accountIds);
+    List<ActiveMembership> activeMemberships =
+        jdbcTemplate.query(
+            """
+            select membership_id, account_id from agent_conversation_memberships
+             where conversation_id = ? and ended_at is null
+            """,
+            (resultSet, rowNumber) ->
+                new ActiveMembership(
+                    resultSet.getString("membership_id"), resultSet.getString("account_id")),
+            conversationId);
+    Set<String> existingAccountIds = new HashSet<>();
+    for (ActiveMembership membership : activeMemberships) {
+      if (desiredAccountIds.contains(membership.accountId())) {
+        existingAccountIds.add(membership.accountId());
+        continue;
+      }
+      jdbcTemplate.update(
+          """
+          update agent_conversation_memberships
+             set ended_at = ?, updated_at = ?
+           where membership_id = ? and ended_at is null
+          """,
+          observedAt,
+          observedAt,
+          membership.membershipId());
+    }
+    for (String accountId : desiredAccountIds) {
+      if (!existingAccountIds.contains(accountId)) {
+        recordMembership(conversationId, accountId, observedAt);
+      }
+    }
+  }
+
+  @Transactional(readOnly = true)
+  public Optional<String> latestSenderAccountId(String conversationId) {
+    return jdbcTemplate
+        .query(
+            """
+            select sender_account_id from agent_conversation_messages
+             where conversation_id = ? and sender_account_id is not null and removed = false
+             order by source_timestamp desc, message_guid desc
+             limit 1
+            """,
+            (resultSet, rowNumber) -> resultSet.getString(1),
+            conversationId)
+        .stream()
+        .findFirst();
   }
 
   @Transactional
@@ -618,6 +806,12 @@ public class ConversationMemoryStore {
     }
   }
 
+  private Instant toInstant(java.sql.Timestamp timestamp) {
+    return timestamp == null ? null : timestamp.toInstant();
+  }
+
   private record ProjectionCandidate(
       String artifactId, String accountId, ProjectionOperation operation, String projectionHash) {}
+
+  private record ActiveMembership(String membershipId, String accountId) {}
 }

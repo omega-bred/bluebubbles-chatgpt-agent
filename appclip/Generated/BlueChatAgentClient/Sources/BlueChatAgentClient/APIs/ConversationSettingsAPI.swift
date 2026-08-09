@@ -48,6 +48,45 @@ open class ConversationSettingsAPI {
     }
 
     /**
+     Enables or disables prospective collective memory for a group conversation
+
+     - parameter conversationGroupMemoryUpdateRequest: (body)
+     - returns: ConversationSettingsUpdateResponse
+     */
+    @available(macOS 10.15, iOS 13.0, tvOS 13.0, watchOS 6.0, *)
+    open class func conversationSettingsUpdateGroupMemory(conversationGroupMemoryUpdateRequest: ConversationGroupMemoryUpdateRequest) async throws -> ConversationSettingsUpdateResponse {
+        return try await conversationSettingsUpdateGroupMemoryWithRequestBuilder(conversationGroupMemoryUpdateRequest: conversationGroupMemoryUpdateRequest).execute().body
+    }
+
+    /**
+     Enables or disables prospective collective memory for a group conversation
+     - POST /api/v1/conversationSettings/updateGroupMemory.conversationSettings
+     - Updates the current group conversation only and posts a visible notice in that group. Direct conversations cannot enable group memory.
+     - API Key:
+       - type: apiKey X-App-Clip-Session (HEADER)
+       - name: appClipSessionAuth
+     - parameter conversationGroupMemoryUpdateRequest: (body)
+     - returns: RequestBuilder<ConversationSettingsUpdateResponse>
+     */
+    open class func conversationSettingsUpdateGroupMemoryWithRequestBuilder(conversationGroupMemoryUpdateRequest: ConversationGroupMemoryUpdateRequest) -> RequestBuilder<ConversationSettingsUpdateResponse> {
+        let localVariablePath = "/api/v1/conversationSettings/updateGroupMemory.conversationSettings"
+        let localVariableURLString = BlueChatAgentClientAPI.basePath + localVariablePath
+        let localVariableParameters = JSONEncodingHelper.encodingParameters(forEncodableObject: conversationGroupMemoryUpdateRequest)
+
+        let localVariableUrlComponents = URLComponents(string: localVariableURLString)
+
+        let localVariableNillableHeaders: [String: Any?] = [
+            "Content-Type": "application/json",
+        ]
+
+        let localVariableHeaderParameters = APIHelper.rejectNilHeaders(localVariableNillableHeaders)
+
+        let localVariableRequestBuilder: RequestBuilder<ConversationSettingsUpdateResponse>.Type = BlueChatAgentClientAPI.requestBuilderFactory.getBuilder()
+
+        return localVariableRequestBuilder.init(method: "POST", URLString: (localVariableUrlComponents?.string ?? localVariableURLString), parameters: localVariableParameters, headers: localVariableHeaderParameters, requiresAuthentication: true)
+    }
+
+    /**
      Updates chat-scoped assistant responsiveness
 
      - parameter conversationSettingsUpdateRequest: (body)

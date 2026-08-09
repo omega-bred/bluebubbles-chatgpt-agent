@@ -3,21 +3,27 @@ package io.breland.bbagent.server.conversation;
 import static io.breland.bbagent.server.StringSupport.firstNonBlank;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import io.breland.bbagent.generated.model.ConversationGroupMemorySetting;
 import io.breland.bbagent.generated.model.ConversationParticipantSummary;
+import io.breland.bbagent.generated.model.ConversationPersonalCatchupSetting;
 import io.breland.bbagent.generated.model.ConversationResponsivenessOption;
 import io.breland.bbagent.generated.model.ConversationSettingsResponse;
 import io.breland.bbagent.generated.model.ConversationSettingsUpdateResponse;
 import io.breland.bbagent.generated.model.ConversationSummary;
+import io.breland.bbagent.server.agent.memory.ConversationMemorySettingsService;
+import io.breland.bbagent.server.agent.memory.ConversationMemorySettingsService.GroupMemorySetting;
 import io.breland.bbagent.server.agent.profile.AgentProfileService;
 import io.breland.bbagent.server.agent.profile.AssistantResponsiveness;
 import io.breland.bbagent.server.agent.transport.bb.BBHttpClientWrapper;
 import io.breland.bbagent.server.analytics.UmamiAnalyticsService;
+import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.lang.Nullable;
 import org.springframework.stereotype.Service;
@@ -48,14 +54,25 @@ public class ConversationSettingsService {
   private final AgentProfileService profileService;
   private final BBHttpClientWrapper bbHttpClientWrapper;
   private final @Nullable UmamiAnalyticsService umamiAnalyticsService;
+  private final @Nullable ConversationMemorySettingsService memorySettingsService;
 
   public ConversationSettingsService(
       AgentProfileService profileService,
       BBHttpClientWrapper bbHttpClientWrapper,
       @Nullable UmamiAnalyticsService umamiAnalyticsService) {
+    this(profileService, bbHttpClientWrapper, umamiAnalyticsService, null);
+  }
+
+  @Autowired
+  public ConversationSettingsService(
+      AgentProfileService profileService,
+      BBHttpClientWrapper bbHttpClientWrapper,
+      @Nullable UmamiAnalyticsService umamiAnalyticsService,
+      @Nullable ConversationMemorySettingsService memorySettingsService) {
     this.profileService = profileService;
     this.bbHttpClientWrapper = bbHttpClientWrapper;
     this.umamiAnalyticsService = umamiAnalyticsService;
+    this.memorySettingsService = memorySettingsService;
   }
 
   public ConversationSettingsResponse getSettings(String chatGuid) {
@@ -75,13 +92,64 @@ public class ConversationSettingsService {
         .message("Conversation response style changed to " + labelFor(resolved) + ".");
   }
 
+  public ConversationSettingsUpdateResponse updateGroupMemory(
+      String accountId, String chatGuid, boolean enabled) {
+    String cleanChatGuid = requireChatGuid(chatGuid);
+    if (memorySettingsService == null) {
+      throw new ResponseStatusException(
+          HttpStatus.SERVICE_UNAVAILABLE, "Memory settings unavailable");
+    }
+    GroupMemorySetting current = memorySettingsService.getGroupMemory(cleanChatGuid);
+    if (!current.available()) {
+      throw new ResponseStatusException(
+          HttpStatus.BAD_REQUEST, "Group memory is unavailable for this conversation");
+    }
+    try {
+      memorySettingsService.updateGroupMemory(accountId, cleanChatGuid, enabled);
+    } catch (IllegalStateException e) {
+      throw new ResponseStatusException(HttpStatus.BAD_GATEWAY, e.getMessage(), e);
+    }
+    return new ConversationSettingsUpdateResponse()
+        .settings(response(cleanChatGuid))
+        .message("Group memory " + (enabled ? "enabled" : "disabled") + ".");
+  }
+
   private ConversationSettingsResponse response(String chatGuid) {
     AssistantResponsiveness current = profileService.getAssistantResponsiveness(chatGuid);
     return new ConversationSettingsResponse()
         .conversation(conversationSummary(chatGuid))
         .currentResponsiveness(toResponseEnum(current))
         .currentResponsivenessLabel(labelFor(current))
-        .options(OPTIONS.stream().map(this::toOption).toList());
+        .options(OPTIONS.stream().map(this::toOption).toList())
+        .groupMemory(groupMemorySetting(chatGuid))
+        .personalCatchups(personalCatchupSetting());
+  }
+
+  private ConversationGroupMemorySetting groupMemorySetting(String chatGuid) {
+    GroupMemorySetting setting =
+        memorySettingsService == null
+            ? new GroupMemorySetting(
+                false, false, "Memory", "Group memory is unavailable for this conversation.", null)
+            : memorySettingsService.getGroupMemory(chatGuid);
+    ConversationGroupMemorySetting response =
+        new ConversationGroupMemorySetting()
+            .available(setting.available())
+            .enabled(setting.enabled())
+            .label(setting.label())
+            .description(setting.description());
+    if (setting.collectionStartedAt() != null) {
+      response.collectionStartedAt(setting.collectionStartedAt().atOffset(ZoneOffset.UTC));
+    }
+    return response;
+  }
+
+  private ConversationPersonalCatchupSetting personalCatchupSetting() {
+    return new ConversationPersonalCatchupSetting()
+        .available(false)
+        .enabled(false)
+        .timezone("UTC")
+        .quietStart("22:00")
+        .quietEnd("08:00");
   }
 
   private ConversationSummary conversationSummary(String chatGuid) {

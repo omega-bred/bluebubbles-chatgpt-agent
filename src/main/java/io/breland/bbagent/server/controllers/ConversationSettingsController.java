@@ -1,5 +1,6 @@
 package io.breland.bbagent.server.controllers;
 
+import io.breland.bbagent.generated.model.ConversationGroupMemoryUpdateRequest;
 import io.breland.bbagent.generated.model.ConversationSettingsResponse;
 import io.breland.bbagent.generated.model.ConversationSettingsUpdateRequest;
 import io.breland.bbagent.generated.model.ConversationSettingsUpdateResponse;
@@ -47,6 +48,19 @@ public class ConversationSettingsController {
         request.getResponsiveness() == null ? null : request.getResponsiveness().getValue();
     return ResponseEntity.ok(
         settingsService.updateResponsiveness(accountId(jwt), chatGuid(jwt), responsiveness));
+  }
+
+  @PostMapping(
+      path = "/api/v1/conversationSettings/updateGroupMemory.conversationSettings",
+      consumes = MediaType.APPLICATION_JSON_VALUE,
+      produces = MediaType.APPLICATION_JSON_VALUE)
+  public ResponseEntity<ConversationSettingsUpdateResponse> conversationSettingsUpdateGroupMemory(
+      @RequestBody ConversationGroupMemoryUpdateRequest request, @AuthenticationPrincipal Jwt jwt) {
+    if (request.getEnabled() == null) {
+      throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Missing enabled setting");
+    }
+    return ResponseEntity.ok(
+        settingsService.updateGroupMemory(accountId(jwt), chatGuid(jwt), request.getEnabled()));
   }
 
   private String accountId(Jwt jwt) {

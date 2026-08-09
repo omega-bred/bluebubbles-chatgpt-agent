@@ -66,7 +66,7 @@ struct ClipRootView: View {
                     colors: [
                         Color.green.opacity(0.18),
                         Color.blue.opacity(0.10),
-                        Color(.secondarySystemBackground)
+                        Color(.secondarySystemBackground),
                     ],
                     startPoint: .topLeading,
                     endPoint: .bottomTrailing
@@ -262,6 +262,61 @@ struct ClipRootView: View {
             }
             .appClipPanel()
 
+            if settings.groupMemory.available {
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("Collective Context")
+                        .font(.headline)
+                    Text(settings.groupMemory.label)
+                        .font(.title3.weight(.semibold))
+                    Text(settings.groupMemory.description)
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                    InfoRow(label: "Status", value: settings.groupMemory.enabled ? "On" : "Off")
+                    if let startedAt = settings.groupMemory.collectionStartedAt {
+                        InfoRow(label: "Collection started", value: model.formatDate(startedAt))
+                    }
+                    Button {
+                        Task {
+                            await model.updateGroupMemory(!settings.groupMemory.enabled)
+                        }
+                    } label: {
+                        HStack {
+                            Text(settings.groupMemory.enabled ? "Turn memory off" : "Turn memory on")
+                            Spacer()
+                            if model.groupMemoryUpdateInProgress {
+                                ProgressView()
+                            }
+                        }
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(model.groupMemoryUpdateInProgress)
+                    Text("The change is announced in this group. Enabling starts with new messages only.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                .appClipPanel()
+            }
+
+            VStack(alignment: .leading, spacing: 12) {
+                Text("Personal Catch-ups")
+                    .font(.headline)
+                Text(settings.personalCatchups.available ? "Available" : "Coming soon")
+                    .font(.title3.weight(.semibold))
+                Text(
+                    settings.personalCatchups.available
+                        ? "Receive relevant group developments in your personal chat."
+                        : "Optional personal summaries will become available after group memory is established."
+                )
+                .font(.callout)
+                .foregroundStyle(.secondary)
+                InfoRow(label: "Timezone", value: settings.personalCatchups.timezone)
+                InfoRow(
+                    label: "Quiet hours",
+                    value: "\(settings.personalCatchups.quietStart)–\(settings.personalCatchups.quietEnd)"
+                )
+            }
+            .appClipPanel()
+
             VStack(alignment: .leading, spacing: 12) {
                 Text("Conversation")
                     .font(.headline)
@@ -439,6 +494,7 @@ final class ClipViewModel: ObservableObject {
     @Published var isLoading = false
     @Published var modelSelectionInProgress = false
     @Published var responsivenessSelectionInProgress: String?
+    @Published var groupMemoryUpdateInProgress = false
     @Published var errorMessage: String?
     @Published var modelErrorMessage: String?
 
@@ -790,6 +846,48 @@ final class ClipViewModel: ObservableObject {
         }
     }
 
+    func updateGroupMemory(_ enabled: Bool) async {
+        guard let session else {
+            return
+        }
+        guard session.purpose == .conversationSettings else {
+            return
+        }
+        guard enabled != conversationSettings?.groupMemory.enabled else {
+            return
+        }
+        groupMemoryUpdateInProgress = true
+        modelErrorMessage = nil
+        defer {
+            groupMemoryUpdateInProgress = false
+        }
+        do {
+            trackAppClipEvent(
+                "appclip_group_memory_update_started",
+                properties: eventContext(for: session).merging(["enabled": enabled ? "true" : "false"]) { _, new in new }
+            )
+            let response = try await GeneratedAPIConfiguration.executeWithSession(session.sessionToken) {
+                ConversationSettingsAPI.conversationSettingsUpdateGroupMemoryWithRequestBuilder(
+                    conversationGroupMemoryUpdateRequest: ConversationGroupMemoryUpdateRequest(
+                        enabled: enabled
+                    )
+                )
+            }
+            let refreshed = session.replacing(conversationSettings: response.settings)
+            self.session = refreshed
+            trackAppClipEvent(
+                "appclip_group_memory_updated",
+                properties: eventContext(for: refreshed).merging(["enabled": enabled ? "true" : "false"]) { _, new in new }
+            )
+        } catch {
+            trackAppClipEvent(
+                "appclip_group_memory_update_failed",
+                properties: eventContext(for: session).merging(["enabled": enabled ? "true" : "false"]) { _, new in new }
+            )
+            modelErrorMessage = error.localizedDescription
+        }
+    }
+
     private func createSession(linkToken: String) async {
         isLoading = true
         errorMessage = nil
@@ -875,7 +973,7 @@ final class ClipViewModel: ObservableObject {
         let diagnostic = bootstrapDiagnostic(for: error)
         var properties = [
             "launch_source": source.rawValue,
-            "reason": diagnostic.reason
+            "reason": diagnostic.reason,
         ]
         if let status = diagnostic.status {
             properties["http_status"] = String(status)
@@ -948,7 +1046,7 @@ final class ClipViewModel: ObservableObject {
         var properties: [String: String] = [
             "purpose": session.purpose.rawValue,
             "is_premium": session.subscription.isPremium ? "true" : "false",
-            "billing_source": session.subscription.entitlementSource
+            "billing_source": session.subscription.entitlementSource,
         ]
         if let model = session.linkedAccounts.integrations.compactMap(\.modelAccess).first?.currentModel {
             properties["model"] = model

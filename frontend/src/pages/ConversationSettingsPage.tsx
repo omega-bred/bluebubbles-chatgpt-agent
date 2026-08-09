@@ -96,6 +96,33 @@ export function ConversationSettingsPage({ auth }: { auth: AuthState }) {
     }
   };
 
+  const updateGroupMemory = async (enabled: boolean) => {
+    if (!session) {
+      return;
+    }
+    setSaving("group-memory");
+    setError(null);
+    trackEvent("web_group_memory_update_start", { enabled });
+    try {
+      const response = await conversationSettingsApi.updateGroupMemory(
+        session.session_token,
+        enabled,
+      );
+      setSettings(response.settings);
+      setSession({ ...session, conversation_settings: response.settings });
+      trackEvent("web_group_memory_updated", { enabled });
+      void appClipApi.trackEvent(session.session_token, {
+        event_name: "web_group_memory_updated",
+        properties: { enabled: String(enabled) },
+      });
+    } catch (err) {
+      trackEvent("web_group_memory_update_failed", { enabled });
+      setError(err instanceof Error ? err.message : "Unable to update group memory.");
+    } finally {
+      setSaving(null);
+    }
+  };
+
   if (loading && !settings) {
     return <CenteredMessage title="Loading settings" body="Getting this conversation ready." />;
   }
@@ -151,6 +178,52 @@ export function ConversationSettingsPage({ auth }: { auth: AuthState }) {
                   />
                 ))}
               </div>
+            </article>
+
+            {settings.group_memory.available ? (
+              <article className="conversation-info-panel">
+                <p className="eyebrow">Collective Context</p>
+                <h2>{settings.group_memory.label}</h2>
+                <p className="muted">{settings.group_memory.description}</p>
+                <InfoLine
+                  label="Status"
+                  value={settings.group_memory.enabled ? "On" : "Off"}
+                />
+                {settings.group_memory.collection_started_at ? (
+                  <InfoLine
+                    label="Collection started"
+                    value={formatDateTime(settings.group_memory.collection_started_at)}
+                  />
+                ) : null}
+                <button
+                  type="button"
+                  className="responsiveness-option"
+                  disabled={Boolean(saving)}
+                  onClick={() => void updateGroupMemory(!settings.group_memory.enabled)}
+                >
+                  <span>{settings.group_memory.enabled ? "Turn memory off" : "Turn memory on"}</span>
+                  <small>
+                    {saving === "group-memory"
+                      ? "Saving"
+                      : "The change will be announced in this group."}
+                  </small>
+                </button>
+              </article>
+            ) : null}
+
+            <article className="conversation-info-panel">
+              <p className="eyebrow">Personal Catch-ups</p>
+              <h2>{settings.personal_catchups.available ? "Available" : "Coming soon"}</h2>
+              <p className="muted">
+                {settings.personal_catchups.available
+                  ? "Receive relevant group developments in your personal chat."
+                  : "Optional personal summaries will become available after group memory is established."}
+              </p>
+              <InfoLine label="Timezone" value={settings.personal_catchups.timezone} />
+              <InfoLine
+                label="Quiet hours"
+                value={`${settings.personal_catchups.quiet_start}–${settings.personal_catchups.quiet_end}`}
+              />
             </article>
 
             <article className="conversation-info-panel">
@@ -237,4 +310,9 @@ function formatParticipantCount(value?: number) {
     return "Participants unavailable";
   }
   return count === 1 ? "1 participant" : `${count} participants`;
+}
+
+function formatDateTime(value: string) {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? value : date.toLocaleString();
 }

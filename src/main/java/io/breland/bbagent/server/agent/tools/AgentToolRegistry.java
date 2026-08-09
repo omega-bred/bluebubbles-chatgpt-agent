@@ -5,6 +5,7 @@ import com.openai.client.OpenAIClient;
 import com.openai.models.responses.ResponseInputItem;
 import io.breland.bbagent.server.agent.IncomingMessage;
 import io.breland.bbagent.server.agent.cadence.CadenceWorkflowLauncher;
+import io.breland.bbagent.server.agent.memory.ConversationMemorySettingsService;
 import io.breland.bbagent.server.agent.model_picker.ModelAccessService;
 import io.breland.bbagent.server.agent.tools.assistant.AssistantNameAgentTool;
 import io.breland.bbagent.server.agent.tools.assistant.AssistantResponsivenessAgentTool;
@@ -36,6 +37,7 @@ import io.breland.bbagent.server.agent.tools.giphy.SendGiphyAgentTool;
 import io.breland.bbagent.server.agent.tools.kubernetes.KubernetesPodLogsAgentTool;
 import io.breland.bbagent.server.agent.tools.kubernetes.KubernetesReadOnlyAgentTool;
 import io.breland.bbagent.server.agent.tools.limits.GetUsageLimitsAgentTool;
+import io.breland.bbagent.server.agent.tools.memory.ConfigureGroupMemoryAgentTool;
 import io.breland.bbagent.server.agent.tools.memory.Mem0Client;
 import io.breland.bbagent.server.agent.tools.memory.MemoryDeleteAgentTool;
 import io.breland.bbagent.server.agent.tools.memory.MemoryGetAgentTool;
@@ -71,13 +73,17 @@ import org.springframework.lang.Nullable;
 
 public final class AgentToolRegistry {
   private static final Set<String> GROUP_ONLY_TOOLS =
-      Set.of(RenameConversationAgentTool.TOOL_NAME, SetGroupIconAgentTool.TOOL_NAME);
+      Set.of(
+          RenameConversationAgentTool.TOOL_NAME,
+          SetGroupIconAgentTool.TOOL_NAME,
+          ConfigureGroupMemoryAgentTool.TOOL_NAME);
   private static final Set<String> BLUEBUBBLES_ONLY_TOOLS =
       Set.of(
           SearchConvoHistoryAgentTool.TOOL_NAME,
           CurrentConversationInfoAgentTool.TOOL_NAME,
           RenameConversationAgentTool.TOOL_NAME,
           SetGroupIconAgentTool.TOOL_NAME,
+          ConfigureGroupMemoryAgentTool.TOOL_NAME,
           SendGiphyAgentTool.TOOL_NAME,
           GetThreadContextAgentTool.TOOL_NAME,
           SendPollAgentTool.TOOL_NAME,
@@ -90,6 +96,7 @@ public final class AgentToolRegistry {
           CurrentConversationInfoAgentTool.TOOL_NAME,
           RenameConversationAgentTool.TOOL_NAME,
           SetGroupIconAgentTool.TOOL_NAME,
+          ConfigureGroupMemoryAgentTool.TOOL_NAME,
           SendGiphyAgentTool.TOOL_NAME,
           GetThreadContextAgentTool.TOOL_NAME,
           SendPollAgentTool.TOOL_NAME,
@@ -178,6 +185,40 @@ public final class AgentToolRegistry {
       Function<IncomingMessage, Optional<String>> accountIdResolver,
       @Nullable OperationalMetricsService operationalMetricsService,
       @Nullable ModelAccessService modelAccessService) {
+    this(
+        bbHttpClientWrapper,
+        mem0Client,
+        gcalClient,
+        websiteAccountService,
+        giphyClient,
+        transportRegistry,
+        objectMapper,
+        openAiSupplier,
+        feedbackService,
+        messageResponseRateLimitService,
+        cadenceWorkflowLauncher,
+        accountIdResolver,
+        operationalMetricsService,
+        modelAccessService,
+        null);
+  }
+
+  public AgentToolRegistry(
+      BBHttpClientWrapper bbHttpClientWrapper,
+      Mem0Client mem0Client,
+      GcalClient gcalClient,
+      @Nullable WebsiteAccountService websiteAccountService,
+      GiphyClient giphyClient,
+      MessageTransportRegistry transportRegistry,
+      ObjectMapper objectMapper,
+      Supplier<OpenAIClient> openAiSupplier,
+      @Nullable FeedbackService feedbackService,
+      @Nullable MessageResponseRateLimitService messageResponseRateLimitService,
+      CadenceWorkflowLauncher cadenceWorkflowLauncher,
+      Function<IncomingMessage, Optional<String>> accountIdResolver,
+      @Nullable OperationalMetricsService operationalMetricsService,
+      @Nullable ModelAccessService modelAccessService,
+      @Nullable ConversationMemorySettingsService conversationMemorySettingsService) {
     this.transportRegistry = transportRegistry;
     this.accountIdResolver = accountIdResolver;
     this.objectMapper = objectMapper;
@@ -193,7 +234,8 @@ public final class AgentToolRegistry {
         messageResponseRateLimitService,
         cadenceWorkflowLauncher,
         operationalMetricsService,
-        modelAccessService);
+        modelAccessService,
+        conversationMemorySettingsService);
   }
 
   public List<AgentTool> availableTools(IncomingMessage message) {
@@ -262,6 +304,9 @@ public final class AgentToolRegistry {
       return "kubernetes";
     }
     if (toolName.startsWith("memory_")) {
+      return "memory";
+    }
+    if (ConfigureGroupMemoryAgentTool.TOOL_NAME.equals(toolName)) {
       return "memory";
     }
     if (FeedbackAgentTool.TOOL_NAME.equals(toolName)) {
@@ -403,7 +448,8 @@ public final class AgentToolRegistry {
       @Nullable MessageResponseRateLimitService messageResponseRateLimitService,
       CadenceWorkflowLauncher cadenceWorkflowLauncher,
       @Nullable OperationalMetricsService operationalMetricsService,
-      @Nullable ModelAccessService modelAccessService) {
+      @Nullable ModelAccessService modelAccessService,
+      @Nullable ConversationMemorySettingsService conversationMemorySettingsService) {
     registerTool(new SendTextAgentTool().getTool());
     registerTool(new SendReactionAgentTool().getTool());
     registerTool(new SendPollAgentTool(bbHttpClientWrapper).getTool());
@@ -425,6 +471,9 @@ public final class AgentToolRegistry {
     registerTool(new MemoryGetAgentTool(mem0Client).getTool());
     registerTool(new MemoryUpdateAgentTool(mem0Client).getTool());
     registerTool(new MemoryDeleteAgentTool(mem0Client).getTool());
+    if (conversationMemorySettingsService != null) {
+      registerTool(new ConfigureGroupMemoryAgentTool(conversationMemorySettingsService).getTool());
+    }
     if (feedbackService != null) {
       registerTool(new FeedbackAgentTool(feedbackService).getTool());
     }

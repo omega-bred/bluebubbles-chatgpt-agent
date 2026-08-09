@@ -14,6 +14,7 @@ import {
   type AdminPremiumGrantTargetType,
   type AppClipEventRequest,
   type ConversationSettingsUpdateRequest,
+  type ConversationGroupMemoryUpdateRequest,
   type ContactMessageRequest,
   type WebsiteAccountDeleteLinkedAccountTypeEnum,
   type WebsiteModelSelectionRequest,
@@ -173,6 +174,14 @@ export const conversationSettingsApi = {
   ) => {
     const client = conversationSettingsClient(sessionToken);
     return (await client.conversationSettingsUpdateResponsiveness({ responsiveness })).data;
+  },
+
+  updateGroupMemory: async (
+    sessionToken: string,
+    enabled: ConversationGroupMemoryUpdateRequest["enabled"],
+  ) => {
+    const client = conversationSettingsClient(sessionToken);
+    return (await client.conversationSettingsUpdateGroupMemory({ enabled })).data;
   },
 };
 

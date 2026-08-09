@@ -6,6 +6,7 @@ import io.breland.bbagent.server.agent.BBMessageAgent;
 import io.breland.bbagent.server.agent.ConversationState;
 import io.breland.bbagent.server.agent.IncomingMessage;
 import io.breland.bbagent.server.agent.cadence.models.CadenceMessageWorkflowRequest;
+import io.breland.bbagent.server.agent.memory.ConversationJournalService;
 import io.breland.bbagent.server.agent.profile.AgentProfileService;
 import io.breland.bbagent.server.agent.profile.AssistantResponsiveness;
 import io.breland.bbagent.server.agent.reactions.MessageReactionSupport;
@@ -33,6 +34,7 @@ public final class CadenceIncomingMessageHandler {
   private final @Nullable AgentMetricsService agentMetricsService;
   private final TermsGate termsGate;
   private final PollNotificationEnricher pollNotificationEnricher;
+  private final @Nullable ConversationJournalService conversationJournalService;
 
   public CadenceIncomingMessageHandler(
       BBMessageAgent messageAgent,
@@ -44,12 +46,37 @@ public final class CadenceIncomingMessageHandler {
       @Nullable AgentMetricsService agentMetricsService,
       Supplier<String> termsUrl,
       TermsAgreementValidator termsAgreementValidator) {
+    this(
+        messageAgent,
+        conversations,
+        profileService,
+        transportRegistry,
+        bbHttpClientWrapper,
+        cadenceWorkflowLauncher,
+        agentMetricsService,
+        termsUrl,
+        termsAgreementValidator,
+        null);
+  }
+
+  public CadenceIncomingMessageHandler(
+      BBMessageAgent messageAgent,
+      Map<String, ConversationState> conversations,
+      AgentProfileService profileService,
+      MessageTransportRegistry transportRegistry,
+      BBHttpClientWrapper bbHttpClientWrapper,
+      CadenceWorkflowLauncher cadenceWorkflowLauncher,
+      @Nullable AgentMetricsService agentMetricsService,
+      Supplier<String> termsUrl,
+      TermsAgreementValidator termsAgreementValidator,
+      @Nullable ConversationJournalService conversationJournalService) {
     this.conversations = conversations;
     this.profileService = profileService;
     this.transportRegistry = transportRegistry;
     this.pollNotificationEnricher = new PollNotificationEnricher(bbHttpClientWrapper);
     this.cadenceWorkflowLauncher = cadenceWorkflowLauncher;
     this.agentMetricsService = agentMetricsService;
+    this.conversationJournalService = conversationJournalService;
     this.termsGate =
         new TermsGate(
             messageAgent,
@@ -86,13 +113,17 @@ public final class CadenceIncomingMessageHandler {
   }
 
   private @Nullable PreparedIncomingMessage prepare(IncomingMessage rawMessage) {
-    if (!shouldProcess(rawMessage)) {
+    if (!isEligibleTransportMessage(rawMessage)) {
       log.debug("Dropping message {}", rawMessage);
       return null;
     }
     log.info("Processing Message {}", rawMessage);
     profileService.recordMessageIdentities(rawMessage);
     if (profileService.isProcessingBlocked(rawMessage)) {
+      return null;
+    }
+    recordEligibleMessage(rawMessage);
+    if (!shouldInvokeAssistant(rawMessage)) {
       return null;
     }
     IncomingMessage message = pollNotificationEnricher.enrich(rawMessage);
@@ -164,7 +195,7 @@ public final class CadenceIncomingMessageHandler {
     }
   }
 
-  private boolean shouldProcess(IncomingMessage message) {
+  private boolean isEligibleTransportMessage(IncomingMessage message) {
     if (message == null) {
       return false;
     }
@@ -179,6 +210,9 @@ public final class CadenceIncomingMessageHandler {
         && !BBMessageAgent.IMESSAGE_SERVICE.equalsIgnoreCase(message.service())) {
       return false;
     }
+    if (message.isSystemMessage()) {
+      return false;
+    }
     if (MessageReactionSupport.isReactionMessage(message.text())) {
       return false;
     }
@@ -190,12 +224,27 @@ public final class CadenceIncomingMessageHandler {
       }
       return false;
     }
+    return true;
+  }
+
+  private boolean shouldInvokeAssistant(IncomingMessage message) {
     AssistantResponsiveness responsiveness =
         profileService.getAssistantResponsiveness(message.chatGuid());
     if (responsiveness == AssistantResponsiveness.SILENT) {
       return isSilentInvocation(message.text());
     }
     return true;
+  }
+
+  private void recordEligibleMessage(IncomingMessage message) {
+    if (conversationJournalService == null) {
+      return;
+    }
+    try {
+      conversationJournalService.recordEligibleMessage(message);
+    } catch (RuntimeException e) {
+      log.warn("conversation_journal_failed failure_type={}", e.getClass().getSimpleName());
+    }
   }
 
   private void processAcceptedMessage(ConversationState state, IncomingMessage message) {
