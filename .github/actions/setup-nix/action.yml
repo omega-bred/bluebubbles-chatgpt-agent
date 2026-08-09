@@ -22,7 +22,7 @@ runs:
   using: composite
   steps:
     - name: Install Nix
-      uses: cachix/install-nix-action@8aa03977d8d733052d78f4e008a241fd1dbf36b3
+      uses: cachix/install-nix-action@630ae543ea3a38a9a4166f03376c02c50f408342
       with:
         extra_nix_config: |
           experimental-features = nix-command flakes
@@ -30,7 +30,7 @@ runs:
           access-tokens = github.com=${{ inputs['github-token'] }}
 
     - name: Configure Cachix cache
-      uses: cachix/cachix-action@02b16339eddcf6ea27126a830c7f1992855cae13
+      uses: cachix/cachix-action@5f2d7c5294214f71b873db4b969586b980625e71
       with:
         name: bluebubbles-chatgpt-agent
         skipPush: true
@@ -68,7 +68,7 @@ runs:
 
     - name: Enable Cachix push
       if: ${{ steps.cachix_token.outputs.enabled == 'true' }}
-      uses: cachix/cachix-action@02b16339eddcf6ea27126a830c7f1992855cae13
+      uses: cachix/cachix-action@5f2d7c5294214f71b873db4b969586b980625e71
       with:
         name: bluebubbles-chatgpt-agent
         authToken: ${{ steps.cachix_token.outputs.auth-token }}
