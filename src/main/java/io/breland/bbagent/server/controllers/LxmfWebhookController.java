@@ -51,7 +51,6 @@ public class LxmfWebhookController extends LxmfApiController {
       return ResponseEntity.badRequest().body(Map.of("status", "bad_request"));
     }
     IncomingMessage message = parseWebhookMessage(requestBody);
-    log.info("Incoming LXMF message {}", message);
     messageAgent.handleIncomingMessage(message);
     return ResponseEntity.ok(Map.of("status", "ok"));
   }

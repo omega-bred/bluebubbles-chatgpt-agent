@@ -23,7 +23,6 @@ public class LxmfBridgeClient {
   }
 
   public boolean sendText(String destinationHash, String content) {
-    log.info("Sending message to Lxmf bridge {}: {}", destinationHash, content);
     if (destinationHash == null || destinationHash.isBlank()) {
       log.warn("Cannot send LXMF message without destination hash");
       return false;
@@ -46,7 +45,7 @@ public class LxmfBridgeClient {
           .toBodilessEntity();
       return true;
     } catch (Exception e) {
-      log.warn("Failed to send LXMF message to {}", destinationHash, e);
+      log.warn("Failed to send LXMF message", e);
       return false;
     }
   }

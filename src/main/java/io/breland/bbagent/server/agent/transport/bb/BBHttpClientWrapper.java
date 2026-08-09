@@ -524,7 +524,9 @@ public class BBHttpClientWrapper {
     }
     String normalizedChatGuid = normalizeDirectAnyChatGuid(chatGuid);
     log.info(
-        "Sending multipart message with chatGuid {} - message {}", normalizedChatGuid, message);
+        "Sending multipart message hasText={} attachmentCount={}",
+        StringUtils.isNotBlank(message),
+        attachments == null ? 0 : attachments.size());
     List<MultipartMessagePart> parts = new ArrayList<>();
     int partIndex = 0;
     if (StringUtils.isNotBlank(message)) {
@@ -789,14 +791,11 @@ public class BBHttpClientWrapper {
         }
 
         log.info(
-            "Attempting to send direct text message chatGuid={} confirmationChatGuid={} tempGuid={} attempt={}/{} timeout={} request={}",
-            request.getChatGuid(),
-            confirmationChatGuid,
+            "Attempting to send direct text message tempGuid={} attempt={}/{} timeout={}",
             request.getTempGuid(),
             attempt,
             DIRECT_SEND_MAX_ATTEMPTS,
-            apiTimeout,
-            request);
+            apiTimeout);
         submitDirectTextMessage(request, attempt, overallStartedNanos);
         DirectSendConfirmation confirmation =
             confirmDirectTextSend(
