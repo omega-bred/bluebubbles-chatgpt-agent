@@ -194,7 +194,7 @@ spec:
             - name: BBAGENT_TERMS_ACCEPTANCE_RESPONSES_MODEL
               value: "openai/gpt-4.1-mini"
             - name: BBAGENT_GROUP_MEMORY_ENABLED
-              value: "false"
+              value: "true"
             - name: BBAGENT_GROUP_MEMORY_PROACTIVE_ENABLED
               value: "false"
             - name: BBAGENT_GROUP_MEMORY_RESPONSES_MODEL
@@ -221,8 +221,6 @@ spec:
               value: "PT1M"
             - name: BBAGENT_GROUP_MEMORY_METRICS_INITIAL_DELAY
               value: "PT30S"
-            - name: BBAGENT_GROUP_MEMORY_RESPONSES_MODEL
-              value: "openai/gpt-4.1-mini"
             - name: BBAGENT_GROUP_MEMORY_RAW_RETENTION
               value: "P30D"
             - name: BBAGENT_GROUP_MEMORY_SEGMENT_RETENTION
