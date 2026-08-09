@@ -21,9 +21,11 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
+import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
 @Component
+@RequiredArgsConstructor
 public class CadenceAgentActivitiesImpl implements CadenceAgentActivities {
 
   private final BBMessageAgent messageAgent;
@@ -31,17 +33,6 @@ public class CadenceAgentActivitiesImpl implements CadenceAgentActivities {
   private final MessageTransportRegistry transportRegistry;
   private final BlobStore blobStore;
   private final GeneratedImageExtractor generatedImageExtractor = new GeneratedImageExtractor();
-
-  public CadenceAgentActivitiesImpl(
-      BBMessageAgent messageAgent,
-      AgentPromptBuilder promptBuilder,
-      MessageTransportRegistry transportRegistry,
-      BlobStore blobStore) {
-    this.messageAgent = messageAgent;
-    this.promptBuilder = promptBuilder;
-    this.transportRegistry = transportRegistry;
-    this.blobStore = blobStore;
-  }
 
   @Override
   public String buildConversationInputJson(
