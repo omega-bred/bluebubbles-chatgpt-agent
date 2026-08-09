@@ -89,12 +89,16 @@ public final class ConversationQuestionAnsweringModels {
     }
   }
 
-  public record RoutedModelAnswer(ModelAnswer answer, String model) {
+  public record RoutedModelAnswer(ModelAnswer answer, String model, boolean fallbackUsed) {
     public RoutedModelAnswer {
       if (answer == null) {
         throw new IllegalArgumentException("answer must not be null");
       }
       requireNotBlank(model, "model");
+    }
+
+    public RoutedModelAnswer(ModelAnswer answer, String model) {
+      this(answer, model, false);
     }
   }
 

@@ -87,7 +87,9 @@ public class ConversationQuestionAnsweringModelClient {
             800,
             RawQuestionAnswer.class);
     return new RoutedModelAnswer(
-        parseAnswer(routed.value(), submittedMessageGuids(submittedMessages)), routed.model());
+        parseAnswer(routed.value(), submittedMessageGuids(submittedMessages)),
+        routed.model(),
+        routed.fallbackUsed());
   }
 
   public RoutedModelAnswer reduce(String question, List<QuestionFinding> findings) {
@@ -101,7 +103,8 @@ public class ConversationQuestionAnsweringModelClient {
             RawQuestionAnswer.class);
     return new RoutedModelAnswer(
         parseAnswer(routed.value(), submittedFindingMessageGuids(submittedFindings)),
-        routed.model());
+        routed.model(),
+        routed.fallbackUsed());
   }
 
   private SearchPlan normalizePlan(RawSearchPlan raw, Instant from, Instant to) {
@@ -119,11 +122,9 @@ public class ConversationQuestionAnsweringModelClient {
         break;
       }
     }
-    return new SearchPlan(
-        List.copyOf(terms.values()),
-        raw.senderHint(),
-        intersectLowerBound(parseHint(raw.fromHint()), from),
-        intersectUpperBound(parseHint(raw.toHint()), to));
+    HintRange hints =
+        normalizeHintRange(parseHint(raw.fromHint()), parseHint(raw.toHint()), from, to);
+    return new SearchPlan(List.copyOf(terms.values()), raw.senderHint(), hints.from(), hints.to());
   }
 
   private String serializePlanInput(String question, Instant from, Instant to) {
@@ -230,20 +231,32 @@ public class ConversationQuestionAnsweringModelClient {
     }
   }
 
-  private static @Nullable Instant intersectLowerBound(
-      @Nullable Instant hint, Instant authorizedFrom) {
-    if (hint == null) {
-      return null;
+  private static HintRange normalizeHintRange(
+      @Nullable Instant proposedFrom,
+      @Nullable Instant proposedTo,
+      Instant authorizedFrom,
+      Instant authorizedTo) {
+    Instant fromHint = clampToAuthorizedRange(proposedFrom, authorizedFrom, authorizedTo);
+    Instant toHint = clampToAuthorizedRange(proposedTo, authorizedFrom, authorizedTo);
+    if (fromHint != null && toHint != null && fromHint.isAfter(toHint)) {
+      throw new IllegalStateException(
+          "question search plan hints do not intersect authorized range");
     }
-    return hint.isBefore(authorizedFrom) ? authorizedFrom : hint;
+    return new HintRange(fromHint, toHint);
   }
 
-  private static @Nullable Instant intersectUpperBound(
-      @Nullable Instant hint, Instant authorizedTo) {
-    if (hint == null) {
+  private static @Nullable Instant clampToAuthorizedRange(
+      @Nullable Instant value, Instant authorizedFrom, Instant authorizedTo) {
+    if (value == null) {
       return null;
     }
-    return hint.isAfter(authorizedTo) ? authorizedTo : hint;
+    if (value.isBefore(authorizedFrom)) {
+      return authorizedFrom;
+    }
+    if (value.isAfter(authorizedTo)) {
+      return authorizedTo;
+    }
+    return value;
   }
 
   private String serialize(ObjectNode node, String failureMessage) {
@@ -279,4 +292,6 @@ public class ConversationQuestionAnsweringModelClient {
       String confidence,
       @JsonProperty("evidence_message_guids") List<String> evidenceMessageGuids,
       @JsonProperty("needs_more_context") boolean needsMoreContext) {}
+
+  private record HintRange(@Nullable Instant from, @Nullable Instant to) {}
 }
