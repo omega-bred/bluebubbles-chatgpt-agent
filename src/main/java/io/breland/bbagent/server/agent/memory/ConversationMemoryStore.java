@@ -1,5 +1,6 @@
 package io.breland.bbagent.server.agent.memory;
 
+import static io.breland.bbagent.server.TimeSupport.offset;
 import static io.breland.bbagent.server.agent.memory.ConversationMemoryModels.ArtifactSensitivity.NORMAL;
 import static io.breland.bbagent.server.agent.memory.ConversationMemoryModels.ArtifactStatus.CONFIRMED;
 import static io.breland.bbagent.server.agent.memory.ConversationMemoryModels.ProjectionOperation.UPSERT;
@@ -38,6 +39,7 @@ import org.apache.commons.lang3.StringUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.core.RowMapper;
 import org.springframework.lang.Nullable;
 import org.springframework.stereotype.Repository;
 import org.springframework.transaction.annotation.Transactional;
@@ -48,14 +50,14 @@ public class ConversationMemoryStore {
   private static final Duration PROJECTION_LEASE = Duration.ofMinutes(5);
   private static final Duration CATCHUP_LEASE = Duration.ofMinutes(5);
 
-  private final JdbcTemplate jdbcTemplate;
+  private final PostgresCompatibleJdbcTemplate jdbcTemplate;
   private final double minimumConfidence;
 
   @Autowired
   public ConversationMemoryStore(
       JdbcTemplate jdbcTemplate,
       @Value("${bbagent.memory.group.minimum-confidence:0.85}") double minimumConfidence) {
-    this.jdbcTemplate = jdbcTemplate;
+    this.jdbcTemplate = new PostgresCompatibleJdbcTemplate(jdbcTemplate);
     this.minimumConfidence = minimumConfidence;
   }
 
@@ -2081,6 +2083,36 @@ public class ConversationMemoryStore {
 
   private Instant toInstant(java.sql.Timestamp timestamp) {
     return timestamp == null ? null : timestamp.toInstant();
+  }
+
+  private static final class PostgresCompatibleJdbcTemplate {
+    private final JdbcTemplate delegate;
+
+    private PostgresCompatibleJdbcTemplate(JdbcTemplate delegate) {
+      this.delegate = Objects.requireNonNull(delegate, "jdbcTemplate");
+    }
+
+    private int update(String sql, Object... args) {
+      return delegate.update(sql, postgresArguments(args));
+    }
+
+    private <T> List<T> query(String sql, RowMapper<T> rowMapper, Object... args) {
+      return delegate.query(sql, rowMapper, postgresArguments(args));
+    }
+
+    private <T> @Nullable T queryForObject(String sql, Class<T> requiredType, Object... args) {
+      return delegate.queryForObject(sql, requiredType, postgresArguments(args));
+    }
+
+    private Object[] postgresArguments(Object[] args) {
+      Object[] converted = args.clone();
+      for (int index = 0; index < converted.length; index++) {
+        if (converted[index] instanceof Instant instant) {
+          converted[index] = offset(instant);
+        }
+      }
+      return converted;
+    }
   }
 
   private record ProjectionCandidate(

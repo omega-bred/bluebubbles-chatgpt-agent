@@ -16,9 +16,12 @@ import io.breland.bbagent.server.agent.memory.ConversationMemoryModels.WorkClaim
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
+import javax.sql.DataSource;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.core.PreparedStatementSetter;
 import org.springframework.transaction.annotation.Transactional;
 
 @SpringBootTest
@@ -28,6 +31,35 @@ class ConversationMemoryStoreTest {
 
   @Autowired private ConversationMemoryStore store;
   @Autowired private AgentAccountResolver accountResolver;
+  @Autowired private DataSource dataSource;
+
+  @Test
+  void extractionWorkUsesPostgresCompatibleTimestampArguments() {
+    String conversationId =
+        store.upsertConversation(
+            "bluebubbles", "iMessage;+;postgres-time", true, "Postgres", OBSERVED_AT);
+    ConversationMemoryStore postgresStrictStore =
+        new ConversationMemoryStore(
+            new JdbcTemplate(dataSource) {
+              @Override
+              protected PreparedStatementSetter newArgPreparedStatementSetter(Object[] args) {
+                for (Object argument : args) {
+                  if (argument instanceof Instant) {
+                    throw new IllegalArgumentException(
+                        "PostgreSQL cannot infer the JDBC type for java.time.Instant");
+                  }
+                }
+                return super.newArgPreparedStatementSetter(args);
+              }
+            });
+
+    postgresStrictStore.scheduleExtraction(conversationId, OBSERVED_AT);
+
+    assertThat(postgresStrictStore.claimDueExtractionWork("postgres-worker", OBSERVED_AT, 1))
+        .singleElement()
+        .extracting(WorkClaim::conversationId)
+        .isEqualTo(conversationId);
+  }
 
   @Test
   void persistsConversationMembershipAndMessage() {
