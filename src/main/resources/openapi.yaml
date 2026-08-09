@@ -464,6 +464,34 @@ paths:
           description: Conversation settings session required
         '502':
           description: The visible group notice could not be confirmed
+  /api/v1/conversationSettings/updateCatchups.conversationSettings:
+    post:
+      operationId: conversationSettingsUpdateCatchups
+      tags:
+        - conversationSettings
+      summary: Updates the current account's proactive catch-up preference for this group
+      description: Enables or disables personal one-to-one summaries for the current account and group, including IANA timezone and quiet hours. Group memory and current membership are required.
+      security:
+        - appClipSessionAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ConversationCatchupPreferencesUpdateRequest'
+      responses:
+        '200':
+          description: Personal catch-up preference updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConversationSettingsUpdateResponse'
+        '400':
+          description: Invalid preference or catch-ups unavailable for this conversation
+        '401':
+          description: Missing or invalid session
+        '403':
+          description: Conversation settings session required
   /api/v1/websiteAccount/updateModel.websiteAccountModels:
     post:
       operationId: websiteAccountUpdateModel
@@ -1528,10 +1556,10 @@ components:
           type: string
         quiet_start:
           type: string
-          pattern: '^[0-2][0-9]:[0-5][0-9]$'
+          pattern: '^(?:[01][0-9]|2[0-3]):[0-5][0-9]$'
         quiet_end:
           type: string
-          pattern: '^[0-2][0-9]:[0-5][0-9]$'
+          pattern: '^(?:[01][0-9]|2[0-3]):[0-5][0-9]$'
         next_delivery_at:
           type: string
           format: date-time
@@ -1584,6 +1612,25 @@ components:
       properties:
         enabled:
           type: boolean
+    ConversationCatchupPreferencesUpdateRequest:
+      type: object
+      required:
+        - enabled
+        - timezone
+        - quiet_start
+        - quiet_end
+      properties:
+        enabled:
+          type: boolean
+        timezone:
+          type: string
+          description: IANA timezone name used to interpret quiet hours.
+        quiet_start:
+          type: string
+          pattern: '^(?:[01][0-9]|2[0-3]):[0-5][0-9]$'
+        quiet_end:
+          type: string
+          pattern: '^(?:[01][0-9]|2[0-3]):[0-5][0-9]$'
     ConversationSettingsUpdateResponse:
       type: object
       required:

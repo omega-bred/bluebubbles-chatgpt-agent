@@ -82,6 +82,14 @@ public class MessageResponseRateLimitService {
 
   public RateLimitDecision tryConsume(IncomingMessage message) {
     ModelAccessService.ModelAccess access = modelAccessService.resolve(message);
+    return tryConsume(access);
+  }
+
+  public RateLimitDecision tryConsumeForAccountId(String accountId) {
+    return tryConsume(modelAccessService.resolve(accountId));
+  }
+
+  private RateLimitDecision tryConsume(ModelAccessService.ModelAccess access) {
     if (StringUtils.isBlank(access.accountId())) {
       return new RateLimitDecision(untrackedStatus(access), true, 1L);
     }

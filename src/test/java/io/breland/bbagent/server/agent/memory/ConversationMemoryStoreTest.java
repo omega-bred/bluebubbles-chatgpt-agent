@@ -214,6 +214,64 @@ class ConversationMemoryStoreTest {
   }
 
   @Test
+  void proactiveCatchupsAreDefaultOffPreferLatestDirectRouteAndDeduplicateDaily() {
+    String accountId = createAccount("proactive@example.com");
+    String groupConversationId =
+        store.upsertConversation(
+            "bluebubbles", "iMessage;+;proactive-group", true, "Project", OBSERVED_AT);
+    store.recordMembership(groupConversationId, accountId, OBSERVED_AT.minusSeconds(60));
+    store.enableMemory(groupConversationId, accountId, OBSERVED_AT.minusSeconds(30));
+
+    assertThat(store.findCatchupPreference(accountId, groupConversationId)).isEmpty();
+    store.saveCatchupPreference(
+        accountId, groupConversationId, false, "UTC", "22:00", "08:00", OBSERVED_AT, OBSERVED_AT);
+    assertThat(store.claimDueCatchupPreferences("disabled-worker", OBSERVED_AT, 10)).isEmpty();
+
+    store.saveCatchupPreference(
+        accountId, groupConversationId, true, "UTC", "22:00", "08:00", OBSERVED_AT, OBSERVED_AT);
+    var claim = store.claimDueCatchupPreferences("proactive-worker", OBSERVED_AT, 10).getFirst();
+
+    String olderDirect =
+        store.upsertConversation(
+            "bluebubbles", "iMessage;-;older", false, "Older", OBSERVED_AT.minusSeconds(20));
+    store.recordMembership(olderDirect, accountId, OBSERVED_AT.minusSeconds(20));
+    String newerDirect =
+        store.upsertConversation(
+            "bluebubbles", "iMessage;-;newer", false, "Newer", OBSERVED_AT.minusSeconds(10));
+    store.recordMembership(newerDirect, accountId, OBSERVED_AT.minusSeconds(10));
+
+    assertThat(store.findPreferredDirectConversation(accountId, OBSERVED_AT))
+        .get()
+        .satisfies(
+            route -> {
+              assertThat(route.conversationId()).isEqualTo(newerDirect);
+              assertThat(route.externalConversationId()).isEqualTo("iMessage;-;newer");
+            });
+
+    Instant dayStart = OBSERVED_AT.minusSeconds(3600);
+    Instant dayEnd = OBSERVED_AT.plusSeconds(23 * 3600);
+    Instant coverage = OBSERVED_AT.minusSeconds(5);
+    var delivery =
+        store.createCatchupDelivery(
+            claim, newerDirect, "proactive-digest-hash", coverage, dayStart, dayEnd, OBSERVED_AT);
+    assertThat(delivery).isPresent();
+    assertThat(
+            store.createCatchupDelivery(
+                claim,
+                newerDirect,
+                "different-hash-same-day",
+                coverage,
+                dayStart,
+                dayEnd,
+                OBSERVED_AT))
+        .isEmpty();
+
+    store.completeCatchupDelivery(delivery.orElseThrow().deliveryId(), "SENT", OBSERVED_AT);
+    assertThat(store.latestSuccessfulCatchupCoverage(accountId, groupConversationId))
+        .contains(coverage);
+  }
+
+  @Test
   void extractionCheckpointUsesTheLastSourceMessageAndExposesActiveArtifacts() {
     String accountId = createAccount("checkpoint@example.com");
     String conversationId =

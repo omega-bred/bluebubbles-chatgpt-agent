@@ -38,6 +38,7 @@ import io.breland.bbagent.server.agent.tools.giphy.SendGiphyAgentTool;
 import io.breland.bbagent.server.agent.tools.kubernetes.KubernetesPodLogsAgentTool;
 import io.breland.bbagent.server.agent.tools.kubernetes.KubernetesReadOnlyAgentTool;
 import io.breland.bbagent.server.agent.tools.limits.GetUsageLimitsAgentTool;
+import io.breland.bbagent.server.agent.tools.memory.ConfigureGroupCatchupAgentTool;
 import io.breland.bbagent.server.agent.tools.memory.ConfigureGroupMemoryAgentTool;
 import io.breland.bbagent.server.agent.tools.memory.GetGroupCatchupAgentTool;
 import io.breland.bbagent.server.agent.tools.memory.Mem0Client;
@@ -79,7 +80,8 @@ public final class AgentToolRegistry {
           RenameConversationAgentTool.TOOL_NAME,
           SetGroupIconAgentTool.TOOL_NAME,
           ConfigureGroupMemoryAgentTool.TOOL_NAME);
-  private static final Set<String> DIRECT_ONLY_TOOLS = Set.of(GetGroupCatchupAgentTool.TOOL_NAME);
+  private static final Set<String> DIRECT_ONLY_TOOLS =
+      Set.of(GetGroupCatchupAgentTool.TOOL_NAME, ConfigureGroupCatchupAgentTool.TOOL_NAME);
   private static final Set<String> BLUEBUBBLES_ONLY_TOOLS =
       Set.of(
           SearchConvoHistoryAgentTool.TOOL_NAME,
@@ -311,7 +313,8 @@ public final class AgentToolRegistry {
       return "memory";
     }
     if (ConfigureGroupMemoryAgentTool.TOOL_NAME.equals(toolName)
-        || GetGroupCatchupAgentTool.TOOL_NAME.equals(toolName)) {
+        || GetGroupCatchupAgentTool.TOOL_NAME.equals(toolName)
+        || ConfigureGroupCatchupAgentTool.TOOL_NAME.equals(toolName)) {
       return "memory";
     }
     if (FeedbackAgentTool.TOOL_NAME.equals(toolName)) {
@@ -482,6 +485,7 @@ public final class AgentToolRegistry {
     registerTool(new MemoryDeleteAgentTool(mem0Client, memoryScopeResolver).getTool());
     if (memoryScopeResolver != null) {
       registerTool(new GetGroupCatchupAgentTool(memoryScopeResolver).getTool());
+      registerTool(new ConfigureGroupCatchupAgentTool(memoryScopeResolver).getTool());
     }
     if (conversationMemorySettingsService != null) {
       registerTool(new ConfigureGroupMemoryAgentTool(conversationMemorySettingsService).getTool());

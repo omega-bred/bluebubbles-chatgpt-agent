@@ -6,6 +6,7 @@ import type {
   ConversationResponsivenessOption,
   ConversationSettingsResponse,
   ConversationSettingsUpdateRequest,
+  ConversationCatchupPreferencesUpdateRequest,
 } from "../client";
 import { CenteredMessage } from "../components/CenteredMessage";
 import { SiteNav } from "../components/SiteNav";
@@ -20,6 +21,9 @@ export function ConversationSettingsPage({ auth }: { auth: AuthState }) {
   const [loading, setLoading] = React.useState(true);
   const [saving, setSaving] = React.useState<string | null>(null);
   const [error, setError] = React.useState<string | null>(null);
+  const [catchupTimezone, setCatchupTimezone] = React.useState("UTC");
+  const [catchupQuietStart, setCatchupQuietStart] = React.useState("22:00");
+  const [catchupQuietEnd, setCatchupQuietEnd] = React.useState("08:00");
 
   const rememberSession = React.useCallback((nextSession: AppClipSessionResponse) => {
     window.sessionStorage.setItem(SESSION_TOKEN_KEY, nextSession.session_token);
@@ -68,6 +72,15 @@ export function ConversationSettingsPage({ auth }: { auth: AuthState }) {
   React.useEffect(() => {
     void load();
   }, [load]);
+
+  React.useEffect(() => {
+    if (!settings) {
+      return;
+    }
+    setCatchupTimezone(settings.personal_catchups.timezone);
+    setCatchupQuietStart(settings.personal_catchups.quiet_start);
+    setCatchupQuietEnd(settings.personal_catchups.quiet_end);
+  }, [settings]);
 
   const updateResponsiveness = async (responsiveness: string) => {
     if (!session) {
@@ -118,6 +131,39 @@ export function ConversationSettingsPage({ auth }: { auth: AuthState }) {
     } catch (err) {
       trackEvent("web_group_memory_update_failed", { enabled });
       setError(err instanceof Error ? err.message : "Unable to update group memory.");
+    } finally {
+      setSaving(null);
+    }
+  };
+
+  const updateCatchups = async (enabled: boolean) => {
+    if (!session) {
+      return;
+    }
+    const request: ConversationCatchupPreferencesUpdateRequest = {
+      enabled,
+      timezone: catchupTimezone,
+      quiet_start: catchupQuietStart,
+      quiet_end: catchupQuietEnd,
+    };
+    setSaving("personal-catchups");
+    setError(null);
+    trackEvent("web_personal_catchups_update_start", { enabled });
+    try {
+      const response = await conversationSettingsApi.updateCatchups(
+        session.session_token,
+        request,
+      );
+      setSettings(response.settings);
+      setSession({ ...session, conversation_settings: response.settings });
+      trackEvent("web_personal_catchups_updated", { enabled });
+      void appClipApi.trackEvent(session.session_token, {
+        event_name: "web_personal_catchups_updated",
+        properties: { enabled: String(enabled) },
+      });
+    } catch (err) {
+      trackEvent("web_personal_catchups_update_failed", { enabled });
+      setError(err instanceof Error ? err.message : "Unable to update personal catch-ups.");
     } finally {
       setSaving(null);
     }
@@ -213,17 +259,80 @@ export function ConversationSettingsPage({ auth }: { auth: AuthState }) {
 
             <article className="conversation-info-panel">
               <p className="eyebrow">Personal Catch-ups</p>
-              <h2>{settings.personal_catchups.available ? "Available" : "Coming soon"}</h2>
+              <h2>
+                {settings.personal_catchups.available
+                  ? settings.personal_catchups.enabled
+                    ? "On"
+                    : "Off"
+                  : "Unavailable"}
+              </h2>
               <p className="muted">
                 {settings.personal_catchups.available
-                  ? "Receive relevant group developments in your personal chat."
-                  : "Optional personal summaries will become available after group memory is established."}
+                  ? "Receive developments since your last catch-up in your personal chat."
+                  : "Personal summaries require group memory and current membership."}
               </p>
-              <InfoLine label="Timezone" value={settings.personal_catchups.timezone} />
-              <InfoLine
-                label="Quiet hours"
-                value={`${settings.personal_catchups.quiet_start}–${settings.personal_catchups.quiet_end}`}
-              />
+              {settings.personal_catchups.available ? (
+                <div className="conversation-catchup-controls">
+                  <label>
+                    <span>Timezone</span>
+                    <input
+                      type="text"
+                      value={catchupTimezone}
+                      placeholder="America/Los_Angeles"
+                      disabled={Boolean(saving)}
+                      onChange={(event) => setCatchupTimezone(event.target.value)}
+                    />
+                  </label>
+                  <label>
+                    <span>Quiet start</span>
+                    <input
+                      type="time"
+                      value={catchupQuietStart}
+                      disabled={Boolean(saving)}
+                      onChange={(event) => setCatchupQuietStart(event.target.value)}
+                    />
+                  </label>
+                  <label>
+                    <span>Quiet end</span>
+                    <input
+                      type="time"
+                      value={catchupQuietEnd}
+                      disabled={Boolean(saving)}
+                      onChange={(event) => setCatchupQuietEnd(event.target.value)}
+                    />
+                  </label>
+                  <button
+                    type="button"
+                    className="responsiveness-option"
+                    disabled={Boolean(saving)}
+                    onClick={() =>
+                      void updateCatchups(!settings.personal_catchups.enabled)
+                    }
+                  >
+                    <span>
+                      {settings.personal_catchups.enabled
+                        ? "Turn personal catch-ups off"
+                        : "Turn personal catch-ups on"}
+                    </span>
+                    <small>
+                      {saving === "personal-catchups"
+                        ? "Saving"
+                        : "At most one summary per day for this group."}
+                    </small>
+                  </button>
+                  {settings.personal_catchups.enabled ? (
+                    <button
+                      type="button"
+                      className="responsiveness-option"
+                      disabled={Boolean(saving)}
+                      onClick={() => void updateCatchups(true)}
+                    >
+                      <span>Save quiet hours</span>
+                      <small>Use an IANA timezone such as America/Los_Angeles.</small>
+                    </button>
+                  ) : null}
+                </div>
+              ) : null}
             </article>
 
             <article className="conversation-info-panel">

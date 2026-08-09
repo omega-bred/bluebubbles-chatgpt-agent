@@ -5,14 +5,18 @@ import static io.breland.bbagent.server.agent.memory.ConversationMemoryModels.Ar
 import static io.breland.bbagent.server.agent.memory.ConversationMemoryModels.ProjectionOperation.UPSERT;
 
 import io.breland.bbagent.server.agent.memory.ConversationMemoryModels.AuthorizedGroup;
+import io.breland.bbagent.server.agent.memory.ConversationMemoryModels.CatchupPreference;
+import io.breland.bbagent.server.agent.memory.ConversationMemoryModels.CatchupPreferenceClaim;
 import io.breland.bbagent.server.agent.memory.ConversationMemoryModels.ConversationRecord;
 import io.breland.bbagent.server.agent.memory.ConversationMemoryModels.DigestBatch;
 import io.breland.bbagent.server.agent.memory.ConversationMemoryModels.DigestWorkClaim;
+import io.breland.bbagent.server.agent.memory.ConversationMemoryModels.DirectConversationRoute;
 import io.breland.bbagent.server.agent.memory.ConversationMemoryModels.ExistingArtifact;
 import io.breland.bbagent.server.agent.memory.ConversationMemoryModels.ExtractionBatch;
 import io.breland.bbagent.server.agent.memory.ConversationMemoryModels.ExtractionCandidate;
 import io.breland.bbagent.server.agent.memory.ConversationMemoryModels.ExtractionCheckpoint;
 import io.breland.bbagent.server.agent.memory.ConversationMemoryModels.JournalMessage;
+import io.breland.bbagent.server.agent.memory.ConversationMemoryModels.ProactiveDelivery;
 import io.breland.bbagent.server.agent.memory.ConversationMemoryModels.ProjectedArtifact;
 import io.breland.bbagent.server.agent.memory.ConversationMemoryModels.ProjectionArtifact;
 import io.breland.bbagent.server.agent.memory.ConversationMemoryModels.ProjectionClaim;
@@ -38,6 +42,7 @@ import org.springframework.transaction.annotation.Transactional;
 public class ConversationMemoryStore {
   private static final Duration EXTRACTION_LEASE = Duration.ofMinutes(5);
   private static final Duration PROJECTION_LEASE = Duration.ofMinutes(5);
+  private static final Duration CATCHUP_LEASE = Duration.ofMinutes(5);
 
   private final JdbcTemplate jdbcTemplate;
 
@@ -957,6 +962,59 @@ public class ConversationMemoryStore {
   }
 
   @Transactional(readOnly = true)
+  public List<AuthorizedGroup> findCurrentlyAuthorizedGroups(String accountId, Instant now) {
+    return jdbcTemplate.query(
+        """
+        select c.conversation_id, c.display_name, c.last_observed_at
+          from agent_conversations c
+          join agent_conversation_memberships membership
+            on membership.conversation_id = c.conversation_id
+         where c.is_group = true and c.memory_enabled_at is not null
+           and membership.account_id = ? and membership.started_at <= ?
+           and (membership.ended_at is null or membership.ended_at > ?)
+         order by c.last_observed_at desc, c.conversation_id
+        """,
+        (resultSet, rowNumber) ->
+            new AuthorizedGroup(
+                resultSet.getString("conversation_id"),
+                resultSet.getString("display_name"),
+                resultSet.getTimestamp("last_observed_at").toInstant()),
+        accountId,
+        now,
+        now);
+  }
+
+  @Transactional(readOnly = true)
+  public Optional<AuthorizedGroup> findCurrentlyAuthorizedGroup(
+      String accountId, String transport, String externalConversationId, Instant now) {
+    return jdbcTemplate
+        .query(
+            """
+            select c.conversation_id, c.display_name, c.last_observed_at
+              from agent_conversations c
+              join agent_conversation_memberships membership
+                on membership.conversation_id = c.conversation_id
+             where c.transport = ? and c.external_conversation_id = ?
+               and c.is_group = true and c.memory_enabled_at is not null
+               and membership.account_id = ? and membership.started_at <= ?
+               and (membership.ended_at is null or membership.ended_at > ?)
+             order by c.last_observed_at desc
+            """,
+            (resultSet, rowNumber) ->
+                new AuthorizedGroup(
+                    resultSet.getString("conversation_id"),
+                    resultSet.getString("display_name"),
+                    resultSet.getTimestamp("last_observed_at").toInstant()),
+            transport,
+            externalConversationId,
+            accountId,
+            now,
+            now)
+        .stream()
+        .findFirst();
+  }
+
+  @Transactional(readOnly = true)
   public List<SummaryMaterial> findAuthorizedDigests(
       String conversationId, String accountId, Instant fromInclusive, Instant toExclusive) {
     return jdbcTemplate.query(
@@ -1266,6 +1324,292 @@ public class ConversationMemoryStore {
         failedAt);
   }
 
+  @Transactional(readOnly = true)
+  public Optional<CatchupPreference> findCatchupPreference(
+      String accountId, String conversationId) {
+    return jdbcTemplate
+        .query(
+            """
+            select preference.account_id, preference.conversation_id, conversation.display_name,
+                   preference.proactive_enabled, preference.timezone, preference.quiet_start,
+                   preference.quiet_end, preference.next_delivery_at
+              from group_catchup_preferences preference
+              join agent_conversations conversation
+                on conversation.conversation_id = preference.conversation_id
+             where preference.account_id = ? and preference.conversation_id = ?
+            """,
+            (resultSet, rowNumber) -> catchupPreference(resultSet),
+            accountId,
+            conversationId)
+        .stream()
+        .findFirst();
+  }
+
+  @Transactional
+  public CatchupPreference saveCatchupPreference(
+      String accountId,
+      String conversationId,
+      boolean enabled,
+      String timezone,
+      String quietStart,
+      String quietEnd,
+      Instant nextDeliveryAt,
+      Instant now) {
+    Integer existing =
+        jdbcTemplate.queryForObject(
+            """
+            select count(*) from group_catchup_preferences
+             where account_id = ? and conversation_id = ?
+            """,
+            Integer.class,
+            accountId,
+            conversationId);
+    if (existing != null && existing > 0) {
+      jdbcTemplate.update(
+          """
+          update group_catchup_preferences
+             set proactive_enabled = ?, timezone = ?, quiet_start = ?, quiet_end = ?,
+                 next_delivery_at = ?, claimed_by = null, claimed_until = null, updated_at = ?
+           where account_id = ? and conversation_id = ?
+          """,
+          enabled,
+          timezone,
+          quietStart,
+          quietEnd,
+          enabled ? nextDeliveryAt : null,
+          now,
+          accountId,
+          conversationId);
+    } else {
+      jdbcTemplate.update(
+          """
+          insert into group_catchup_preferences
+            (account_id, conversation_id, proactive_enabled, timezone, quiet_start, quiet_end,
+             next_delivery_at, claimed_by, claimed_until, updated_at)
+          values (?, ?, ?, ?, ?, ?, ?, null, null, ?)
+          """,
+          accountId,
+          conversationId,
+          enabled,
+          timezone,
+          quietStart,
+          quietEnd,
+          enabled ? nextDeliveryAt : null,
+          now);
+    }
+    return findCatchupPreference(accountId, conversationId).orElseThrow();
+  }
+
+  @Transactional
+  public List<CatchupPreferenceClaim> claimDueCatchupPreferences(
+      String workerId, Instant now, int limit) {
+    Instant claimedUntil = now.plus(CATCHUP_LEASE);
+    List<CatchupPreferenceKey> candidates =
+        jdbcTemplate.query(
+            """
+            select preference.account_id, preference.conversation_id
+              from group_catchup_preferences preference
+              join agent_conversations conversation
+                on conversation.conversation_id = preference.conversation_id
+             where preference.proactive_enabled = true and preference.next_delivery_at <= ?
+               and (preference.claimed_until is null or preference.claimed_until < ?)
+               and conversation.memory_enabled_at is not null
+               and exists (
+                 select 1 from agent_conversation_memberships membership
+                  where membership.conversation_id = preference.conversation_id
+                    and membership.account_id = preference.account_id
+                    and membership.started_at <= ?
+                    and (membership.ended_at is null or membership.ended_at > ?)
+               )
+             order by preference.next_delivery_at, preference.account_id,
+                      preference.conversation_id
+             limit ?
+            """,
+            (resultSet, rowNumber) ->
+                new CatchupPreferenceKey(
+                    resultSet.getString("account_id"), resultSet.getString("conversation_id")),
+            now,
+            now,
+            now,
+            now,
+            limit);
+    List<CatchupPreferenceClaim> claims = new ArrayList<>();
+    for (CatchupPreferenceKey key : candidates) {
+      int updated =
+          jdbcTemplate.update(
+              """
+              update group_catchup_preferences
+                 set claimed_by = ?, claimed_until = ?, updated_at = ?
+               where account_id = ? and conversation_id = ? and proactive_enabled = true
+                 and next_delivery_at <= ?
+                 and (claimed_until is null or claimed_until < ?)
+              """,
+              workerId,
+              claimedUntil,
+              now,
+              key.accountId(),
+              key.conversationId(),
+              now,
+              now);
+      if (updated == 1) {
+        findCatchupPreference(key.accountId(), key.conversationId())
+            .ifPresent(
+                preference ->
+                    claims.add(
+                        new CatchupPreferenceClaim(
+                            preference.accountId(),
+                            preference.conversationId(),
+                            preference.groupDisplayName(),
+                            preference.timezone(),
+                            preference.quietStart(),
+                            preference.quietEnd(),
+                            workerId,
+                            claimedUntil)));
+      }
+    }
+    return List.copyOf(claims);
+  }
+
+  @Transactional
+  public void completeCatchupPreferenceClaim(
+      CatchupPreferenceClaim claim,
+      Instant nextDeliveryAt,
+      Instant completedAt,
+      @Nullable String outcome) {
+    jdbcTemplate.update(
+        """
+        update group_catchup_preferences
+           set next_delivery_at = ?, claimed_by = null, claimed_until = null, updated_at = ?
+         where account_id = ? and conversation_id = ? and claimed_by = ? and claimed_until >= ?
+        """,
+        nextDeliveryAt,
+        completedAt,
+        claim.accountId(),
+        claim.conversationId(),
+        claim.workerId(),
+        completedAt);
+  }
+
+  @Transactional(readOnly = true)
+  public Optional<Instant> latestSuccessfulCatchupCoverage(
+      String accountId, String conversationId) {
+    return jdbcTemplate
+        .query(
+            """
+            select max(coverage_through) as coverage_through
+              from group_catchup_deliveries
+             where account_id = ? and conversation_id = ? and state = 'SENT'
+            """,
+            (resultSet, rowNumber) -> toInstant(resultSet.getTimestamp("coverage_through")),
+            accountId,
+            conversationId)
+        .stream()
+        .filter(Objects::nonNull)
+        .findFirst();
+  }
+
+  @Transactional(readOnly = true)
+  public Optional<DirectConversationRoute> findPreferredDirectConversation(
+      String accountId, Instant now) {
+    return jdbcTemplate
+        .query(
+            """
+            select conversation.conversation_id, conversation.external_conversation_id
+              from agent_conversations conversation
+              join agent_conversation_memberships membership
+                on membership.conversation_id = conversation.conversation_id
+             where conversation.is_group = false and conversation.transport = 'bluebubbles'
+               and membership.account_id = ? and membership.started_at <= ?
+               and (membership.ended_at is null or membership.ended_at > ?)
+             order by conversation.last_observed_at desc, conversation.conversation_id
+            """,
+            (resultSet, rowNumber) ->
+                new DirectConversationRoute(
+                    resultSet.getString("conversation_id"),
+                    resultSet.getString("external_conversation_id")),
+            accountId,
+            now,
+            now)
+        .stream()
+        .findFirst();
+  }
+
+  @Transactional
+  public Optional<ProactiveDelivery> createCatchupDelivery(
+      CatchupPreferenceClaim claim,
+      String directConversationId,
+      String digestHash,
+      Instant coverageThrough,
+      Instant localDayStart,
+      Instant localDayEnd,
+      Instant now) {
+    Integer owned =
+        jdbcTemplate.queryForObject(
+            """
+            select count(*) from group_catchup_preferences
+             where account_id = ? and conversation_id = ? and proactive_enabled = true
+               and claimed_by = ? and claimed_until >= ?
+            """,
+            Integer.class,
+            claim.accountId(),
+            claim.conversationId(),
+            claim.workerId(),
+            now);
+    if (owned == null || owned != 1) {
+      return Optional.empty();
+    }
+    Integer existing =
+        jdbcTemplate.queryForObject(
+            """
+            select count(*) from group_catchup_deliveries
+             where account_id = ? and conversation_id = ?
+               and (digest_hash = ? or (created_at >= ? and created_at < ?))
+            """,
+            Integer.class,
+            claim.accountId(),
+            claim.conversationId(),
+            digestHash,
+            localDayStart,
+            localDayEnd);
+    if (existing != null && existing > 0) {
+      return Optional.empty();
+    }
+    String deliveryId = UUID.randomUUID().toString();
+    jdbcTemplate.update(
+        """
+        insert into group_catchup_deliveries
+          (delivery_id, account_id, conversation_id, direct_conversation_id, digest_hash,
+           coverage_through, state, created_at, sent_at)
+        values (?, ?, ?, ?, ?, ?, 'PENDING', ?, null)
+        """,
+        deliveryId,
+        claim.accountId(),
+        claim.conversationId(),
+        directConversationId,
+        digestHash,
+        coverageThrough,
+        now);
+    return Optional.of(
+        new ProactiveDelivery(
+            deliveryId,
+            claim.accountId(),
+            claim.conversationId(),
+            directConversationId,
+            digestHash,
+            coverageThrough));
+  }
+
+  @Transactional
+  public void completeCatchupDelivery(String deliveryId, String state, Instant completedAt) {
+    jdbcTemplate.update(
+        """
+        update group_catchup_deliveries set state = ?, sent_at = ? where delivery_id = ?
+        """,
+        state,
+        completedAt,
+        deliveryId);
+  }
+
   @Transactional
   public void recordCanonicalMemory(
       String canonicalScope, String mem0MemoryId, String contentHash, Instant recordedAt) {
@@ -1530,6 +1874,19 @@ public class ConversationMemoryStore {
         resultSet.getString("corpus_hash"));
   }
 
+  private CatchupPreference catchupPreference(java.sql.ResultSet resultSet)
+      throws java.sql.SQLException {
+    return new CatchupPreference(
+        resultSet.getString("account_id"),
+        resultSet.getString("conversation_id"),
+        resultSet.getString("display_name"),
+        resultSet.getBoolean("proactive_enabled"),
+        resultSet.getString("timezone"),
+        resultSet.getString("quiet_start"),
+        resultSet.getString("quiet_end"),
+        toInstant(resultSet.getTimestamp("next_delivery_at")));
+  }
+
   private Set<String> intersectSegmentAudiences(List<String> segmentIds) {
     Set<String> intersection = null;
     for (String segmentId : segmentIds) {
@@ -1595,6 +1952,8 @@ public class ConversationMemoryStore {
   private record ActiveMembership(String membershipId, String accountId) {}
 
   private record DigestKey(String conversationId, Instant periodStart, Instant periodEnd) {}
+
+  private record CatchupPreferenceKey(String accountId, String conversationId) {}
 
   private record ScopeKey(String type, String id) {}
 }

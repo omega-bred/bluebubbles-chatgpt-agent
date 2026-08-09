@@ -106,6 +106,27 @@ public class ConversationDigestService {
     return new CatchupResult(List.copyOf(groups), List.of());
   }
 
+  public CatchupResult catchUpForConversation(
+      String accountId, String conversationId, Instant requestedFrom, Instant requestedTo) {
+    if (StringUtils.isBlank(conversationId)) {
+      throw new IllegalArgumentException("conversation is required");
+    }
+    Instant from = requestedFrom;
+    if (Duration.between(from, requestedTo).compareTo(MAX_CATCHUP_RANGE) > 0) {
+      from = requestedTo.minus(MAX_CATCHUP_RANGE);
+    }
+    final Instant authorizedFrom = from;
+    Optional<AuthorizedGroup> group =
+        store.findAuthorizedGroups(accountId, authorizedFrom, requestedTo).stream()
+            .filter(candidate -> conversationId.equals(candidate.conversationId()))
+            .findFirst();
+    if (group.isEmpty()) {
+      return new CatchupResult(List.of(), List.of());
+    }
+    return new CatchupResult(
+        List.of(buildCatchupGroup(accountId, group.get(), authorizedFrom, requestedTo)), List.of());
+  }
+
   public Instant currentTime() {
     return clock.instant();
   }

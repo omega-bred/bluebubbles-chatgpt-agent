@@ -33,6 +33,7 @@ import io.breland.bbagent.server.agent.tools.gcal.SearchEventsAgentTool;
 import io.breland.bbagent.server.agent.tools.gcal.UpdateEventAgentTool;
 import io.breland.bbagent.server.agent.tools.giphy.SendGiphyAgentTool;
 import io.breland.bbagent.server.agent.tools.limits.GetUsageLimitsAgentTool;
+import io.breland.bbagent.server.agent.tools.memory.ConfigureGroupCatchupAgentTool;
 import io.breland.bbagent.server.agent.tools.memory.ConfigureGroupMemoryAgentTool;
 import io.breland.bbagent.server.agent.tools.memory.GetGroupCatchupAgentTool;
 import io.breland.bbagent.server.agent.tools.memory.MemoryDeleteAgentTool;
@@ -308,6 +309,9 @@ public final class AgentPromptBuilder {
                   + " for questions like what happened, what did I miss, or summaries of a group over a time range. Use "
                   + MemoryGetAgentTool.TOOL_NAME
                   + " for semantic facts and decisions; its limited search results are not proof of complete time-range coverage. "
+                  + "When the user asks to enable, disable, or schedule proactive summaries from a group into this one-to-one chat, call "
+                  + ConfigureGroupCatchupAgentTool.TOOL_NAME
+                  + ". "
                   + "When the user asks about quota, usage limits, monthly messages, or remaining messages, call "
                   + GetUsageLimitsAgentTool.TOOL_NAME
                   + " before answering. "
@@ -361,6 +365,9 @@ public final class AgentPromptBuilder {
                 + " for questions like what happened, what did I miss, or summaries of a group over a time range. Use "
                 + MemoryGetAgentTool.TOOL_NAME
                 + " for semantic facts and decisions; its limited search results are not proof of complete time-range coverage. "
+                + "When the user asks to enable, disable, or schedule proactive summaries from a group into this one-to-one chat, call "
+                + ConfigureGroupCatchupAgentTool.TOOL_NAME
+                + ". "
                 + "Use web_search for current info or external lookups when relevant. "
                 + "When the user asks about quota, usage limits, monthly messages, or remaining messages, call "
                 + GetUsageLimitsAgentTool.TOOL_NAME

@@ -10,8 +10,10 @@ import io.breland.bbagent.generated.model.ConversationResponsivenessOption;
 import io.breland.bbagent.generated.model.ConversationSettingsResponse;
 import io.breland.bbagent.generated.model.ConversationSettingsUpdateResponse;
 import io.breland.bbagent.generated.model.ConversationSummary;
+import io.breland.bbagent.server.agent.memory.ConversationMemoryModels.CatchupPreferenceSetting;
 import io.breland.bbagent.server.agent.memory.ConversationMemorySettingsService;
 import io.breland.bbagent.server.agent.memory.ConversationMemorySettingsService.GroupMemorySetting;
+import io.breland.bbagent.server.agent.memory.ProactiveCatchupService;
 import io.breland.bbagent.server.agent.profile.AgentProfileService;
 import io.breland.bbagent.server.agent.profile.AssistantResponsiveness;
 import io.breland.bbagent.server.agent.transport.bb.BBHttpClientWrapper;
@@ -55,12 +57,21 @@ public class ConversationSettingsService {
   private final BBHttpClientWrapper bbHttpClientWrapper;
   private final @Nullable UmamiAnalyticsService umamiAnalyticsService;
   private final @Nullable ConversationMemorySettingsService memorySettingsService;
+  private final @Nullable ProactiveCatchupService proactiveCatchupService;
 
   public ConversationSettingsService(
       AgentProfileService profileService,
       BBHttpClientWrapper bbHttpClientWrapper,
       @Nullable UmamiAnalyticsService umamiAnalyticsService) {
-    this(profileService, bbHttpClientWrapper, umamiAnalyticsService, null);
+    this(profileService, bbHttpClientWrapper, umamiAnalyticsService, null, null);
+  }
+
+  public ConversationSettingsService(
+      AgentProfileService profileService,
+      BBHttpClientWrapper bbHttpClientWrapper,
+      @Nullable UmamiAnalyticsService umamiAnalyticsService,
+      @Nullable ConversationMemorySettingsService memorySettingsService) {
+    this(profileService, bbHttpClientWrapper, umamiAnalyticsService, memorySettingsService, null);
   }
 
   @Autowired
@@ -68,16 +79,22 @@ public class ConversationSettingsService {
       AgentProfileService profileService,
       BBHttpClientWrapper bbHttpClientWrapper,
       @Nullable UmamiAnalyticsService umamiAnalyticsService,
-      @Nullable ConversationMemorySettingsService memorySettingsService) {
+      @Nullable ConversationMemorySettingsService memorySettingsService,
+      @Nullable ProactiveCatchupService proactiveCatchupService) {
     this.profileService = profileService;
     this.bbHttpClientWrapper = bbHttpClientWrapper;
     this.umamiAnalyticsService = umamiAnalyticsService;
     this.memorySettingsService = memorySettingsService;
+    this.proactiveCatchupService = proactiveCatchupService;
   }
 
   public ConversationSettingsResponse getSettings(String chatGuid) {
+    return getSettings(null, chatGuid);
+  }
+
+  public ConversationSettingsResponse getSettings(@Nullable String accountId, String chatGuid) {
     String cleanChatGuid = requireChatGuid(chatGuid);
-    return response(cleanChatGuid);
+    return response(accountId, cleanChatGuid);
   }
 
   public ConversationSettingsUpdateResponse updateResponsiveness(
@@ -86,7 +103,7 @@ public class ConversationSettingsService {
     AssistantResponsiveness resolved = parseResponsiveness(responsiveness);
     profileService.setAssistantResponsiveness(cleanChatGuid, resolved);
     trackUpdate(accountId, resolved);
-    ConversationSettingsResponse settings = response(cleanChatGuid);
+    ConversationSettingsResponse settings = response(accountId, cleanChatGuid);
     return new ConversationSettingsUpdateResponse()
         .settings(settings)
         .message("Conversation response style changed to " + labelFor(resolved) + ".");
@@ -110,11 +127,37 @@ public class ConversationSettingsService {
       throw new ResponseStatusException(HttpStatus.BAD_GATEWAY, e.getMessage(), e);
     }
     return new ConversationSettingsUpdateResponse()
-        .settings(response(cleanChatGuid))
+        .settings(response(accountId, cleanChatGuid))
         .message("Group memory " + (enabled ? "enabled" : "disabled") + ".");
   }
 
-  private ConversationSettingsResponse response(String chatGuid) {
+  public ConversationSettingsUpdateResponse updateCatchups(
+      String accountId,
+      String chatGuid,
+      boolean enabled,
+      String timezone,
+      String quietStart,
+      String quietEnd) {
+    String cleanChatGuid = requireChatGuid(chatGuid);
+    if (proactiveCatchupService == null) {
+      throw new ResponseStatusException(
+          HttpStatus.SERVICE_UNAVAILABLE, "Personal catch-ups unavailable");
+    }
+    try {
+      proactiveCatchupService.updateForChat(
+          accountId, cleanChatGuid, enabled, timezone, quietStart, quietEnd);
+    } catch (IllegalArgumentException e) {
+      throw new ResponseStatusException(HttpStatus.BAD_REQUEST, e.getMessage(), e);
+    }
+    return new ConversationSettingsUpdateResponse()
+        .settings(response(accountId, cleanChatGuid))
+        .message(
+            enabled
+                ? "Personal catch-ups enabled for developments since your last catch-up."
+                : "Personal catch-ups disabled.");
+  }
+
+  private ConversationSettingsResponse response(@Nullable String accountId, String chatGuid) {
     AssistantResponsiveness current = profileService.getAssistantResponsiveness(chatGuid);
     return new ConversationSettingsResponse()
         .conversation(conversationSummary(chatGuid))
@@ -122,7 +165,7 @@ public class ConversationSettingsService {
         .currentResponsivenessLabel(labelFor(current))
         .options(OPTIONS.stream().map(this::toOption).toList())
         .groupMemory(groupMemorySetting(chatGuid))
-        .personalCatchups(personalCatchupSetting());
+        .personalCatchups(personalCatchupSetting(accountId, chatGuid));
   }
 
   private ConversationGroupMemorySetting groupMemorySetting(String chatGuid) {
@@ -143,13 +186,23 @@ public class ConversationSettingsService {
     return response;
   }
 
-  private ConversationPersonalCatchupSetting personalCatchupSetting() {
-    return new ConversationPersonalCatchupSetting()
-        .available(false)
-        .enabled(false)
-        .timezone("UTC")
-        .quietStart("22:00")
-        .quietEnd("08:00");
+  private ConversationPersonalCatchupSetting personalCatchupSetting(
+      @Nullable String accountId, String chatGuid) {
+    CatchupPreferenceSetting setting =
+        proactiveCatchupService == null || StringUtils.isBlank(accountId)
+            ? new CatchupPreferenceSetting(false, false, "UTC", "22:00", "08:00", null, null)
+            : proactiveCatchupService.preferenceForChat(accountId, chatGuid);
+    ConversationPersonalCatchupSetting response =
+        new ConversationPersonalCatchupSetting()
+            .available(setting.available())
+            .enabled(setting.enabled())
+            .timezone(setting.timezone())
+            .quietStart(setting.quietStart())
+            .quietEnd(setting.quietEnd());
+    if (setting.nextDeliveryAt() != null) {
+      response.nextDeliveryAt(setting.nextDeliveryAt().atOffset(ZoneOffset.UTC));
+    }
+    return response;
   }
 
   private ConversationSummary conversationSummary(String chatGuid) {

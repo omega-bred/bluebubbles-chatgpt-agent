@@ -428,6 +428,21 @@ public class AgentAccountResolver {
         "agent_conversations", "memory_enabled_by_account_id", targetAccountId, sourceAccountId);
     updateAccountColumn(
         "agent_conversation_messages", "sender_account_id", targetAccountId, sourceAccountId);
+    mergeCatchupPreferences(targetAccountId, sourceAccountId);
+    jdbcTemplate.update(
+        """
+        delete from group_catchup_deliveries source_delivery
+         where source_delivery.account_id = ?
+           and exists (
+             select 1 from group_catchup_deliveries target_delivery
+              where target_delivery.account_id = ?
+                and target_delivery.conversation_id = source_delivery.conversation_id
+                and target_delivery.digest_hash = source_delivery.digest_hash
+           )
+        """,
+        sourceAccountId,
+        targetAccountId);
+    updateAccountColumn("group_catchup_deliveries", "account_id", targetAccountId, sourceAccountId);
     jdbcTemplate.update(
         """
         update canonical_memory_records
@@ -436,6 +451,81 @@ public class AgentAccountResolver {
         """,
         targetAccountId,
         sourceAccountId);
+  }
+
+  private void mergeCatchupPreferences(String targetAccountId, String sourceAccountId) {
+    List<CatchupPreferenceMergeRow> sourceRows =
+        jdbcTemplate.query(
+            """
+            select conversation_id, proactive_enabled, next_delivery_at
+              from group_catchup_preferences where account_id = ?
+            """,
+            (resultSet, rowNumber) ->
+                new CatchupPreferenceMergeRow(
+                    resultSet.getString("conversation_id"),
+                    resultSet.getBoolean("proactive_enabled"),
+                    resultSet.getTimestamp("next_delivery_at") == null
+                        ? null
+                        : resultSet.getTimestamp("next_delivery_at").toInstant()),
+            sourceAccountId);
+    for (CatchupPreferenceMergeRow source : sourceRows) {
+      List<CatchupPreferenceMergeRow> targets =
+          jdbcTemplate.query(
+              """
+              select conversation_id, proactive_enabled, next_delivery_at
+                from group_catchup_preferences
+               where account_id = ? and conversation_id = ?
+              """,
+              (resultSet, rowNumber) ->
+                  new CatchupPreferenceMergeRow(
+                      resultSet.getString("conversation_id"),
+                      resultSet.getBoolean("proactive_enabled"),
+                      resultSet.getTimestamp("next_delivery_at") == null
+                          ? null
+                          : resultSet.getTimestamp("next_delivery_at").toInstant()),
+              targetAccountId,
+              source.conversationId());
+      if (targets.isEmpty()) {
+        jdbcTemplate.update(
+            """
+            update group_catchup_preferences
+               set account_id = ?, claimed_by = null, claimed_until = null,
+                   updated_at = current_timestamp
+             where account_id = ? and conversation_id = ?
+            """,
+            targetAccountId,
+            sourceAccountId,
+            source.conversationId());
+        continue;
+      }
+      CatchupPreferenceMergeRow target = targets.getFirst();
+      Instant laterDelivery = later(target.nextDeliveryAt(), source.nextDeliveryAt());
+      jdbcTemplate.update(
+          """
+          update group_catchup_preferences
+             set proactive_enabled = ?, next_delivery_at = ?, claimed_by = null,
+                 claimed_until = null, updated_at = current_timestamp
+           where account_id = ? and conversation_id = ?
+          """,
+          target.enabled() || source.enabled(),
+          laterDelivery,
+          targetAccountId,
+          source.conversationId());
+      jdbcTemplate.update(
+          "delete from group_catchup_preferences where account_id = ? and conversation_id = ?",
+          sourceAccountId,
+          source.conversationId());
+    }
+  }
+
+  private Instant later(Instant first, Instant second) {
+    if (first == null) {
+      return second;
+    }
+    if (second == null) {
+      return first;
+    }
+    return first.isAfter(second) ? first : second;
   }
 
   private void deleteAccountCollision(
@@ -453,6 +543,9 @@ public class AgentAccountResolver {
         sourceAccountId,
         targetAccountId);
   }
+
+  private record CatchupPreferenceMergeRow(
+      String conversationId, boolean enabled, Instant nextDeliveryAt) {}
 
   private void mergeAccountScopedRateLimitUsage(String targetAccountId, String sourceAccountId) {
     List<Map<String, Object>> sourceRows =

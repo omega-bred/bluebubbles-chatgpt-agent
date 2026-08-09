@@ -19,28 +19,31 @@ public class MemoryScopeResolver {
   private final boolean legacyScopeReadEnabled;
   private final @Nullable AuthorizedMemoryRetrievalService authorizedMemoryRetrievalService;
   private final @Nullable ConversationDigestService conversationDigestService;
+  private final @Nullable ProactiveCatchupService proactiveCatchupService;
 
   @Autowired
   public MemoryScopeResolver(
       ConversationMemoryStore store,
       @Value("${bbagent.memory.legacy-scope-read-enabled:true}") boolean legacyScopeReadEnabled,
       @Nullable AuthorizedMemoryRetrievalService authorizedMemoryRetrievalService,
-      @Nullable ConversationDigestService conversationDigestService) {
+      @Nullable ConversationDigestService conversationDigestService,
+      @Nullable ProactiveCatchupService proactiveCatchupService) {
     this.store = store;
     this.legacyScopeReadEnabled = legacyScopeReadEnabled;
     this.authorizedMemoryRetrievalService = authorizedMemoryRetrievalService;
     this.conversationDigestService = conversationDigestService;
+    this.proactiveCatchupService = proactiveCatchupService;
   }
 
   public MemoryScopeResolver(ConversationMemoryStore store, boolean legacyScopeReadEnabled) {
-    this(store, legacyScopeReadEnabled, null, null);
+    this(store, legacyScopeReadEnabled, null, null, null);
   }
 
   public MemoryScopeResolver(
       ConversationMemoryStore store,
       boolean legacyScopeReadEnabled,
       @Nullable AuthorizedMemoryRetrievalService authorizedMemoryRetrievalService) {
-    this(store, legacyScopeReadEnabled, authorizedMemoryRetrievalService, null);
+    this(store, legacyScopeReadEnabled, authorizedMemoryRetrievalService, null, null);
   }
 
   public Optional<String> primaryScope(ToolContext context) {
@@ -89,6 +92,10 @@ public class MemoryScopeResolver {
 
   public Optional<ConversationDigestService> conversationDigestService() {
     return Optional.ofNullable(conversationDigestService);
+  }
+
+  public Optional<ProactiveCatchupService> proactiveCatchupService() {
+    return Optional.ofNullable(proactiveCatchupService);
   }
 
   public void updateOwnership(String canonicalScope, String memoryId, String text) {

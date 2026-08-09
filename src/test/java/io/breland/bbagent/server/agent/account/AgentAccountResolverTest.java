@@ -180,6 +180,52 @@ class AgentAccountResolverTest {
         "canonical-hash",
         now,
         now);
+    memoryStore.saveCatchupPreference(
+        targetAccountId,
+        conversationId,
+        false,
+        "America/Los_Angeles",
+        "21:00",
+        "07:00",
+        now.plusSeconds(3600),
+        now);
+    memoryStore.saveCatchupPreference(
+        sourceAccountId, conversationId, true, "UTC", "22:00", "08:00", now.plusSeconds(7200), now);
+    jdbcTemplate.update(
+        """
+        insert into group_catchup_deliveries
+          (delivery_id, account_id, conversation_id, direct_conversation_id, digest_hash,
+           coverage_through, state, created_at)
+        values (?, ?, ?, ?, ?, ?, 'SENT', ?)
+        """,
+        UUID.randomUUID().toString(),
+        targetAccountId,
+        conversationId,
+        conversationId,
+        "shared-digest",
+        now,
+        now);
+    jdbcTemplate.update(
+        """
+        insert into group_catchup_deliveries
+          (delivery_id, account_id, conversation_id, direct_conversation_id, digest_hash,
+           coverage_through, state, created_at)
+        values (?, ?, ?, ?, ?, ?, 'SENT', ?), (?, ?, ?, ?, ?, ?, 'SENT', ?)
+        """,
+        UUID.randomUUID().toString(),
+        sourceAccountId,
+        conversationId,
+        conversationId,
+        "shared-digest",
+        now,
+        now,
+        UUID.randomUUID().toString(),
+        sourceAccountId,
+        conversationId,
+        conversationId,
+        "source-only-digest",
+        now,
+        now);
 
     accountResolver.linkWebsiteAccount(targetAccountId, jwt);
 
@@ -201,6 +247,14 @@ class AgentAccountResolverTest {
             """,
             Integer.class,
             targetAccountId));
+    var mergedPreference =
+        memoryStore.findCatchupPreference(targetAccountId, conversationId).orElseThrow();
+    assertTrue(mergedPreference.enabled());
+    assertEquals("America/Los_Angeles", mergedPreference.timezone());
+    assertEquals(now.plusSeconds(7200), mergedPreference.nextDeliveryAt());
+    assertEquals(
+        2,
+        rowCount("group_catchup_deliveries", "conversation_id", conversationId, targetAccountId));
   }
 
   private int rowCount(String table, String idColumn, String id, String accountId) {

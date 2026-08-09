@@ -207,4 +207,54 @@ public final class ConversationMemoryModels {
       return !disambiguationOptions.isEmpty();
     }
   }
+
+  public record CatchupPreference(
+      String accountId,
+      String conversationId,
+      String groupDisplayName,
+      boolean enabled,
+      String timezone,
+      String quietStart,
+      String quietEnd,
+      Instant nextDeliveryAt) {}
+
+  public record CatchupPreferenceClaim(
+      String accountId,
+      String conversationId,
+      String groupDisplayName,
+      String timezone,
+      String quietStart,
+      String quietEnd,
+      String workerId,
+      Instant claimedUntil) {}
+
+  public record CatchupPreferenceSetting(
+      boolean available,
+      boolean enabled,
+      String timezone,
+      String quietStart,
+      String quietEnd,
+      Instant nextDeliveryAt,
+      String groupDisplayName) {}
+
+  public record CatchupPreferenceUpdate(
+      CatchupPreferenceSetting setting, List<String> disambiguationOptions) {
+    public CatchupPreferenceUpdate {
+      disambiguationOptions = List.copyOf(disambiguationOptions);
+    }
+
+    public boolean ambiguous() {
+      return !disambiguationOptions.isEmpty();
+    }
+  }
+
+  public record DirectConversationRoute(String conversationId, String externalConversationId) {}
+
+  public record ProactiveDelivery(
+      String deliveryId,
+      String accountId,
+      String conversationId,
+      String directConversationId,
+      String digestHash,
+      Instant coverageThrough) {}
 }

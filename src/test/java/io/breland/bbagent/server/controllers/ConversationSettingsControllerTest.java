@@ -46,7 +46,7 @@ class ConversationSettingsControllerTest {
                     WebsiteAccountService.LINK_PURPOSE_CONVERSATION_SETTINGS,
                     "chat-guid",
                     Instant.now().plusSeconds(300))));
-    when(settingsService.getSettings("chat-guid"))
+    when(settingsService.getSettings("account-1", "chat-guid"))
         .thenReturn(settingsResponse("default", "Balanced"));
 
     mockMvc
@@ -127,6 +127,37 @@ class ConversationSettingsControllerTest {
                 .content("{\"enabled\":true}"))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.settings.group_memory.enabled").value(true));
+  }
+
+  @Test
+  void updatesPersonalCatchupsWithinAuthenticatedAccountAndConversationScope() throws Exception {
+    when(appClipSessionService.authenticate("clip-session"))
+        .thenReturn(
+            Optional.of(
+                new AppClipSessionService.AuthenticatedAppClipSession(
+                    "account-1",
+                    WebsiteAccountService.LINK_PURPOSE_CONVERSATION_SETTINGS,
+                    "chat-guid",
+                    Instant.now().plusSeconds(300))));
+    when(settingsService.updateCatchups(
+            "account-1", "chat-guid", true, "America/Los_Angeles", "22:00", "08:00"))
+        .thenReturn(
+            new ConversationSettingsUpdateResponse()
+                .settings(settingsResponse("default", "Balanced"))
+                .message("Personal catch-ups enabled."));
+
+    mockMvc
+        .perform(
+            post("/api/v1/conversationSettings/updateCatchups.conversationSettings")
+                .header(AppClipSessionAuthenticationFilter.SESSION_HEADER, "clip-session")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    """
+                    {"enabled":true,"timezone":"America/Los_Angeles",
+                     "quiet_start":"22:00","quiet_end":"08:00"}
+                    """))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.settings.personal_catchups.enabled").value(false));
   }
 
   private ConversationSettingsResponse settingsResponse(String responsiveness, String label) {

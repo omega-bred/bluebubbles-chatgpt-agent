@@ -300,20 +300,62 @@ struct ClipRootView: View {
             VStack(alignment: .leading, spacing: 12) {
                 Text("Personal Catch-ups")
                     .font(.headline)
-                Text(settings.personalCatchups.available ? "Available" : "Coming soon")
-                    .font(.title3.weight(.semibold))
                 Text(
                     settings.personalCatchups.available
-                        ? "Receive relevant group developments in your personal chat."
-                        : "Optional personal summaries will become available after group memory is established."
+                        ? (settings.personalCatchups.enabled ? "On" : "Off")
+                        : "Unavailable"
+                )
+                .font(.title3.weight(.semibold))
+                Text(
+                    settings.personalCatchups.available
+                        ? "Receive developments since your last catch-up in your personal chat."
+                        : "Personal summaries require group memory and current membership."
                 )
                 .font(.callout)
                 .foregroundStyle(.secondary)
-                InfoRow(label: "Timezone", value: settings.personalCatchups.timezone)
-                InfoRow(
-                    label: "Quiet hours",
-                    value: "\(settings.personalCatchups.quietStart)–\(settings.personalCatchups.quietEnd)"
-                )
+                if settings.personalCatchups.available {
+                    TextField("IANA timezone", text: $model.catchupTimezone)
+                        .textFieldStyle(.roundedBorder)
+                        .disabled(model.catchupUpdateInProgress)
+                    HStack {
+                        TextField("Quiet start (HH:mm)", text: $model.catchupQuietStart)
+                            .textFieldStyle(.roundedBorder)
+                        TextField("Quiet end (HH:mm)", text: $model.catchupQuietEnd)
+                            .textFieldStyle(.roundedBorder)
+                    }
+                    .disabled(model.catchupUpdateInProgress)
+                    Button {
+                        Task {
+                            await model.updateCatchups(!settings.personalCatchups.enabled)
+                        }
+                    } label: {
+                        HStack {
+                            Text(
+                                settings.personalCatchups.enabled
+                                    ? "Turn personal catch-ups off"
+                                    : "Turn personal catch-ups on"
+                            )
+                            Spacer()
+                            if model.catchupUpdateInProgress {
+                                ProgressView()
+                            }
+                        }
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(model.catchupUpdateInProgress)
+                    if settings.personalCatchups.enabled {
+                        Button("Save quiet hours") {
+                            Task {
+                                await model.updateCatchups(true)
+                            }
+                        }
+                        .buttonStyle(.bordered)
+                        .disabled(model.catchupUpdateInProgress)
+                    }
+                    Text("At most one summary per day for this group. Use an IANA timezone such as America/Los_Angeles.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
             }
             .appClipPanel()
 
@@ -495,6 +537,10 @@ final class ClipViewModel: ObservableObject {
     @Published var modelSelectionInProgress = false
     @Published var responsivenessSelectionInProgress: String?
     @Published var groupMemoryUpdateInProgress = false
+    @Published var catchupUpdateInProgress = false
+    @Published var catchupTimezone = "UTC"
+    @Published var catchupQuietStart = "22:00"
+    @Published var catchupQuietEnd = "08:00"
     @Published var errorMessage: String?
     @Published var modelErrorMessage: String?
 
@@ -875,6 +921,7 @@ final class ClipViewModel: ObservableObject {
             }
             let refreshed = session.replacing(conversationSettings: response.settings)
             self.session = refreshed
+            syncCatchupDraft(from: refreshed)
             trackAppClipEvent(
                 "appclip_group_memory_updated",
                 properties: eventContext(for: refreshed).merging(["enabled": enabled ? "true" : "false"]) { _, new in new }
@@ -882,6 +929,49 @@ final class ClipViewModel: ObservableObject {
         } catch {
             trackAppClipEvent(
                 "appclip_group_memory_update_failed",
+                properties: eventContext(for: session).merging(["enabled": enabled ? "true" : "false"]) { _, new in new }
+            )
+            modelErrorMessage = error.localizedDescription
+        }
+    }
+
+    func updateCatchups(_ enabled: Bool) async {
+        guard let session else {
+            return
+        }
+        guard session.purpose == .conversationSettings else {
+            return
+        }
+        catchupUpdateInProgress = true
+        modelErrorMessage = nil
+        defer {
+            catchupUpdateInProgress = false
+        }
+        do {
+            trackAppClipEvent(
+                "appclip_personal_catchups_update_started",
+                properties: eventContext(for: session).merging(["enabled": enabled ? "true" : "false"]) { _, new in new }
+            )
+            let response = try await GeneratedAPIConfiguration.executeWithSession(session.sessionToken) {
+                ConversationSettingsAPI.conversationSettingsUpdateCatchupsWithRequestBuilder(
+                    conversationCatchupPreferencesUpdateRequest: ConversationCatchupPreferencesUpdateRequest(
+                        enabled: enabled,
+                        timezone: catchupTimezone,
+                        quietStart: catchupQuietStart,
+                        quietEnd: catchupQuietEnd
+                    )
+                )
+            }
+            let refreshed = session.replacing(conversationSettings: response.settings)
+            self.session = refreshed
+            syncCatchupDraft(from: refreshed)
+            trackAppClipEvent(
+                "appclip_personal_catchups_updated",
+                properties: eventContext(for: refreshed).merging(["enabled": enabled ? "true" : "false"]) { _, new in new }
+            )
+        } catch {
+            trackAppClipEvent(
+                "appclip_personal_catchups_failed",
                 properties: eventContext(for: session).merging(["enabled": enabled ? "true" : "false"]) { _, new in new }
             )
             modelErrorMessage = error.localizedDescription
@@ -902,6 +992,7 @@ final class ClipViewModel: ObservableObject {
             )
             UserDefaults.standard.set(session.sessionToken, forKey: sessionTokenKey)
             self.session = session
+            syncCatchupDraft(from: session)
             errorMessage = nil
             trackAppClipEvent(
                 "appclip_session_created",
@@ -925,6 +1016,7 @@ final class ClipViewModel: ObservableObject {
                 AppClipAPI.appClipGetSessionWithRequestBuilder()
             }
             self.session = session
+            syncCatchupDraft(from: session)
             errorMessage = nil
             trackAppClipEvent(
                 "appclip_session_restored",
@@ -937,6 +1029,15 @@ final class ClipViewModel: ObservableObject {
             }
             setBootstrapError(error, source: .stored)
         }
+    }
+
+    private func syncCatchupDraft(from session: AppClipSessionResponse) {
+        guard let settings = session.conversationSettings?.personalCatchups else {
+            return
+        }
+        catchupTimezone = settings.timezone
+        catchupQuietStart = settings.quietStart
+        catchupQuietEnd = settings.quietEnd
     }
 
     private func setBootstrapError(_ error: Error, source: BootstrapSource) {
