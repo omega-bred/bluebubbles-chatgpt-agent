@@ -37,7 +37,7 @@ jobs:
     timeout-minutes: 90
     steps:
       - name: Checkout
-        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
 
       - name: Set up Nix
         uses: ./.github/actions/setup-nix
@@ -60,12 +60,12 @@ jobs:
           BBAGENT_NIX_SHELL_QUIET=1 nix develop --command asc --version
 
       - name: Configure 1Password service account
-        uses: 1password/load-secrets-action/configure@581a835fb51b8e7ec56b71cf2ffddd7e68bb25e0
+        uses: 1password/load-secrets-action/configure@e544b780808654ba8ceba5fb2fe2897103d92ff4
         with:
           service-account-token: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
 
       - name: Load App Store Connect secrets
-        uses: 1password/load-secrets-action@581a835fb51b8e7ec56b71cf2ffddd7e68bb25e0
+        uses: 1password/load-secrets-action@e544b780808654ba8ceba5fb2fe2897103d92ff4
         with:
           export-env: true
         env:

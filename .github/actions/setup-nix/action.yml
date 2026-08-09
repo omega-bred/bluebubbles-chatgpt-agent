@@ -37,13 +37,13 @@ runs:
 
     - name: Configure 1Password service account
       if: ${{ inputs['enable-cachix-push'] == 'true' && inputs['op-service-account-token'] != '' }}
-      uses: 1password/load-secrets-action/configure@581a835fb51b8e7ec56b71cf2ffddd7e68bb25e0
+      uses: 1password/load-secrets-action/configure@e544b780808654ba8ceba5fb2fe2897103d92ff4
       with:
         service-account-token: ${{ inputs['op-service-account-token'] }}
 
     - name: Load Cachix auth token
       if: ${{ inputs['enable-cachix-push'] == 'true' && inputs['op-service-account-token'] != '' }}
-      uses: 1password/load-secrets-action@581a835fb51b8e7ec56b71cf2ffddd7e68bb25e0
+      uses: 1password/load-secrets-action@e544b780808654ba8ceba5fb2fe2897103d92ff4
       with:
         export-env: true
       env:
