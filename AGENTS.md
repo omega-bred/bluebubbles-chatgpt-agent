@@ -47,6 +47,49 @@ Google Calendar:
 BlueChat / BlueBubbles:
 - Outbound BlueChat messaging requires `BLUEBUBBLES_PASSWORD` and a reachable BlueBubbles server base URL.
 
+Live BlueChat end-to-end validation:
+- Run live message canaries only after the intended image is built, the manifest commit is applied by
+  Flux, and the `bluebubbles-chatgpt-agent` pod in namespace `bluebubbles-chatgpt-agent` is ready on
+  the expected image tag and digest. The production Kubernetes context is `bdawg-3646`.
+- The personal test BlueBubbles server is `http://192.168.1.191:1234`, its 1Password item is
+  `bluebubbles-3646-personal` in the `Personal` vault, and the BlueChat agent target is
+  `+14158674956`. Never print the password or commit it.
+- To avoid repeated 1Password prompts during a bounded test, create a unique directory under
+  `/private/tmp`, write `op://Personal/bluebubbles-3646-personal/password` to a new file inside it
+  with `op read --no-newline --out-file ... --file-mode 0600`, and delete the file and directory at
+  the end. Do not put the secret in a command literal, log it, or print raw API responses that may
+  contain unrelated chat history.
+- Authenticate calls with the BlueBubbles `password` query parameter. Start with
+  `GET /api/v1/ping`, then use `POST /api/v1/chat/query` with `participants` to discover the chat
+  instead of guessing its GUID. The direct chat for the target above is currently
+  `any;-;+14158674956`; URL-encode chat GUIDs when putting them in paths.
+- This personal server does not have the Private API enabled. Send with
+  `POST /api/v1/message/text` using a JSON body containing the discovered `chatGuid`, a fresh UUID
+  `tempGuid`, the canary text, and `method: "apple-script"`. AppleScript sends can be slow; allow at
+  least 90 seconds and do not retry merely because the HTTP response is delayed. Before retrying,
+  query history for the `tempGuid` or unique canary marker to prevent duplicate messages.
+- Receive replies with `GET /api/v1/chat/{chatGuid}/message?password=...&with=handle&limit=...&sort=DESC`.
+  On BlueBubbles 1.9.9, prefer client-side filtering by the sent message's millisecond
+  `dateCreated` and `isFromMe == false`; do not rely only on the endpoint's `after` parameter.
+  Return only the scoped canary messages from `jq`, never the complete conversation payload.
+- A useful tool-search suite is: a control asking for exactly `CONTROL_OK` with no tools; a
+  read-only website-account/model-access request that should call `toolSearchTool` and then
+  `get_website_account_link_status`; and a usage-limit request that should call `toolSearchTool`
+  and then `get_usage_limits`. Use a unique `E2E-...` marker in every prompt and send one canary at
+  a time.
+- Correlate each marker and message GUID with timestamped production pod logs. The control should
+  have no `AgentToolActivityRunner` invocation between inbound processing and its model response.
+  Tool canaries should show `Invoking tool toolSearchTool`, the expected `LuceneToolIndex` result,
+  and then `Invoking tool <discovered-tool>`. Record the sent/reply `dateCreated` delta plus the
+  search invocation-to-next-model delta, verify exactly one reply per case, and check pod readiness
+  and restart count afterward.
+- The production BlueBubbles send request may time out after 60 seconds even though the recipient
+  received the reply promptly; `BBHttpClientWrapper` should confirm the same `tempGuid` in chat
+  history around 65 seconds and avoid a duplicate retry. Report that delivery-ack timeout (and any
+  late Cadence `Workflow execution already completed` noise) separately from tool-search latency.
+  Nominatim reverse-lookup 500s are also ambient location-enrichment failures, not tool-search
+  failures.
+
 Help/contact and Cap:
 - The public help/contact form lives at `/help` and `/contact`, uses generated OpenAPI client calls
   to `/api/v1/contact/get.contactConfig` and `/api/v1/contact/create.contactMessages`, and stores
