@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Extend `get_group_catchup` with optional, authorized natural-language question answering over recent or explicitly requested iMessage group history without exposing raw transcripts to the main conversation model.
+**Goal:** Extend `get_group_catchup` with optional, authorized natural-language question answering over recent or explicitly requested iMessage group history from a one-to-one chat or the current group itself, without exposing raw transcripts to the main conversation model.
 
 **Architecture:** Preserve the existing summary-only catch-up path. Question mode resolves one authorized group, asks a cost-guarded model for literal search terms, uses a private time-bounded BlueBubbles substring search plus neighboring context, falls back to bounded chronological map/reduce, and returns only a structured synthesized answer with honest coverage metadata.
 
@@ -12,7 +12,8 @@
 
 - The default question-answering range is the preceding 24 hours.
 - Explicit `from`, `to`, or `lookback_hours` requests may search beyond 30 days; available iMessage history, verified membership, a 90-second deadline, 100 history pages, five model batches, and 300,000 aggregate transcript characters remain hard operational boundaries.
-- Question mode is available only from a one-to-one chat with a canonical account and one unambiguous, memory-enabled group.
+- Question mode requires a canonical account and a memory-enabled group; one-to-one chats resolve one authorized group, while a group chat is restricted to its server-derived current group.
+- In group context, ignore the request's model-supplied `group` field and never resolve or query another conversation.
 - Every candidate message must fall inside a verified membership interval for the requesting account.
 - Never accept model-supplied chat GUIDs, conversation IDs, account IDs, or sender identifiers.
 - Raw questions, search terms, messages, message GUIDs, phone numbers, and email addresses must not appear in application logs, metrics, Mem0, application persistence, or the tool result.
@@ -40,6 +41,7 @@
 - Modify `src/main/java/io/breland/bbagent/server/agent/memory/ConversationMemoryStore.java`: read verified membership intervals for one account and conversation.
 - Modify `src/main/java/io/breland/bbagent/server/agent/memory/ConversationDigestService.java`: preserve summary mode and delegate question mode for one selected group.
 - Modify `src/main/java/io/breland/bbagent/server/agent/tools/memory/GetGroupCatchupAgentTool.java`: accept `question`, remove the 31-day product clamp, and serialize `question_answer`.
+- Modify `src/main/java/io/breland/bbagent/server/agent/tools/AgentToolRegistry.java`: make `get_group_catchup` available in both direct and group contexts while keeping proactive catch-up configuration direct-only.
 - Modify `src/main/java/io/breland/bbagent/server/agent/AgentPromptBuilder.java`: direct precise group questions to `get_group_catchup` with the user's exact question and prohibit semantic-memory substitution.
 - Modify `src/main/java/io/breland/bbagent/server/agent/transport/bb/BBHttpClientWrapper.java`: add authorized-chat, literal-term, explicit-time history search while retaining the existing current-chat helper.
 - Modify `src/main/java/io/breland/bbagent/server/metrics/OperationalMetricsService.java`: record QA count, latency, source pages, model batches, and evidence counts with low-cardinality tags.
@@ -797,14 +799,16 @@ git commit -m "feat: answer authorized group questions"
 - Modify: `src/main/java/io/breland/bbagent/server/agent/memory/ConversationMemoryModels.java:185-205`
 - Modify: `src/main/java/io/breland/bbagent/server/agent/memory/ConversationDigestService.java:103-191,234-292`
 - Modify: `src/main/java/io/breland/bbagent/server/agent/tools/memory/GetGroupCatchupAgentTool.java:20-102`
+- Modify: `src/main/java/io/breland/bbagent/server/agent/tools/AgentToolRegistry.java:79-86,330-347`
 - Modify: `src/main/java/io/breland/bbagent/server/agent/AgentPromptBuilder.java:300-380`
 - Modify: `src/test/java/io/breland/bbagent/server/agent/memory/ConversationDigestServiceTest.java`
 - Modify: `src/test/java/io/breland/bbagent/server/agent/tools/memory/GetGroupCatchupAgentToolTest.java`
+- Modify: `src/test/java/io/breland/bbagent/server/agent/tools/AgentToolRegistryTest.java`
 - Modify: `src/test/java/io/breland/bbagent/server/agent/BBMessageAgentTest.java`
 
 **Interfaces:**
-- Consumes: optional `GetGroupCatchupRequest.question` and the existing group/range fields.
-- Produces: existing catch-up JSON plus optional `question_answer`; summary-only calls do not invoke QA.
+- Consumes: optional `GetGroupCatchupRequest.question`, existing group/range fields, and the server-derived current transport/chat GUID in group context.
+- Produces: existing catch-up JSON plus optional `question_answer`; summary-only calls do not invoke QA; group calls can read only their current conversation.
 
 - [ ] **Step 1: Write failing compatibility and question-mode tests**
 
@@ -828,9 +832,21 @@ void questionModeRequiresOneGroupAndSerializesOnlySynthesizedAnswer() {
   assertThat(response).contains("question_answer", "only reported", "coverage_status");
   assertThat(response).doesNotContain("message_guid", "Wordle 1,877 4/6+");
 }
+
+@Test
+void groupContextIgnoresRequestedGroupAndQueriesOnlyItself() {
+  when(context.message()).thenReturn(groupMessage("current-group-guid"));
+
+  invokeTool("{\"group\":\"Some Other Group\",\"question\":\"Who is winning?\"}");
+
+  verify(digestService).catchUpForChat(
+      "account-1", IncomingMessage.TRANSPORT_BLUEBUBBLES, "current-group-guid",
+      any(Instant.class), any(Instant.class), eq("Who is winning?"));
+  verify(digestService, never()).catchUp(eq("account-1"), eq("Some Other Group"), any(), any(), any());
+}
 ```
 
-Add a prompt assertion that precise “who/what/which/when” questions about another group call `get_group_catchup` with the exact question and that scoped insufficient evidence must not be replaced by `memory_get` results.
+Add registry assertions that `get_group_catchup` is available in direct and group chats while `configure_group_catchup` remains direct-only. Add prompt assertions that precise “who/what/which/when” questions about another group from a one-to-one chat call `get_group_catchup` with the exact question, group-context calls use it only for the current group, and scoped insufficient evidence must not be replaced by `memory_get` results.
 
 - [ ] **Step 2: Run digest, tool, and agent tests and verify failure**
 
@@ -867,6 +883,28 @@ public record CatchupGroup(
 
 Overload `catchUp` with `@Nullable String question`. When question is nonblank, return disambiguation if no group hint maps to exactly one authorized group; call `questionAnsweringService.answer` only for that group; attach the result to the existing catch-up group. Keep the old four-argument method delegating with null.
 
+Add a current-chat entry point that resolves the conversation and membership server-side:
+
+```java
+public CatchupResult catchUpForChat(
+    String accountId,
+    String transport,
+    String chatGuid,
+    Instant from,
+    Instant to,
+    @Nullable String question) {
+  AuthorizedGroup group =
+      store.findCurrentlyAuthorizedGroup(accountId, transport, chatGuid, clock.instant()).orElse(null);
+  if (group == null) {
+    return new CatchupResult(List.of(), List.of());
+  }
+  return new CatchupResult(
+      List.of(buildCatchupGroup(accountId, group, from, to, question)), List.of());
+}
+```
+
+`catchUpForChat` must require an enabled group and active requester membership through the existing store query. It never accepts a group hint or returns disambiguation options.
+
 - [ ] **Step 5: Extend the tool request and remove the product lookback clamp**
 
 ```java
@@ -880,12 +918,20 @@ public record GetGroupCatchupRequest(
 
 Default to 24 hours. Accept any positive integer lookback that can be subtracted from `Instant`; reject zero, negative, inverted, overflowed, or unparsable ranges as `invalid catch-up range`. Serialize lower-case enum wire values, evidence count, retrieval mode, coverage state, interval, coverage watermark, and optional partial reason. Never serialize evidence GUIDs or messages.
 
+In the tool handler, direct messages call question-aware `catchUp(accountId, request.group(), ...)`. Group messages call `catchUpForChat(accountId, message.transportOrDefault(), IncomingMessage.chatGuidOrNull(message), ...)` and never pass `request.group()`. Reject a missing current chat GUID before service invocation. Remove `GetGroupCatchupAgentTool.TOOL_NAME` from `DIRECT_ONLY_TOOLS`; leave `ConfigureGroupCatchupAgentTool.TOOL_NAME` there.
+
 - [ ] **Step 6: Update tool and developer-prompt guidance**
 
 Add to both iMessage and LXMF one-to-one instructions:
 
 ```text
 For precise questions about who, what, which, when, counts, scores, or comparisons in an authorized group, call get_group_catchup with the user's exact question. Treat question_answer coverage and insufficient_evidence as authoritative for that requested range; do not substitute unrelated semantic memory as current group evidence.
+```
+
+Add to the iMessage group instruction:
+
+```text
+In a group chat, use get_group_catchup for precise questions about the current group's own history. The server always scopes this tool to the current group; do not use it to ask about another conversation.
 ```
 
 - [ ] **Step 7: Run catch-up, tool, registry, and agent tests**
@@ -902,7 +948,7 @@ Expected: summary compatibility, question serialization, 24-hour default, deep e
 
 ```bash
 CI=true nix develop --command ./gradlew spotlessApply
-git add src/main/java/io/breland/bbagent/server/agent/memory/ConversationMemoryModels.java src/main/java/io/breland/bbagent/server/agent/memory/ConversationDigestService.java src/main/java/io/breland/bbagent/server/agent/tools/memory/GetGroupCatchupAgentTool.java src/main/java/io/breland/bbagent/server/agent/AgentPromptBuilder.java src/test/java/io/breland/bbagent/server/agent/memory/ConversationDigestServiceTest.java src/test/java/io/breland/bbagent/server/agent/tools/memory/GetGroupCatchupAgentToolTest.java src/test/java/io/breland/bbagent/server/agent/BBMessageAgentTest.java
+git add src/main/java/io/breland/bbagent/server/agent/memory/ConversationMemoryModels.java src/main/java/io/breland/bbagent/server/agent/memory/ConversationDigestService.java src/main/java/io/breland/bbagent/server/agent/tools/memory/GetGroupCatchupAgentTool.java src/main/java/io/breland/bbagent/server/agent/tools/AgentToolRegistry.java src/main/java/io/breland/bbagent/server/agent/AgentPromptBuilder.java src/test/java/io/breland/bbagent/server/agent/memory/ConversationDigestServiceTest.java src/test/java/io/breland/bbagent/server/agent/tools/memory/GetGroupCatchupAgentToolTest.java src/test/java/io/breland/bbagent/server/agent/tools/AgentToolRegistryTest.java src/test/java/io/breland/bbagent/server/agent/BBMessageAgentTest.java
 git commit -m "feat: add questions to group catchups"
 ```
 
@@ -1128,9 +1174,11 @@ Use the deployed application and the enabled Wordling Wonders group only:
 
 1. Post a new unique Wordle-style score message in the group.
 2. Ask from the authorized one-to-one chat: “Who is winning the current Wordle in Wordling Wonders?”
-3. Verify the answer includes the supported score and a safe participant label, says “only reported” when only one participant posted, and does not mention historical league standings.
-4. Verify `coverage_status`, range, and evidence count are present in the tool trace while raw group text and message GUIDs are absent.
-5. Inspect bounded application logs and Grafana QA panels for success, latency, model, retrieval mode, and coverage without sensitive values.
-6. Confirm the application pod is ready with zero new restarts.
+3. Ask inside Wordling Wonders: “Who is winning the current Wordle here?”
+4. From inside Wordling Wonders, issue a tool test that supplies a different `group` value and verify the call still resolves only Wordling Wonders.
+5. Verify both answers include the supported score and a safe participant label, say “only reported” when only one participant posted, and do not mention historical league standings.
+6. Verify `coverage_status`, range, and evidence count are present in the tool trace while raw group text and message GUIDs are absent.
+7. Inspect bounded application logs and Grafana QA panels for success, latency, model, retrieval mode, and coverage without sensitive values.
+8. Confirm the application pod is ready with zero new restarts.
 
 Expected: a specific, evidence-backed answer arrives from the exact-search path, privacy invariants hold, and production health remains green.

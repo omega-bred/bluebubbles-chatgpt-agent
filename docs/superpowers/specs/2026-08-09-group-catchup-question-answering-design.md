@@ -2,7 +2,7 @@
 
 ## Goal
 
-Extend `get_group_catchup` so an authorized user in a one-to-one chat can ask a precise natural-language question about an enabled group conversation and receive an evidence-backed, server-generated answer. The default range is the preceding 24 hours. Explicit requests may search older iMessage history without the current 30-day search-tool limit, subject to confirmed membership, source availability, and honest coverage reporting.
+Extend `get_group_catchup` so an authorized user can ask a precise natural-language question about an enabled group conversation from either a one-to-one chat or that group itself and receive an evidence-backed, server-generated answer. A group conversation may query only itself; cross-group retrieval remains available only from an authorized one-to-one chat. The default range is the preceding 24 hours. Explicit requests may search older iMessage history without the current 30-day search-tool limit, subject to confirmed membership, source availability, and honest coverage reporting.
 
 Raw group messages never enter the main conversation model's context or the tool result. The backend submits only the bounded answering transcript transiently to the configured group-memory model provider, then returns a synthesized answer and coverage metadata—never message excerpts, message GUIDs, phone numbers, email addresses, or a transcript.
 
@@ -21,6 +21,7 @@ This change will:
 - Add an optional `question` field to `GetGroupCatchupRequest`.
 - Preserve the current catch-up response when `question` is absent or blank.
 - Search an explicitly resolved, memory-enabled group when `question` is present.
+- Allow an enabled group to query its own history using the server-derived current chat identity.
 - Convert the natural-language question into bounded literal substring terms.
 - Use exact BlueBubbles search as the primary candidate finder for iMessage history.
 - Fetch neighboring messages around matches for conversational context.
@@ -48,7 +49,9 @@ String question
 
 The existing `group`, `from`, `to`, and `lookback_hours` fields remain. If no range is supplied, the service searches the preceding 24 hours. Explicit `from` and `to` values take precedence over `lookback_hours`. Explicit historical ranges are not clipped to 31 days; they are clipped only by valid `Instant` arithmetic, confirmed membership intervals, available iMessage history, and operational request limits.
 
-Question mode requires one unambiguous group. If `group` is absent and more than one authorized group is available, or if the supplied name matches multiple groups, the tool returns the existing disambiguation options without searching any message text. Summary-only mode retains its current multi-group behavior.
+From a one-to-one chat, question mode requires one unambiguous group. If `group` is absent and more than one authorized group is available, or if the supplied name matches multiple groups, the tool returns the existing disambiguation options without searching any message text. Summary-only one-to-one mode retains its current multi-group behavior.
+
+From a group chat, the server derives transport and chat GUID exclusively from `ToolContext.message`. The request's `group` field is ignored, and both summary and question modes are scoped to the current group. The tool must never use a model-supplied group hint to resolve another conversation from a group context.
 
 Each selected group adds a `question_answer` object:
 
@@ -72,7 +75,7 @@ The tool description and agent developer prompt will instruct the main model to 
 
 ## Authorization and History Boundary
 
-Question answering remains available only from a one-to-one conversation with a resolved canonical `agent_accounts.account_id`. The server resolves group hints only among memory-enabled groups authorized for that account.
+Question answering requires a resolved canonical `agent_accounts.account_id`. In a one-to-one context, the server resolves group hints only among memory-enabled groups authorized for that account. In a group context, the server resolves only the incoming message's transport and chat GUID, then verifies that the current group is memory-enabled and the requesting sender's canonical account has an active membership interval. A group context can never select or query another group.
 
 Every candidate message must fall within an active `agent_conversation_memberships` interval for the requesting account. A broad requested range is intersected with confirmed membership intervals before retrieval, and messages outside those intervals are discarded before any model call. Current membership does not authorize messages from an unverified period before the user joined.
 
@@ -178,6 +181,7 @@ Unit and focused integration tests will prove:
 - Blank `question` preserves the exact existing catch-up path and response.
 - Question mode defaults to 24 hours and honors explicit older `from`, `to`, and `lookback_hours` ranges without a 31-day product limit.
 - Question mode requires one unambiguous authorized group.
+- Group-context calls derive the current group from `ToolContext`, ignore model-supplied group hints, and cannot query any other conversation.
 - Requested ranges and every candidate message are clipped to confirmed membership intervals.
 - Natural language produces bounded literal terms, and `%`, `_`, backslashes, long terms, and duplicate terms cannot alter the fixed query.
 - Exact hits are deduplicated and receive bounded neighboring context.
@@ -193,7 +197,7 @@ Unit and focused integration tests will prove:
 - Tool responses, logs, and metrics never contain raw messages, search terms, group GUIDs, account IDs, phone numbers, or email addresses.
 - Existing catch-up, proactive delivery, digest reconciliation, and memory extraction tests remain green.
 
-After deployment, run a scoped production E2E in an enabled test group: post a fresh score, ask from the authorized one-to-one chat who is currently leading, verify the answer includes the supported score and participant label, and verify logs expose no raw group content. The E2E must also confirm that the answer reports only posted results and does not substitute historical semantic memory.
+After deployment, run a scoped production E2E in an enabled test group: post a fresh score, ask both from the authorized one-to-one chat and from inside the group who is currently leading, verify both answers include the supported score and participant label, and verify logs expose no raw group content. Also attempt to name a different group from the group-context call and verify the server still searches only the current group. The E2E must confirm that answers report only posted results and do not substitute historical semantic memory.
 
 ## Success Criteria
 
@@ -201,6 +205,7 @@ The feature is ready when:
 
 - The existing broad catch-up behavior is unchanged without `question`.
 - A precise question about a recent enabled-group message receives a specific, evidence-backed answer.
+- The same precise question works from inside the enabled group while remaining strictly scoped to that current group.
 - Explicit historical ranges can search available iMessage history beyond 30 days when membership and operational limits permit.
 - Raw messages never enter the main agent context, tool result, application logs, metrics, Mem0, or application persistence; only bounded candidates are transmitted transiently to the configured QA model provider.
 - Unsupported conclusions return insufficient or partial states rather than guesses.
