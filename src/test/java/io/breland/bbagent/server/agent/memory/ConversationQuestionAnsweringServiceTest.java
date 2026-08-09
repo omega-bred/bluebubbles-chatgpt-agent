@@ -561,6 +561,33 @@ class ConversationQuestionAnsweringServiceTest {
   }
 
   @Test
+  void lateChronologicalProcessingFailureRecordsAccumulatedWorkOnce() {
+    QuestionMessage completed =
+        message("completed", "participant ending 0199", "Wordle 1,877 4/6", 1);
+    when(retriever.retrieveExact(any(), eq(WORDLE_PLAN))).thenReturn(completeExact(List.of()));
+    when(retriever.retrieveChronological(any()))
+        .thenThrow(
+            new ConversationQuestionHistoryRetriever.PartialRetrievalException(
+                new RetrievalResult(
+                    List.of(completed),
+                    RetrievalMode.CHRONOLOGICAL,
+                    CoverageStatus.PARTIAL,
+                    completed.timestamp(),
+                    "source_unavailable",
+                    2),
+                new IllegalStateException("late processing failure")));
+
+    GroupQuestionAnswer result = service.answer(ACCOUNT, GROUP, QUESTION, FROM, TO);
+
+    assertThat(result.status()).isEqualTo(AnswerStatus.UNAVAILABLE);
+    assertThat(totalQuestionAnswers()).isEqualTo(1.0);
+    assertThat(registry.get("bbagent.memory.question.answer.message.count").counter().count())
+        .isEqualTo(1.0);
+    assertThat(registry.get("bbagent.memory.question.answer.page.count").counter().count())
+        .isEqualTo(3.0);
+  }
+
+  @Test
   void unsupportedEvidenceIsNotReportedAndDoesNotCauseAnotherFallbackLoop() {
     QuestionMessage exact = message("exact", "participant ending 0199", "Wordle 1,877 4/6", 1);
     QuestionMessage chronological =

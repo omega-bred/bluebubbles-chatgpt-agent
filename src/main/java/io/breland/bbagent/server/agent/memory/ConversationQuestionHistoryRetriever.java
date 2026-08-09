@@ -201,12 +201,19 @@ public class ConversationQuestionHistoryRetriever {
               journalFailure);
         }
       }
-      for (ApiV1ChatChatGuidMessageGet200ResponseDataInner raw : page) {
-        Optional<QuestionMessage> mapped = mapAuthorized(raw, request, bounds);
-        if (mapped.isPresent() && !candidates.add(mapped.get())) {
-          budget.limit(HISTORY_LIMIT);
-          break;
+      try {
+        for (ApiV1ChatChatGuidMessageGet200ResponseDataInner raw : page) {
+          Optional<QuestionMessage> mapped = mapAuthorized(raw, request, bounds);
+          if (mapped.isPresent() && !candidates.add(mapped.get())) {
+            budget.limit(HISTORY_LIMIT);
+            break;
+          }
         }
+      } catch (RuntimeException processingFailure) {
+        budget.limit(SOURCE_UNAVAILABLE);
+        throw new PartialRetrievalException(
+            result(candidates.values(), RetrievalMode.CHRONOLOGICAL, bounds, budget, null),
+            processingFailure);
       }
       if (budget.partialReason() != null || page.size() < pageSize) {
         break;

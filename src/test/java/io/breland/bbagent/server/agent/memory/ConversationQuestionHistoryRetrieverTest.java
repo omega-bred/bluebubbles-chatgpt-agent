@@ -392,6 +392,38 @@ class ConversationQuestionHistoryRetrieverTest {
   }
 
   @Test
+  void lateChronologicalProcessingFailureCarriesCompletedPagesAndMessages() {
+    ApiV1ChatChatGuidMessageGet200ResponseDataInner first = raw("first", "available", at("11:00"));
+    when(bb.getMessagesInChat(GUID, FROM, TO, 0, 500, "ASC"))
+        .thenReturn(Collections.nCopies(500, first));
+    when(bb.getMessagesInChat(GUID, FROM, TO, 500, 500, "ASC"))
+        .thenReturn(List.of(raw("failing", "unmappable", at("12:00"), "+15555550999")));
+    when(accountResolver.resolve(any(IncomingMessage.class)))
+        .thenAnswer(
+            invocation -> {
+              IncomingMessage incoming = invocation.getArgument(0);
+              if ("+15555550999".equals(incoming.sender())) {
+                throw new IllegalStateException("mapping failed");
+              }
+              return Optional.empty();
+            });
+
+    assertThatThrownBy(() -> retriever.retrieveChronological(request(activeFrom("10:00"))))
+        .isInstanceOf(ConversationQuestionHistoryRetriever.PartialRetrievalException.class)
+        .satisfies(
+            failure -> {
+              ConversationQuestionHistoryRetriever.PartialRetrievalException partialFailure =
+                  (ConversationQuestionHistoryRetriever.PartialRetrievalException) failure;
+              assertThat(partialFailure.partialResult().messages())
+                  .extracting(QuestionMessage::messageGuid)
+                  .containsExactly("first");
+              assertThat(partialFailure.partialResult().pageCount()).isEqualTo(2);
+              assertThat(partialFailure.partialResult().partialReason())
+                  .isEqualTo("source_unavailable");
+            });
+  }
+
+  @Test
   void checksAdvancingDeadlineBeforeEveryNeighborCall() {
     retriever =
         retriever(
