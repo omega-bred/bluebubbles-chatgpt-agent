@@ -144,7 +144,7 @@ public class ConversationQuestionAnsweringService {
         result.retrievalMode().name(),
         result.coverageStatus().name(),
         result.model(),
-        work.messageCount,
+        work.messageCount(),
         work.pageCount,
         budget.modelBatches,
         success,
@@ -193,6 +193,9 @@ public class ConversationQuestionAnsweringService {
             return finalAnswer(exactSynthesis, exact, RetrievalMode.EXACT_SEARCH, from, to, null);
           }
         }
+      } catch (ConversationQuestionHistoryRetriever.PartialRetrievalException partialFailure) {
+        work.observe(partialFailure.partialResult());
+        exactSynthesis = Synthesis.unavailable(from, SOURCE_UNAVAILABLE);
       } catch (RuntimeException ignored) {
         exactSynthesis = Synthesis.unavailable(from, SOURCE_UNAVAILABLE);
       }
@@ -208,6 +211,10 @@ public class ConversationQuestionAnsweringService {
       try {
         chronological = retriever.retrieveChronological(request);
         work.observe(chronological);
+      } catch (ConversationQuestionHistoryRetriever.PartialRetrievalException partialFailure) {
+        work.observe(partialFailure.partialResult());
+        return supportedBackupOrUnavailable(
+            exactSynthesis, exact, fallbackMode, from, to, SOURCE_UNAVAILABLE);
       } catch (RuntimeException ignored) {
         return supportedBackupOrUnavailable(
             exactSynthesis, exact, fallbackMode, from, to, SOURCE_UNAVAILABLE);
@@ -671,12 +678,16 @@ public class ConversationQuestionAnsweringService {
   }
 
   private static final class QuestionAnswerWork {
-    private long messageCount;
+    private final Set<String> messageGuids = new LinkedHashSet<>();
     private long pageCount;
 
     private void observe(RetrievalResult retrieval) {
-      messageCount += retrieval.messages().size();
+      retrieval.messages().stream().map(QuestionMessage::messageGuid).forEach(messageGuids::add);
       pageCount += retrieval.pageCount();
+    }
+
+    private long messageCount() {
+      return messageGuids.size();
     }
   }
 

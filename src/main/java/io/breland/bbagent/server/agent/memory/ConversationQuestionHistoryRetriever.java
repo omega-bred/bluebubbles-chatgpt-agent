@@ -90,8 +90,8 @@ public class ConversationQuestionHistoryRetriever {
     if (maxHistoryPages <= 0 || maxHistoryPages > MAX_SOURCE_CALLS) {
       throw new IllegalArgumentException("max history pages must be between 1 and 100");
     }
-    if (neighborMessageCount < 0) {
-      throw new IllegalArgumentException("neighbor message count must not be negative");
+    if (neighborMessageCount <= 0) {
+      throw new IllegalArgumentException("neighbor message count must be positive");
     }
     if (maxAggregateCharacters <= 0) {
       throw new IllegalArgumentException("max aggregate characters must be positive");
@@ -116,47 +116,55 @@ public class ConversationQuestionHistoryRetriever {
     CandidateAccumulator candidates = new CandidateAccumulator();
     CallBudget budget = new CallBudget();
     Set<String> contextualizedHits = new HashSet<>();
-    boolean stop = false;
-    for (String term : plan.terms()) {
-      for (int offset = 0; !stop; offset += pageSize) {
-        if (!budget.reserve(request.deadline())) {
-          stop = true;
-          break;
-        }
-        List<Message> page =
-            Objects.requireNonNull(
-                bb.searchConversationHistory(
-                    request.conversation().externalConversationId(),
-                    term,
-                    bounds.from(),
-                    bounds.to(),
-                    pageSize,
-                    offset),
-                "history search returned no page");
-        for (Message raw : page) {
-          Optional<QuestionMessage> mapped = mapAuthorized(raw, request, bounds);
-          if (mapped.isEmpty()) {
-            continue;
-          }
-          QuestionMessage hit = mapped.get();
-          if (!candidates.add(hit)) {
-            budget.limit(HISTORY_LIMIT);
+    try {
+      boolean stop = false;
+      for (String term : plan.terms()) {
+        for (int offset = 0; !stop; offset += pageSize) {
+          if (!budget.reserve(request.deadline())) {
             stop = true;
             break;
           }
-          if (contextualizedHits.add(hit.messageGuid())
-              && !addNeighbors(hit, request, bounds, candidates, budget)) {
-            stop = true;
+          List<Message> page =
+              Objects.requireNonNull(
+                  bb.searchConversationHistory(
+                      request.conversation().externalConversationId(),
+                      term,
+                      bounds.from(),
+                      bounds.to(),
+                      pageSize,
+                      offset),
+                  "history search returned no page");
+          for (Message raw : page) {
+            Optional<QuestionMessage> mapped = mapAuthorized(raw, request, bounds);
+            if (mapped.isEmpty()) {
+              continue;
+            }
+            QuestionMessage hit = mapped.get();
+            if (!candidates.add(hit)) {
+              budget.limit(HISTORY_LIMIT);
+              stop = true;
+              break;
+            }
+            if (contextualizedHits.add(hit.messageGuid())
+                && !addNeighbors(hit, request, bounds, candidates, budget)) {
+              stop = true;
+              break;
+            }
+          }
+          if (page.size() < pageSize) {
             break;
           }
         }
-        if (page.size() < pageSize) {
+        if (stop) {
           break;
         }
       }
-      if (stop) {
-        break;
-      }
+    } catch (RuntimeException sourceFailure) {
+      budget.limit(SOURCE_UNAVAILABLE);
+      throw new PartialRetrievalException(
+          result(
+              candidates.values(), RetrievalMode.EXACT_SEARCH, bounds, budget, plan.senderHint()),
+          sourceFailure);
     }
     return result(
         candidates.values(), RetrievalMode.EXACT_SEARCH, bounds, budget, plan.senderHint());
@@ -184,7 +192,14 @@ public class ConversationQuestionHistoryRetriever {
                     "ASC"),
                 "chronological history returned no page");
       } catch (RuntimeException sourceFailure) {
-        return journalFallback(request, bounds, candidates, budget);
+        try {
+          return journalFallback(request, bounds, candidates, budget);
+        } catch (RuntimeException journalFailure) {
+          budget.limit(SOURCE_UNAVAILABLE);
+          throw new PartialRetrievalException(
+              result(candidates.values(), RetrievalMode.CHRONOLOGICAL, bounds, budget, null),
+              journalFailure);
+        }
       }
       for (ApiV1ChatChatGuidMessageGet200ResponseDataInner raw : page) {
         Optional<QuestionMessage> mapped = mapAuthorized(raw, request, bounds);
@@ -240,9 +255,6 @@ public class ConversationQuestionHistoryRetriever {
       Bounds bounds,
       CandidateAccumulator candidates,
       CallBudget budget) {
-    if (neighborMessageCount == 0) {
-      return true;
-    }
     if (bounds.from().isBefore(hit.timestamp())) {
       if (!addNeighborPage(
           request, bounds, candidates, budget, bounds.from(), hit.timestamp(), "DESC")) {
@@ -418,6 +430,19 @@ public class ConversationQuestionHistoryRetriever {
   }
 
   private record Bounds(Instant from, Instant to) {}
+
+  static final class PartialRetrievalException extends RuntimeException {
+    private final RetrievalResult partialResult;
+
+    PartialRetrievalException(RetrievalResult partialResult, RuntimeException cause) {
+      super("question history retrieval failed", cause);
+      this.partialResult = Objects.requireNonNull(partialResult, "partialResult");
+    }
+
+    RetrievalResult partialResult() {
+      return partialResult;
+    }
+  }
 
   private final class CallBudget {
     private int pages;

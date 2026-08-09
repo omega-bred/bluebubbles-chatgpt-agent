@@ -516,6 +516,51 @@ class ConversationQuestionAnsweringServiceTest {
   }
 
   @Test
+  void lateExactFailureRecordsPartialWorkOnceWithoutFallbackMessageDuplication() {
+    QuestionMessage duplicate =
+        message("duplicate", "participant ending 0199", "Wordle 1,877 4/6", 1);
+    RetrievalResult partialExact =
+        new RetrievalResult(
+            List.of(duplicate),
+            RetrievalMode.EXACT_SEARCH,
+            CoverageStatus.PARTIAL,
+            duplicate.timestamp(),
+            "source_unavailable",
+            4);
+    when(retriever.retrieveExact(any(), eq(WORDLE_PLAN)))
+        .thenThrow(
+            new ConversationQuestionHistoryRetriever.PartialRetrievalException(
+                partialExact, new IllegalStateException("late source failure")));
+    when(retriever.retrieveChronological(any()))
+        .thenReturn(
+            new RetrievalResult(
+                List.of(duplicate),
+                RetrievalMode.CHRONOLOGICAL,
+                CoverageStatus.PARTIAL,
+                duplicate.timestamp(),
+                "source_unavailable",
+                2));
+    when(model.answer(QUESTION, List.of(duplicate), DEADLINE))
+        .thenReturn(
+            routed(
+                new ModelAnswer(
+                    AnswerStatus.UNAVAILABLE,
+                    "The answer provider is unavailable.",
+                    Confidence.LOW,
+                    List.of(),
+                    false)));
+
+    GroupQuestionAnswer result = service.answer(ACCOUNT, GROUP, QUESTION, FROM, TO);
+
+    assertThat(result.status()).isEqualTo(AnswerStatus.UNAVAILABLE);
+    assertThat(totalQuestionAnswers()).isEqualTo(1.0);
+    assertThat(registry.get("bbagent.memory.question.answer.message.count").counter().count())
+        .isEqualTo(1.0);
+    assertThat(registry.get("bbagent.memory.question.answer.page.count").counter().count())
+        .isEqualTo(6.0);
+  }
+
+  @Test
   void unsupportedEvidenceIsNotReportedAndDoesNotCauseAnotherFallbackLoop() {
     QuestionMessage exact = message("exact", "participant ending 0199", "Wordle 1,877 4/6", 1);
     QuestionMessage chronological =

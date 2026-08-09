@@ -2,6 +2,7 @@ package io.breland.bbagent.server.agent.memory;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatIllegalArgumentException;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -136,13 +137,15 @@ class ConversationQuestionHistoryRetrieverTest {
 
   @Test
   void enforcesAggregateCharacterAndFiveThousandCandidateLimits() {
-    retriever = retriever(5, 500, 100, 0, 5, NOW);
+    retriever = retriever(5, 500, 100, 1, 5, NOW);
     when(bb.searchConversationHistory(GUID, "Wordle", FROM, TO, 500, 0))
         .thenReturn(
             List.of(
                 searchMessage(HIT_GUID, "12345", at("12:00")),
                 searchMessage(
                     UUID.fromString("00000000-0000-0000-0000-000000000102"), "6", at("12:01"))));
+    when(bb.getMessagesInChat(anyString(), any(), any(), anyInt(), anyInt(), anyString()))
+        .thenReturn(List.of());
 
     RetrievalResult characterLimited =
         retriever.retrieveExact(request(activeFrom("10:00")), plan("Wordle"));
@@ -150,19 +153,18 @@ class ConversationQuestionHistoryRetrieverTest {
     assertThat(characterLimited.messages()).hasSize(1);
     assertThat(characterLimited.partialReason()).isEqualTo("history_limit");
 
-    retriever = retriever(5, 500, 100, 0, 300_000, NOW);
-    for (int page = 0; page < 11; page++) {
-      int offset = page * 500;
-      when(bb.searchConversationHistory(GUID, "scores", FROM, TO, 500, offset))
-          .thenReturn(searchPage(offset, 500));
-    }
+    retriever = retriever(5, 500, 100, 1, 300_000, NOW);
+    Message hit = searchMessage(HIT_GUID, "score", at("12:00"));
+    when(bb.searchConversationHistory(GUID, "scores", FROM, TO, 500, 0)).thenReturn(List.of(hit));
+    when(bb.getMessagesInChat(GUID, FROM, at("12:00"), 0, 2, "DESC"))
+        .thenReturn(historyPage(5_000));
 
     RetrievalResult candidateLimited =
         retriever.retrieveExact(request(activeFrom("10:00")), plan("scores"));
 
     assertThat(candidateLimited.messages()).hasSize(5_000);
     assertThat(candidateLimited.partialReason()).isEqualTo("history_limit");
-    assertThat(candidateLimited.pageCount()).isEqualTo(11);
+    assertThat(candidateLimited.pageCount()).isEqualTo(2);
   }
 
   @Test
@@ -229,7 +231,7 @@ class ConversationQuestionHistoryRetrieverTest {
 
   @Test
   void senderHintOnlyTiebreaksEqualTimestampsUsingSafeLabels() {
-    retriever = retriever(5, 500, 100, 0, 300_000, NOW);
+    retriever = retriever(5, 500, 100, 1, 300_000, NOW);
     UUID domGuid = UUID.fromString("00000000-0000-0000-0000-000000000103");
     when(bb.searchConversationHistory(GUID, "Wordle", FROM, TO, 500, 0))
         .thenReturn(
@@ -245,6 +247,8 @@ class ConversationQuestionHistoryRetrieverTest {
                       ? TestAccounts.resolved("account-dom", "Dom")
                       : TestAccounts.resolved("account-alice", "Alice"));
             });
+    when(bb.getMessagesInChat(anyString(), any(), any(), anyInt(), anyInt(), anyString()))
+        .thenReturn(List.of());
 
     RetrievalResult result =
         retriever.retrieveExact(
@@ -257,16 +261,18 @@ class ConversationQuestionHistoryRetrieverTest {
 
   @Test
   void directExactHitPreservesHandleForSafeMappingWithoutNeighborDuplicate() {
-    retriever = retriever(5, 500, 100, 0, 300_000, NOW);
+    retriever = retriever(5, 500, 100, 1, 300_000, NOW);
     when(bb.searchConversationHistory(GUID, "Wordle", FROM, TO, 500, 0))
         .thenReturn(List.of(searchMessage(HIT_GUID, "Wordle", at("12:00"), "+15555550200")));
     when(accountResolver.resolve(any(IncomingMessage.class)))
         .thenReturn(Optional.of(TestAccounts.resolved("account-dom", "Dom")));
+    when(bb.getMessagesInChat(anyString(), any(), any(), anyInt(), anyInt(), anyString()))
+        .thenReturn(List.of());
 
     RetrievalResult result = retriever.retrieveExact(request(activeFrom("10:00")), plan("Wordle"));
 
     assertThat(result.messages()).extracting(QuestionMessage::participant).containsExactly("Dom");
-    assertThat(result.pageCount()).isEqualTo(1);
+    assertThat(result.pageCount()).isEqualTo(3);
   }
 
   @Test
@@ -327,7 +333,7 @@ class ConversationQuestionHistoryRetrieverTest {
 
   @Test
   void neverExceedsOneHundredSourceCallsIncludingJournalFallback() {
-    retriever = retriever(5, 500, 100, 0, 300_000, NOW);
+    retriever = retriever(5, 500, 100, 1, 300_000, NOW);
     ApiV1ChatChatGuidMessageGet200ResponseDataInner duplicate =
         raw("duplicate", "available", at("11:30"));
     for (int page = 0; page < 99; page++) {
@@ -346,7 +352,7 @@ class ConversationQuestionHistoryRetrieverTest {
 
   @Test
   void rejectsConfiguredSourceCallLimitAboveHardMaximum() {
-    assertThatIllegalArgumentException().isThrownBy(() -> retriever(5, 500, 101, 0, 300_000, NOW));
+    assertThatIllegalArgumentException().isThrownBy(() -> retriever(5, 500, 101, 1, 300_000, NOW));
   }
 
   @Test
@@ -355,8 +361,34 @@ class ConversationQuestionHistoryRetrieverTest {
     assertThatIllegalArgumentException().isThrownBy(() -> retriever(5, 0, 100, 3, 300_000, NOW));
     assertThatIllegalArgumentException().isThrownBy(() -> retriever(5, 501, 100, 3, 300_000, NOW));
     assertThatIllegalArgumentException().isThrownBy(() -> retriever(5, 500, 0, 3, 300_000, NOW));
-    assertThatIllegalArgumentException().isThrownBy(() -> retriever(5, 500, 100, -1, 300_000, NOW));
+    assertThatIllegalArgumentException().isThrownBy(() -> retriever(5, 500, 100, 0, 300_000, NOW));
     assertThatIllegalArgumentException().isThrownBy(() -> retriever(5, 500, 100, 3, 0, NOW));
+  }
+
+  @Test
+  void lateExactSourceFailureCarriesCompletedPagesAndMessages() {
+    retriever = retriever(5, 500, 100, 1, 300_000, NOW);
+    Message hit = searchMessage(HIT_GUID, "Wordle", at("12:00"));
+    when(bb.searchConversationHistory(GUID, "Wordle", FROM, TO, 500, 0))
+        .thenReturn(Collections.nCopies(500, hit));
+    when(bb.getMessagesInChat(anyString(), any(), any(), anyInt(), anyInt(), anyString()))
+        .thenReturn(List.of());
+    when(bb.searchConversationHistory(GUID, "Wordle", FROM, TO, 500, 500))
+        .thenThrow(new IllegalStateException("late source failure"));
+
+    assertThatThrownBy(() -> retriever.retrieveExact(request(activeFrom("10:00")), plan("Wordle")))
+        .isInstanceOf(ConversationQuestionHistoryRetriever.PartialRetrievalException.class)
+        .satisfies(
+            failure -> {
+              ConversationQuestionHistoryRetriever.PartialRetrievalException partialFailure =
+                  (ConversationQuestionHistoryRetriever.PartialRetrievalException) failure;
+              assertThat(partialFailure.partialResult().messages())
+                  .extracting(QuestionMessage::messageGuid)
+                  .containsExactly(HIT_GUID.toString());
+              assertThat(partialFailure.partialResult().pageCount()).isEqualTo(4);
+              assertThat(partialFailure.partialResult().partialReason())
+                  .isEqualTo("source_unavailable");
+            });
   }
 
   @Test
@@ -446,12 +478,10 @@ class ConversationQuestionHistoryRetrieverTest {
     return new SearchPlan(List.of(terms), null, null, null);
   }
 
-  private List<Message> searchPage(int offset, int size) {
-    List<Message> messages = new ArrayList<>(size);
+  private List<ApiV1ChatChatGuidMessageGet200ResponseDataInner> historyPage(int size) {
+    List<ApiV1ChatChatGuidMessageGet200ResponseDataInner> messages = new ArrayList<>(size);
     for (int index = 0; index < size; index++) {
-      messages.add(
-          searchMessage(
-              new UUID(1L, offset + index + 1L), "x", FROM.plusSeconds(offset + index + 1L)));
+      messages.add(raw("neighbor-" + index, "x", FROM.plusSeconds(index + 1L)));
     }
     return messages;
   }
