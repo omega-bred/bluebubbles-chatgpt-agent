@@ -51,12 +51,11 @@ public class ConversationQuestionHistoryRetriever {
       BBHttpClientWrapper bb,
       ConversationMemoryStore store,
       ConversationHistoryMessageMapper mapper,
-      @Value("${bbagent.memory.group.qa.max-search-terms:5}") int maxSearchTerms,
-      @Value("${bbagent.memory.group.qa.search-page-size:500}") int pageSize,
-      @Value("${bbagent.memory.group.qa.max-history-pages:100}") int maxHistoryPages,
-      @Value("${bbagent.memory.group.qa.neighbor-message-count:3}") int neighborMessageCount,
-      @Value("${bbagent.memory.group.qa.max-aggregate-characters:300000}")
-          int maxAggregateCharacters) {
+      @Value("${bbagent.memory.group.qa.max-search-terms}") int maxSearchTerms,
+      @Value("${bbagent.memory.group.qa.search-page-size}") int pageSize,
+      @Value("${bbagent.memory.group.qa.max-history-pages}") int maxHistoryPages,
+      @Value("${bbagent.memory.group.qa.neighbor-message-count}") int neighborMessageCount,
+      @Value("${bbagent.memory.group.qa.max-aggregate-characters}") int maxAggregateCharacters) {
     this(
         bb,
         store,

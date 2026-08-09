@@ -15,6 +15,7 @@ import io.breland.bbagent.server.agent.memory.ConversationQuestionAnsweringModel
 import io.breland.bbagent.server.agent.memory.ConversationQuestionAnsweringModels.RetrievalResult;
 import io.breland.bbagent.server.agent.memory.ConversationQuestionAnsweringModels.RoutedModelAnswer;
 import io.breland.bbagent.server.agent.memory.ConversationQuestionAnsweringModels.SearchPlan;
+import io.breland.bbagent.server.metrics.OperationalMetricsService;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
@@ -55,6 +56,7 @@ public class ConversationQuestionAnsweringService {
   private final ConversationMemoryStore store;
   private final ConversationQuestionHistoryRetriever retriever;
   private final ConversationQuestionAnsweringModelClient model;
+  private final OperationalMetricsService metrics;
   private final int maxBatchMessages;
   private final int maxBatchCharacters;
   private final int maxModelBatches;
@@ -67,16 +69,17 @@ public class ConversationQuestionAnsweringService {
       ConversationMemoryStore store,
       ConversationQuestionHistoryRetriever retriever,
       ConversationQuestionAnsweringModelClient model,
-      @Value("${bbagent.memory.group.qa.max-batch-messages:100}") int maxBatchMessages,
-      @Value("${bbagent.memory.group.qa.max-batch-characters:60000}") int maxBatchCharacters,
-      @Value("${bbagent.memory.group.qa.max-model-batches:5}") int maxModelBatches,
-      @Value("${bbagent.memory.group.qa.max-aggregate-characters:300000}")
-          int maxAggregateCharacters,
-      @Value("${bbagent.memory.group.qa.request-timeout:PT90S}") Duration requestTimeout) {
+      OperationalMetricsService metrics,
+      @Value("${bbagent.memory.group.qa.max-batch-messages}") int maxBatchMessages,
+      @Value("${bbagent.memory.group.qa.max-batch-characters}") int maxBatchCharacters,
+      @Value("${bbagent.memory.group.qa.max-model-batches}") int maxModelBatches,
+      @Value("${bbagent.memory.group.qa.max-aggregate-characters}") int maxAggregateCharacters,
+      @Value("${bbagent.memory.group.qa.request-timeout}") Duration requestTimeout) {
     this(
         store,
         retriever,
         model,
+        metrics,
         maxBatchMessages,
         maxBatchCharacters,
         maxModelBatches,
@@ -89,6 +92,7 @@ public class ConversationQuestionAnsweringService {
       ConversationMemoryStore store,
       ConversationQuestionHistoryRetriever retriever,
       ConversationQuestionAnsweringModelClient model,
+      OperationalMetricsService metrics,
       int maxBatchMessages,
       int maxBatchCharacters,
       int maxModelBatches,
@@ -98,6 +102,7 @@ public class ConversationQuestionAnsweringService {
     this.store = Objects.requireNonNull(store, "store");
     this.retriever = Objects.requireNonNull(retriever, "retriever");
     this.model = Objects.requireNonNull(model, "model");
+    this.metrics = Objects.requireNonNull(metrics, "metrics");
     if (maxBatchMessages <= 0 || maxBatchMessages > HARD_MAX_BATCH_MESSAGES) {
       throw new IllegalArgumentException("max batch messages must be between 1 and 100");
     }
@@ -129,8 +134,34 @@ public class ConversationQuestionAnsweringService {
   public GroupQuestionAnswer answer(
       String accountId, AuthorizedGroup group, String question, Instant from, Instant to) {
     requireRequest(accountId, group, question, from, to);
-    Instant deadline = clock.instant().plus(requestTimeout);
+    Instant startedAt = clock.instant();
     ModelBudget budget = new ModelBudget();
+    QuestionAnswerWork work = new QuestionAnswerWork();
+    GroupQuestionAnswer result =
+        answerWithinLimits(accountId, group, question, from, to, budget, work);
+    boolean success = result.status() == AnswerStatus.ANSWERED;
+    metrics.recordMemoryQuestionAnswer(
+        result.retrievalMode().name(),
+        result.coverageStatus().name(),
+        result.model(),
+        work.messageCount,
+        work.pageCount,
+        budget.modelBatches,
+        success,
+        success ? null : firstReason(result.partialReason(), result.status().name()),
+        Duration.between(startedAt, clock.instant()));
+    return result;
+  }
+
+  private GroupQuestionAnswer answerWithinLimits(
+      String accountId,
+      AuthorizedGroup group,
+      String question,
+      Instant from,
+      Instant to,
+      ModelBudget budget,
+      QuestionAnswerWork work) {
+    Instant deadline = clock.instant().plus(requestTimeout);
     try {
       Optional<ConversationRecord> conversationValue =
           store.findConversation(group.conversationId());
@@ -155,6 +186,7 @@ public class ConversationQuestionAnsweringService {
           return unavailable(from, to, RetrievalMode.EXACT_SEARCH, TIME_LIMIT, from);
         }
         exact = retriever.retrieveExact(request, plan);
+        work.observe(exact);
         if (!exact.messages().isEmpty() && !deadlineReached(deadline)) {
           exactSynthesis = synthesize(question, exact.messages(), from, deadline, budget, true);
           if (exactSynthesis.supported() && !exactSynthesis.routed().answer().needsMoreContext()) {
@@ -175,6 +207,7 @@ public class ConversationQuestionAnsweringService {
       RetrievalResult chronological;
       try {
         chronological = retriever.retrieveChronological(request);
+        work.observe(chronological);
       } catch (RuntimeException ignored) {
         return supportedBackupOrUnavailable(
             exactSynthesis, exact, fallbackMode, from, to, SOURCE_UNAVAILABLE);
@@ -635,6 +668,16 @@ public class ConversationQuestionAnsweringService {
   private final class ModelBudget {
     private int modelBatches;
     private int characters;
+  }
+
+  private static final class QuestionAnswerWork {
+    private long messageCount;
+    private long pageCount;
+
+    private void observe(RetrievalResult retrieval) {
+      messageCount += retrieval.messages().size();
+      pageCount += retrieval.pageCount();
+    }
   }
 
   private record Batch(List<QuestionMessage> messages, int characters, int nextIndex) {}

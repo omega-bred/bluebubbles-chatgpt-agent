@@ -251,6 +251,51 @@ public class OperationalMetricsService {
     incrementCounter("bbagent.memory.catchup.count", "Conversation memory catch-up count", tags);
   }
 
+  public void recordMemoryQuestionAnswer(
+      String retrievalMode,
+      String coverageStatus,
+      @Nullable String model,
+      long messageCount,
+      long pageCount,
+      long modelBatchCount,
+      boolean success,
+      @Nullable String failureType,
+      Duration duration) {
+    Tags tags =
+        Tags.of(
+            "retrieval_mode",
+            tagValue(retrievalMode, "unknown"),
+            "coverage_status",
+            tagValue(coverageStatus, "unknown"),
+            "model",
+            modelTagValue(model),
+            "outcome",
+            outcome(success),
+            "failure_type",
+            failureTag(success, failureType));
+    recordTimer(
+        "bbagent.memory.question.answer.duration",
+        "Group question answer duration",
+        duration,
+        tags);
+    incrementCounter("bbagent.memory.question.answer.count", "Group question answer count", tags);
+    incrementCounter(
+        "bbagent.memory.question.answer.message.count",
+        "Group question evidence messages",
+        tags,
+        Math.max(0L, messageCount));
+    incrementCounter(
+        "bbagent.memory.question.answer.page.count",
+        "Group question source pages",
+        tags,
+        Math.max(0L, pageCount));
+    incrementCounter(
+        "bbagent.memory.question.answer.model.batch.count",
+        "Group question model batches",
+        tags,
+        Math.max(0L, modelBatchCount));
+  }
+
   public void recordMemoryProactiveDelivery(
       String deliveryMode, boolean success, @Nullable String failureType, Duration duration) {
     Tags tags =

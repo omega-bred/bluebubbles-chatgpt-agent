@@ -2,6 +2,7 @@ package io.breland.bbagent.server.metrics;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
+import io.micrometer.core.instrument.Tag;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.time.Duration;
 import org.junit.jupiter.api.Test;
@@ -188,5 +189,47 @@ class OperationalMetricsServiceTest {
                             org.assertj.core.api.Assertions.assertThat(tag.getKey())
                                 .doesNotContain(
                                     "account", "conversation", "message", "phone", "email")));
+  }
+
+  @Test
+  void recordsQuestionAnswerMetricsWithoutSensitiveTags() {
+    SimpleMeterRegistry registry = new SimpleMeterRegistry();
+    OperationalMetricsService service = new OperationalMetricsService(registry);
+
+    service.recordMemoryQuestionAnswer(
+        "EXACT_SEARCH",
+        "COMPLETE",
+        "openrouter/z-ai/glm-5.2",
+        3,
+        2,
+        1,
+        true,
+        null,
+        Duration.ofMillis(250));
+
+    assertEquals(
+        1.0,
+        registry
+            .get("bbagent.memory.question.answer.count")
+            .tag("retrieval_mode", "exact_search")
+            .tag("coverage_status", "complete")
+            .tag("model", "openrouter/z-ai/glm-5.2")
+            .tag("outcome", "success")
+            .tag("failure_type", "none")
+            .counter()
+            .count());
+    assertEquals(1L, registry.get("bbagent.memory.question.answer.duration").timer().count());
+    assertEquals(
+        3.0, registry.get("bbagent.memory.question.answer.message.count").counter().count());
+    assertEquals(2.0, registry.get("bbagent.memory.question.answer.page.count").counter().count());
+    assertEquals(
+        1.0, registry.get("bbagent.memory.question.answer.model.batch.count").counter().count());
+    org.assertj.core.api.Assertions.assertThat(
+            registry.getMeters().stream()
+                .filter(
+                    meter -> meter.getId().getName().startsWith("bbagent.memory.question.answer"))
+                .flatMap(meter -> meter.getId().getTags().stream())
+                .map(Tag::getKey))
+        .containsOnly("retrieval_mode", "coverage_status", "model", "outcome", "failure_type");
   }
 }

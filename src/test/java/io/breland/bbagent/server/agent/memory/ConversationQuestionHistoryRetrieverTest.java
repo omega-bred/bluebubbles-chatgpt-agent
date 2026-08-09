@@ -350,6 +350,16 @@ class ConversationQuestionHistoryRetrieverTest {
   }
 
   @Test
+  void rejectsNonPositiveCountsAndPageSizesAboveBlueBubblesMaximum() {
+    assertThatIllegalArgumentException().isThrownBy(() -> retriever(0, 500, 100, 3, 300_000, NOW));
+    assertThatIllegalArgumentException().isThrownBy(() -> retriever(5, 0, 100, 3, 300_000, NOW));
+    assertThatIllegalArgumentException().isThrownBy(() -> retriever(5, 501, 100, 3, 300_000, NOW));
+    assertThatIllegalArgumentException().isThrownBy(() -> retriever(5, 500, 0, 3, 300_000, NOW));
+    assertThatIllegalArgumentException().isThrownBy(() -> retriever(5, 500, 100, -1, 300_000, NOW));
+    assertThatIllegalArgumentException().isThrownBy(() -> retriever(5, 500, 100, 3, 0, NOW));
+  }
+
+  @Test
   void checksAdvancingDeadlineBeforeEveryNeighborCall() {
     retriever =
         retriever(

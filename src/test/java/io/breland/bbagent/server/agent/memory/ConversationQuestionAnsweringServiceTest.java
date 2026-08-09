@@ -1,6 +1,7 @@
 package io.breland.bbagent.server.agent.memory;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatIllegalArgumentException;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.eq;
@@ -26,6 +27,8 @@ import io.breland.bbagent.server.agent.memory.ConversationQuestionAnsweringModel
 import io.breland.bbagent.server.agent.memory.ConversationQuestionAnsweringModels.RetrievalResult;
 import io.breland.bbagent.server.agent.memory.ConversationQuestionAnsweringModels.RoutedModelAnswer;
 import io.breland.bbagent.server.agent.memory.ConversationQuestionAnsweringModels.SearchPlan;
+import io.breland.bbagent.server.metrics.OperationalMetricsService;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
@@ -66,6 +69,8 @@ class ConversationQuestionAnsweringServiceTest {
   private final ConversationQuestionAnsweringModelClient model =
       mock(ConversationQuestionAnsweringModelClient.class);
   private final MutableClock clock = new MutableClock(NOW);
+  private final SimpleMeterRegistry registry = new SimpleMeterRegistry();
+  private final OperationalMetricsService metrics = new OperationalMetricsService(registry);
   private ConversationQuestionAnsweringService service;
 
   @BeforeEach
@@ -99,6 +104,23 @@ class ConversationQuestionAnsweringServiceTest {
     assertThat(result.coverageStatus()).isEqualTo(CoverageStatus.COMPLETE);
     assertThat(result.coverageThrough()).isEqualTo(TO);
     verify(retriever, never()).retrieveChronological(any());
+    assertThat(totalQuestionAnswers()).isEqualTo(1.0);
+    assertThat(
+            registry
+                .get("bbagent.memory.question.answer.count")
+                .tag("retrieval_mode", "exact_search")
+                .tag("coverage_status", "complete")
+                .tag("model", "openai/gpt-4.1-mini")
+                .tag("outcome", "success")
+                .counter()
+                .count())
+        .isEqualTo(1.0);
+    assertThat(registry.get("bbagent.memory.question.answer.message.count").counter().count())
+        .isEqualTo(1.0);
+    assertThat(registry.get("bbagent.memory.question.answer.page.count").counter().count())
+        .isEqualTo(1.0);
+    assertThat(registry.get("bbagent.memory.question.answer.model.batch.count").counter().count())
+        .isEqualTo(1.0);
   }
 
   @Test
@@ -525,6 +547,44 @@ class ConversationQuestionAnsweringServiceTest {
     assertThat(result.partialReason()).isEqualTo("unauthorized_range");
     verifyNoInteractions(retriever);
     verifyNoInteractions(model);
+    assertThat(totalQuestionAnswers()).isEqualTo(1.0);
+    assertThat(
+            registry
+                .get("bbagent.memory.question.answer.count")
+                .tag("outcome", "failure")
+                .tag("failure_type", "unauthorized_range")
+                .counter()
+                .count())
+        .isEqualTo(1.0);
+  }
+
+  @Test
+  void unexpectedSourceFailureRecordsOneUnavailableOutcome() {
+    when(store.findConversation(CONVERSATION_ID))
+        .thenThrow(new IllegalStateException("database unavailable"));
+
+    GroupQuestionAnswer result = service.answer(ACCOUNT, GROUP, QUESTION, FROM, TO);
+
+    assertThat(result.status()).isEqualTo(AnswerStatus.UNAVAILABLE);
+    assertThat(totalQuestionAnswers()).isEqualTo(1.0);
+    assertThat(
+            registry
+                .get("bbagent.memory.question.answer.count")
+                .tag("outcome", "failure")
+                .tag("failure_type", "source_unavailable")
+                .counter()
+                .count())
+        .isEqualTo(1.0);
+  }
+
+  @Test
+  void rejectsNonPositiveAndInternallyInconsistentLimits() {
+    assertThatIllegalArgumentException().isThrownBy(() -> service(0, 60_000, 5, 300_000));
+    assertThatIllegalArgumentException().isThrownBy(() -> service(100, 0, 5, 300_000));
+    assertThatIllegalArgumentException().isThrownBy(() -> service(100, 60_000, 0, 300_000));
+    assertThatIllegalArgumentException().isThrownBy(() -> service(100, 60_000, 5, 59_999));
+    assertThatIllegalArgumentException()
+        .isThrownBy(() -> service(100, 60_000, 5, 300_000, Duration.ZERO));
   }
 
   private ConversationQuestionAnsweringService service(
@@ -532,16 +592,37 @@ class ConversationQuestionAnsweringServiceTest {
       int maxBatchCharacters,
       int maxModelBatches,
       int maxAggregateCharacters) {
-    return new ConversationQuestionAnsweringService(
-        store,
-        retriever,
-        model,
+    return service(
         maxBatchMessages,
         maxBatchCharacters,
         maxModelBatches,
         maxAggregateCharacters,
-        Duration.ofSeconds(90),
+        Duration.ofSeconds(90));
+  }
+
+  private ConversationQuestionAnsweringService service(
+      int maxBatchMessages,
+      int maxBatchCharacters,
+      int maxModelBatches,
+      int maxAggregateCharacters,
+      Duration requestTimeout) {
+    return new ConversationQuestionAnsweringService(
+        store,
+        retriever,
+        model,
+        metrics,
+        maxBatchMessages,
+        maxBatchCharacters,
+        maxModelBatches,
+        maxAggregateCharacters,
+        requestTimeout,
         clock);
+  }
+
+  private double totalQuestionAnswers() {
+    return registry.find("bbagent.memory.question.answer.count").counters().stream()
+        .mapToDouble(counter -> counter.count())
+        .sum();
   }
 
   private void exactMissThenChronological(List<QuestionMessage> messages) {
