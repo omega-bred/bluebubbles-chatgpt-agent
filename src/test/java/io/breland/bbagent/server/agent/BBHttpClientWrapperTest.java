@@ -330,7 +330,8 @@ class BBHttpClientWrapperTest {
     assertThat(request.getBefore()).isEqualTo(1767225600L);
     assertThat(request.getLimit()).isEqualTo(500);
     assertThat(request.getOffset()).isEqualTo(1000);
-    assertThat(request.getWhere().getFirst().getStatement()).contains("ESCAPE");
+    assertThat(request.getWhere().getFirst().getStatement())
+        .isEqualTo("message.text LIKE :text ESCAPE '\\'");
     assertThat(request.getWhere().getFirst().getArgs().get("text"))
         .isEqualTo("%100\\%\\_Wordle\\\\%");
   }
@@ -349,6 +350,12 @@ class BBHttpClientWrapperTest {
     assertThrows(
         IllegalArgumentException.class,
         () -> wrapper.searchConversationHistory("group-guid", " ", after, before, 1, 0));
+    assertThrows(
+        IllegalArgumentException.class,
+        () -> wrapper.searchConversationHistory("group-guid", "Wordle", null, before, 1, 0));
+    assertThrows(
+        IllegalArgumentException.class,
+        () -> wrapper.searchConversationHistory("group-guid", "Wordle", after, null, 1, 0));
     assertThrows(
         IllegalArgumentException.class,
         () -> wrapper.searchConversationHistory("group-guid", "Wordle", before, after, 1, 0));

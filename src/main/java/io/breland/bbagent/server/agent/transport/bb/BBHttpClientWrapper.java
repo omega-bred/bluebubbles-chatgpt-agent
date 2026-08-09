@@ -581,7 +581,7 @@ public class BBHttpClientWrapper {
         literalQuery.trim().replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_");
     WhereClause textClause =
         WhereClause.builder()
-            .statement("message.text LIKE :text ESCAPE '\\\\'")
+            .statement("message.text LIKE :text ESCAPE '\\'")
             .args(Map.of("text", "%" + escaped + "%"))
             .build();
     ApiV1MessageQueryPostRequest request =
