@@ -1,5 +1,6 @@
 package io.breland.bbagent.server.agent.memory;
 
+import io.breland.bbagent.server.agent.memory.ConversationMemoryModels.ConversationRecord;
 import java.time.Instant;
 import java.util.List;
 import java.util.Locale;
@@ -82,6 +83,59 @@ public final class ConversationQuestionAnsweringModels {
       return timestamp != null
           && !timestamp.isBefore(startedAt)
           && (endedAt == null || timestamp.isBefore(endedAt));
+    }
+  }
+
+  public record RetrievalRequest(
+      String accountId,
+      ConversationRecord conversation,
+      List<MembershipInterval> memberships,
+      Instant from,
+      Instant to,
+      Instant deadline) {
+    public RetrievalRequest {
+      requireNotBlank(accountId, "account id");
+      if (conversation == null) {
+        throw new IllegalArgumentException("conversation must not be null");
+      }
+      memberships = List.copyOf(memberships);
+      if (from == null || to == null || !from.isBefore(to)) {
+        throw new IllegalArgumentException("retrieval range must be ordered");
+      }
+      if (deadline == null) {
+        throw new IllegalArgumentException("retrieval deadline must not be null");
+      }
+    }
+  }
+
+  public record RetrievalResult(
+      List<QuestionMessage> messages,
+      RetrievalMode mode,
+      CoverageStatus coverageStatus,
+      Instant coverageThrough,
+      @Nullable String partialReason,
+      int pageCount) {
+    public RetrievalResult {
+      messages = List.copyOf(messages);
+      if (mode == null) {
+        throw new IllegalArgumentException("retrieval mode must not be null");
+      }
+      if (coverageStatus == null) {
+        throw new IllegalArgumentException("coverage status must not be null");
+      }
+      if (coverageThrough == null) {
+        throw new IllegalArgumentException("coverage through must not be null");
+      }
+      partialReason = StringUtils.trimToNull(partialReason);
+      if (coverageStatus == CoverageStatus.COMPLETE && partialReason != null) {
+        throw new IllegalArgumentException("complete retrieval must not have a partial reason");
+      }
+      if (coverageStatus == CoverageStatus.PARTIAL && partialReason == null) {
+        throw new IllegalArgumentException("partial retrieval must have a reason");
+      }
+      if (pageCount < 0) {
+        throw new IllegalArgumentException("page count must not be negative");
+      }
     }
   }
 
