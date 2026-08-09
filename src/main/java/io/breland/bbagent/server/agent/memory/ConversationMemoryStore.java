@@ -26,6 +26,7 @@ import io.breland.bbagent.server.agent.memory.ConversationMemoryModels.Projectio
 import io.breland.bbagent.server.agent.memory.ConversationMemoryModels.ProjectionOperation;
 import io.breland.bbagent.server.agent.memory.ConversationMemoryModels.SummaryMaterial;
 import io.breland.bbagent.server.agent.memory.ConversationMemoryModels.WorkClaim;
+import io.breland.bbagent.server.agent.memory.ConversationQuestionAnsweringModels.MembershipInterval;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -386,6 +387,27 @@ public class ConversationMemoryStore {
         conversationId,
         at,
         at);
+  }
+
+  @Transactional(readOnly = true)
+  public List<MembershipInterval> findMembershipIntervals(
+      String conversationId, String accountId, Instant from, Instant to) {
+    return jdbcTemplate.query(
+        """
+        select started_at, ended_at
+          from agent_conversation_memberships
+         where conversation_id = ? and account_id = ?
+           and started_at < ? and (ended_at is null or ended_at > ?)
+         order by started_at, membership_id
+        """,
+        (resultSet, rowNumber) ->
+            new MembershipInterval(
+                resultSet.getTimestamp("started_at").toInstant(),
+                toInstant(resultSet.getTimestamp("ended_at"))),
+        conversationId,
+        accountId,
+        to,
+        from);
   }
 
   @Transactional

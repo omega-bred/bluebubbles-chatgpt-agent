@@ -71,6 +71,20 @@ public final class ConversationQuestionAnsweringModels {
     }
   }
 
+  public record MembershipInterval(Instant startedAt, @Nullable Instant endedAt) {
+    public MembershipInterval {
+      if (startedAt == null) {
+        throw new IllegalArgumentException("membership start must not be null");
+      }
+    }
+
+    public boolean contains(Instant timestamp) {
+      return timestamp != null
+          && !timestamp.isBefore(startedAt)
+          && (endedAt == null || timestamp.isBefore(endedAt));
+    }
+  }
+
   public record ModelAnswer(
       AnswerStatus status,
       String answer,

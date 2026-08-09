@@ -13,6 +13,7 @@ import io.breland.bbagent.server.agent.memory.ConversationMemoryModels.Extractio
 import io.breland.bbagent.server.agent.memory.ConversationMemoryModels.ExtractionCandidate;
 import io.breland.bbagent.server.agent.memory.ConversationMemoryModels.JournalMessage;
 import io.breland.bbagent.server.agent.memory.ConversationMemoryModels.WorkClaim;
+import io.breland.bbagent.server.agent.memory.ConversationQuestionAnsweringModels.MembershipInterval;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
@@ -78,6 +79,45 @@ class ConversationMemoryStoreTest {
         .containsExactly("message-1");
     assertThat(store.activeMembershipAccountIds(conversationId, OBSERVED_AT))
         .containsExactly(accountId);
+  }
+
+  @Test
+  void findsOnlyOverlappingMembershipIntervalsForAccount() {
+    String accountId = createAccount("interval-account@example.com");
+    String otherAccountId = createAccount("interval-other@example.com");
+    String conversationId =
+        store.upsertConversation(
+            "bluebubbles", "iMessage;+;intervals", true, "Intervals", OBSERVED_AT);
+    Instant firstStart = OBSERVED_AT.minusSeconds(180);
+    Instant firstEnd = OBSERVED_AT.minusSeconds(120);
+    Instant secondStart = OBSERVED_AT.minusSeconds(60);
+
+    store.recordMembership(conversationId, accountId, firstStart);
+    store.replaceActiveMemberships(conversationId, java.util.Set.of(), firstEnd);
+    store.recordMembership(conversationId, accountId, secondStart);
+    store.recordMembership(conversationId, otherAccountId, OBSERVED_AT.minusSeconds(240));
+
+    assertThat(
+            store.findMembershipIntervals(
+                conversationId,
+                accountId,
+                OBSERVED_AT.minusSeconds(150),
+                OBSERVED_AT.minusSeconds(30)))
+        .extracting(MembershipInterval::startedAt)
+        .containsExactly(firstStart, secondStart);
+  }
+
+  @Test
+  void membershipIntervalIncludesStartAndExcludesEnd() {
+    Instant start = OBSERVED_AT.minusSeconds(60);
+    Instant end = OBSERVED_AT.minusSeconds(30);
+    MembershipInterval interval = new MembershipInterval(start, end);
+
+    assertThat(interval.contains(start)).isTrue();
+    assertThat(interval.contains(end.minusMillis(1))).isTrue();
+    assertThat(interval.contains(end)).isFalse();
+    assertThat(interval.contains(start.minusMillis(1))).isFalse();
+    assertThat(new MembershipInterval(start, null).contains(OBSERVED_AT)).isTrue();
   }
 
   @Test
