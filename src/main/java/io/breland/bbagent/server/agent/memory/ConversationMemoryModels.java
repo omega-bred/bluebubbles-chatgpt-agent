@@ -119,4 +119,29 @@ public final class ConversationMemoryModels {
       String projectionHash,
       String workerId,
       Instant claimedUntil) {}
+
+  public record ProjectionArtifact(
+      String artifactId,
+      String conversationId,
+      String groupDisplayName,
+      ArtifactKind kind,
+      String text,
+      ArtifactStatus status,
+      ArtifactSensitivity sensitivity,
+      double confidence,
+      Instant occurredAt,
+      Instant expiresAt) {}
+
+  public record ProjectedArtifact(
+      String artifactId,
+      String mem0MemoryId,
+      String conversationId,
+      String groupDisplayName,
+      ArtifactKind kind,
+      String text,
+      ArtifactStatus status,
+      ArtifactSensitivity sensitivity,
+      double confidence,
+      Instant occurredAt,
+      Instant expiresAt) {}
 }

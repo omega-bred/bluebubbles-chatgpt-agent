@@ -10,6 +10,8 @@ import io.breland.bbagent.server.agent.memory.ConversationMemoryModels.Extractio
 import io.breland.bbagent.server.agent.memory.ConversationMemoryModels.ExtractionCandidate;
 import io.breland.bbagent.server.agent.memory.ConversationMemoryModels.ExtractionCheckpoint;
 import io.breland.bbagent.server.agent.memory.ConversationMemoryModels.JournalMessage;
+import io.breland.bbagent.server.agent.memory.ConversationMemoryModels.ProjectedArtifact;
+import io.breland.bbagent.server.agent.memory.ConversationMemoryModels.ProjectionArtifact;
 import io.breland.bbagent.server.agent.memory.ConversationMemoryModels.ProjectionClaim;
 import io.breland.bbagent.server.agent.memory.ConversationMemoryModels.ProjectionOperation;
 import io.breland.bbagent.server.agent.memory.ConversationMemoryModels.WorkClaim;
@@ -24,6 +26,7 @@ import java.util.Set;
 import java.util.UUID;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.lang.Nullable;
 import org.springframework.stereotype.Repository;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -677,6 +680,16 @@ public class ConversationMemoryStore {
             now,
             candidate.supersedesArtifactId(),
             batch.conversationId());
+        jdbcTemplate.update(
+            """
+            update conversation_memory_projections
+               set operation = 'DELETE', state = 'PENDING', available_at = ?,
+                   claimed_by = null, claimed_until = null, last_error_code = null, updated_at = ?
+             where artifact_id = ?
+            """,
+            now,
+            now,
+            candidate.supersedesArtifactId());
       }
       savedArtifactIds.add(artifactId);
     }
@@ -756,6 +769,127 @@ public class ConversationMemoryStore {
   }
 
   @Transactional(readOnly = true)
+  public Optional<ProjectionArtifact> findProjectionArtifact(String artifactId) {
+    return jdbcTemplate
+        .query(
+            """
+            select a.artifact_id, a.conversation_id, c.display_name, a.kind, a.artifact_text,
+                   a.status, a.sensitivity, a.confidence, a.occurred_at, a.expires_at
+              from conversation_memory_artifacts a
+              join agent_conversations c on c.conversation_id = a.conversation_id
+             where a.artifact_id = ?
+            """,
+            (resultSet, rowNumber) -> projectionArtifact(resultSet),
+            artifactId)
+        .stream()
+        .findFirst();
+  }
+
+  @Transactional(readOnly = true)
+  public Optional<ProjectedArtifact> findProjectedArtifact(String mem0MemoryId, String accountId) {
+    return jdbcTemplate
+        .query(
+            """
+            select a.artifact_id, p.mem0_memory_id, a.conversation_id, c.display_name, a.kind,
+                   a.artifact_text, a.status, a.sensitivity, a.confidence, a.occurred_at,
+                   a.expires_at
+              from conversation_memory_projections p
+              join conversation_memory_artifacts a on a.artifact_id = p.artifact_id
+              join agent_conversations c on c.conversation_id = a.conversation_id
+             where p.mem0_memory_id = ? and p.account_id = ? and p.operation = 'UPSERT'
+               and p.state = 'SUCCEEDED'
+            """,
+            (resultSet, rowNumber) ->
+                new ProjectedArtifact(
+                    resultSet.getString("artifact_id"),
+                    resultSet.getString("mem0_memory_id"),
+                    resultSet.getString("conversation_id"),
+                    resultSet.getString("display_name"),
+                    ConversationMemoryModels.ArtifactKind.valueOf(resultSet.getString("kind")),
+                    resultSet.getString("artifact_text"),
+                    ConversationMemoryModels.ArtifactStatus.valueOf(resultSet.getString("status")),
+                    ConversationMemoryModels.ArtifactSensitivity.valueOf(
+                        resultSet.getString("sensitivity")),
+                    resultSet.getDouble("confidence"),
+                    resultSet.getTimestamp("occurred_at").toInstant(),
+                    toInstant(resultSet.getTimestamp("expires_at"))),
+            mem0MemoryId,
+            accountId)
+        .stream()
+        .findFirst();
+  }
+
+  @Transactional(readOnly = true)
+  public Optional<String> projectionMemoryId(String artifactId, String accountId) {
+    return jdbcTemplate
+        .query(
+            """
+            select mem0_memory_id from conversation_memory_projections
+             where artifact_id = ? and account_id = ? and mem0_memory_id is not null
+            """,
+            (resultSet, rowNumber) -> resultSet.getString(1),
+            artifactId,
+            accountId)
+        .stream()
+        .findFirst();
+  }
+
+  @Transactional
+  public void completeProjection(
+      ProjectionClaim claim, @Nullable String mem0MemoryId, Instant completedAt) {
+    int updated =
+        jdbcTemplate.update(
+            """
+            update conversation_memory_projections
+               set state = 'SUCCEEDED', mem0_memory_id = ?, claimed_by = null,
+                   claimed_until = null, last_error_code = null, updated_at = ?
+             where artifact_id = ? and account_id = ? and claimed_by = ? and claimed_until >= ?
+            """,
+            StringUtils.trimToNull(mem0MemoryId),
+            completedAt,
+            claim.artifactId(),
+            claim.accountId(),
+            claim.workerId(),
+            completedAt);
+    if (updated != 1) {
+      throw new IllegalStateException("projection work lease is not owned by this worker");
+    }
+  }
+
+  @Transactional
+  public void failProjection(ProjectionClaim claim, Instant failedAt, String errorCode) {
+    Integer attempts =
+        jdbcTemplate.queryForObject(
+            """
+            select attempt_count from conversation_memory_projections
+             where artifact_id = ? and account_id = ? and claimed_by = ? and claimed_until >= ?
+            """,
+            Integer.class,
+            claim.artifactId(),
+            claim.accountId(),
+            claim.workerId(),
+            failedAt);
+    if (attempts == null) {
+      return;
+    }
+    Duration retryDelay = projectionRetryDelay(attempts);
+    jdbcTemplate.update(
+        """
+        update conversation_memory_projections
+           set state = 'FAILED', available_at = ?, claimed_by = null, claimed_until = null,
+               last_error_code = ?, updated_at = ?
+         where artifact_id = ? and account_id = ? and claimed_by = ? and claimed_until >= ?
+        """,
+        failedAt.plus(retryDelay),
+        StringUtils.truncate(errorCode, 64),
+        failedAt,
+        claim.artifactId(),
+        claim.accountId(),
+        claim.workerId(),
+        failedAt);
+  }
+
+  @Transactional(readOnly = true)
   public boolean isInArtifactAudience(String artifactId, String accountId) {
     Integer count =
         jdbcTemplate.queryForObject(
@@ -766,6 +900,30 @@ public class ConversationMemoryStore {
             Integer.class,
             artifactId,
             accountId);
+    return count != null && count > 0;
+  }
+
+  @Transactional(readOnly = true)
+  public boolean isReadOnlyGroupArtifact(String canonicalScope, String identifier) {
+    ScopeKey scope = parseCanonicalScope(canonicalScope);
+    if (!scope.type().equals("ACCOUNT") || StringUtils.isBlank(identifier)) {
+      return false;
+    }
+    Integer count =
+        jdbcTemplate.queryForObject(
+            """
+            select count(*)
+              from conversation_memory_audiences audience
+              left join conversation_memory_projections projection
+                on projection.artifact_id = audience.artifact_id
+               and projection.account_id = audience.account_id
+             where audience.account_id = ?
+               and (audience.artifact_id = ? or projection.mem0_memory_id = ?)
+            """,
+            Integer.class,
+            scope.id(),
+            identifier,
+            identifier);
     return count != null && count > 0;
   }
 
@@ -1000,6 +1158,34 @@ public class ConversationMemoryStore {
         claim.conversationId(),
         claim.workerId(),
         releasedAt);
+  }
+
+  private ProjectionArtifact projectionArtifact(java.sql.ResultSet resultSet)
+      throws java.sql.SQLException {
+    return new ProjectionArtifact(
+        resultSet.getString("artifact_id"),
+        resultSet.getString("conversation_id"),
+        resultSet.getString("display_name"),
+        ConversationMemoryModels.ArtifactKind.valueOf(resultSet.getString("kind")),
+        resultSet.getString("artifact_text"),
+        ConversationMemoryModels.ArtifactStatus.valueOf(resultSet.getString("status")),
+        ConversationMemoryModels.ArtifactSensitivity.valueOf(resultSet.getString("sensitivity")),
+        resultSet.getDouble("confidence"),
+        resultSet.getTimestamp("occurred_at").toInstant(),
+        toInstant(resultSet.getTimestamp("expires_at")));
+  }
+
+  private Duration projectionRetryDelay(int attempts) {
+    if (attempts <= 1) {
+      return Duration.ofSeconds(30);
+    }
+    if (attempts == 2) {
+      return Duration.ofMinutes(2);
+    }
+    if (attempts == 3) {
+      return Duration.ofMinutes(10);
+    }
+    return Duration.ofHours(1);
   }
 
   private void requireText(String value, String label) {

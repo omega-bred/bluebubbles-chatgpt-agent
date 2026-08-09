@@ -225,6 +225,82 @@ class ConversationMemoryStoreTest {
   }
 
   @Test
+  void supersedingArtifactQueuesDeletionOfExistingProjections() {
+    String accountId = createAccount("supersedes@example.com");
+    String conversationId =
+        store.upsertConversation(
+            "bluebubbles", "iMessage;+;group-supersedes", true, "Plans", OBSERVED_AT);
+    store.recordMembership(conversationId, accountId, OBSERVED_AT.minusSeconds(1));
+    JournalMessage firstSource = message("message-first", conversationId, accountId, "Meet Friday");
+    store.recordMessage(firstSource);
+    store.scheduleExtraction(conversationId, OBSERVED_AT);
+    WorkClaim firstClaim =
+        store.claimDueExtractionWork("extract-first", OBSERVED_AT, 10).getFirst();
+    String firstArtifactId =
+        store
+            .saveExtraction(
+                firstClaim,
+                new ExtractionBatch(
+                    conversationId,
+                    List.of(firstSource),
+                    List.of(
+                        new ExtractionCandidate(
+                            GROUP_DECISION,
+                            "Meet Friday.",
+                            CONFIRMED,
+                            NORMAL,
+                            0.95,
+                            OBSERVED_AT,
+                            null,
+                            List.of(firstSource.messageGuid()),
+                            null,
+                            "first-artifact-hash")),
+                    "Friday was selected.",
+                    "[]",
+                    "first-corpus-hash",
+                    OBSERVED_AT))
+            .getFirst();
+    var firstProjection = store.claimDueProjections("project-first", OBSERVED_AT, 10).getFirst();
+    store.completeProjection(firstProjection, "memory-first", OBSERVED_AT);
+
+    JournalMessage secondSource =
+        message("message-second", conversationId, accountId, "Actually meet Saturday");
+    store.recordMessage(secondSource);
+    Instant secondAt = OBSERVED_AT.plusSeconds(1);
+    store.scheduleExtraction(conversationId, secondAt);
+    WorkClaim secondClaim = store.claimDueExtractionWork("extract-second", secondAt, 10).getFirst();
+    store.saveExtraction(
+        secondClaim,
+        new ExtractionBatch(
+            conversationId,
+            List.of(secondSource),
+            List.of(
+                new ExtractionCandidate(
+                    GROUP_DECISION,
+                    "Meet Saturday.",
+                    CONFIRMED,
+                    NORMAL,
+                    0.96,
+                    secondAt,
+                    null,
+                    List.of(secondSource.messageGuid()),
+                    firstArtifactId,
+                    "second-artifact-hash")),
+            "Saturday replaced Friday.",
+            "[]",
+            "second-corpus-hash",
+            secondAt));
+
+    assertThat(store.claimDueProjections("project-delete", secondAt, 10))
+        .anySatisfy(
+            claim -> {
+              assertThat(claim.artifactId()).isEqualTo(firstArtifactId);
+              assertThat(claim.operation())
+                  .isEqualTo(ConversationMemoryModels.ProjectionOperation.DELETE);
+            });
+  }
+
+  @Test
   void canonicalMemoryOwnershipCannotMoveAcrossScopes() {
     String accountId = createAccount("memory-owner@example.com");
     String canonicalScope = "account:" + accountId;

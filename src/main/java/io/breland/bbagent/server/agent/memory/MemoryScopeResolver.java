@@ -8,19 +8,29 @@ import java.time.Instant;
 import java.util.HexFormat;
 import java.util.Optional;
 import org.apache.commons.lang3.StringUtils;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.lang.Nullable;
 import org.springframework.stereotype.Service;
 
 @Service
 public class MemoryScopeResolver {
   private final ConversationMemoryStore store;
   private final boolean legacyScopeReadEnabled;
+  private final @Nullable AuthorizedMemoryRetrievalService authorizedMemoryRetrievalService;
 
+  @Autowired
   public MemoryScopeResolver(
       ConversationMemoryStore store,
-      @Value("${bbagent.memory.legacy-scope-read-enabled:true}") boolean legacyScopeReadEnabled) {
+      @Value("${bbagent.memory.legacy-scope-read-enabled:true}") boolean legacyScopeReadEnabled,
+      @Nullable AuthorizedMemoryRetrievalService authorizedMemoryRetrievalService) {
     this.store = store;
     this.legacyScopeReadEnabled = legacyScopeReadEnabled;
+    this.authorizedMemoryRetrievalService = authorizedMemoryRetrievalService;
+  }
+
+  public MemoryScopeResolver(ConversationMemoryStore store, boolean legacyScopeReadEnabled) {
+    this(store, legacyScopeReadEnabled, null);
   }
 
   public Optional<String> primaryScope(ToolContext context) {
@@ -57,6 +67,14 @@ public class MemoryScopeResolver {
 
   public boolean ownsMemory(String canonicalScope, String memoryId) {
     return store.ownsCanonicalMemory(canonicalScope, memoryId);
+  }
+
+  public boolean isReadOnlyMemory(String canonicalScope, String identifier) {
+    return store.isReadOnlyGroupArtifact(canonicalScope, identifier);
+  }
+
+  public Optional<AuthorizedMemoryRetrievalService> authorizedRetrievalService() {
+    return Optional.ofNullable(authorizedMemoryRetrievalService);
   }
 
   public void updateOwnership(String canonicalScope, String memoryId, String text) {

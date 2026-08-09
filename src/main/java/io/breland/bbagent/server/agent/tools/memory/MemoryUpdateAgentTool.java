@@ -62,6 +62,9 @@ public class MemoryUpdateAgentTool implements ToolProvider {
                 ? "group memory is not enabled"
                 : "memory scope unavailable";
           }
+          if (scopeResolver.isReadOnlyMemory(canonicalScope, memoryId)) {
+            return "collective group memories are read-only";
+          }
           if (!scopeResolver.ownsMemory(canonicalScope, memoryId)) {
             return "memory does not belong to the current scope";
           }

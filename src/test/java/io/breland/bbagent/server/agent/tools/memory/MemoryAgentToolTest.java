@@ -12,6 +12,8 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.breland.bbagent.server.agent.BBMessageAgent;
 import io.breland.bbagent.server.agent.IncomingMessage;
+import io.breland.bbagent.server.agent.memory.AuthorizedMemoryRetrievalService;
+import io.breland.bbagent.server.agent.memory.ConversationMemoryModels.AuthorizedMemory;
 import io.breland.bbagent.server.agent.memory.MemoryScopeResolver;
 import io.breland.bbagent.server.agent.tools.ToolContext;
 import java.time.Instant;
@@ -155,6 +157,62 @@ class MemoryAgentToolTest {
     assertThat(deleteResult).isEqualTo("deleted");
     verify(scopeResolver).updateOwnership("account:account-1", "memory-1", "new text");
     verify(scopeResolver).removeOwnership("account:account-1", "memory-1");
+  }
+
+  @Test
+  void formatsAuthorizedGroupDecisionAsReadOnlyWithoutMem0Id() throws Exception {
+    AuthorizedMemoryRetrievalService retrievalService =
+        mock(AuthorizedMemoryRetrievalService.class);
+    when(scopeResolver.authorizedRetrievalService()).thenReturn(Optional.of(retrievalService));
+    when(retrievalService.search(context, "Saturday"))
+        .thenReturn(
+            List.of(
+                new AuthorizedMemory(
+                    "artifact-1",
+                    "Meet Saturday at 6 PM.",
+                    "Trip planning",
+                    Instant.parse("2026-08-08T17:03:00Z"),
+                    true,
+                    null)));
+
+    String result =
+        new MemoryGetAgentTool(mem0Client, scopeResolver)
+            .getTool()
+            .handler()
+            .apply(context, mapper.readTree("{\"query\":\"Saturday\"}"));
+
+    JsonNode memory = mapper.readTree(result).path("memories").get(0);
+    assertThat(memory.path("artifact_id").asText()).isEqualTo("artifact-1");
+    assertThat(memory.path("source_group").asText()).isEqualTo("Trip planning");
+    assertThat(memory.path("read_only").asBoolean()).isTrue();
+    assertThat(memory.has("memory_id")).isFalse();
+  }
+
+  @Test
+  void updateAndDeleteExplicitlyRejectReadOnlyGroupArtifacts() throws Exception {
+    when(scopeResolver.primaryScope(context)).thenReturn(Optional.of("account:account-1"));
+    when(scopeResolver.isReadOnlyMemory("account:account-1", "artifact-1")).thenReturn(true);
+
+    String updateResult =
+        new MemoryUpdateAgentTool(mem0Client, scopeResolver)
+            .getTool()
+            .handler()
+            .apply(
+                context, mapper.readTree("{\"memory_id\":\"artifact-1\",\"memory\":\"new text\"}"));
+    String deleteResult =
+        new MemoryDeleteAgentTool(mem0Client, scopeResolver)
+            .getTool()
+            .handler()
+            .apply(context, mapper.readTree("{\"memory_id\":\"artifact-1\"}"));
+
+    assertThat(updateResult).isEqualTo("collective group memories are read-only");
+    assertThat(deleteResult).isEqualTo("collective group memories are read-only");
+    verify(mem0Client, never())
+        .updateMemory(
+            org.mockito.ArgumentMatchers.any(),
+            org.mockito.ArgumentMatchers.any(),
+            org.mockito.ArgumentMatchers.any());
+    verify(mem0Client, never()).deleteMemory(org.mockito.ArgumentMatchers.any());
   }
 
   private ToolContext context(IncomingMessage message) {
