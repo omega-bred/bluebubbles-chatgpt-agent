@@ -13,8 +13,8 @@
     "axios": "^1.18.0",
     "cap-widget": "^0.1.53",
     "keycloak-js": "^26.1.4",
-    "react": "^18.3.1",
-    "react-dom": "^18.3.1"
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8"
   },
   "devDependencies": {
     "@babel/core": "^8.0.1",
@@ -23,8 +23,8 @@
     "@babel/preset-typescript": "^8.0.1",
     "@babel/traverse": "^8.0.4",
     "@babel/types": "^8.0.4",
-    "@types/react": "^18.3.18",
-    "@types/react-dom": "^18.3.5",
+    "@types/react": "^19.2.18",
+    "@types/react-dom": "^19.2.4",
     "@vitejs/plugin-react": "^6.0.5",
     "autoprefixer": "10.4.20",
     "postcss": "8.5.25",
