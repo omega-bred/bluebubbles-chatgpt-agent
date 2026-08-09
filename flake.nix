@@ -220,7 +220,7 @@
             pkgs.keycloak
             pkgs.kubectl
             pkgs.kustomize
-            pkgs.nodejs_20
+            pkgs.nodejs_24
             pkgs.openapi-generator-cli
             pkgs.openssl
             postgresql
@@ -318,7 +318,7 @@
 
           devTools = devToolsFor system pkgs;
           jdk = devTools.jdk;
-          nodejs = pkgs.nodejs_20;
+          nodejs = pkgs.nodejs_24;
           gradle = pkgs.gradle_9.override {
             java = jdk;
             javaToolchains = [ jdk ];

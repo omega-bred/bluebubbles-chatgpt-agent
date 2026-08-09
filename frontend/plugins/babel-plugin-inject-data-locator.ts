@@ -208,10 +208,10 @@ const createPluginLogic = (babel: {types: typeof BabelTypes}, options: CustomPlu
 // Babel plugin signature: a function that returns the plugin object.
 // Receives babel object (with types, etc.) as first argument, and plugin options as second.
 export default function (
-  babelAPI: {types: typeof BabelTypes; assertVersion: (version: number) => void},
+  babelAPI: {types: typeof BabelTypes; assertVersion: (version: number | string) => void},
   options: CustomPluginOptions,
 ) {
-  babelAPI.assertVersion(7); // Ensure compatibility with Babel 7+
+  babelAPI.assertVersion("^8.0.0");
 
   return createPluginLogic(babelAPI, options);
 }
