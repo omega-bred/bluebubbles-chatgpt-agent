@@ -234,6 +234,47 @@ class ConversationQuestionAnsweringModelClientTest {
   }
 
   @ParameterizedTest
+  @ValueSource(
+      strings = {
+        "41\u200B1111111\u00851111111",
+        "41🔒1111111•1111111",
+        "41111111\u202E11111111",
+        "4\u200B111111111111111",
+        "\u200B41111111🔒11111111\u0085",
+        "41🧬1111111\u2066🔒•1111111"
+      })
+  void rejectsAStoredSourceCardRegardlessOfAnswerRegrouping(String answerCandidate) {
+    assertThat(
+            ConversationQuestionAnswerOutputValidator.isSafe(
+                "The payment reference was " + answerCandidate + ".",
+                Set.of(),
+                List.of("Payment reference: 4111 1111 1111 1111")))
+        .isFalse();
+  }
+
+  @ParameterizedTest
+  @MethodSource("safeNonmatchingRegroupedNumbers")
+  void doesNotTreatUnrelatedDatesCountsOrIdentifiersAsTheStoredSourceCard(
+      String source, String answer) {
+    assertThat(ConversationQuestionAnswerOutputValidator.isSafe(answer, Set.of(), List.of(source)))
+        .isTrue();
+  }
+
+  private static Stream<Arguments> safeNonmatchingRegroupedNumbers() {
+    return Stream.of(
+        Arguments.of("Payment reference: 4111 1111 1111 1111", "The meeting date is 2026-08-09."),
+        Arguments.of(
+            "Payment reference: 4111 1111 1111 1111", "The reported count is 1,234,567,890,123."),
+        Arguments.of(
+            "Payment reference: 4111 1111 1111 1111",
+            "A different reference is 52\u200B2222222\u00852222222."),
+        Arguments.of(
+            "Reported count: 1,234,567,890,123", "The same count is 1\u200B234567\u0085890123."),
+        Arguments.of(
+            "Payment reference: 4111 1111 1111 1111", "The short value is 4111•1111•1111."));
+  }
+
+  @ParameterizedTest
   @MethodSource("regroupedPaymentCardCandidates")
   void rejectsRegroupedPaymentCardIdentifiersAcrossSourceAndAnswer(
       String sourceCandidate, String answerCandidate) {

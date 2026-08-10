@@ -297,6 +297,9 @@ final class ConversationQuestionAnswerOutputValidator {
   }
 
   private static boolean containsSensitiveNumber(String answer, SourceIdentifiers identifiers) {
+    if (containsSourcePaymentCard(answer, identifiers)) {
+      return true;
+    }
     Matcher formattedMatcher = NUMBER_CANDIDATE.matcher(answer);
     while (formattedMatcher.find()) {
       String candidate = formattedMatcher.group();
@@ -314,16 +317,26 @@ final class ConversationQuestionAnswerOutputValidator {
   }
 
   private static void collectPaymentCardIdentifiers(String source, SourceIdentifiers identifiers) {
-    for (String candidate : paymentCardCandidates(source)) {
-      identifiers.addSensitiveNumber(candidate);
+    for (String candidate : paymentCardDigitSequences(source, true)) {
+      identifiers.addPaymentCard(candidate);
     }
   }
 
   private static boolean containsPaymentCardLike(String text) {
-    return !paymentCardCandidates(text).isEmpty();
+    return !paymentCardDigitSequences(text, true).isEmpty();
   }
 
-  private static List<String> paymentCardCandidates(String text) {
+  private static boolean containsSourcePaymentCard(String answer, SourceIdentifiers identifiers) {
+    for (String candidate : paymentCardDigitSequences(answer, false)) {
+      if (identifiers.paymentCards().contains(candidate)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  private static List<String> paymentCardDigitSequences(
+      String text, boolean requirePlausibleGrouping) {
     if (text.length() > MAX_PAYMENT_CARD_SCAN_CHARACTERS) {
       throw new IllegalStateException("payment-card character budget exceeded");
     }
@@ -377,7 +390,7 @@ final class ConversationQuestionAnswerOutputValidator {
       if (tokenEnd
           && digitCount >= 13
           && digitCount <= 19
-          && isPlausiblePaymentCardGrouping(rawCandidate)) {
+          && (!requirePlausibleGrouping || isPlausiblePaymentCardGrouping(rawCandidate))) {
         candidates.add(digits.toString());
         if (candidates.size() > MAX_SENSITIVE_SOURCE_IDENTIFIERS) {
           throw new IllegalStateException("payment-card work budget exceeded");
@@ -1209,6 +1222,7 @@ final class ConversationQuestionAnswerOutputValidator {
     private final Set<String> endpoints = new HashSet<>();
     private final Set<String> paths = new HashSet<>();
     private final Set<String> sensitiveNumbers = new HashSet<>();
+    private final Set<String> paymentCards = new HashSet<>();
     private final Set<String> overlapExemptTokens = new HashSet<>();
 
     private void addText(String value) {
@@ -1230,6 +1244,13 @@ final class ConversationQuestionAnswerOutputValidator {
     private void addSensitiveNumber(String value) {
       if (!value.isEmpty()) {
         sensitiveNumbers.add(value);
+        checkSize();
+      }
+    }
+
+    private void addPaymentCard(String value) {
+      if (!value.isEmpty()) {
+        paymentCards.add(value);
         checkSize();
       }
     }
@@ -1262,6 +1283,10 @@ final class ConversationQuestionAnswerOutputValidator {
       return sensitiveNumbers;
     }
 
+    private Set<String> paymentCards() {
+      return paymentCards;
+    }
+
     private Set<String> overlapExemptTokens() {
       return overlapExemptTokens;
     }
@@ -1272,6 +1297,7 @@ final class ConversationQuestionAnswerOutputValidator {
               + endpoints.size()
               + paths.size()
               + sensitiveNumbers.size()
+              + paymentCards.size()
               + overlapExemptTokens.size();
       if (size > MAX_SENSITIVE_SOURCE_IDENTIFIERS) {
         throw new IllegalStateException("sensitive source identifier budget exceeded");
