@@ -26,6 +26,7 @@ import java.util.Set;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.ArgumentCaptor;
 
@@ -194,6 +195,9 @@ class ConversationQuestionAnsweringModelClientTest {
         "4111 1111 1111 1",
         "4111 1111 1111 1111",
         "4111 1111 1111 1111 111",
+        "4111     1111     1111     1111",
+        "4111\t1111\t1111\t1111",
+        "4111 \t—\n1111-\r\n1111\u2003–\t1111",
         "4111-1111-1111-1111",
         "4111–1111–1111–1111",
         "4111—1111—1111—1111"
@@ -219,6 +223,45 @@ class ConversationQuestionAnsweringModelClientTest {
                 Set.of(),
                 List.of()))
         .isFalse();
+  }
+
+  @ParameterizedTest
+  @CsvSource(
+      delimiter = '|',
+      textBlock =
+          """
+          4111     1111     1111     1111|41111     11111     111111
+          4111\t1111\t1111\t1111|41111\t11111\t111111
+          4111 — 1111\t1111 - 1111|41111\t— 11111     111111
+          """)
+  void rejectsRegroupedPaymentCardIdentifiersAcrossSourceAndAnswer(
+      String sourceCandidate, String answerCandidate) {
+    assertThat(
+            ConversationQuestionAnswerOutputValidator.isSafe(
+                "The payment reference was " + answerCandidate + ".",
+                Set.of(),
+                List.of("Payment reference: " + sourceCandidate)))
+        .isFalse();
+  }
+
+  @Test
+  void paymentCardScannerRemainsBoundedAcrossNearCapSeparatorRuns() {
+    String answerSeparatorRun = " \t—".repeat(1_300);
+    String nearAnswerCap = "4111" + answerSeparatorRun + "1111 1111 1111";
+    String nearSourceCap = "4111" + " ".repeat(299_970) + "1111 1111 1111";
+
+    assertTimeoutPreemptively(
+        Duration.ofSeconds(3),
+        () -> {
+          assertThat(
+                  ConversationQuestionAnswerOutputValidator.isSafe(
+                      nearAnswerCap, Set.of(), List.of()))
+              .isFalse();
+          assertThat(
+                  ConversationQuestionAnswerOutputValidator.isSafe(
+                      "No payment reference was repeated.", Set.of(), List.of(nearSourceCap)))
+              .isTrue();
+        });
   }
 
   @Test

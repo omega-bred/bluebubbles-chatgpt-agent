@@ -49,7 +49,7 @@ final class ConversationQuestionAnswerOutputValidator {
       Pattern.compile("(?<![\\p{L}\\p{N}])\\d{7,}(?![\\p{L}\\p{N}])");
   private static final Pattern GROUPED_LONG_NUMBER =
       Pattern.compile("(?<![\\p{L}\\p{N}])\\d{1,3}(?:,\\d{3}){2,}(?![\\p{L}\\p{N}])");
-  private static final int MAX_PAYMENT_CARD_CANDIDATE_CHARACTERS = 64;
+  private static final int MAX_PAYMENT_CARD_SCAN_CHARACTERS = MAX_SOURCE_CHARACTERS;
   private static final Pattern PHONE_CONTEXT =
       Pattern.compile("(?i)\\b(?:phone|call|text|contact|mobile|telephone|tel|sms|fax|reach)\\b");
   private static final Pattern PHONE_FORMAT =
@@ -324,6 +324,9 @@ final class ConversationQuestionAnswerOutputValidator {
   }
 
   private static List<String> paymentCardCandidates(String text) {
+    if (text.length() > MAX_PAYMENT_CARD_SCAN_CHARACTERS) {
+      throw new IllegalStateException("payment-card character budget exceeded");
+    }
     List<String> candidates = new ArrayList<>();
     int index = 0;
     while (index < text.length()) {
@@ -336,7 +339,7 @@ final class ConversationQuestionAnswerOutputValidator {
       int digitCount = 0;
       int lastDigitEnd = index;
       StringBuilder digits = new StringBuilder(19);
-      while (cursor < text.length() && cursor - index < MAX_PAYMENT_CARD_CANDIDATE_CHARACTERS) {
+      while (cursor < text.length()) {
         char value = text.charAt(cursor);
         if (Character.isDigit(value)) {
           digitCount++;
@@ -351,25 +354,19 @@ final class ConversationQuestionAnswerOutputValidator {
           break;
         }
         int nextDigit = cursor;
-        while (nextDigit < text.length()
-            && nextDigit - cursor < 4
-            && isPaymentCardSeparator(text.charAt(nextDigit))) {
+        while (nextDigit < text.length() && isPaymentCardSeparator(text.charAt(nextDigit))) {
           nextDigit++;
         }
         if (nextDigit == text.length() || !Character.isDigit(text.charAt(nextDigit))) {
+          cursor = nextDigit;
           break;
         }
         cursor = nextDigit;
       }
-      boolean workBudgetExhausted =
-          cursor < text.length()
-              && cursor - index >= MAX_PAYMENT_CARD_CANDIDATE_CHARACTERS
-              && isPaymentCardCandidateCharacter(text.charAt(cursor));
       boolean tokenEnd =
           lastDigitEnd == text.length() || !Character.isLetterOrDigit(text.charAt(lastDigitEnd));
       String rawCandidate = text.substring(index, lastDigitEnd);
-      if (!workBudgetExhausted
-          && tokenEnd
+      if (tokenEnd
           && digitCount >= 13
           && digitCount <= 19
           && isPlausiblePaymentCardGrouping(rawCandidate)) {
@@ -381,10 +378,6 @@ final class ConversationQuestionAnswerOutputValidator {
       index = Math.max(index + 1, cursor);
     }
     return List.copyOf(candidates);
-  }
-
-  private static boolean isPaymentCardCandidateCharacter(char value) {
-    return Character.isDigit(value) || isPaymentCardSeparator(value);
   }
 
   private static boolean isPlausiblePaymentCardGrouping(String candidate) {
@@ -421,7 +414,8 @@ final class ConversationQuestionAnswerOutputValidator {
   }
 
   private static boolean isPaymentCardSeparator(char value) {
-    return Character.isSpaceChar(value)
+    return Character.isWhitespace(value)
+        || Character.isSpaceChar(value)
         || value == '-'
         || (value >= '\u2010' && value <= '\u2015')
         || value == '\u2212'
