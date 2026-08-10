@@ -279,7 +279,7 @@ dependencies {
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
 
     // generated java client
-    implementation 'joda-time:joda-time:2.14.0'
+    implementation 'joda-time:joda-time:2.14.3'
     implementation "com.fasterxml.jackson.datatype:jackson-datatype-jsr310"
 }
 
