@@ -440,6 +440,103 @@ class ConversationQuestionAnsweringServiceTest {
   }
 
   @Test
+  void firstBatchAnswerCannotExposeAGuidFromALaterBatch() {
+    service = service(1, 60_000, 5, 300_000);
+    List<QuestionMessage> messages = messages(2, 10);
+    when(retriever.retrieveExact(any(), eq(REPORT_PLAN))).thenReturn(completeExact(messages));
+    when(retriever.retrieveChronological(any())).thenReturn(completeChronological(List.of()));
+    when(model.answer(QUESTION, List.of(messages.get(0)), DEADLINE))
+        .thenReturn(
+            routed(
+                answered("The first finding exposes message-1 from a later batch.", "message-0")));
+    when(model.answer(QUESTION, List.of(messages.get(1)), DEADLINE))
+        .thenReturn(
+            routed(
+                new ModelAnswer(
+                    AnswerStatus.INSUFFICIENT_EVIDENCE,
+                    "There is not enough evidence.",
+                    Confidence.LOW,
+                    List.of(),
+                    false)));
+
+    GroupQuestionAnswer result = service.answer(ACCOUNT, GROUP, QUESTION, FROM, TO);
+
+    assertThat(result.status()).isNotEqualTo(AnswerStatus.ANSWERED);
+    assertThat(result.answer()).doesNotContain("message-1");
+  }
+
+  @Test
+  void reducedAnswerCannotExposeAGuidFromAnUnsupportedBatch() {
+    service = service(1, 60_000, 5, 300_000);
+    List<QuestionMessage> messages = messages(3, 10);
+    when(retriever.retrieveExact(any(), eq(REPORT_PLAN))).thenReturn(completeExact(messages));
+    when(model.answer(eq(QUESTION), anyList(), eq(DEADLINE)))
+        .thenAnswer(
+            invocation -> {
+              List<QuestionMessage> batch = invocation.getArgument(1);
+              return switch (batch.getFirst().messageGuid()) {
+                case "message-0" ->
+                    routed(answered("The first finding is supported.", "message-0"));
+                case "message-1" ->
+                    routed(
+                        new ModelAnswer(
+                            AnswerStatus.INSUFFICIENT_EVIDENCE,
+                            "There is not enough evidence.",
+                            Confidence.LOW,
+                            List.of(),
+                            false));
+                case "message-2" -> routed(answered("The last finding is supported.", "message-2"));
+                default -> throw new AssertionError("unexpected batch");
+              };
+            });
+    stubReduction(
+        routed(
+            answered(
+                "The reduced answer exposes message-1 from the unsupported batch.",
+                "message-0",
+                "message-2")));
+
+    GroupQuestionAnswer result = service.answer(ACCOUNT, GROUP, QUESTION, FROM, TO);
+
+    assertThat(result.answer())
+        .doesNotContain("The reduced answer exposes message-1 from the unsupported batch.");
+    verify(model, never()).verifyReduction(eq(QUESTION), anyString(), anyList(), eq(DEADLINE));
+  }
+
+  @Test
+  void exactBackupIsRevalidatedAgainstGuidsRetrievedLaterInTheRequest() {
+    QuestionMessage exact = message("exact-guid", "Dom", "More context is required.", 1);
+    QuestionMessage chronological =
+        message("chronological-guid", "Eve", "The chronological fallback found no answer.", 2);
+    when(retriever.retrieveExact(any(), eq(REPORT_PLAN))).thenReturn(completeExact(List.of(exact)));
+    when(retriever.retrieveChronological(any()))
+        .thenReturn(completeChronological(List.of(chronological)));
+    when(model.answer(QUESTION, List.of(exact), DEADLINE))
+        .thenReturn(
+            routed(
+                new ModelAnswer(
+                    AnswerStatus.ANSWERED,
+                    "The tentative answer exposes chronological-guid.",
+                    Confidence.LOW,
+                    List.of("exact-guid"),
+                    true)));
+    when(model.answer(QUESTION, List.of(chronological), DEADLINE))
+        .thenReturn(
+            routed(
+                new ModelAnswer(
+                    AnswerStatus.INSUFFICIENT_EVIDENCE,
+                    "There is not enough evidence.",
+                    Confidence.LOW,
+                    List.of(),
+                    false)));
+
+    GroupQuestionAnswer result = service.answer(ACCOUNT, GROUP, QUESTION, FROM, TO);
+
+    assertThat(result.status()).isNotEqualTo(AnswerStatus.ANSWERED);
+    assertThat(result.answer()).doesNotContain("chronological-guid");
+  }
+
+  @Test
   void chronologicalFallbackBatchesByMessageCountAndReducesFindings() {
     List<QuestionMessage> messages = messages(101, 10);
     exactMissThenChronological(messages);

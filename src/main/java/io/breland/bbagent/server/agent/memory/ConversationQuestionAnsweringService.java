@@ -197,7 +197,14 @@ public class ConversationQuestionAnsweringService {
         if (!exact.messages().isEmpty() && !deadlineReached(deadline)) {
           exactSynthesis = synthesize(question, exact.messages(), from, deadline, budget, true);
           if (exactSynthesis.supported() && !exactSynthesis.routed().answer().needsMoreContext()) {
-            return finalAnswer(exactSynthesis, exact, RetrievalMode.EXACT_SEARCH, from, to, null);
+            return finalAnswer(
+                exactSynthesis,
+                exact,
+                RetrievalMode.EXACT_SEARCH,
+                from,
+                to,
+                null,
+                work.messageGuids());
           }
         }
       } catch (ConversationQuestionHistoryRetriever.PartialRetrievalException partialFailure) {
@@ -216,7 +223,7 @@ public class ConversationQuestionAnsweringService {
           exactSourceAttempted ? RetrievalMode.HYBRID : RetrievalMode.CHRONOLOGICAL;
       if (deadlineReached(deadline)) {
         return supportedBackupOrUnavailable(
-            exactSynthesis, exact, fallbackMode, from, to, TIME_LIMIT);
+            exactSynthesis, exact, fallbackMode, from, to, TIME_LIMIT, work.messageGuids());
       }
 
       RetrievalResult chronological;
@@ -230,7 +237,13 @@ public class ConversationQuestionAnsweringService {
             synthesize(question, chronological.messages(), from, deadline, budget, false);
         if (partialSynthesis.supported()) {
           return finalAnswer(
-              partialSynthesis, chronological, fallbackMode, from, to, SOURCE_UNAVAILABLE);
+              partialSynthesis,
+              chronological,
+              fallbackMode,
+              from,
+              to,
+              SOURCE_UNAVAILABLE,
+              work.messageGuids());
         }
         if (exactSynthesis != null && exactSynthesis.supported()) {
           return finalAnswer(
@@ -242,23 +255,31 @@ public class ConversationQuestionAnsweringService {
               dominantReason(
                   SOURCE_UNAVAILABLE,
                   chronological.partialReason(),
-                  partialSynthesis.partialReason()));
+                  partialSynthesis.partialReason()),
+              work.messageGuids());
         }
         return supportedBackupOrUnavailable(
-            exactSynthesis, exact, fallbackMode, from, to, SOURCE_UNAVAILABLE);
+            exactSynthesis, exact, fallbackMode, from, to, SOURCE_UNAVAILABLE, work.messageGuids());
       } catch (RuntimeException ignored) {
         return supportedBackupOrUnavailable(
-            exactSynthesis, exact, fallbackMode, from, to, SOURCE_UNAVAILABLE);
+            exactSynthesis, exact, fallbackMode, from, to, SOURCE_UNAVAILABLE, work.messageGuids());
       }
       if (deadlineReached(deadline) && chronological.messages().isEmpty()) {
         return supportedBackupOrUnavailable(
-            exactSynthesis, exact, fallbackMode, from, to, TIME_LIMIT);
+            exactSynthesis, exact, fallbackMode, from, to, TIME_LIMIT, work.messageGuids());
       }
 
       Synthesis chronologicalSynthesis =
           synthesize(question, chronological.messages(), from, deadline, budget, false);
       if (chronologicalSynthesis.supported()) {
-        return finalAnswer(chronologicalSynthesis, chronological, fallbackMode, from, to, null);
+        return finalAnswer(
+            chronologicalSynthesis,
+            chronological,
+            fallbackMode,
+            from,
+            to,
+            null,
+            work.messageGuids());
       }
       if (exactSynthesis != null && exactSynthesis.supported()) {
         String reason =
@@ -266,7 +287,8 @@ public class ConversationQuestionAnsweringService {
                 chronologicalSynthesis.partialReason(),
                 chronological.partialReason(),
                 NEEDS_MORE_CONTEXT);
-        return finalAnswer(exactSynthesis, exact, fallbackMode, from, to, reason);
+        return finalAnswer(
+            exactSynthesis, exact, fallbackMode, from, to, reason, work.messageGuids());
       }
       return unsupportedAnswer(chronologicalSynthesis, chronological, fallbackMode, from, to);
     } catch (RuntimeException ignored) {
@@ -296,6 +318,7 @@ public class ConversationQuestionAnsweringService {
       ModelBudget budget,
       boolean stopOnNeedsMoreContext) {
     List<QuestionMessage> messages = List.copyOf(submittedMessages);
+    Set<String> forbiddenMessageGuids = messageGuids(messages);
     List<SupportedFinding> findings = new ArrayList<>();
     RoutedModelAnswer lastUnsupported = null;
     Instant processedThrough = from;
@@ -332,7 +355,8 @@ public class ConversationQuestionAnsweringService {
         partialReason = MODEL_UNAVAILABLE;
         break;
       }
-      ModelAnswer validated = validateAnswer(routed, messageGuids(batch.messages()));
+      ModelAnswer validated =
+          validateAnswer(routed, messageGuids(batch.messages()), forbiddenMessageGuids);
       if (validated == null) {
         partialReason = MODEL_INVALID;
         break;
@@ -389,7 +413,8 @@ public class ConversationQuestionAnsweringService {
         partialReason,
         needsMoreContextObserved,
         deadline,
-        budget);
+        budget,
+        forbiddenMessageGuids);
   }
 
   private Synthesis finishSynthesis(
@@ -400,7 +425,8 @@ public class ConversationQuestionAnsweringService {
       @Nullable String partialReason,
       boolean needsMoreContextObserved,
       Instant deadline,
-      ModelBudget budget) {
+      ModelBudget budget,
+      Set<String> forbiddenMessageGuids) {
     if (findings.isEmpty()) {
       if (lastUnsupported == null) {
         return new Synthesis(null, processedThrough, partialReason, false);
@@ -416,14 +442,18 @@ public class ConversationQuestionAnsweringService {
           lastUnsupported.answer().status() == AnswerStatus.UNAVAILABLE);
     }
     if (findings.size() == 1) {
-      return new Synthesis(
-          findings.get(0).routed(),
+      return bestFinding(
+          findings,
           processedThrough,
           firstReason(partialReason, needsMoreContextObserved ? NEEDS_MORE_CONTEXT : null),
-          false);
+          forbiddenMessageGuids);
     }
     if (deadlineReached(deadline)) {
-      return bestFinding(findings, processedThrough, firstReason(TIME_LIMIT, partialReason));
+      return bestFinding(
+          findings,
+          processedThrough,
+          firstReason(TIME_LIMIT, partialReason),
+          forbiddenMessageGuids);
     }
 
     List<QuestionFinding> questionFindings =
@@ -433,7 +463,11 @@ public class ConversationQuestionAnsweringService {
     try {
       reductionCharacters = model.reduceInputCharacters(question, questionFindings);
     } catch (RuntimeException ignored) {
-      return bestFinding(findings, processedThrough, firstReason(MODEL_INVALID, partialReason));
+      return bestFinding(
+          findings,
+          processedThrough,
+          firstReason(MODEL_INVALID, partialReason),
+          forbiddenMessageGuids);
     }
     if (budget.modelBatches >= maxModelBatches
         || reductionCharacters > maxBatchCharacters
@@ -443,7 +477,8 @@ public class ConversationQuestionAnsweringService {
           processedThrough,
           firstReason(
               budget.modelBatches >= maxModelBatches ? MODEL_BATCH_LIMIT : CHARACTER_LIMIT,
-              partialReason));
+              partialReason),
+          forbiddenMessageGuids);
     }
     budget.modelBatches++;
     budget.characters += reductionCharacters;
@@ -451,9 +486,13 @@ public class ConversationQuestionAnsweringService {
       RoutedReductionAnswer reduction =
           model.reduceWithCitations(question, questionFindings, deadline);
       RoutedModelAnswer reduced = reduction.routed();
-      ModelAnswer validated = validateAnswer(reduced, submittedEvidence);
+      ModelAnswer validated = validateAnswer(reduced, submittedEvidence, forbiddenMessageGuids);
       if (validated == null) {
-        return bestFinding(findings, processedThrough, firstReason(MODEL_INVALID, partialReason));
+        return bestFinding(
+            findings,
+            processedThrough,
+            firstReason(MODEL_INVALID, partialReason),
+            forbiddenMessageGuids);
       }
       RoutedModelAnswer accepted = reduced;
       if (validated.status() == AnswerStatus.ANSWERED) {
@@ -462,13 +501,19 @@ public class ConversationQuestionAnsweringService {
                 question, reduced, questionFindings, reduction.citedFindings(), deadline, budget);
         if (verification.failureReason() != null) {
           return bestFinding(
-              findings, processedThrough, firstReason(verification.failureReason(), partialReason));
+              findings,
+              processedThrough,
+              firstReason(verification.failureReason(), partialReason),
+              forbiddenMessageGuids);
         }
         accepted = Objects.requireNonNull(verification.routed());
         validated = accepted.answer();
         if (validated.status() != AnswerStatus.ANSWERED) {
           return bestFinding(
-              findings, processedThrough, firstReason(NEEDS_MORE_CONTEXT, partialReason));
+              findings,
+              processedThrough,
+              firstReason(NEEDS_MORE_CONTEXT, partialReason),
+              forbiddenMessageGuids);
         }
       }
       String reason =
@@ -480,12 +525,19 @@ public class ConversationQuestionAnsweringService {
       return new Synthesis(
           accepted, processedThrough, reason, validated.status() == AnswerStatus.UNAVAILABLE);
     } catch (RuntimeException ignored) {
-      return bestFinding(findings, processedThrough, firstReason(MODEL_UNAVAILABLE, partialReason));
+      return bestFinding(
+          findings,
+          processedThrough,
+          firstReason(MODEL_UNAVAILABLE, partialReason),
+          forbiddenMessageGuids);
     }
   }
 
   private Synthesis bestFinding(
-      List<SupportedFinding> findings, Instant processedThrough, String partialReason) {
+      List<SupportedFinding> findings,
+      Instant processedThrough,
+      String partialReason,
+      Set<String> forbiddenMessageGuids) {
     SupportedFinding selected =
         findings.stream()
             .max(
@@ -494,6 +546,11 @@ public class ConversationQuestionAnsweringService {
                             confidenceRank(finding.finding().confidence()))
                     .thenComparing(finding -> finding.finding().coverageThrough()))
             .orElseThrow();
+    if (!ConversationQuestionAnswerOutputValidator.isSafe(
+        selected.routed().answer().answer(), forbiddenMessageGuids, Set.of())) {
+      return new Synthesis(
+          null, processedThrough, firstReason(MODEL_INVALID, partialReason), false);
+    }
     return new Synthesis(selected.routed(), processedThrough, partialReason, false);
   }
 
@@ -522,7 +579,9 @@ public class ConversationQuestionAnsweringService {
   }
 
   private ModelAnswer validateAnswer(
-      @Nullable RoutedModelAnswer routed, Set<String> submittedEvidence) {
+      @Nullable RoutedModelAnswer routed,
+      Set<String> submittedEvidence,
+      Set<String> forbiddenMessageGuids) {
     if (routed == null || routed.answer() == null) {
       return null;
     }
@@ -536,7 +595,7 @@ public class ConversationQuestionAnsweringService {
       return null;
     }
     if (!ConversationQuestionAnswerOutputValidator.isSafe(
-        answer.answer(), submittedEvidence, Set.of())) {
+        answer.answer(), forbiddenMessageGuids, Set.of())) {
       return null;
     }
     return answer;
@@ -631,13 +690,28 @@ public class ConversationQuestionAnsweringService {
       RetrievalMode mode,
       Instant from,
       Instant to,
-      @Nullable String forcedPartialReason) {
+      @Nullable String forcedPartialReason,
+      Set<String> forbiddenMessageGuids) {
     ModelAnswer answer = synthesis.routed().answer();
     String reason =
         dominantReason(
             forcedPartialReason,
             synthesis.partialReason(),
             retrieval == null ? null : retrieval.partialReason());
+    if (answer.status() == AnswerStatus.ANSWERED
+        && !ConversationQuestionAnswerOutputValidator.isSafe(
+            answer.answer(), forbiddenMessageGuids, Set.of())) {
+      return terminalAnswer(
+          AnswerStatus.INSUFFICIENT_EVIDENCE,
+          from,
+          to,
+          mode,
+          CoverageStatus.PARTIAL,
+          dominantReason(MODEL_INVALID, reason),
+          synthesis.coverageThrough(),
+          synthesis.routed().model(),
+          synthesis.routed().fallbackUsed());
+    }
     CoverageStatus coverage = reason == null ? CoverageStatus.COMPLETE : CoverageStatus.PARTIAL;
     Instant coverageThrough =
         coverage == CoverageStatus.COMPLETE
@@ -693,9 +767,10 @@ public class ConversationQuestionAnsweringService {
       RetrievalMode mode,
       Instant from,
       Instant to,
-      String reason) {
+      String reason,
+      Set<String> forbiddenMessageGuids) {
     if (backup != null && backup.supported()) {
-      return finalAnswer(backup, retrieval, mode, from, to, reason);
+      return finalAnswer(backup, retrieval, mode, from, to, reason, forbiddenMessageGuids);
     }
     return unavailable(from, to, mode, reason, from);
   }
@@ -861,6 +936,10 @@ public class ConversationQuestionAnsweringService {
 
     private long messageCount() {
       return messageGuids.size();
+    }
+
+    private Set<String> messageGuids() {
+      return Set.copyOf(messageGuids);
     }
   }
 

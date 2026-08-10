@@ -7,12 +7,12 @@ import static org.mockito.Mockito.when;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.breland.bbagent.generated.bluebubblesclient.model.Message;
-import io.breland.bbagent.generated.bluebubblesclient.model.MessageHandle;
 import io.breland.bbagent.server.agent.IncomingMessage;
 import io.breland.bbagent.server.agent.tools.ToolContext;
 import io.breland.bbagent.server.agent.transport.bb.BBHttpClientWrapper;
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 
@@ -26,9 +26,7 @@ class SearchConvoHistoryAgentToolTest {
     when(wrapper.searchConversationHistory("iMessage;+;group", "Wordle", 20, 0))
         .thenReturn(
             List.of(
-                message(
-                    "00000000-0000-0000-0000-000000000101",
-                    new MessageHandle().address("+15555550199")),
+                message("00000000-0000-0000-0000-000000000101", Map.of("address", "+15555550199")),
                 message("00000000-0000-0000-0000-000000000102", null)));
     ToolContext context = mock(ToolContext.class);
     when(context.message()).thenReturn(incoming());
@@ -46,7 +44,7 @@ class SearchConvoHistoryAgentToolTest {
     assertThat(messages.get(1).get("sender").isNull()).isTrue();
   }
 
-  private static Message message(String guid, MessageHandle handle) {
+  private static Message message(String guid, Object handle) {
     return new Message()
         .guid(UUID.fromString(guid))
         .text("Wordle")

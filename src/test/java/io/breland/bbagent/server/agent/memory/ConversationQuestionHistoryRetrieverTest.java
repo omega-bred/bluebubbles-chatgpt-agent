@@ -18,7 +18,6 @@ import io.breland.bbagent.generated.bluebubblesclient.model.ApiV1ChatChatGuidMes
 import io.breland.bbagent.generated.bluebubblesclient.model.ApiV1ChatChatGuidMessageGet200ResponseDataInnerHandle;
 import io.breland.bbagent.generated.bluebubblesclient.model.Chat;
 import io.breland.bbagent.generated.bluebubblesclient.model.Message;
-import io.breland.bbagent.generated.bluebubblesclient.model.MessageHandle;
 import io.breland.bbagent.server.agent.IncomingMessage;
 import io.breland.bbagent.server.agent.account.AgentAccountResolver;
 import io.breland.bbagent.server.agent.memory.ConversationMemoryModels.ConversationRecord;
@@ -37,6 +36,7 @@ import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
@@ -868,7 +868,7 @@ class ConversationQuestionHistoryRetrieverTest {
         .isFromMe(false)
         .isSystemMessage(false)
         .isServiceMessage(false)
-        .handle(sender == null ? null : new MessageHandle().address(sender))
+        .handle(sender == null ? null : Map.of("address", sender))
         .chats(List.of(new Chat().guid(GUID)));
   }
 

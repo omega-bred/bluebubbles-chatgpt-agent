@@ -14,6 +14,7 @@ import io.breland.bbagent.server.agent.memory.ConversationQuestionAnsweringModel
 import io.breland.bbagent.server.agent.memory.ConversationQuestionAnsweringModels.RetrievalResult;
 import io.breland.bbagent.server.agent.memory.ConversationQuestionAnsweringModels.SearchPlan;
 import io.breland.bbagent.server.agent.transport.bb.BBHttpClientWrapper;
+import io.breland.bbagent.server.agent.transport.bb.BlueBubblesHandleAddress;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
@@ -464,8 +465,8 @@ public class ConversationQuestionHistoryRetriever {
     if (!authorized(timestamp, request, bounds)) {
       return Optional.empty();
     }
-    if (!seenRawGuids.accept(
-        raw.getGuid().toString(), raw.getHandle() == null ? null : raw.getHandle().getAddress())) {
+    String sender = BlueBubblesHandleAddress.from(raw.getHandle());
+    if (!seenRawGuids.accept(raw.getGuid().toString(), sender)) {
       return Optional.empty();
     }
     ApiV1ChatChatGuidMessageGet200ResponseDataInner normalized =
@@ -477,10 +478,9 @@ public class ConversationQuestionHistoryRetriever {
             .isSystemMessage(raw.getIsSystemMessage())
             .isServiceMessage(raw.getIsServiceMessage())
             .handle(
-                raw.getHandle() == null
+                sender == null
                     ? null
-                    : new ApiV1ChatChatGuidMessageGet200ResponseDataInnerHandle()
-                        .address(raw.getHandle().getAddress()))
+                    : new ApiV1ChatChatGuidMessageGet200ResponseDataInnerHandle().address(sender))
             .chats(
                 raw.getChats().stream()
                     .map(

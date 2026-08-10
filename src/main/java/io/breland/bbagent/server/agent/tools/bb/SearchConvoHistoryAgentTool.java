@@ -8,6 +8,7 @@ import io.breland.bbagent.server.agent.tools.AgentTool;
 import io.breland.bbagent.server.agent.tools.ToolJson;
 import io.breland.bbagent.server.agent.tools.ToolProvider;
 import io.breland.bbagent.server.agent.transport.bb.BBHttpClientWrapper;
+import io.breland.bbagent.server.agent.transport.bb.BlueBubblesHandleAddress;
 import io.swagger.v3.oas.annotations.media.Schema;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -59,7 +60,7 @@ public class SearchConvoHistoryAgentTool implements ToolProvider {
                 entry.put("guid", msg.getGuid());
                 entry.put("text", msg.getText());
                 entry.put("dateCreated", msg.getDateCreated());
-                entry.put("sender", msg.getHandle() == null ? null : msg.getHandle().getAddress());
+                entry.put("sender", BlueBubblesHandleAddress.from(msg.getHandle()));
                 messages.add(entry);
               });
 
