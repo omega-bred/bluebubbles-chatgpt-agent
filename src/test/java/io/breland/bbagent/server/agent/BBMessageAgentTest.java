@@ -1,5 +1,6 @@
 package io.breland.bbagent.server.agent;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -68,6 +69,7 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
@@ -478,6 +480,113 @@ class BBMessageAgentTest {
     assertFalse(prompt.contains("retired__"));
     assertFalse(prompt.contains("retired_auth"));
     assertFalse(prompt.contains("start_retired_async_task"));
+  }
+
+  @Test
+  void directBlueChatPromptForwardsPreciseGroupQuestionsWithoutMemorySubstitution() {
+    IncomingMessage incoming =
+        incomingMessage(
+            "iMessage;-;+15555550123",
+            "msg-group-question-direct",
+            "Who owns Project Atlas?",
+            1_000L);
+
+    String prompt =
+        promptBuilder(new StubBBHttpClientWrapper())
+            .buildConversationInput(List.of(), List.of(), incoming)
+            .toString();
+
+    String catchupGuidance =
+        prompt.substring(
+            prompt.indexOf("In a one-to-one chat, use get_group_catchup"),
+            prompt.indexOf(
+                "When the user asks to enable, disable, or schedule proactive summaries"));
+    assertTrue(
+        catchupGuidance.contains(
+            "For a precise question requiring exact evidence from an authorized group"));
+    assertTrue(prompt.contains("get_group_catchup with the user's exact question"));
+    assertTrue(
+        prompt.contains("question_answer coverage and insufficient_evidence as authoritative"));
+    assertTrue(
+        prompt.contains("do not substitute unrelated semantic memory as current group evidence"));
+    assertThat(catchupGuidance.toLowerCase(Locale.ROOT))
+        .doesNotContain(" count", " score", " game", " puzzle", " round", "wordle", "wordling");
+  }
+
+  @Test
+  void directLxmfPromptForwardsPreciseGroupQuestionsWithoutMemorySubstitution() {
+    IncomingMessage incoming =
+        new IncomingMessage(
+            IncomingMessage.TRANSPORT_LXMF,
+            IncomingMessage.transportPrefix(IncomingMessage.TRANSPORT_LXMF, "aabbccdd"),
+            "msg-group-question-lxmf",
+            null,
+            "Which plan did the Hiking group choose?",
+            false,
+            "LXMF",
+            "aabbccdd",
+            false,
+            Instant.ofEpochSecond(1_000L),
+            List.of(),
+            false);
+
+    String prompt =
+        promptBuilder(new StubBBHttpClientWrapper())
+            .buildConversationInput(List.of(), List.of(), incoming)
+            .toString();
+
+    assertTrue(prompt.contains("get_group_catchup with the user's exact question"));
+    assertTrue(
+        prompt.contains("question_answer coverage and insufficient_evidence as authoritative"));
+    assertTrue(
+        prompt.contains("do not substitute unrelated semantic memory as current group evidence"));
+    String catchupGuidance =
+        prompt.substring(
+            prompt.indexOf("Use get_group_catchup for questions like"),
+            prompt.indexOf(
+                "When the user asks to enable, disable, or schedule proactive summaries"));
+    assertTrue(
+        catchupGuidance.contains(
+            "For a precise question requiring exact evidence from an authorized group"));
+    assertThat(catchupGuidance.toLowerCase(Locale.ROOT))
+        .doesNotContain(" count", " score", " game", " puzzle", " round", "wordle", "wordling");
+  }
+
+  @Test
+  void groupPromptRestrictsCatchupQuestionsToTheCurrentConversation() {
+    IncomingMessage incoming =
+        new IncomingMessage(
+            "iMessage;+;chat-group-question",
+            "msg-group-question",
+            null,
+            "Who is winning?",
+            false,
+            "iMessage",
+            "Alice",
+            true,
+            Instant.ofEpochSecond(1_000L),
+            List.of(),
+            false);
+
+    String prompt =
+        promptBuilder(new StubBBHttpClientWrapper())
+            .buildConversationInput(List.of(), List.of(), incoming)
+            .toString();
+
+    assertTrue(
+        prompt.contains(
+            "use get_group_catchup for precise questions requiring exact evidence from the current group's own history"));
+    assertTrue(prompt.contains("server always scopes this tool to the current group"));
+    assertTrue(prompt.contains("do not use it to ask about another conversation"));
+    String catchupGuidance =
+        prompt.substring(
+            prompt.indexOf("In a group chat, use get_group_catchup"),
+            prompt.indexOf("Use web_search for current info"));
+    assertThat(catchupGuidance)
+        .contains(
+            "precise questions requiring exact evidence from the current group's own history");
+    assertThat(catchupGuidance.toLowerCase(Locale.ROOT))
+        .doesNotContain(" count", " score", " game", " puzzle", " round", "wordle", "wordling");
   }
 
   @Test

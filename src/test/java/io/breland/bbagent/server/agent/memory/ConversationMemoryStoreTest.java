@@ -13,15 +13,18 @@ import io.breland.bbagent.server.agent.memory.ConversationMemoryModels.Extractio
 import io.breland.bbagent.server.agent.memory.ConversationMemoryModels.ExtractionCandidate;
 import io.breland.bbagent.server.agent.memory.ConversationMemoryModels.JournalMessage;
 import io.breland.bbagent.server.agent.memory.ConversationMemoryModels.WorkClaim;
+import io.breland.bbagent.server.agent.memory.ConversationQuestionAnsweringModels.MembershipInterval;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicInteger;
 import javax.sql.DataSource;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.PreparedStatementSetter;
+import org.springframework.jdbc.core.RowMapper;
 import org.springframework.transaction.annotation.Transactional;
 
 @SpringBootTest
@@ -78,6 +81,175 @@ class ConversationMemoryStoreTest {
         .containsExactly("message-1");
     assertThat(store.activeMembershipAccountIds(conversationId, OBSERVED_AT))
         .containsExactly(accountId);
+  }
+
+  @Test
+  void pagesJournalMessagesByTimestampAndGuidWithAnExclusiveUpperBound() {
+    String accountId = createAccount("journal-page@example.com");
+    String conversationId =
+        store.upsertConversation(
+            "bluebubbles", "iMessage;+;journal-page", true, "Journal page", OBSERVED_AT);
+    JournalMessage first =
+        new JournalMessage(
+            "message-a",
+            conversationId,
+            accountId,
+            "first",
+            OBSERVED_AT,
+            false,
+            false,
+            "hash-first");
+    JournalMessage second =
+        new JournalMessage(
+            "message-b",
+            conversationId,
+            accountId,
+            "second",
+            OBSERVED_AT,
+            false,
+            false,
+            "hash-second");
+    JournalMessage atExclusiveEnd =
+        new JournalMessage(
+            "message-end",
+            conversationId,
+            accountId,
+            "outside",
+            OBSERVED_AT.plusSeconds(1),
+            false,
+            false,
+            "hash-outside");
+    store.recordMessage(first);
+    store.recordMessage(second);
+    store.recordMessage(atExclusiveEnd);
+
+    List<JournalMessage> firstPage =
+        store.findMessagePage(
+            conversationId,
+            OBSERVED_AT.minusSeconds(1),
+            OBSERVED_AT.plusSeconds(1),
+            null,
+            null,
+            1,
+            Duration.ofSeconds(5));
+    List<JournalMessage> secondPage =
+        store.findMessagePage(
+            conversationId,
+            OBSERVED_AT.minusSeconds(1),
+            OBSERVED_AT.plusSeconds(1),
+            firstPage.getFirst().sourceTimestamp(),
+            firstPage.getFirst().messageGuid(),
+            10,
+            Duration.ofSeconds(5));
+
+    assertThat(firstPage).extracting(JournalMessage::messageGuid).containsExactly("message-a");
+    assertThat(secondPage).extracting(JournalMessage::messageGuid).containsExactly("message-b");
+  }
+
+  @Test
+  void appliesSmallerPerRequestTimeoutAfterHigherSharedStatementSettings() {
+    AtomicInteger statementTimeout = new AtomicInteger();
+    JdbcTemplate inspectingTemplate =
+        new JdbcTemplate(dataSource) {
+          @Override
+          public <T> List<T> query(
+              String sql, PreparedStatementSetter preparedStatementSetter, RowMapper<T> rowMapper) {
+            return super.query(
+                sql,
+                statement -> {
+                  preparedStatementSetter.setValues(statement);
+                  statementTimeout.set(statement.getQueryTimeout());
+                },
+                rowMapper);
+          }
+        };
+    inspectingTemplate.setQueryTimeout(10);
+    int sharedTimeout = inspectingTemplate.getQueryTimeout();
+    ConversationMemoryStore timeoutStore = new ConversationMemoryStore(inspectingTemplate);
+
+    timeoutStore.findMessagePage(
+        "missing-conversation",
+        OBSERVED_AT.minusSeconds(1),
+        OBSERVED_AT.plusSeconds(1),
+        null,
+        null,
+        10,
+        Duration.ofMillis(1_001));
+
+    assertThat(statementTimeout.get()).isEqualTo(2);
+    assertThat(inspectingTemplate.getQueryTimeout()).isEqualTo(sharedTimeout);
+  }
+
+  @Test
+  void journalPageTimeoutHonorsALowerPreconfiguredJdbcTemplateLimit() {
+    AtomicInteger statementTimeout = new AtomicInteger();
+    JdbcTemplate inspectingTemplate =
+        new JdbcTemplate(dataSource) {
+          @Override
+          public <T> List<T> query(
+              String sql, PreparedStatementSetter preparedStatementSetter, RowMapper<T> rowMapper) {
+            return super.query(
+                sql,
+                statement -> {
+                  preparedStatementSetter.setValues(statement);
+                  statementTimeout.set(statement.getQueryTimeout());
+                },
+                rowMapper);
+          }
+        };
+    inspectingTemplate.setQueryTimeout(1);
+    ConversationMemoryStore timeoutStore = new ConversationMemoryStore(inspectingTemplate);
+
+    timeoutStore.findMessagePage(
+        "missing-conversation",
+        OBSERVED_AT.minusSeconds(1),
+        OBSERVED_AT.plusSeconds(1),
+        null,
+        null,
+        10,
+        Duration.ofSeconds(5));
+
+    assertThat(statementTimeout.get()).isEqualTo(1);
+    assertThat(inspectingTemplate.getQueryTimeout()).isEqualTo(1);
+  }
+
+  @Test
+  void findsOnlyOverlappingMembershipIntervalsForAccount() {
+    String accountId = createAccount("interval-account@example.com");
+    String otherAccountId = createAccount("interval-other@example.com");
+    String conversationId =
+        store.upsertConversation(
+            "bluebubbles", "iMessage;+;intervals", true, "Intervals", OBSERVED_AT);
+    Instant firstStart = OBSERVED_AT.minusSeconds(180);
+    Instant firstEnd = OBSERVED_AT.minusSeconds(120);
+    Instant secondStart = OBSERVED_AT.minusSeconds(60);
+
+    store.recordMembership(conversationId, accountId, firstStart);
+    store.replaceActiveMemberships(conversationId, java.util.Set.of(), firstEnd);
+    store.recordMembership(conversationId, accountId, secondStart);
+    store.recordMembership(conversationId, otherAccountId, OBSERVED_AT.minusSeconds(240));
+
+    assertThat(
+            store.findMembershipIntervals(
+                conversationId,
+                accountId,
+                OBSERVED_AT.minusSeconds(150),
+                OBSERVED_AT.minusSeconds(30)))
+        .extracting(MembershipInterval::startedAt)
+        .containsExactly(firstStart, secondStart);
+  }
+
+  @Test
+  void membershipIntervalIncludesStartAndExcludesEnd() {
+    Instant start = OBSERVED_AT.minusSeconds(60);
+    Instant end = OBSERVED_AT.minusSeconds(30);
+    MembershipInterval interval = new MembershipInterval(start, end);
+
+    assertThat(interval.contains(start)).isTrue();
+    assertThat(interval.contains(end.minusMillis(1))).isTrue();
+    assertThat(interval.contains(end)).isFalse();
+    assertThat(interval.contains(start.minusMillis(1))).isFalse();
+    assertThat(new MembershipInterval(start, null).contains(OBSERVED_AT)).isTrue();
   }
 
   @Test

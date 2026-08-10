@@ -26,6 +26,7 @@ import io.breland.bbagent.server.agent.memory.ConversationMemoryModels.Projectio
 import io.breland.bbagent.server.agent.memory.ConversationMemoryModels.ProjectionOperation;
 import io.breland.bbagent.server.agent.memory.ConversationMemoryModels.SummaryMaterial;
 import io.breland.bbagent.server.agent.memory.ConversationMemoryModels.WorkClaim;
+import io.breland.bbagent.server.agent.memory.ConversationQuestionAnsweringModels.MembershipInterval;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -38,6 +39,7 @@ import java.util.UUID;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.jdbc.core.ArgumentPreparedStatementSetter;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
 import org.springframework.lang.Nullable;
@@ -49,6 +51,18 @@ public class ConversationMemoryStore {
   private static final Duration EXTRACTION_LEASE = Duration.ofMinutes(5);
   private static final Duration PROJECTION_LEASE = Duration.ofMinutes(5);
   private static final Duration CATCHUP_LEASE = Duration.ofMinutes(5);
+  private static final int MAX_JOURNAL_PAGE_SIZE = 500;
+  private static final RowMapper<JournalMessage> JOURNAL_MESSAGE_ROW_MAPPER =
+      (resultSet, rowNumber) ->
+          new JournalMessage(
+              resultSet.getString("message_guid"),
+              resultSet.getString("conversation_id"),
+              resultSet.getString("sender_account_id"),
+              resultSet.getString("message_text"),
+              resultSet.getTimestamp("source_timestamp").toInstant(),
+              resultSet.getBoolean("from_agent"),
+              resultSet.getBoolean("system_message"),
+              resultSet.getString("content_hash"));
 
   private final PostgresCompatibleJdbcTemplate jdbcTemplate;
   private final double minimumConfidence;
@@ -357,19 +371,78 @@ public class ConversationMemoryStore {
            and removed = false
          order by source_timestamp, message_guid
         """,
-        (resultSet, rowNumber) ->
-            new JournalMessage(
-                resultSet.getString("message_guid"),
-                resultSet.getString("conversation_id"),
-                resultSet.getString("sender_account_id"),
-                resultSet.getString("message_text"),
-                resultSet.getTimestamp("source_timestamp").toInstant(),
-                resultSet.getBoolean("from_agent"),
-                resultSet.getBoolean("system_message"),
-                resultSet.getString("content_hash")),
+        JOURNAL_MESSAGE_ROW_MAPPER,
         conversationId,
         fromInclusive,
         toInclusive);
+  }
+
+  @Transactional(readOnly = true)
+  public List<JournalMessage> findMessagePage(
+      String conversationId,
+      Instant fromInclusive,
+      Instant toExclusive,
+      @Nullable Instant afterTimestamp,
+      @Nullable String afterMessageGuid,
+      int limit,
+      Duration remaining) {
+    requireText(conversationId, "conversation id");
+    if (fromInclusive == null || toExclusive == null || !fromInclusive.isBefore(toExclusive)) {
+      throw new IllegalArgumentException("journal page range is invalid");
+    }
+    String normalizedAfterGuid = StringUtils.trimToNull(afterMessageGuid);
+    if ((afterTimestamp == null) != (normalizedAfterGuid == null)) {
+      throw new IllegalArgumentException("journal page cursor is incomplete");
+    }
+    if (afterTimestamp != null
+        && (afterTimestamp.isBefore(fromInclusive) || !afterTimestamp.isBefore(toExclusive))) {
+      throw new IllegalArgumentException("journal page cursor is outside the requested range");
+    }
+    if (limit < 1 || limit > MAX_JOURNAL_PAGE_SIZE) {
+      throw new IllegalArgumentException("journal page limit must be between 1 and 500");
+    }
+    if (remaining == null || remaining.isZero() || remaining.isNegative()) {
+      throw new IllegalArgumentException("journal page remaining time must be positive");
+    }
+
+    if (afterTimestamp == null) {
+      return jdbcTemplate.query(
+          """
+          select message_guid, conversation_id, sender_account_id, message_text, source_timestamp,
+                 from_agent, system_message, content_hash
+            from agent_conversation_messages
+           where conversation_id = ? and source_timestamp >= ? and source_timestamp < ?
+             and removed = false
+           order by source_timestamp, message_guid
+           limit ?
+          """,
+          remaining,
+          JOURNAL_MESSAGE_ROW_MAPPER,
+          conversationId,
+          fromInclusive,
+          toExclusive,
+          limit);
+    }
+    return jdbcTemplate.query(
+        """
+        select message_guid, conversation_id, sender_account_id, message_text, source_timestamp,
+               from_agent, system_message, content_hash
+          from agent_conversation_messages
+         where conversation_id = ? and source_timestamp >= ? and source_timestamp < ?
+           and (source_timestamp > ? or (source_timestamp = ? and message_guid > ?))
+           and removed = false
+         order by source_timestamp, message_guid
+         limit ?
+        """,
+        remaining,
+        JOURNAL_MESSAGE_ROW_MAPPER,
+        conversationId,
+        fromInclusive,
+        toExclusive,
+        afterTimestamp,
+        afterTimestamp,
+        normalizedAfterGuid,
+        limit);
   }
 
   @Transactional(readOnly = true)
@@ -386,6 +459,27 @@ public class ConversationMemoryStore {
         conversationId,
         at,
         at);
+  }
+
+  @Transactional(readOnly = true)
+  public List<MembershipInterval> findMembershipIntervals(
+      String conversationId, String accountId, Instant from, Instant to) {
+    return jdbcTemplate.query(
+        """
+        select started_at, ended_at
+          from agent_conversation_memberships
+         where conversation_id = ? and account_id = ?
+           and started_at < ? and (ended_at is null or ended_at > ?)
+         order by started_at, membership_id
+        """,
+        (resultSet, rowNumber) ->
+            new MembershipInterval(
+                resultSet.getTimestamp("started_at").toInstant(),
+                toInstant(resultSet.getTimestamp("ended_at"))),
+        conversationId,
+        accountId,
+        to,
+        from);
   }
 
   @Transactional
@@ -2100,6 +2194,25 @@ public class ConversationMemoryStore {
       return delegate.query(sql, rowMapper, postgresArguments(args));
     }
 
+    private <T> List<T> query(
+        String sql, Duration remaining, RowMapper<T> rowMapper, Object... args) {
+      Object[] converted = postgresArguments(args);
+      int requestQueryTimeoutSeconds = queryTimeoutSeconds(remaining);
+      ArgumentPreparedStatementSetter argumentSetter =
+          new ArgumentPreparedStatementSetter(converted);
+      return delegate.query(
+          sql,
+          statement -> {
+            argumentSetter.setValues(statement);
+            int appliedTimeoutSeconds = statement.getQueryTimeout();
+            statement.setQueryTimeout(
+                appliedTimeoutSeconds > 0
+                    ? Math.min(requestQueryTimeoutSeconds, appliedTimeoutSeconds)
+                    : requestQueryTimeoutSeconds);
+          },
+          rowMapper);
+    }
+
     private <T> @Nullable T queryForObject(String sql, Class<T> requiredType, Object... args) {
       return delegate.queryForObject(sql, requiredType, postgresArguments(args));
     }
@@ -2112,6 +2225,17 @@ public class ConversationMemoryStore {
         }
       }
       return converted;
+    }
+
+    private int queryTimeoutSeconds(Duration remaining) {
+      if (remaining == null || remaining.isZero() || remaining.isNegative()) {
+        throw new IllegalArgumentException("query remaining time must be positive");
+      }
+      long seconds = remaining.getSeconds();
+      if (remaining.getNano() > 0 && seconds < Long.MAX_VALUE) {
+        seconds++;
+      }
+      return (int) Math.min(seconds, Integer.MAX_VALUE);
     }
   }
 

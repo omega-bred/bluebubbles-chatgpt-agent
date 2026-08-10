@@ -10,6 +10,7 @@ import io.breland.bbagent.server.agent.tools.ToolContext;
 import io.breland.bbagent.server.agent.tools.ToolJson;
 import io.breland.bbagent.server.agent.tools.ToolProvider;
 import io.breland.bbagent.server.agent.transport.bb.BBHttpClientWrapper;
+import io.breland.bbagent.server.agent.transport.bb.BlueBubblesHandleAddress;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -98,7 +99,7 @@ public class GetThreadContextAgentTool implements ToolProvider {
       if (message == null) {
         return null;
       }
-      String sender = message.getHandle() != null ? message.getHandle().toString() : null;
+      String sender = BlueBubblesHandleAddress.from(message.getHandle());
       List<String> imageUrls = extractImageUrls(context, message.getAttachments());
       String timestamp =
           message.getDateCreated() != null

@@ -3927,10 +3927,10 @@ components:
             - type: string
             - type: "null"
         handle:
-          oneOf:
-            - type: string
-            - type: "null"
-            - type: object
+          description: >-
+            A BlueBubbles message handle. Wire responses may provide a scalar address, an object
+            containing an address property, or null; consumers normalize this intentionally
+            unconstrained value at the application boundary.
         
         handleId:
           type: integer

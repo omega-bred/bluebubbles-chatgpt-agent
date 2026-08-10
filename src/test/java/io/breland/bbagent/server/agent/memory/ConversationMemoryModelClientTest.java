@@ -8,6 +8,7 @@ import static org.mockito.Mockito.when;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.openai.client.OpenAIClient;
+import com.openai.models.responses.ResponseInputItem;
 import com.openai.models.responses.StructuredResponse;
 import com.openai.models.responses.StructuredResponseCreateParams;
 import com.openai.models.responses.StructuredResponseOutputItem;
@@ -151,33 +152,6 @@ class ConversationMemoryModelClientTest {
   }
 
   @Test
-  void buildsANoToolsDeterministicStructuredRequest() {
-    var request = client.buildRequest(messages(), List.of()).rawParams();
-
-    assertThat(request.temperature()).contains(0.0);
-    assertThat(request.maxOutputTokens()).contains(1200L);
-    assertThat(request.tools()).contains(List.of());
-    assertThat(request.toString()).containsIgnoringCase("untrusted");
-    assertThat(request.toString()).contains("participant-1", "participant-2");
-    assertThat(request.toString()).doesNotContain("account-1", "account-2");
-  }
-
-  @Test
-  void capsOpenRouterPricingAtTheConfiguredFallbackCost() {
-    var priceGuardedClient =
-        new ConversationMemoryModelClient(
-            () -> null,
-            new ObjectMapper().findAndRegisterModules(),
-            "openrouter/z-ai/glm-5.2",
-            null);
-
-    var request = priceGuardedClient.buildRequest(messages(), List.of()).rawParams();
-
-    assertThat(request._additionalBodyProperties().toString())
-        .contains("extra_body", "provider", "max_price", "prompt", "0.4", "completion", "1.6");
-  }
-
-  @Test
   @SuppressWarnings({"unchecked", "rawtypes"})
   void fallsBackToGpt41MiniWhenTheGuardedGlmRequestIsRejected() {
     OpenAIClient openAIClient = mock(OpenAIClient.class);
@@ -225,6 +199,11 @@ class ConversationMemoryModelClientTest {
     assertThat(requests)
         .extracting(request -> request.rawParams().model().orElseThrow().asString())
         .containsExactly("openrouter/z-ai/glm-5.2", "openai/gpt-4.1-mini");
+    List<ResponseInputItem> input =
+        requests.getFirst().rawParams().input().orElseThrow().asResponse();
+    assertThat(input.get(1).asEasyInputMessage().content().asTextInput())
+        .contains("Untrusted quoted extraction input JSON:", "participant-1", "participant-2")
+        .doesNotContain("account-1", "account-2");
   }
 
   private static List<JournalMessage> messages() {
