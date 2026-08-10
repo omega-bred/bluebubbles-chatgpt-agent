@@ -124,6 +124,7 @@ class ConversationQuestionAnsweringServiceTest {
     assertThat(answer.status()).isEqualTo(AnswerStatus.ANSWERED);
     assertThat(answer.answer()).isEqualTo("Sam posted the only update.");
     assertThat(answer.clarificationQuestion()).isNull();
+    assertQuestionMetric("answered", true);
     verify(model, times(1)).decide(anyString(), any(), nullable(String.class), anyList(), any());
     verify(model, never())
         .reduceFindings(
@@ -209,6 +210,7 @@ class ConversationQuestionAnsweringServiceTest {
     assertThat(answer.status()).isEqualTo(AnswerStatus.CLARIFICATION_REQUIRED);
     assertThat(answer.answer()).isNull();
     assertThat(answer.clarificationQuestion()).isEqualTo("About when did that happen?");
+    assertQuestionMetric("clarification_required", true);
     verify(retriever, never()).retrieveWindow(any(), eq(cursor), anyInt());
   }
 
@@ -225,6 +227,7 @@ class ConversationQuestionAnsweringServiceTest {
     assertThat(answer.status()).isEqualTo(AnswerStatus.NO_ANSWER);
     assertThat(answer.answer()).isEqualTo("I couldn't find that in this group's messages.");
     assertThat(answer.answer()).doesNotContain("authorized", "coverage", "evidence");
+    assertQuestionMetric("no_answer", true);
   }
 
   @Test
@@ -436,6 +439,7 @@ class ConversationQuestionAnsweringServiceTest {
     assertThat(answer.answer())
         .contains("couldn't search")
         .doesNotContain("authorized", "coverage", "evidence", "source_unavailable");
+    assertQuestionMetric("unavailable", false);
   }
 
   @Test
@@ -528,6 +532,28 @@ class ConversationQuestionAnsweringServiceTest {
   private HistoryWindow window(
       List<QuestionMessage> messages, HistoryWindowCursor nextCursor, boolean exhausted) {
     return new HistoryWindow(messages, nextCursor, exhausted, true, null, 1);
+  }
+
+  private void assertQuestionMetric(String action, boolean success) {
+    assertThat(
+            registry
+                .get("bbagent.memory.question.answer.count")
+                .tag("action", action)
+                .tag("outcome", success ? "success" : "failure")
+                .counter()
+                .count())
+        .isEqualTo(1.0);
+    assertThat(
+            registry.getMeters().stream()
+                .filter(
+                    meter -> meter.getId().getName().startsWith("bbagent.memory.question.answer"))
+                .flatMap(meter -> meter.getId().getTags().stream())
+                .map(tag -> tag.getValue()))
+        .noneMatch(
+            value ->
+                value.contains(QUESTION)
+                    || value.contains(CONVERSATION_ID)
+                    || value.contains(ACCOUNT));
   }
 
   private RoutedWindowDecision routed(ModelWindowDecision decision) {

@@ -534,16 +534,15 @@ public class ConversationQuestionAnsweringService {
   }
 
   private void recordMetrics(GroupQuestionAnswer result, RunState run, Instant startedAt) {
-    boolean success = result.status() == AnswerStatus.ANSWERED;
+    boolean success = result.status() != AnswerStatus.UNAVAILABLE;
     metrics.recordMemoryQuestionAnswer(
-        "progressive",
-        run.partialReason == null ? "complete" : "partial",
+        result.status().wireValue(),
         result.model(),
         run.messagesByGuid.size(),
         run.pageCount,
+        run.windowCount,
         run.modelCalls,
-        0,
-        0,
+        run.reductionCount,
         success,
         success ? null : result.status().wireValue(),
         Duration.between(startedAt, clock.instant()));
@@ -598,13 +597,16 @@ public class ConversationQuestionAnsweringService {
     private final List<QuestionFinding> findings = new ArrayList<>();
     private final Set<String> findingKeys = new LinkedHashSet<>();
     private int pageCount;
+    private int windowCount;
     private int modelCalls;
+    private int reductionCount;
     private int aggregateCharacters;
     private @Nullable String model;
     private boolean fallbackUsed;
     private @Nullable String partialReason;
 
     private void observe(HistoryWindow window) {
+      windowCount = Math.addExact(windowCount, 1);
       pageCount = Math.addExact(pageCount, window.pageCount());
       if (!window.windowComplete()) {
         partialReason = StringUtils.defaultIfBlank(partialReason, window.partialReason());
@@ -623,6 +625,7 @@ public class ConversationQuestionAnsweringService {
     }
 
     private void observe(RoutedFindingReduction routed) {
+      reductionCount = Math.addExact(reductionCount, 1);
       model = routed.model();
       fallbackUsed |= routed.fallbackUsed();
     }
