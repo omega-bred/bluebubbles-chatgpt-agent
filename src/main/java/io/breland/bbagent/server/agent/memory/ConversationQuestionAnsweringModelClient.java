@@ -79,16 +79,18 @@ public class ConversationQuestionAnsweringModelClient {
     }
     ProviderInput input =
         serializeWindowInput(question, referenceTime, timezone, submittedMessages);
-    RoutedResponse<RawWindowDecision> routed =
-        responsesClient.create(
-            WINDOW_INSTRUCTIONS, input.payload(), 1_000, RawWindowDecision.class, deadline);
+    RoutedResponse<ModelWindowDecision> routed =
+        responsesClient.createValidated(
+            WINDOW_INSTRUCTIONS,
+            input.payload(),
+            1_000,
+            RawWindowDecision.class,
+            deadline,
+            raw -> parseWindowDecision(raw, input, submittedMessages));
     if (routed == null) {
       throw new IllegalStateException("invalid question window response");
     }
-    return new RoutedWindowDecision(
-        parseWindowDecision(routed.value(), input, submittedMessages),
-        routed.model(),
-        routed.fallbackUsed());
+    return new RoutedWindowDecision(routed.value(), routed.model(), routed.fallbackUsed());
   }
 
   public RoutedFindingReduction reduceFindings(
@@ -108,14 +110,22 @@ public class ConversationQuestionAnsweringModelClient {
     ProviderInput input =
         serializeFindingReductionInput(
             question, referenceTime, timezone, submittedFindings, olderMessagesAvailable);
-    RoutedResponse<RawFindingReduction> routed =
-        responsesClient.create(
+    RoutedResponse<ParsedFindingReduction> routed =
+        responsesClient.createValidated(
             FINDING_REDUCTION_INSTRUCTIONS,
             input.payload(),
             800,
             RawFindingReduction.class,
-            deadline);
-    return parseFindingReduction(routed, input, olderMessagesAvailable);
+            deadline,
+            raw -> parseFindingReduction(raw, input, olderMessagesAvailable));
+    if (routed == null || routed.value() == null) {
+      throw new IllegalStateException("invalid finding reduction response");
+    }
+    return new RoutedFindingReduction(
+        routed.value().decision(),
+        routed.value().citedFindings(),
+        routed.model(),
+        routed.fallbackUsed());
   }
 
   public int windowInputCharacters(
@@ -263,14 +273,11 @@ public class ConversationQuestionAnsweringModelClient {
         validateParticipants(raw.referencedParticipants(), submittedParticipants));
   }
 
-  private RoutedFindingReduction parseFindingReduction(
-      RoutedResponse<RawFindingReduction> routed,
-      ProviderInput input,
-      boolean olderMessagesAvailable) {
-    if (routed == null || routed.value() == null) {
+  private ParsedFindingReduction parseFindingReduction(
+      RawFindingReduction raw, ProviderInput input, boolean olderMessagesAvailable) {
+    if (raw == null) {
       throw new IllegalStateException("invalid finding reduction response");
     }
-    RawFindingReduction raw = routed.value();
     if (raw.citedFindingAliases() == null || raw.referencedParticipants() == null) {
       throw new IllegalStateException("invalid finding reduction response");
     }
@@ -325,8 +332,7 @@ public class ConversationQuestionAnsweringModelClient {
     } catch (IllegalArgumentException e) {
       throw new IllegalStateException("invalid finding reduction response", e);
     }
-    return new RoutedFindingReduction(
-        decision, List.copyOf(cited), routed.model(), routed.fallbackUsed());
+    return new ParsedFindingReduction(decision, List.copyOf(cited));
   }
 
   private static void requireSafeText(@Nullable String value, ProviderInput input) {
@@ -473,4 +479,7 @@ public class ConversationQuestionAnsweringModelClient {
       Set<String> messageGuids,
       Set<String> evidenceAliases,
       Map<String, QuestionFinding> aliasToFinding) {}
+
+  private record ParsedFindingReduction(
+      ModelWindowDecision decision, List<QuestionFinding> citedFindings) {}
 }

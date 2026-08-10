@@ -3,6 +3,7 @@ package io.breland.bbagent.server.agent.memory;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
@@ -24,8 +25,10 @@ import io.breland.bbagent.server.agent.memory.ConversationQuestionAnsweringModel
 import io.breland.bbagent.server.agent.memory.ConversationQuestionAnsweringModels.WindowFinding;
 import java.time.Instant;
 import java.util.List;
+import java.util.function.Function;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
+import org.mockito.invocation.InvocationOnMock;
 
 class ConversationQuestionAnsweringModelClientTest {
   private static final Instant FROM = Instant.parse("2026-08-08T00:00:00Z");
@@ -40,8 +43,8 @@ class ConversationQuestionAnsweringModelClientTest {
 
   @Test
   void decideSuppliesReferenceTimeTimestampsAndOrdinaryEvidenceContent() throws Exception {
-    when(responses.create(
-            anyString(), anyString(), eq(1_000), eq(RawWindowDecision.class), eq(DEADLINE)))
+    when(responses.createValidated(
+            anyString(), anyString(), eq(1_000), eq(RawWindowDecision.class), eq(DEADLINE), any()))
         .thenAnswer(
             invocation -> {
               String alias =
@@ -50,7 +53,8 @@ class ConversationQuestionAnsweringModelClientTest {
                       .get(0)
                       .path("evidence_alias")
                       .asText();
-              return routed(
+              return validated(
+                  invocation,
                   new RawWindowDecision(
                       "ANSWERED",
                       "Sam shared the link this morning.",
@@ -89,8 +93,8 @@ class ConversationQuestionAnsweringModelClientTest {
 
   @Test
   void decideDoesNotSendInternalParticipantIdentityHintsToTheQaProvider() throws Exception {
-    when(responses.create(
-            anyString(), anyString(), eq(1_000), eq(RawWindowDecision.class), eq(DEADLINE)))
+    when(responses.createValidated(
+            anyString(), anyString(), eq(1_000), eq(RawWindowDecision.class), eq(DEADLINE), any()))
         .thenAnswer(
             invocation -> {
               String alias =
@@ -99,7 +103,8 @@ class ConversationQuestionAnsweringModelClientTest {
                       .get(0)
                       .path("evidence_alias")
                       .asText();
-              return routed(
+              return validated(
+                  invocation,
                   new RawWindowDecision(
                       "ANSWERED",
                       "The masked participant posted the update.",
@@ -126,8 +131,8 @@ class ConversationQuestionAnsweringModelClientTest {
 
   @Test
   void needOlderMapsProvisionalFindingsOnlyFromSubmittedAliases() throws Exception {
-    when(responses.create(
-            anyString(), anyString(), eq(1_000), eq(RawWindowDecision.class), eq(DEADLINE)))
+    when(responses.createValidated(
+            anyString(), anyString(), eq(1_000), eq(RawWindowDecision.class), eq(DEADLINE), any()))
         .thenAnswer(
             invocation -> {
               String alias =
@@ -136,7 +141,8 @@ class ConversationQuestionAnsweringModelClientTest {
                       .get(0)
                       .path("evidence_alias")
                       .asText();
-              return routed(
+              return validated(
+                  invocation,
                   new RawWindowDecision(
                       "NEED_OLDER_MESSAGES",
                       null,
@@ -228,8 +234,8 @@ class ConversationQuestionAnsweringModelClientTest {
 
   @Test
   void rejectsReferencedParticipantOutsideSubmittedWindow() throws Exception {
-    when(responses.create(
-            anyString(), anyString(), eq(1_000), eq(RawWindowDecision.class), eq(DEADLINE)))
+    when(responses.createValidated(
+            anyString(), anyString(), eq(1_000), eq(RawWindowDecision.class), eq(DEADLINE), any()))
         .thenAnswer(
             invocation -> {
               String alias =
@@ -238,7 +244,8 @@ class ConversationQuestionAnsweringModelClientTest {
                       .get(0)
                       .path("evidence_alias")
                       .asText();
-              return routed(
+              return validated(
+                  invocation,
                   new RawWindowDecision(
                       "ANSWERED",
                       "Mallory posted the update.",
@@ -267,8 +274,8 @@ class ConversationQuestionAnsweringModelClientTest {
         new QuestionFinding("Sam posted the launch plan.", Confidence.HIGH, List.of("m-1"), FROM);
     QuestionFinding uncited =
         new QuestionFinding("Lee posted an unrelated note.", Confidence.LOW, List.of("m-2"), TO);
-    when(responses.create(
-            anyString(), anyString(), eq(800), eq(RawFindingReduction.class), eq(DEADLINE)))
+    when(responses.createValidated(
+            anyString(), anyString(), eq(800), eq(RawFindingReduction.class), eq(DEADLINE), any()))
         .thenAnswer(
             invocation -> {
               String alias =
@@ -277,7 +284,8 @@ class ConversationQuestionAnsweringModelClientTest {
                       .get(0)
                       .path("finding_alias")
                       .asText();
-              return routed(
+              return validated(
+                  invocation,
                   new RawFindingReduction(
                       "ANSWERED",
                       "The launch plan came from Sam.",
@@ -313,8 +321,8 @@ class ConversationQuestionAnsweringModelClientTest {
     QuestionFinding finding =
         new QuestionFinding(
             "An earlier event is referenced.", Confidence.MEDIUM, List.of("m-1"), FROM);
-    when(responses.create(
-            anyString(), anyString(), eq(800), eq(RawFindingReduction.class), eq(DEADLINE)))
+    when(responses.createValidated(
+            anyString(), anyString(), eq(800), eq(RawFindingReduction.class), eq(DEADLINE), any()))
         .thenAnswer(
             invocation -> {
               String alias =
@@ -323,7 +331,8 @@ class ConversationQuestionAnsweringModelClientTest {
                       .get(0)
                       .path("finding_alias")
                       .asText();
-              return routed(
+              return validated(
+                  invocation,
                   new RawFindingReduction(
                       "NEED_OLDER_MESSAGES", null, null, "LOW", List.of(alias), List.of()));
             });
@@ -338,8 +347,8 @@ class ConversationQuestionAnsweringModelClientTest {
 
   @Test
   void malformedAnsweredWindowResponseFailsClosedAsProviderError() throws Exception {
-    when(responses.create(
-            anyString(), anyString(), eq(1_000), eq(RawWindowDecision.class), eq(DEADLINE)))
+    when(responses.createValidated(
+            anyString(), anyString(), eq(1_000), eq(RawWindowDecision.class), eq(DEADLINE), any()))
         .thenAnswer(
             invocation -> {
               String alias =
@@ -348,7 +357,8 @@ class ConversationQuestionAnsweringModelClientTest {
                       .get(0)
                       .path("evidence_alias")
                       .asText();
-              return routed(
+              return validated(
+                  invocation,
                   new RawWindowDecision(
                       "ANSWERED", null, null, "HIGH", List.of(alias), List.of(), List.of("Sam")));
             });
@@ -367,20 +377,22 @@ class ConversationQuestionAnsweringModelClientTest {
 
   @Test
   void clarificationPreservesFallbackMetadata() {
-    when(responses.create(
-            anyString(), anyString(), eq(1_000), eq(RawWindowDecision.class), eq(DEADLINE)))
-        .thenReturn(
-            routed(
-                new RawWindowDecision(
-                    "NEED_TIME_CLARIFICATION",
-                    null,
-                    "About when did that happen?",
-                    "LOW",
-                    List.of(),
-                    List.of(),
-                    List.of()),
-                "openai/gpt-4.1-mini",
-                true));
+    when(responses.createValidated(
+            anyString(), anyString(), eq(1_000), eq(RawWindowDecision.class), eq(DEADLINE), any()))
+        .thenAnswer(
+            invocation ->
+                validated(
+                    invocation,
+                    new RawWindowDecision(
+                        "NEED_TIME_CLARIFICATION",
+                        null,
+                        "About when did that happen?",
+                        "LOW",
+                        List.of(),
+                        List.of(),
+                        List.of()),
+                    "openai/gpt-4.1-mini",
+                    true));
 
     var result =
         client.decide(
@@ -398,18 +410,20 @@ class ConversationQuestionAnsweringModelClientTest {
 
   @Test
   void clarificationCannotRevealSubmittedMessageGuid() {
-    when(responses.create(
-            anyString(), anyString(), eq(1_000), eq(RawWindowDecision.class), eq(DEADLINE)))
-        .thenReturn(
-            routed(
-                new RawWindowDecision(
-                    "NEED_TIME_CLARIFICATION",
-                    null,
-                    "Did that happen around message m-1?",
-                    "LOW",
-                    List.of(),
-                    List.of(),
-                    List.of())));
+    when(responses.createValidated(
+            anyString(), anyString(), eq(1_000), eq(RawWindowDecision.class), eq(DEADLINE), any()))
+        .thenAnswer(
+            invocation ->
+                validated(
+                    invocation,
+                    new RawWindowDecision(
+                        "NEED_TIME_CLARIFICATION",
+                        null,
+                        "Did that happen around message m-1?",
+                        "LOW",
+                        List.of(),
+                        List.of(),
+                        List.of())));
 
     assertThatThrownBy(
             () ->
@@ -425,8 +439,8 @@ class ConversationQuestionAnsweringModelClientTest {
 
   @Test
   void windowAnswerCannotRevealOpaqueAliasOrMessageGuid() throws Exception {
-    when(responses.create(
-            anyString(), anyString(), eq(1_000), eq(RawWindowDecision.class), eq(DEADLINE)))
+    when(responses.createValidated(
+            anyString(), anyString(), eq(1_000), eq(RawWindowDecision.class), eq(DEADLINE), any()))
         .thenAnswer(
             invocation -> {
               String alias =
@@ -435,7 +449,8 @@ class ConversationQuestionAnsweringModelClientTest {
                       .get(0)
                       .path("evidence_alias")
                       .asText();
-              return routed(
+              return validated(
+                  invocation,
                   new RawWindowDecision(
                       "ANSWERED",
                       "Evidence " + alias + " came from m-1.",
@@ -462,17 +477,19 @@ class ConversationQuestionAnsweringModelClientTest {
   void unknownFindingAliasFailsClosed() {
     QuestionFinding finding =
         new QuestionFinding("Sam posted it.", Confidence.HIGH, List.of("m-1"), FROM);
-    when(responses.create(
-            anyString(), anyString(), eq(800), eq(RawFindingReduction.class), eq(DEADLINE)))
-        .thenReturn(
-            routed(
-                new RawFindingReduction(
-                    "ANSWERED",
-                    "Sam posted it.",
-                    null,
-                    "HIGH",
-                    List.of("finding_unknown"),
-                    List.of())));
+    when(responses.createValidated(
+            anyString(), anyString(), eq(800), eq(RawFindingReduction.class), eq(DEADLINE), any()))
+        .thenAnswer(
+            invocation ->
+                validated(
+                    invocation,
+                    new RawFindingReduction(
+                        "ANSWERED",
+                        "Sam posted it.",
+                        null,
+                        "HIGH",
+                        List.of("finding_unknown"),
+                        List.of())));
 
     assertThatThrownBy(
             () ->
@@ -486,8 +503,8 @@ class ConversationQuestionAnsweringModelClientTest {
   void malformedFindingReductionFailsClosedAsProviderError() throws Exception {
     QuestionFinding finding =
         new QuestionFinding("Sam posted it.", Confidence.HIGH, List.of("m-1"), FROM);
-    when(responses.create(
-            anyString(), anyString(), eq(800), eq(RawFindingReduction.class), eq(DEADLINE)))
+    when(responses.createValidated(
+            anyString(), anyString(), eq(800), eq(RawFindingReduction.class), eq(DEADLINE), any()))
         .thenAnswer(
             invocation -> {
               String alias =
@@ -496,7 +513,8 @@ class ConversationQuestionAnsweringModelClientTest {
                       .get(0)
                       .path("finding_alias")
                       .asText();
-              return routed(
+              return validated(
+                  invocation,
                   new RawFindingReduction(
                       "ANSWERED", null, null, "HIGH", List.of(alias), List.of()));
             });
@@ -517,24 +535,26 @@ class ConversationQuestionAnsweringModelClientTest {
   private String capturedDeadlineInput(Class<?> outputType) {
     ArgumentCaptor<String> input = ArgumentCaptor.forClass(String.class);
     verify(responses)
-        .create(
+        .createValidated(
             anyString(),
             input.capture(),
             org.mockito.ArgumentMatchers.anyInt(),
             eq(outputType),
-            org.mockito.ArgumentMatchers.<Instant>any());
+            org.mockito.ArgumentMatchers.<Instant>any(),
+            any());
     return input.getValue();
   }
 
   private String capturedInstructions(Class<?> outputType) {
     ArgumentCaptor<String> instructions = ArgumentCaptor.forClass(String.class);
     verify(responses)
-        .create(
+        .createValidated(
             instructions.capture(),
             anyString(),
             org.mockito.ArgumentMatchers.anyInt(),
             eq(outputType),
-            org.mockito.ArgumentMatchers.<Instant>any());
+            org.mockito.ArgumentMatchers.<Instant>any(),
+            any());
     return instructions.getValue();
   }
 
@@ -542,11 +562,13 @@ class ConversationQuestionAnsweringModelClientTest {
     return new QuestionMessage(guid, participant, FROM, text);
   }
 
-  private static <T> RoutedResponse<T> routed(T value) {
-    return routed(value, "openrouter/z-ai/glm-5.2", false);
+  private static <T, R> RoutedResponse<R> validated(InvocationOnMock invocation, T value) {
+    return validated(invocation, value, "openrouter/z-ai/glm-5.2", false);
   }
 
-  private static <T> RoutedResponse<T> routed(T value, String model, boolean fallbackUsed) {
-    return new RoutedResponse<>(value, model, fallbackUsed);
+  private static <T, R> RoutedResponse<R> validated(
+      InvocationOnMock invocation, T value, String model, boolean fallbackUsed) {
+    Function<T, R> validator = invocation.getArgument(5);
+    return new RoutedResponse<>(validator.apply(value), model, fallbackUsed);
   }
 }

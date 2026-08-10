@@ -14,6 +14,7 @@ import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.function.Function;
 import java.util.function.Supplier;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -97,7 +98,8 @@ public class ConversationMemoryResponsesClient {
 
   public <T> RoutedResponse<T> create(
       String instructions, String userInput, int maxOutputTokens, Class<T> outputType) {
-    return createInternal(instructions, userInput, maxOutputTokens, outputType, null);
+    return createInternal(
+        instructions, userInput, maxOutputTokens, outputType, null, Function.identity());
   }
 
   public <T> RoutedResponse<T> create(
@@ -107,16 +109,40 @@ public class ConversationMemoryResponsesClient {
       Class<T> outputType,
       Instant deadline) {
     Objects.requireNonNull(deadline, "deadline");
-    return createInternal(instructions, userInput, maxOutputTokens, outputType, deadline);
+    return createInternal(
+        instructions, userInput, maxOutputTokens, outputType, deadline, Function.identity());
   }
 
-  private <T> RoutedResponse<T> createInternal(
+  public <T, R> RoutedResponse<R> createValidated(
       String instructions,
       String userInput,
       int maxOutputTokens,
       Class<T> outputType,
-      @Nullable Instant deadline) {
+      Function<T, R> validator) {
+    return createInternal(instructions, userInput, maxOutputTokens, outputType, null, validator);
+  }
+
+  public <T, R> RoutedResponse<R> createValidated(
+      String instructions,
+      String userInput,
+      int maxOutputTokens,
+      Class<T> outputType,
+      Instant deadline,
+      Function<T, R> validator) {
+    Objects.requireNonNull(deadline, "deadline");
+    return createInternal(
+        instructions, userInput, maxOutputTokens, outputType, deadline, validator);
+  }
+
+  private <T, R> RoutedResponse<R> createInternal(
+      String instructions,
+      String userInput,
+      int maxOutputTokens,
+      Class<T> outputType,
+      @Nullable Instant deadline,
+      Function<T, R> validator) {
     requireRequestInput(instructions, userInput, maxOutputTokens, outputType);
+    Objects.requireNonNull(validator, "validator");
     RuntimeException primaryFailure;
     try {
       return createWithModel(
@@ -127,7 +153,8 @@ public class ConversationMemoryResponsesClient {
           primaryModel,
           true,
           false,
-          deadline);
+          deadline,
+          validator);
     } catch (RuntimeException e) {
       primaryFailure = e;
     }
@@ -143,14 +170,15 @@ public class ConversationMemoryResponsesClient {
           fallbackModel,
           false,
           true,
-          deadline);
+          deadline,
+          validator);
     } catch (RuntimeException fallbackFailure) {
       fallbackFailure.addSuppressed(primaryFailure);
       throw fallbackFailure;
     }
   }
 
-  private <T> RoutedResponse<T> createWithModel(
+  private <T, R> RoutedResponse<R> createWithModel(
       String instructions,
       String userInput,
       int maxOutputTokens,
@@ -158,7 +186,8 @@ public class ConversationMemoryResponsesClient {
       String model,
       boolean applyPriceCeiling,
       boolean fallbackUsed,
-      @Nullable Instant deadline) {
+      @Nullable Instant deadline,
+      Function<T, R> validator) {
     var responses = openAiSupplier.get().responses();
     var request =
         buildRequest(
@@ -178,7 +207,7 @@ public class ConversationMemoryResponsesClient {
             .findFirst()
             .orElseThrow(
                 () -> new IllegalStateException("memory response returned no structured output"));
-    return new RoutedResponse<>(output, model, fallbackUsed);
+    return new RoutedResponse<>(validator.apply(output), model, fallbackUsed);
   }
 
   private Duration remaining(Instant deadline) {

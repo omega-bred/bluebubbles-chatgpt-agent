@@ -141,6 +141,74 @@ class ConversationMemoryResponsesClientTest {
 
   @Test
   @SuppressWarnings({"unchecked", "rawtypes"})
+  void retriesWithFallbackWhenPrimaryStructuredOutputFailsSemanticValidation() {
+    OpenAIClient openAIClient = mock(OpenAIClient.class);
+    ResponseService responseService = mock(ResponseService.class);
+    StructuredResponse<TestOutput> primaryResponse = successfulResponse(new TestOutput("invalid"));
+    StructuredResponse<TestOutput> fallbackResponse = successfulResponse(new TestOutput("valid"));
+    when(openAIClient.responses()).thenReturn(responseService);
+    when(responseService.create(any(StructuredResponseCreateParams.class)))
+        .thenReturn(primaryResponse, fallbackResponse);
+    ConversationMemoryResponsesClient client =
+        new ConversationMemoryResponsesClient(
+            () -> openAIClient, "openrouter/z-ai/glm-5.2", "openai/gpt-4.1-mini", 0.4, 1.6);
+
+    ConversationMemoryResponsesClient.RoutedResponse<String> result =
+        client.createValidated(
+            "instructions",
+            "input",
+            200,
+            TestOutput.class,
+            output -> {
+              if (!"valid".equals(output.value())) {
+                throw new IllegalStateException("invalid semantic output");
+              }
+              return output.value().toUpperCase();
+            });
+
+    assertThat(result.value()).isEqualTo("VALID");
+    assertThat(result.model()).isEqualTo("openai/gpt-4.1-mini");
+    assertThat(result.fallbackUsed()).isTrue();
+    verify(responseService, times(2)).create(any(StructuredResponseCreateParams.class));
+  }
+
+  @Test
+  @SuppressWarnings({"unchecked", "rawtypes"})
+  void preservesPrimarySemanticFailureWhenFallbackSemanticValidationAlsoFails() {
+    OpenAIClient openAIClient = mock(OpenAIClient.class);
+    ResponseService responseService = mock(ResponseService.class);
+    StructuredResponse<TestOutput> primaryResponse = successfulResponse(new TestOutput("primary"));
+    StructuredResponse<TestOutput> fallbackResponse =
+        successfulResponse(new TestOutput("fallback"));
+    when(openAIClient.responses()).thenReturn(responseService);
+    when(responseService.create(any(StructuredResponseCreateParams.class)))
+        .thenReturn(primaryResponse, fallbackResponse);
+    ConversationMemoryResponsesClient client =
+        new ConversationMemoryResponsesClient(
+            () -> openAIClient, "openrouter/z-ai/glm-5.2", "openai/gpt-4.1-mini", 0.4, 1.6);
+
+    assertThatIllegalStateException()
+        .isThrownBy(
+            () ->
+                client.createValidated(
+                    "instructions",
+                    "input",
+                    200,
+                    TestOutput.class,
+                    output -> {
+                      throw new IllegalStateException(output.value() + " invalid");
+                    }))
+        .withMessage("fallback invalid")
+        .satisfies(
+            failure ->
+                assertThat(failure.getSuppressed())
+                    .singleElement()
+                    .extracting(Throwable::getMessage)
+                    .isEqualTo("primary invalid"));
+  }
+
+  @Test
+  @SuppressWarnings({"unchecked", "rawtypes"})
   void boundsEachProviderAttemptToTheRemainingOperationDeadlineWithoutSdkRetries() {
     Instant now = Instant.parse("2026-08-09T12:00:00Z");
     MutableClock clock = new MutableClock(now);
@@ -204,6 +272,41 @@ class ConversationMemoryResponsesClientTest {
         .isThrownBy(
             () ->
                 client.create("instructions", "input", 200, TestOutput.class, now.plusSeconds(90)))
+        .withMessage("memory response deadline elapsed");
+    verify(responseService, times(1))
+        .create(any(StructuredResponseCreateParams.class), any(RequestOptions.class));
+  }
+
+  @Test
+  @SuppressWarnings({"unchecked", "rawtypes"})
+  void doesNotStartFallbackWhenPrimarySemanticValidationExhaustsTheDeadline() {
+    Instant now = Instant.parse("2026-08-09T12:00:00Z");
+    MutableClock clock = new MutableClock(now);
+    OpenAIClient openAIClient = mock(OpenAIClient.class);
+    ResponseService responseService = mock(ResponseService.class);
+    StructuredResponse<TestOutput> primaryResponse = successfulResponse(new TestOutput("invalid"));
+    when(openAIClient.responses()).thenReturn(responseService);
+    when(responseService.withOptions(any())).thenReturn(responseService);
+    when(responseService.create(
+            any(StructuredResponseCreateParams.class), any(RequestOptions.class)))
+        .thenReturn(primaryResponse);
+    ConversationMemoryResponsesClient client =
+        new ConversationMemoryResponsesClient(
+            () -> openAIClient, "openrouter/z-ai/glm-5.2", "openai/gpt-4.1-mini", 0.4, 1.6, clock);
+
+    assertThatIllegalStateException()
+        .isThrownBy(
+            () ->
+                client.createValidated(
+                    "instructions",
+                    "input",
+                    200,
+                    TestOutput.class,
+                    now.plusSeconds(90),
+                    output -> {
+                      clock.advance(Duration.ofSeconds(90));
+                      throw new IllegalStateException("primary invalid");
+                    }))
         .withMessage("memory response deadline elapsed");
     verify(responseService, times(1))
         .create(any(StructuredResponseCreateParams.class), any(RequestOptions.class));
