@@ -32,6 +32,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
+import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
@@ -39,6 +40,7 @@ import org.springframework.lang.Nullable;
 import org.springframework.stereotype.Service;
 
 @Service
+@Slf4j
 public class ConversationQuestionAnsweringService {
   private static final int HARD_MAX_WINDOW_MESSAGES = 500;
   private static final int HARD_MAX_HISTORY_PAGES = 100;
@@ -165,7 +167,14 @@ public class ConversationQuestionAnsweringService {
       result =
           answerProgressively(
               accountId, group, question, effectiveFrom, to, timezone, startedAt, deadline, run);
-    } catch (RuntimeException ignored) {
+    } catch (RuntimeException failure) {
+      log.warn(
+          "Group question answering failed failureType={} messages={} pages={} windows={} modelCalls={}",
+          OperationalMetricsService.failureType(failure),
+          run.messagesByGuid.size(),
+          run.pageCount,
+          run.windowCount,
+          run.modelCalls);
       result = unavailable(effectiveFrom, to, run, SOURCE_UNAVAILABLE);
     }
     recordMetrics(result, run, startedAt);

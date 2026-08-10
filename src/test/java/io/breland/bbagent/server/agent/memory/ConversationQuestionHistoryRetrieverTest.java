@@ -6,6 +6,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.clearInvocations;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
@@ -190,6 +191,29 @@ class ConversationQuestionHistoryRetrieverTest {
     assertThat(window.messages())
         .extracting(QuestionMessage::messageGuid)
         .containsExactly("older", "newer");
+  }
+
+  @Test
+  void retriesOneTransientBlueBubblesHistoryFailureBeforeUsingTheJournal() {
+    ApiV1ChatChatGuidMessageGet200ResponseDataInner recovered =
+        raw("bb-recovered", "recovered", at("12:00"));
+    when(bb.getMessagesInChatForQuestion(GUID, FROM, TO, 0, 1, "DESC", Duration.ofMinutes(30)))
+        .thenThrow(new IllegalStateException("connection closed before response"))
+        .thenReturn(List.of(recovered));
+    when(store.findMessagePageDescending(
+            CONVERSATION_ID, FROM, TO, null, null, 1, Duration.ofMinutes(30)))
+        .thenReturn(List.of());
+    clearInvocations(bb);
+
+    HistoryWindow window = retriever.retrieveWindow(request(activeFrom("10:00")), null, 1);
+
+    assertThat(window.messages())
+        .extracting(QuestionMessage::messageGuid)
+        .containsExactly("bb-recovered");
+    assertThat(window.windowComplete()).isTrue();
+    verify(bb, times(2))
+        .getMessagesInChatForQuestion(GUID, FROM, TO, 0, 1, "DESC", Duration.ofMinutes(30));
+    verifyNoInteractions(store);
   }
 
   @Test

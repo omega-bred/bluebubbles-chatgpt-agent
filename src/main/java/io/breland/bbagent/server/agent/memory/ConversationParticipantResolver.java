@@ -6,6 +6,7 @@ import io.breland.bbagent.server.agent.account.AgentAccountResolver;
 import io.breland.bbagent.server.agent.account.AgentAccountResolver.ResolvedAccount;
 import io.breland.bbagent.server.agent.memory.ConversationQuestionAnsweringModels.ParticipantDescriptor;
 import io.breland.bbagent.server.agent.memory.ConversationQuestionAnsweringModels.ParticipantHint;
+import io.breland.bbagent.server.agent.persistence.account.AgentAccountIdentityEntity;
 import io.breland.bbagent.server.agent.transport.bb.BBHttpClientWrapper;
 import io.breland.bbagent.server.agent.transport.bb.BlueBubblesContactIdentity;
 import java.time.Clock;
@@ -88,7 +89,38 @@ public class ConversationParticipantResolver {
     return account
         .flatMap(resolved -> accountLabel(resolved, requestingAccountId))
         .map(label -> new ParticipantDescriptor(label, null))
+        .orElseGet(
+            () ->
+                account
+                    .map(resolved -> identityParticipant(resolved, session))
+                    .orElseGet(() -> new ParticipantDescriptor(UNKNOWN_PARTICIPANT, null)));
+  }
+
+  private ParticipantDescriptor identityParticipant(ResolvedAccount resolved, Session session) {
+    List<String> identities =
+        resolved.identities().stream()
+            .filter(Objects::nonNull)
+            .filter(ConversationParticipantResolver::isBlueBubblesIdentity)
+            .map(AgentAccountIdentityEntity::getNormalizedIdentifier)
+            .map(StringUtils::trimToNull)
+            .filter(Objects::nonNull)
+            .distinct()
+            .toList();
+    for (String identity : identities) {
+      Optional<String> contactLabel = contactLabel(identity, session);
+      if (contactLabel.isPresent()) {
+        return new ParticipantDescriptor(contactLabel.get(), null);
+      }
+    }
+    return identities.stream()
+        .findFirst()
+        .map(this::masked)
         .orElseGet(() -> new ParticipantDescriptor(UNKNOWN_PARTICIPANT, null));
+  }
+
+  private static boolean isBlueBubblesIdentity(AgentAccountIdentityEntity identity) {
+    return AgentAccountIdentifiers.IMESSAGE_EMAIL.equals(identity.getIdentityType())
+        || AgentAccountIdentifiers.IMESSAGE_PHONE.equals(identity.getIdentityType());
   }
 
   private Optional<String> accountLabel(ResolvedAccount resolved, String requestingAccountId) {

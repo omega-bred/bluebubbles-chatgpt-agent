@@ -11,6 +11,7 @@ import io.breland.bbagent.server.agent.memory.ConversationQuestionAnsweringModel
 import io.breland.bbagent.server.agent.memory.ConversationQuestionAnsweringModels.QuestionMessage;
 import io.breland.bbagent.server.agent.memory.ConversationQuestionAnsweringModels.RetrievalRequest;
 import io.breland.bbagent.server.agent.transport.bb.BBHttpClientWrapper;
+import io.breland.bbagent.server.metrics.OperationalMetricsService;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
@@ -23,6 +24,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
@@ -30,6 +32,7 @@ import org.springframework.lang.Nullable;
 import org.springframework.stereotype.Service;
 
 @Service
+@Slf4j
 public class ConversationQuestionHistoryRetriever {
   private static final int MAX_SOURCE_CALLS = 100;
   private static final String HISTORY_LIMIT = "history_limit";
@@ -196,35 +199,48 @@ public class ConversationQuestionHistoryRetriever {
     CallBudget budget = new CallBudget();
     while (accepted.size() < windowMessageCount && membershipIndex < newestFirst.size()) {
       Bounds bound = newestFirst.get(membershipIndex);
-      Duration remaining = budget.reserve(request.deadline());
-      if (remaining == null) {
-        return historyWindow(
-            accepted,
-            new HistoryWindowCursor(
-                HistorySource.BLUEBUBBLES,
-                membershipIndex,
-                rawOffset,
-                journalBeforeTimestamp,
-                journalBeforeGuid),
-            false,
-            budget.partialReason(),
-            budget.pages());
-      }
       int requested = Math.min(500, windowMessageCount - accepted.size());
-      List<ApiV1ChatChatGuidMessageGet200ResponseDataInner> page;
-      try {
-        page =
-            Objects.requireNonNull(
-                bb.getMessagesInChatForQuestion(
-                    request.conversation().externalConversationId(),
-                    bound.from(),
-                    bound.to(),
+      List<ApiV1ChatChatGuidMessageGet200ResponseDataInner> page = null;
+      RuntimeException sourceFailure = null;
+      for (int attempt = 1; attempt <= 2 && page == null; attempt++) {
+        Duration remaining = budget.reserve(request.deadline());
+        if (remaining == null) {
+          if (sourceFailure == null) {
+            return historyWindow(
+                accepted,
+                new HistoryWindowCursor(
+                    HistorySource.BLUEBUBBLES,
+                    membershipIndex,
                     rawOffset,
-                    requested,
-                    "DESC",
-                    remaining),
-                "question history window returned no page");
-      } catch (RuntimeException ignored) {
+                    journalBeforeTimestamp,
+                    journalBeforeGuid),
+                false,
+                budget.partialReason(),
+                budget.pages());
+          }
+          break;
+        }
+        try {
+          page =
+              Objects.requireNonNull(
+                  bb.getMessagesInChatForQuestion(
+                      request.conversation().externalConversationId(),
+                      bound.from(),
+                      bound.to(),
+                      rawOffset,
+                      requested,
+                      "DESC",
+                      remaining),
+                  "question history window returned no page");
+        } catch (RuntimeException failure) {
+          sourceFailure = failure;
+          log.warn(
+              "BlueBubbles question history read failed attempt={}/2 failureType={}",
+              attempt,
+              OperationalMetricsService.failureType(failure));
+        }
+      }
+      if (page == null) {
         budget.limit(SOURCE_UNAVAILABLE);
         return retrieveJournalWindow(
             request,

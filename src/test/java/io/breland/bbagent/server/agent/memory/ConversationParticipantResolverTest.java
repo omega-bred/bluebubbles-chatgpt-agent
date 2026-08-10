@@ -17,6 +17,7 @@ import io.breland.bbagent.server.agent.account.AgentAccountResolver.ResolvedAcco
 import io.breland.bbagent.server.agent.memory.ConversationQuestionAnsweringModels.ParticipantDescriptor;
 import io.breland.bbagent.server.agent.memory.ConversationQuestionAnsweringModels.ParticipantHint;
 import io.breland.bbagent.server.agent.persistence.account.AgentAccountEntity;
+import io.breland.bbagent.server.agent.persistence.account.AgentAccountIdentityEntity;
 import io.breland.bbagent.server.agent.transport.bb.BBHttpClientWrapper;
 import io.breland.bbagent.server.agent.transport.bb.BlueBubblesContactIdentity;
 import java.time.Clock;
@@ -206,6 +207,42 @@ class ConversationParticipantResolverTest {
   }
 
   @Test
+  void journalAccountIdentityUsesTheBlueBubblesContactDirectory() {
+    AgentAccountEntity account = account("account-2", null, null);
+    when(accountResolver.resolveById("account-2"))
+        .thenReturn(Optional.of(resolved(account, identity("account-2", "+15555550199"))));
+    when(bb.getContactIdentitiesForQuestion(Duration.ofSeconds(30)))
+        .thenReturn(List.of(contact("Alice", "+15555550199")));
+
+    ParticipantDescriptor participant =
+        resolver.resolve(
+            "account-2",
+            REQUESTER_ACCOUNT_ID,
+            new ConversationParticipantResolver.Session(DEADLINE));
+
+    assertThat(participant.label()).isEqualTo("Alice");
+    assertThat(participant.hint()).isNull();
+  }
+
+  @Test
+  void unresolvedJournalAccountIdentityProducesAMaskedHint() {
+    AgentAccountEntity account = account("account-2", null, null);
+    when(accountResolver.resolveById("account-2"))
+        .thenReturn(Optional.of(resolved(account, identity("account-2", "+15555550199"))));
+    when(bb.getContactIdentitiesForQuestion(Duration.ofSeconds(30))).thenReturn(List.of());
+
+    ParticipantDescriptor participant =
+        resolver.resolve(
+            "account-2",
+            REQUESTER_ACCOUNT_ID,
+            new ConversationParticipantResolver.Session(DEADLINE));
+
+    assertThat(participant.label()).isEqualTo("participant ending 0199");
+    assertThat(participant.hint())
+        .isEqualTo(new ParticipantHint("participant ending 0199", "+15555550199"));
+  }
+
+  @Test
   void readOnlyResolutionNeverCreatesOrMergesAccounts() {
     when(accountResolver.resolve(any(IncomingMessage.class))).thenReturn(Optional.empty());
     when(bb.getContactIdentitiesForQuestion(Duration.ofSeconds(30))).thenReturn(List.of());
@@ -244,6 +281,22 @@ class ConversationParticipantResolverTest {
 
   private ResolvedAccount resolved(AgentAccountEntity account) {
     return new ResolvedAccount(account, List.of());
+  }
+
+  private ResolvedAccount resolved(
+      AgentAccountEntity account, AgentAccountIdentityEntity... identities) {
+    return new ResolvedAccount(account, List.of(identities));
+  }
+
+  private AgentAccountIdentityEntity identity(String accountId, String normalizedIdentifier) {
+    return new AgentAccountIdentityEntity(
+        "identity-1",
+        accountId,
+        "imessage_phone",
+        normalizedIdentifier,
+        normalizedIdentifier,
+        NOW,
+        NOW);
   }
 
   private BlueBubblesContactIdentity contact(String name, String address) {
