@@ -3,8 +3,6 @@ package io.breland.bbagent.server.agent.memory;
 import io.breland.bbagent.server.agent.memory.ConversationMemoryModels.AuthorizedGroup;
 import io.breland.bbagent.server.agent.memory.ConversationMemoryModels.ConversationRecord;
 import io.breland.bbagent.server.agent.memory.ConversationQuestionAnsweringModels.AnswerStatus;
-import io.breland.bbagent.server.agent.memory.ConversationQuestionAnsweringModels.Confidence;
-import io.breland.bbagent.server.agent.memory.ConversationQuestionAnsweringModels.CoverageStatus;
 import io.breland.bbagent.server.agent.memory.ConversationQuestionAnsweringModels.GroupQuestionAnswer;
 import io.breland.bbagent.server.agent.memory.ConversationQuestionAnsweringModels.HistoryWindow;
 import io.breland.bbagent.server.agent.memory.ConversationQuestionAnsweringModels.HistoryWindowCursor;
@@ -13,7 +11,6 @@ import io.breland.bbagent.server.agent.memory.ConversationQuestionAnsweringModel
 import io.breland.bbagent.server.agent.memory.ConversationQuestionAnsweringModels.ParticipantHint;
 import io.breland.bbagent.server.agent.memory.ConversationQuestionAnsweringModels.QuestionFinding;
 import io.breland.bbagent.server.agent.memory.ConversationQuestionAnsweringModels.QuestionMessage;
-import io.breland.bbagent.server.agent.memory.ConversationQuestionAnsweringModels.RetrievalMode;
 import io.breland.bbagent.server.agent.memory.ConversationQuestionAnsweringModels.RetrievalRequest;
 import io.breland.bbagent.server.agent.memory.ConversationQuestionAnsweringModels.RoutedFindingReduction;
 import io.breland.bbagent.server.agent.memory.ConversationQuestionAnsweringModels.RoutedWindowDecision;
@@ -215,9 +212,10 @@ public class ConversationQuestionAnsweringService {
       if (window.messages().isEmpty()) {
         if (window.sourceExhausted()) {
           if (run.findings.isEmpty()) {
-            return noAnswer(from, to, run, EMPTY_HISTORY_ANSWER, null, false, Confidence.LOW);
+            return noAnswer(from, to, run, EMPTY_HISTORY_ANSWER, null, false);
           }
-          return reduceFindings(question, referenceTime, timezone, false, deadline, from, to, run);
+          return Objects.requireNonNull(
+              reduceFindings(question, referenceTime, timezone, false, deadline, from, to, run));
         }
         cursor = advanceCursor(window, seenCursors);
         continue;
@@ -255,21 +253,13 @@ public class ConversationQuestionAnsweringService {
                 from, to, run, decision.clarificationQuestion(), run.model, run.fallbackUsed);
           }
           case NO_ANSWER -> {
-            return noAnswer(
-                from,
-                to,
-                run,
-                decision.answer(),
-                run.model,
-                run.fallbackUsed,
-                decision.confidence());
+            return noAnswer(from, to, run, decision.answer(), run.model, run.fallbackUsed);
           }
           case NEED_OLDER_MESSAGES -> addProvisionalFindings(decision, run);
         }
       } else {
         boolean needsOlder = false;
         String noAnswerText = null;
-        Confidence noAnswerConfidence = Confidence.LOW;
         for (ModelWindowDecision decision : decisions) {
           switch (decision.action()) {
             case ANSWERED -> addAnsweredFinding(decision, run);
@@ -283,7 +273,6 @@ public class ConversationQuestionAnsweringService {
             }
             case NO_ANSWER -> {
               noAnswerText = decision.answer();
-              noAnswerConfidence = decision.confidence();
             }
           }
         }
@@ -292,7 +281,7 @@ public class ConversationQuestionAnsweringService {
           GroupQuestionAnswer reduced =
               reduceFindings(
                   question, referenceTime, timezone, olderAvailable, deadline, from, to, run);
-          if (reduced.status() != AnswerStatus.INSUFFICIENT_EVIDENCE) {
+          if (reduced != null) {
             return reduced;
           }
           needsOlder = true;
@@ -303,16 +292,16 @@ public class ConversationQuestionAnsweringService {
               run,
               StringUtils.defaultIfBlank(noAnswerText, NO_ANSWER),
               run.model,
-              run.fallbackUsed,
-              noAnswerConfidence);
+              run.fallbackUsed);
         }
       }
 
       if (window.nextCursor() == null) {
         if (run.findings.isEmpty()) {
-          return noAnswer(from, to, run, NO_ANSWER, run.model, run.fallbackUsed, Confidence.LOW);
+          return noAnswer(from, to, run, NO_ANSWER, run.model, run.fallbackUsed);
         }
-        return reduceFindings(question, referenceTime, timezone, false, deadline, from, to, run);
+        return Objects.requireNonNull(
+            reduceFindings(question, referenceTime, timezone, false, deadline, from, to, run));
       }
       cursor = advanceCursor(window, seenCursors);
     }
@@ -334,7 +323,7 @@ public class ConversationQuestionAnsweringService {
     return deadlineReached(deadline) ? null : routed;
   }
 
-  private GroupQuestionAnswer reduceFindings(
+  private @Nullable GroupQuestionAnswer reduceFindings(
       String question,
       Instant referenceTime,
       @Nullable String timezone,
@@ -344,7 +333,7 @@ public class ConversationQuestionAnsweringService {
       Instant to,
       RunState run) {
     if (run.findings.isEmpty()) {
-      return noAnswer(from, to, run, NO_ANSWER, run.model, run.fallbackUsed, Confidence.LOW);
+      return noAnswer(from, to, run, NO_ANSWER, run.model, run.fallbackUsed);
     }
     run.findings.sort(Comparator.comparing(QuestionFinding::coverageThrough));
     int characters =
@@ -367,12 +356,10 @@ public class ConversationQuestionAnsweringService {
       case NEED_TIME_CLARIFICATION ->
           clarification(
               from, to, run, decision.clarificationQuestion(), run.model, run.fallbackUsed);
-      case NO_ANSWER ->
-          noAnswer(
-              from, to, run, decision.answer(), run.model, run.fallbackUsed, decision.confidence());
+      case NO_ANSWER -> noAnswer(from, to, run, decision.answer(), run.model, run.fallbackUsed);
       case NEED_OLDER_MESSAGES ->
           olderAvailable
-              ? insufficientForOlder(from, to, run)
+              ? null
               : clarification(from, to, run, NARROW_TIME_QUESTION, run.model, run.fallbackUsed);
     };
   }
@@ -496,18 +483,13 @@ public class ConversationQuestionAnsweringService {
         decision.answer(), run.messagesByGuid.keySet(), Set.of())) {
       return unavailable(from, to, run, "invalid_model_output");
     }
-    return result(
+    return new GroupQuestionAnswer(
         AnswerStatus.ANSWERED,
         decision.answer(),
         null,
-        decision.confidence(),
+        run.hints(decision.evidenceMessageGuids(), decision.referencedParticipants()),
         modelName,
-        fallbackUsed,
-        decision.evidenceMessageGuids(),
-        decision.referencedParticipants(),
-        from,
-        to,
-        run);
+        fallbackUsed);
   }
 
   private GroupQuestionAnswer noAnswer(
@@ -516,24 +498,13 @@ public class ConversationQuestionAnsweringService {
       RunState run,
       String answer,
       @Nullable String modelName,
-      boolean fallbackUsed,
-      Confidence confidence) {
+      boolean fallbackUsed) {
     if (!ConversationQuestionAnswerOutputValidator.isSafe(
         answer, run.messagesByGuid.keySet(), Set.of())) {
       return unavailable(from, to, run, "invalid_model_output");
     }
-    return result(
-        AnswerStatus.NO_ANSWER,
-        answer,
-        null,
-        confidence,
-        modelName,
-        fallbackUsed,
-        List.of(),
-        List.of(),
-        from,
-        to,
-        run);
+    return new GroupQuestionAnswer(
+        AnswerStatus.NO_ANSWER, answer, null, List.of(), modelName, fallbackUsed);
   }
 
   private GroupQuestionAnswer clarification(
@@ -547,88 +518,26 @@ public class ConversationQuestionAnsweringService {
         clarificationQuestion, run.messagesByGuid.keySet(), Set.of())) {
       return unavailable(from, to, run, "invalid_model_output");
     }
-    return result(
+    return new GroupQuestionAnswer(
         AnswerStatus.CLARIFICATION_REQUIRED,
         null,
         clarificationQuestion,
-        Confidence.LOW,
+        List.of(),
         modelName,
-        fallbackUsed,
-        List.of(),
-        List.of(),
-        from,
-        to,
-        run);
+        fallbackUsed);
   }
 
   private GroupQuestionAnswer unavailable(Instant from, Instant to, RunState run, String reason) {
     run.partialReason = StringUtils.defaultIfBlank(run.partialReason, reason);
-    return result(
-        AnswerStatus.UNAVAILABLE,
-        UNAVAILABLE_ANSWER,
-        null,
-        Confidence.LOW,
-        run.model,
-        run.fallbackUsed,
-        List.of(),
-        List.of(),
-        from,
-        to,
-        run);
-  }
-
-  private GroupQuestionAnswer insufficientForOlder(Instant from, Instant to, RunState run) {
     return new GroupQuestionAnswer(
-        AnswerStatus.INSUFFICIENT_EVIDENCE,
-        NO_ANSWER,
-        null,
-        Confidence.LOW,
-        run.model,
-        run.fallbackUsed,
-        0,
-        RetrievalMode.CHRONOLOGICAL,
-        run.coverageStatus(),
-        from,
-        to,
-        run.coverageThrough(from),
-        run.partialReason,
-        List.of());
-  }
-
-  private GroupQuestionAnswer result(
-      AnswerStatus status,
-      @Nullable String answer,
-      @Nullable String clarification,
-      Confidence confidence,
-      @Nullable String modelName,
-      boolean fallbackUsed,
-      List<String> evidenceGuids,
-      List<String> referencedParticipants,
-      Instant from,
-      Instant to,
-      RunState run) {
-    return new GroupQuestionAnswer(
-        status,
-        answer,
-        clarification,
-        confidence,
-        modelName,
-        fallbackUsed,
-        new LinkedHashSet<>(evidenceGuids).size(),
-        RetrievalMode.CHRONOLOGICAL,
-        run.coverageStatus(),
-        from,
-        to,
-        run.coverageThrough(from),
-        run.partialReason,
-        run.hints(evidenceGuids, referencedParticipants));
+        AnswerStatus.UNAVAILABLE, UNAVAILABLE_ANSWER, null, List.of(), run.model, run.fallbackUsed);
   }
 
   private void recordMetrics(GroupQuestionAnswer result, RunState run, Instant startedAt) {
     boolean success = result.status() == AnswerStatus.ANSWERED;
     metrics.recordMemoryQuestionAnswer(
         "progressive",
-        result.coverageStatus().wireValue(),
+        run.partialReason == null ? "complete" : "partial",
         result.model(),
         run.messagesByGuid.size(),
         run.pageCount,
@@ -745,17 +654,6 @@ public class ConversationQuestionAnsweringService {
           .map(QuestionMessage::timestamp)
           .max(Comparator.naturalOrder())
           .orElseThrow(() -> new IllegalStateException("finding has no submitted evidence"));
-    }
-
-    private Instant coverageThrough(Instant fallback) {
-      return messagesByGuid.values().stream()
-          .map(QuestionMessage::timestamp)
-          .max(Comparator.naturalOrder())
-          .orElse(fallback);
-    }
-
-    private CoverageStatus coverageStatus() {
-      return partialReason == null ? CoverageStatus.COMPLETE : CoverageStatus.PARTIAL;
     }
 
     private List<ParticipantHint> hints(

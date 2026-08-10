@@ -308,10 +308,11 @@ public final class AgentPromptBuilder {
                   + GetGroupCatchupAgentTool.TOOL_NAME
                   + " for questions like what happened, what did I miss, or summaries of a group over a time range. Use "
                   + MemoryGetAgentTool.TOOL_NAME
-                  + " for semantic facts and decisions; its limited search results are not proof of complete time-range coverage. "
-                  + "For a precise question requiring exact evidence from an authorized group, call "
+                  + " for semantic facts and decisions. For questions about another group's messages, call "
                   + GetGroupCatchupAgentTool.TOOL_NAME
-                  + " with the user's exact question. Treat question_answer coverage and insufficient_evidence as authoritative for that requested range; do not substitute unrelated semantic memory as current group evidence. "
+                  + " with the user's exact question. Pass relative phrases such as today or recently unchanged; the tool interprets them from timestamped recent history and may search older messages. Supply from/to only when the user clearly established an absolute range. If it returns clarification_question, ask that naturally and wait. Use visible one-to-one context or "
+                  + MemoryGetAgentTool.TOOL_NAME
+                  + " only to resolve unresolved_participants; do not change group-derived facts. Never mention retrieval, authorization, coverage, evidence validation, aliases, models, or internal answer states. "
                   + "When the user asks to enable, disable, or schedule proactive summaries from a group into this one-to-one chat, call "
                   + ConfigureGroupCatchupAgentTool.TOOL_NAME
                   + ". "
@@ -366,15 +367,18 @@ public final class AgentPromptBuilder {
                 + (message != null && message.isGroup()
                     ? "In a group chat, use "
                         + GetGroupCatchupAgentTool.TOOL_NAME
-                        + " for precise questions requiring exact evidence from the current group's own history. The server always scopes this tool to the current group; do not use it to ask about another conversation. Treat question_answer coverage and insufficient_evidence as authoritative for that requested range; do not substitute unrelated semantic memory as current group evidence. "
+                        + " with the user's exact question for the current group's earlier messages. The tool stays within the current group. Pass relative phrases such as today or recently unchanged; the tool interprets them from timestamped recent history and may search older messages. Supply from/to only when the user clearly established an absolute range. If it returns clarification_question, ask that naturally and wait. Use visible conversation context or "
+                        + MemoryGetAgentTool.TOOL_NAME
+                        + " only to resolve unresolved_participants; do not change group-derived facts. Never mention retrieval, authorization, coverage, evidence validation, aliases, models, or internal answer states. "
                     : "In a one-to-one chat, use "
                         + GetGroupCatchupAgentTool.TOOL_NAME
                         + " for questions like what happened, what did I miss, or summaries of a group over a time range. Use "
                         + MemoryGetAgentTool.TOOL_NAME
-                        + " for semantic facts and decisions; its limited search results are not proof of complete time-range coverage. "
-                        + "For a precise question requiring exact evidence from an authorized group, call "
+                        + " for semantic facts and decisions. For questions about another group's messages, call "
                         + GetGroupCatchupAgentTool.TOOL_NAME
-                        + " with the user's exact question. Treat question_answer coverage and insufficient_evidence as authoritative for that requested range; do not substitute unrelated semantic memory as current group evidence. "
+                        + " with the user's exact question. Pass relative phrases such as today or recently unchanged; the tool interprets them from timestamped recent history and may search older messages. Supply from/to only when the user clearly established an absolute range. If it returns clarification_question, ask that naturally and wait. Use visible one-to-one context or "
+                        + MemoryGetAgentTool.TOOL_NAME
+                        + " only to resolve unresolved_participants; do not change group-derived facts. Never mention retrieval, authorization, coverage, evidence validation, aliases, models, or internal answer states. "
                         + "When the user asks to enable, disable, or schedule proactive summaries from a group into this one-to-one chat, call "
                         + ConfigureGroupCatchupAgentTool.TOOL_NAME
                         + ". ")

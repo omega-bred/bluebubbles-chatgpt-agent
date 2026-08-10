@@ -16,7 +16,6 @@ public final class ConversationQuestionAnsweringModels {
     ANSWERED,
     CLARIFICATION_REQUIRED,
     NO_ANSWER,
-    INSUFFICIENT_EVIDENCE,
     UNAVAILABLE;
 
     public String wireValue() {
@@ -180,25 +179,6 @@ public final class ConversationQuestionAnsweringModels {
     }
   }
 
-  public enum RetrievalMode {
-    EXACT_SEARCH,
-    CHRONOLOGICAL,
-    HYBRID;
-
-    public String wireValue() {
-      return name().toLowerCase(Locale.ROOT);
-    }
-  }
-
-  public enum CoverageStatus {
-    COMPLETE,
-    PARTIAL;
-
-    public String wireValue() {
-      return name().toLowerCase(Locale.ROOT);
-    }
-  }
-
   public record ParticipantHint(String label, String normalizedIdentity) {
     public ParticipantHint {
       requireNotBlank(label, "participant hint label");
@@ -299,17 +279,9 @@ public final class ConversationQuestionAnsweringModels {
       AnswerStatus status,
       @Nullable String answer,
       @Nullable String clarificationQuestion,
-      Confidence confidence,
+      List<ParticipantHint> unresolvedParticipants,
       @Nullable String model,
-      boolean fallbackUsed,
-      int evidenceMessageCount,
-      RetrievalMode retrievalMode,
-      CoverageStatus coverageStatus,
-      Instant from,
-      Instant to,
-      Instant coverageThrough,
-      @Nullable String partialReason,
-      List<ParticipantHint> unresolvedParticipants) {
+      boolean fallbackUsed) {
     public GroupQuestionAnswer {
       if (status == null) {
         throw new IllegalArgumentException("answer status must not be null");
@@ -323,9 +295,6 @@ public final class ConversationQuestionAnsweringModels {
       } else if (answer == null || clarificationQuestion != null) {
         throw new IllegalArgumentException("answer result has invalid shape");
       }
-      if (confidence == null) {
-        throw new IllegalArgumentException("confidence must not be null");
-      }
       model = StringUtils.trimToNull(model);
       if (status == AnswerStatus.ANSWERED && model == null) {
         throw new IllegalArgumentException("answered result must have a model");
@@ -333,66 +302,11 @@ public final class ConversationQuestionAnsweringModels {
       if (fallbackUsed && model == null) {
         throw new IllegalArgumentException("fallback use requires a model");
       }
-      if (evidenceMessageCount < 0) {
-        throw new IllegalArgumentException("evidence message count must not be negative");
-      }
-      if (status == AnswerStatus.ANSWERED && evidenceMessageCount == 0) {
-        throw new IllegalArgumentException("answered result must have evidence");
-      }
-      if (retrievalMode == null) {
-        throw new IllegalArgumentException("retrieval mode must not be null");
-      }
-      if (coverageStatus == null) {
-        throw new IllegalArgumentException("coverage status must not be null");
-      }
-      if (from == null || to == null || !from.isBefore(to)) {
-        throw new IllegalArgumentException("answer range must be ordered");
-      }
-      if (coverageThrough == null) {
-        throw new IllegalArgumentException("coverage through must not be null");
-      }
-      partialReason = StringUtils.trimToNull(partialReason);
-      if (coverageStatus == CoverageStatus.COMPLETE && partialReason != null) {
-        throw new IllegalArgumentException("complete answer must not have a partial reason");
-      }
-      if (coverageStatus == CoverageStatus.PARTIAL && partialReason == null) {
-        throw new IllegalArgumentException("partial answer must have a reason");
-      }
       LinkedHashMap<String, ParticipantHint> hints = new LinkedHashMap<>();
       for (ParticipantHint hint : unresolvedParticipants) {
         hints.putIfAbsent(hint.normalizedIdentity(), hint);
       }
       unresolvedParticipants = List.copyOf(hints.values());
-    }
-
-    public GroupQuestionAnswer(
-        AnswerStatus status,
-        String answer,
-        Confidence confidence,
-        @Nullable String model,
-        boolean fallbackUsed,
-        int evidenceMessageCount,
-        RetrievalMode retrievalMode,
-        CoverageStatus coverageStatus,
-        Instant from,
-        Instant to,
-        Instant coverageThrough,
-        @Nullable String partialReason) {
-      this(
-          status,
-          answer,
-          null,
-          confidence,
-          model,
-          fallbackUsed,
-          evidenceMessageCount,
-          retrievalMode,
-          coverageStatus,
-          from,
-          to,
-          coverageThrough,
-          partialReason,
-          List.of());
     }
   }
 
