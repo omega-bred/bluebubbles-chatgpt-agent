@@ -876,23 +876,20 @@ class ConversationQuestionAnsweringServiceTest {
   }
 
   @Test
-  void unsafeModelOutputCannotBecomeAGroupQuestionAnswer() {
-    QuestionMessage score = message("score-guid", "Dom", "Challenge round 1,877 result 3/6", 1);
-    when(retriever.retrieveExact(any(), eq(REPORT_PLAN))).thenReturn(completeExact(List.of(score)));
-    when(model.answer(QUESTION, List.of(score), DEADLINE))
-        .thenReturn(
-            routed(
-                answered(
-                    "Dom reported challenge round 1,877 in 3/6; call +1 (555) 555-0199 for details.",
-                    "score-guid")));
-    when(retriever.retrieveChronological(any()))
-        .thenThrow(new IllegalStateException("source unavailable"));
+  void authorizedContentIsReturnedWhenTheGenericVerifierSupportsIt() {
+    QuestionMessage source = message("source-guid", "Dom", "Call +1 (555) 555-0199.", 1);
+    String answer = "Dom said to call +1 (555) 555-0199 or visit https://example.tech.";
+    when(retriever.retrieveExact(any(), eq(REPORT_PLAN)))
+        .thenReturn(completeExact(List.of(source)));
+    when(model.answer(QUESTION, List.of(source), DEADLINE))
+        .thenReturn(routed(answered(answer, source.messageGuid())));
+    when(model.verifyAnswer(QUESTION, answer, List.of(source), DEADLINE))
+        .thenReturn(new RoutedSupportVerification(true, "openrouter/z-ai/glm-5.2", false));
 
     GroupQuestionAnswer result = service.answer(ACCOUNT, GROUP, QUESTION, FROM, TO);
 
-    assertThat(result.status()).isNotEqualTo(AnswerStatus.ANSWERED);
-    assertThat(result.answer()).doesNotContain("555-0199", "challenge round 1,877");
-    assertThat(totalQuestionAnswers()).isEqualTo(1.0);
+    assertThat(result.status()).isEqualTo(AnswerStatus.ANSWERED);
+    assertThat(result.answer()).isEqualTo(answer);
   }
 
   @Test

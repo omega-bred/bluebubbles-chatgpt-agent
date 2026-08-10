@@ -147,8 +147,7 @@ public class ConversationQuestionAnsweringModelClient {
                 routed.value(),
                 providerInput.aliasToMessageGuids(),
                 providerInput.messageGuids(),
-                providerInput.evidenceAliases(),
-                submittedMessages.stream().map(QuestionMessage::text).toList())
+                providerInput.evidenceAliases())
             .answer(),
         routed.model(),
         routed.fallbackUsed());
@@ -188,8 +187,7 @@ public class ConversationQuestionAnsweringModelClient {
             routed.value(),
             providerInput.aliasToMessageGuids(),
             providerInput.messageGuids(),
-            providerInput.evidenceAliases(),
-            submittedFindings.stream().map(QuestionFinding::answer).toList());
+            providerInput.evidenceAliases());
     List<QuestionFinding> citedFindings =
         parsed.selectedAliases().stream()
             .map(providerInput.aliasToFinding()::get)
@@ -420,8 +418,7 @@ public class ConversationQuestionAnsweringModelClient {
       RawQuestionAnswer raw,
       Map<String, List<String>> aliasToMessageGuids,
       Set<String> forbiddenIdentifiers,
-      Set<String> opaqueEvidenceAliases,
-      List<String> submittedSourceTexts) {
+      Set<String> opaqueEvidenceAliases) {
     if (raw == null) {
       throw new IllegalStateException("invalid question answer response");
     }
@@ -449,7 +446,7 @@ public class ConversationQuestionAnsweringModelClient {
       throw new IllegalStateException("invalid question answer response");
     }
     ConversationQuestionAnswerOutputValidator.requireSafe(
-        answer, forbiddenIdentifiers, opaqueEvidenceAliases, submittedSourceTexts);
+        answer, forbiddenIdentifiers, opaqueEvidenceAliases);
     return new ParsedAnswer(
         new ModelAnswer(status, answer, confidence, List.copyOf(evidence), raw.needsMoreContext()),
         List.copyOf(selectedAliases));

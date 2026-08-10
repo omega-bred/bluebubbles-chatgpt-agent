@@ -19,6 +19,8 @@ import org.springframework.stereotype.Component;
 public class ConversationHistoryMessageMapper {
   private static final String YOU = "you";
   private static final String UNKNOWN_PARTICIPANT = "unknown participant";
+  private static final int MAX_PARTICIPANT_LABEL_CHARACTERS = 160;
+  private static final int MAX_PARTICIPANT_LABEL_WORDS = 8;
 
   private final AgentAccountResolver accountResolver;
 
@@ -134,9 +136,15 @@ public class ConversationHistoryMessageMapper {
       return Optional.of(YOU);
     }
     String globalContactName = StringUtils.trimToNull(account.account().getGlobalContactName());
-    return ConversationQuestionAnswerOutputValidator.isSafeParticipantLabel(globalContactName)
+    return isSafeParticipantLabel(globalContactName)
         ? Optional.of(globalContactName)
         : Optional.empty();
+  }
+
+  private static boolean isSafeParticipantLabel(String label) {
+    return label != null
+        && label.length() <= MAX_PARTICIPANT_LABEL_CHARACTERS
+        && StringUtils.split(label).length <= MAX_PARTICIPANT_LABEL_WORDS;
   }
 
   private String maskedIdentity(IncomingMessage message) {

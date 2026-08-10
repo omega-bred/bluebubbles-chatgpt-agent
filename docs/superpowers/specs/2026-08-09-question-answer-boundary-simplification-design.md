@@ -2,7 +2,7 @@
 
 **Date:** 2026-08-09
 
-**Status:** Approved in conversation; awaiting written-spec review
+**Status:** Task 1 implemented and verified; awaiting written-spec review
 
 ## Context
 

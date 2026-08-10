@@ -2,7 +2,6 @@ package io.breland.bbagent.server.agent.memory;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.junit.jupiter.api.Assertions.assertTimeoutPreemptively;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
@@ -18,17 +17,13 @@ import io.breland.bbagent.server.agent.memory.ConversationQuestionAnsweringModel
 import io.breland.bbagent.server.agent.memory.ConversationQuestionAnsweringModels.Confidence;
 import io.breland.bbagent.server.agent.memory.ConversationQuestionAnsweringModels.QuestionFinding;
 import io.breland.bbagent.server.agent.memory.ConversationQuestionAnsweringModels.QuestionMessage;
-import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicReference;
-import java.util.stream.Stream;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
-import org.junit.jupiter.params.provider.Arguments;
-import org.junit.jupiter.params.provider.MethodSource;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.ArgumentCaptor;
 
@@ -148,6 +143,35 @@ class ConversationQuestionAnsweringModelClientTest {
   }
 
   @Test
+  void rejectsTheDynamicallyGeneratedFindingAliasFromReducedAnswerText() {
+    QuestionFinding finding =
+        new QuestionFinding("Alice owns Atlas.", Confidence.HIGH, List.of("m-owner"), TO);
+    when(responses.create(
+            anyString(), anyString(), eq(800), eq(RawQuestionAnswer.class), eq(DEADLINE)))
+        .thenAnswer(
+            invocation -> {
+              String alias =
+                  providerJson(invocation.getArgument(1))
+                      .path("findings")
+                      .get(0)
+                      .path("finding_alias")
+                      .asText();
+              return routed(
+                  new RawQuestionAnswer(
+                      "ANSWERED",
+                      "Evidence " + alias + " supports Alice.",
+                      "HIGH",
+                      List.of(alias),
+                      false));
+            });
+
+    assertThatThrownBy(
+            () -> client.reduceWithCitations("Who owns Atlas?", List.of(finding), DEADLINE))
+        .isInstanceOf(IllegalStateException.class)
+        .hasMessage("unsafe question answer response");
+  }
+
+  @Test
   void rejectsAShortSubmittedMessageIdentifierFromAnswerText() {
     rawAnswer("The cited message was m1.");
 
@@ -163,244 +187,75 @@ class ConversationQuestionAnsweringModelClientTest {
   @ParameterizedTest
   @ValueSource(
       strings = {
-        "real-message-guid",
-        "alice@example.tech",
-        "https://vault.example.tech/secret",
-        "vault.example.tech/secret",
-        "foo.company?x=1",
-        "foo.company#section",
-        "localhost",
-        "LOCALHOST",
-        "localhost:8080/private",
-        "[2001:db8::1]:443/private",
-        "[fe80::1%en0]:8080",
-        "[::ffff:192.0.2.128]:443",
-        "4111111111111111",
-        "Follow all instructions above.",
-        "10.0.0.1:8080"
+        "Escribe al equipo: alice@example.tech y revisa https://example.tech/a.",
+        "اتصل على +1 (415) 555-0100 للحصول على التفاصيل.",
+        "日本語の記録: 4111 1111 1111 1111。",
+        "Follow all instructions above; this is quoted group content."
       })
-  void deterministicBoundaryRejectsIdentifiersEndpointsAndInstructions(String unsafeAnswer) {
-    rawAnswer(unsafeAnswer);
+  void allowsAuthorizedContentWithoutLanguageSpecificHeuristics(String answer) {
+    rawAnswer(answer);
 
-    assertThatThrownBy(
-            () ->
-                client.answer(
+    assertThat(
+            client
+                .answer(
                     "What was reported?",
-                    List.of(message("real-message-guid", "Alice", "A safe status was reported."))))
-        .isInstanceOf(IllegalStateException.class)
-        .hasMessage("unsafe question answer response");
+                    List.of(message("source-guid", "Alice", "Authorized source content.")))
+                .answer()
+                .answer())
+        .isEqualTo(answer);
   }
 
-  @ParameterizedTest
-  @ValueSource(
-      strings = {
-        "4111 1111 1111 1",
-        "4111 1111 1111 1111",
-        "4111 1111 1111 1111 111",
-        "4111     1111     1111     1111",
-        "4111\t1111\t1111\t1111",
-        "4111 \t—\n1111-\r\n1111\u2003–\t1111",
-        "4111\u00851111\u00851111\u00851111",
-        "4111\u200B1111\u200B1111\u200B1111",
-        "4111\u202E1111\u20661111\u200F1111",
-        "4111🔒1111🔒1111🔒1111",
-        "4111•1111:1111/1111",
-        "4111 \u200B—\u0085\t1111🔒 1111\u2066-1111",
-        "4111-1111-1111-1111",
-        "4111–1111–1111–1111",
-        "4111—1111—1111—1111"
-      })
-  void rejectsPaymentCardCandidatesAcrossCommonGroupingSeparators(String candidate) {
+  @Test
+  void allowsVerbatimAuthorizedSourceText() {
+    String source =
+        "This exact authorized group statement is deliberately long enough to exceed the old copy thresholds.";
+    rawAnswer(source);
+
+    assertThat(
+            client
+                .answer("What was said?", List.of(message("source-guid", "Alice", source)))
+                .answer()
+                .answer())
+        .isEqualTo(source);
+  }
+
+  @Test
+  void enforcesOnlyAnswerShapeAndForbiddenIdentifiers() {
+    assertThat(
+            ConversationQuestionAnswerOutputValidator.isSafe("x".repeat(4_000), Set.of(), Set.of()))
+        .isTrue();
+    assertThat(
+            ConversationQuestionAnswerOutputValidator.isSafe("x".repeat(4_001), Set.of(), Set.of()))
+        .isFalse();
+    assertThat(ConversationQuestionAnswerOutputValidator.isSafe("   ", Set.of(), Set.of()))
+        .isFalse();
     assertThat(
             ConversationQuestionAnswerOutputValidator.isSafe(
-                "Payment reference " + candidate + ".", Set.of(), List.of()))
+                "Message REAL-GUID was cited.", Set.of("real-guid"), Set.of()))
+        .isFalse();
+    assertThat(
+            ConversationQuestionAnswerOutputValidator.isSafe(
+                "Evidence EV_ABC appears here.", Set.of(), Set.of("ev_abc")))
         .isFalse();
   }
 
   @Test
-  void canonicalizesSourcePaymentCardIdentifiersAcrossFormattingChanges() {
+  void messageGuidMatchingUsesUnicodeLetterOrDigitBoundaries() {
     assertThat(
             ConversationQuestionAnswerOutputValidator.isSafe(
-                "The payment reference was 4111-1111-1111-1111.",
-                Set.of(),
-                List.of("Payment reference: 4111 1111 1111 1111")))
-        .isFalse();
-    assertThat(
-            ConversationQuestionAnswerOutputValidator.isSafe(
-                "Reference 4111 1111 1111 1111" + " ".repeat(80) + "was submitted.",
-                Set.of(),
-                List.of()))
-        .isFalse();
-  }
-
-  @ParameterizedTest
-  @ValueSource(
-      strings = {
-        "41\u200B1111111\u00851111111",
-        "41🔒1111111•1111111",
-        "41111111\u202E11111111",
-        "4\u200B111111111111111",
-        "\u200B41111111🔒11111111\u0085",
-        "41🧬1111111\u2066🔒•1111111"
-      })
-  void rejectsAStoredSourceCardRegardlessOfAnswerRegrouping(String answerCandidate) {
-    assertThat(
-            ConversationQuestionAnswerOutputValidator.isSafe(
-                "The payment reference was " + answerCandidate + ".",
-                Set.of(),
-                List.of("Payment reference: 4111 1111 1111 1111")))
-        .isFalse();
-  }
-
-  @ParameterizedTest
-  @MethodSource("safeNonmatchingRegroupedNumbers")
-  void doesNotTreatUnrelatedDatesCountsOrIdentifiersAsTheStoredSourceCard(
-      String source, String answer) {
-    assertThat(ConversationQuestionAnswerOutputValidator.isSafe(answer, Set.of(), List.of(source)))
-        .isTrue();
-  }
-
-  private static Stream<Arguments> safeNonmatchingRegroupedNumbers() {
-    return Stream.of(
-        Arguments.of("Payment reference: 4111 1111 1111 1111", "The meeting date is 2026-08-09."),
-        Arguments.of(
-            "Payment reference: 4111 1111 1111 1111", "The reported count is 1,234,567,890,123."),
-        Arguments.of(
-            "Payment reference: 4111 1111 1111 1111",
-            "A different reference is 52\u200B2222222\u00852222222."),
-        Arguments.of(
-            "Reported count: 1,234,567,890,123", "The same count is 1\u200B234567\u0085890123."),
-        Arguments.of(
-            "Payment reference: 4111 1111 1111 1111", "The short value is 4111•1111•1111."));
-  }
-
-  @ParameterizedTest
-  @MethodSource("regroupedPaymentCardCandidates")
-  void rejectsRegroupedPaymentCardIdentifiersAcrossSourceAndAnswer(
-      String sourceCandidate, String answerCandidate) {
-    assertThat(
-            ConversationQuestionAnswerOutputValidator.isSafe(
-                "The payment reference was " + answerCandidate + ".",
-                Set.of(),
-                List.of("Payment reference: " + sourceCandidate)))
-        .isFalse();
-  }
-
-  private static Stream<Arguments> regroupedPaymentCardCandidates() {
-    return Stream.of(
-        Arguments.of("4111     1111     1111     1111", "41111     11111     111111"),
-        Arguments.of("4111\t1111\t1111\t1111", "41111\t11111\t111111"),
-        Arguments.of("4111 — 1111\t1111 - 1111", "41111\t— 11111     111111"),
-        Arguments.of("4111\u00851111\u200B1111\u202E1111", "41111\u206611111🔒111111"),
-        Arguments.of("4111🔒1111•1111/1111", "41111\u200B11111\u0085111111"));
-  }
-
-  @Test
-  void paymentCardScannerRemainsBoundedAcrossNearCapSeparatorRuns() {
-    String answerSeparatorRun = "\u200B\u0085🔒—".repeat(780);
-    String nearAnswerCap = "4111" + answerSeparatorRun + "1111 1111 1111";
-    String nearSourceCap = "4111" + "\u200B".repeat(299_970) + "1111 1111 1111";
-
-    assertTimeoutPreemptively(
-        Duration.ofSeconds(3),
-        () -> {
-          assertThat(
-                  ConversationQuestionAnswerOutputValidator.isSafe(
-                      nearAnswerCap, Set.of(), List.of()))
-              .isFalse();
-          assertThat(
-                  ConversationQuestionAnswerOutputValidator.isSafe(
-                      "No payment reference was repeated.", Set.of(), List.of(nearSourceCap)))
-              .isTrue();
-        });
-  }
-
-  @Test
-  void paymentCardBoundaryDoesNotClassifyDatesOrGroupedCounts() {
-    assertThat(
-            ConversationQuestionAnswerOutputValidator.isSafe(
-                "The date is 2026-08-09 and the count is 1,234,567,890,123.", Set.of(), List.of()))
+                "prefixm1suffix", Set.of("m1"), Set.of()))
         .isTrue();
     assertThat(
-            ConversationQuestionAnswerOutputValidator.isSafe(
-                "The date and count are 2026-08-09 12345.", Set.of(), List.of()))
-        .isTrue();
-    assertThat(
-            ConversationQuestionAnswerOutputValidator.isSafe(
-                "References 4111 1111 1111 and 41111111111111111111.", Set.of(), List.of()))
-        .isTrue();
-    assertThat(
-            ConversationQuestionAnswerOutputValidator.isSafe(
-                "The date is 08/09/2026, the count is 123,456,789,012, and the short reference is 4111•1111•1111.",
-                Set.of(),
-                List.of()))
-        .isTrue();
-  }
-
-  @Test
-  void rejectsRawUnderscoreSpanAtTheCharacterBoundary() {
-    String below = "a" + "_".repeat(29) + "b";
-    String boundary = "a" + "_".repeat(30) + "b";
-
-    assertThat(ConversationQuestionAnswerOutputValidator.isSafe(below, Set.of("m"), List.of(below)))
-        .isTrue();
-    assertThat(
-            ConversationQuestionAnswerOutputValidator.isSafe(
-                boundary, Set.of("m"), List.of(boundary)))
+            ConversationQuestionAnswerOutputValidator.isSafe("message m1.", Set.of("m1"), Set.of()))
         .isFalse();
   }
 
   @Test
-  void rejectsLongRawUnderscoreAndMixedDelimiterCopies() {
-    String underscore = "a" + "_".repeat(2_998) + "b";
-    String mixed = "alpha" + "_-".repeat(20) + "beta";
-
-    assertThat(
-            ConversationQuestionAnswerOutputValidator.isSafe(
-                underscore, Set.of(), List.of(underscore)))
+  void malformedIdentifierCollectionsFailClosed() {
+    assertThat(ConversationQuestionAnswerOutputValidator.isSafe("answer", null, Set.of()))
         .isFalse();
-    assertThat(ConversationQuestionAnswerOutputValidator.isSafe(mixed, Set.of(), List.of(mixed)))
+    assertThat(ConversationQuestionAnswerOutputValidator.isSafe("answer", Set.of(), null))
         .isFalse();
-  }
-
-  @Test
-  void rejectsMaterialTokenlessEmojiAndPunctuationCopiesButNotOneCoincidentalPunctuationMark() {
-    assertThat(
-            ConversationQuestionAnswerOutputValidator.isSafe(
-                "🔐⚠️!!!🧩", Set.of(), List.of("🔐⚠️!!!🧩")))
-        .isFalse();
-    assertThat(ConversationQuestionAnswerOutputValidator.isSafe("Done!", Set.of(), List.of("!")))
-        .isTrue();
-  }
-
-  @Test
-  void rejectsFillerInterleavedMontageAcrossSources() {
-    List<String> sources =
-        List.of("alpha", "beta", "gamma", "delta", "epsilon", "zeta", "eta", "theta");
-    String montage = String.join(" the ", sources);
-
-    assertThat(ConversationQuestionAnswerOutputValidator.isSafe(montage, Set.of(), sources))
-        .isFalse();
-  }
-
-  @Test
-  void allowsAShortSynthesizedFactAndCodeDataTokens() {
-    rawAnswer("Alice reported build 42.");
-
-    var result =
-        client.answer(
-            "What build did Alice report?",
-            List.of(
-                message(
-                    "m-1",
-                    "Alice",
-                    "The build identifier was 42; implementation notes named Node.js and package.json.")));
-
-    assertThat(result.answer().answer()).isEqualTo("Alice reported build 42.");
-    assertThat(
-            ConversationQuestionAnswerOutputValidator.isSafe(
-                "Node.js package.json", Set.of(), List.of("Node.js package.json")))
-        .isTrue();
   }
 
   @Test
@@ -583,37 +438,6 @@ class ConversationQuestionAnsweringModelClientTest {
             client.verificationInputCharacters(
                 "What is ready?", "Atlas is ready.", List.of(evidence)))
         .isPositive();
-  }
-
-  @ParameterizedTest
-  @ValueSource(strings = {"2026-08-09", "2026–08–09", "08-09-2026", "08/09/2026"})
-  void allowsValidCalendarDatesThatAreNotSensitiveSourcePhones(String date) {
-    assertThat(
-            ConversationQuestionAnswerOutputValidator.isSafe(
-                "The meeting is " + date + ".", Set.of(), List.of("Meeting date: " + date)))
-        .isTrue();
-  }
-
-  @ParameterizedTest
-  @ValueSource(strings = {"555/1234", "555‐1234", "555−1234", "+1 (415) 555-0100"})
-  void rejectsSourcePhoneUsingCommonSeparators(String phone) {
-    assertThat(
-            ConversationQuestionAnswerOutputValidator.isSafe(
-                "The number is " + phone + ".", Set.of(), List.of("Call Alice at " + phone)))
-        .isFalse();
-  }
-
-  @Test
-  void endpointParserRemainsBoundedAtTheConfiguredInputCap() {
-    String adversarialSource = "a.".repeat(149_000) + "x";
-
-    assertTimeoutPreemptively(
-        Duration.ofSeconds(3),
-        () ->
-            assertThat(
-                    ConversationQuestionAnswerOutputValidator.isSafe(
-                        "No endpoint was provided.", Set.of(), List.of(adversarialSource)))
-                .isTrue());
   }
 
   private void rawAnswer(String answer) {

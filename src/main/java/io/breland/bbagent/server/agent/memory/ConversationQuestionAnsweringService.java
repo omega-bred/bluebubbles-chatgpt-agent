@@ -332,11 +332,7 @@ public class ConversationQuestionAnsweringService {
         partialReason = MODEL_UNAVAILABLE;
         break;
       }
-      ModelAnswer validated =
-          validateAnswer(
-              routed,
-              messageGuids(batch.messages()),
-              batch.messages().stream().map(QuestionMessage::text).toList());
+      ModelAnswer validated = validateAnswer(routed, messageGuids(batch.messages()));
       if (validated == null) {
         partialReason = MODEL_INVALID;
         break;
@@ -455,11 +451,7 @@ public class ConversationQuestionAnsweringService {
       RoutedReductionAnswer reduction =
           model.reduceWithCitations(question, questionFindings, deadline);
       RoutedModelAnswer reduced = reduction.routed();
-      ModelAnswer validated =
-          validateAnswer(
-              reduced,
-              submittedEvidence,
-              questionFindings.stream().map(QuestionFinding::answer).toList());
+      ModelAnswer validated = validateAnswer(reduced, submittedEvidence);
       if (validated == null) {
         return bestFinding(findings, processedThrough, firstReason(MODEL_INVALID, partialReason));
       }
@@ -530,9 +522,7 @@ public class ConversationQuestionAnsweringService {
   }
 
   private ModelAnswer validateAnswer(
-      @Nullable RoutedModelAnswer routed,
-      Set<String> submittedEvidence,
-      List<String> submittedSourceTexts) {
+      @Nullable RoutedModelAnswer routed, Set<String> submittedEvidence) {
     if (routed == null || routed.answer() == null) {
       return null;
     }
@@ -546,7 +536,7 @@ public class ConversationQuestionAnsweringService {
       return null;
     }
     if (!ConversationQuestionAnswerOutputValidator.isSafe(
-        answer.answer(), submittedEvidence, submittedSourceTexts)) {
+        answer.answer(), submittedEvidence, Set.of())) {
       return null;
     }
     return answer;
