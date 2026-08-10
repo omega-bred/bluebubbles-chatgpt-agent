@@ -2,7 +2,7 @@
 
 **Date:** 2026-08-09
 
-**Status:** Task 1 implemented and verified; awaiting written-spec review
+**Status:** Implemented
 
 ## Context
 
@@ -53,8 +53,8 @@ Blank forbidden identifiers are ignored. Message identifiers use Unicode letter-
 to avoid rejecting an identifier merely because it is a substring of a larger word or identifier.
 Opaque aliases are high-entropy request-local values and are rejected on literal occurrence.
 
-The validator no longer accepts submitted source text. Consequently it has no source count, source
-character, source token, transcript, identifier-extraction, or language-specific processing.
+The validator API has no submitted-source-text parameter. Consequently it has no source count,
+source character, source token, transcript, identifier-extraction, or language-specific processing.
 
 ## Data Flow
 

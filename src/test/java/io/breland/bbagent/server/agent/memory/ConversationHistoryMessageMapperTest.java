@@ -88,6 +88,29 @@ class ConversationHistoryMessageMapperTest {
   }
 
   @Test
+  void fallsBackToUnknownForAPunctuationDelimitedGlobalContactNameWithMoreThanEightTokens() {
+    String unsafeName = "A!B!C!D!E!F!G!H!I";
+    AgentAccountEntity account = account("account-2", unsafeName);
+    when(accountResolver.resolveById("account-2"))
+        .thenReturn(Optional.of(new ResolvedAccount(account, List.of())));
+    JournalMessage message =
+        new JournalMessage(
+            "journal-1",
+            "conversation-1",
+            "account-2",
+            "We chose Saturday",
+            Instant.parse("2026-08-09T10:00:00Z"),
+            false,
+            false,
+            "hash");
+
+    QuestionMessage mapped = mapper.fromJournal(message, "account-1").orElseThrow();
+
+    assertThat(mapped.participant()).isEqualTo("unknown participant");
+    assertThat(account.getGlobalContactName()).isEqualTo(unsafeName);
+  }
+
+  @Test
   void masksUnknownIdentityAndRejectsIneligibleEvents() {
     when(accountResolver.resolve(any(IncomingMessage.class))).thenReturn(Optional.empty());
 

@@ -142,9 +142,41 @@ public class ConversationHistoryMessageMapper {
   }
 
   private static boolean isSafeParticipantLabel(String label) {
-    return label != null
-        && label.length() <= MAX_PARTICIPANT_LABEL_CHARACTERS
-        && StringUtils.split(label).length <= MAX_PARTICIPANT_LABEL_WORDS;
+    if (StringUtils.isBlank(label) || label.length() > MAX_PARTICIPANT_LABEL_CHARACTERS) {
+      return false;
+    }
+    return participantLabelTokenCount(label) <= MAX_PARTICIPANT_LABEL_WORDS;
+  }
+
+  private static int participantLabelTokenCount(String label) {
+    int tokenCount = 0;
+    int index = 0;
+    while (index < label.length()) {
+      while (index < label.length() && !Character.isLetterOrDigit(label.charAt(index))) {
+        index++;
+      }
+      if (index == label.length()) {
+        break;
+      }
+      tokenCount++;
+      index++;
+      while (index < label.length()) {
+        char character = label.charAt(index);
+        if (Character.isLetterOrDigit(character)
+            || (isParticipantLabelTokenSeparator(character)
+                && index + 1 < label.length()
+                && Character.isLetterOrDigit(label.charAt(index + 1)))) {
+          index++;
+        } else {
+          break;
+        }
+      }
+    }
+    return tokenCount;
+  }
+
+  private static boolean isParticipantLabelTokenSeparator(char value) {
+    return ",.'/-".indexOf(value) >= 0;
   }
 
   private String maskedIdentity(IncomingMessage message) {
