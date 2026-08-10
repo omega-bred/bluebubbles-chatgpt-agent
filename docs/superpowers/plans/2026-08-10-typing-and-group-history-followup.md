@@ -499,7 +499,7 @@ git status --short
 
 If remote main advanced, rebase the branch and rerun affected verification before publication.
 
-- [ ] **Step 8: Push and open the follow-up PR**
+- [x] **Step 8: Push and open the follow-up PR**
 
 ```bash
 git push -u origin codex/typing-and-history-followup
