@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import io.breland.bbagent.generated.bluebubblesclient.model.ApiV1ChatChatGuidMessageGet200ResponseDataInner;
@@ -15,16 +16,24 @@ import io.breland.bbagent.server.agent.account.AgentAccountResolver.ResolvedAcco
 import io.breland.bbagent.server.agent.memory.ConversationMemoryModels.JournalMessage;
 import io.breland.bbagent.server.agent.memory.ConversationQuestionAnsweringModels.QuestionMessage;
 import io.breland.bbagent.server.agent.persistence.account.AgentAccountEntity;
+import io.breland.bbagent.server.agent.transport.bb.BBHttpClientWrapper;
+import io.breland.bbagent.server.agent.transport.bb.BlueBubblesContactIdentity;
+import java.time.Clock;
 import java.time.Instant;
+import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
 
 class ConversationHistoryMessageMapperTest {
+  private static final Instant NOW = Instant.parse("2026-08-09T10:00:00Z");
   private final AgentAccountResolver accountResolver = Mockito.mock(AgentAccountResolver.class);
+  private final BBHttpClientWrapper bb = Mockito.mock(BBHttpClientWrapper.class);
   private final ConversationHistoryMessageMapper mapper =
-      new ConversationHistoryMessageMapper(accountResolver);
+      new ConversationHistoryMessageMapper(
+          new ConversationParticipantResolver(
+              accountResolver, bb, Clock.fixed(NOW, ZoneOffset.UTC)));
 
   @Test
   void labelsRequestingAccountAsYou() {
@@ -47,6 +56,38 @@ class ConversationHistoryMessageMapperTest {
 
     assertThat(mapped.participant()).isEqualTo("Dom");
     verify(accountResolver, never()).resolveOrCreate(any(IncomingMessage.class));
+  }
+
+  @Test
+  void usesWebsiteDisplayNameBeforeBlueBubblesContactName() {
+    AgentAccountEntity account = account("account-2", null);
+    account.setWebsiteDisplayName("Website Name");
+    when(accountResolver.resolve(any(IncomingMessage.class)))
+        .thenReturn(Optional.of(new ResolvedAccount(account, List.of())));
+    when(bb.getContactIdentitiesForQuestion(any()))
+        .thenReturn(
+            List.of(new BlueBubblesContactIdentity("Contact Name", List.of("+15555550199"))));
+
+    QuestionMessage mapped =
+        mapper.fromBlueBubbles(rawMessage("+15555550199"), "account-1").orElseThrow();
+
+    assertThat(mapped.participant()).isEqualTo("Website Name");
+    assertThat(mapped.participantHint()).isNull();
+    verifyNoInteractions(bb);
+  }
+
+  @Test
+  void fallsBackToBlueBubblesContactName() {
+    when(accountResolver.resolve(any(IncomingMessage.class))).thenReturn(Optional.empty());
+    when(bb.getContactIdentitiesForQuestion(any()))
+        .thenReturn(
+            List.of(new BlueBubblesContactIdentity("Contact Name", List.of("+15555550199"))));
+
+    QuestionMessage mapped =
+        mapper.fromBlueBubbles(rawMessage("+15555550199"), "account-1").orElseThrow();
+
+    assertThat(mapped.participant()).isEqualTo("Contact Name");
+    assertThat(mapped.participantHint()).isNull();
   }
 
   @Test
@@ -120,6 +161,16 @@ class ConversationHistoryMessageMapperTest {
                 .orElseThrow()
                 .participant())
         .isEqualTo("participant ending 0199");
+    assertThat(
+            mapper
+                .fromBlueBubbles(rawMessage("+1 (555) 555-0199"), "account-1")
+                .orElseThrow()
+                .participantHint())
+        .satisfies(
+            hint -> {
+              assertThat(hint.label()).isEqualTo("participant ending 0199");
+              assertThat(hint.normalizedIdentity()).isEqualTo("+15555550199");
+            });
     assertThat(mapper.fromBlueBubbles(reactionMessage(), "account-1")).isEmpty();
     assertThat(mapper.fromBlueBubbles(fromMeMessage(), "account-1")).isEmpty();
     assertThat(mapper.fromBlueBubbles(systemMessage(), "account-1")).isEmpty();
@@ -208,8 +259,7 @@ class ConversationHistoryMessageMapperTest {
   }
 
   private AgentAccountEntity account(String accountId, String globalContactName) {
-    Instant now = Instant.parse("2026-08-09T10:00:00Z");
-    AgentAccountEntity account = new AgentAccountEntity(accountId, now, now);
+    AgentAccountEntity account = new AgentAccountEntity(accountId, NOW, NOW);
     account.setGlobalContactName(globalContactName);
     return account;
   }

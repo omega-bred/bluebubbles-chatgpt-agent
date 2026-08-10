@@ -25,11 +25,13 @@ import io.breland.bbagent.generated.bluebubblesclient.model.ApiV1MessageQueryPos
 import io.breland.bbagent.generated.bluebubblesclient.model.Contact;
 import io.breland.bbagent.generated.bluebubblesclient.model.FindMyFriendLocation;
 import io.breland.bbagent.server.agent.transport.bb.BBHttpClientWrapper;
+import io.breland.bbagent.server.agent.transport.bb.BlueBubblesContactIdentity;
 import io.breland.bbagent.server.metrics.OperationalMetricsService;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 import org.junit.jupiter.api.Test;
@@ -160,6 +162,40 @@ class BBHttpClientWrapperTest {
     assertEquals(
         List.of("+1 (555) 555-0123", "alice@example.com"),
         wrapper.getContactAddressesFor("tel:555-555-0123"));
+  }
+
+  @Test
+  void getContactIdentitiesForQuestionUsesSafeDisplayFallbacksAndAddresses() {
+    V1ContactApi contactApi = Mockito.mock(V1ContactApi.class);
+    BBHttpClientWrapper wrapper =
+        new BBHttpClientWrapper("pw", Mockito.mock(V1MessageApi.class), contactApi);
+    when(contactApi.apiV1ContactGet("pw"))
+        .thenReturn(
+            Mono.just(
+                ApiV1ContactGet200Response.builder()
+                    .status(200)
+                    .message("Successfully fetched contacts")
+                    .data(
+                        List.of(
+                            new Contact()
+                                .displayName("  Display Name  ")
+                                .nickname("Ignored")
+                                .phoneNumbers(List.of(new AddressEntry().address("+15555550199"))),
+                            new Contact()
+                                .nickname("Nickname")
+                                .emails(List.of(new AddressEntry().address("nick@example.com"))),
+                            new Contact()
+                                .firstName("First")
+                                .lastName("Last")
+                                .phoneNumbers(List.of(new AddressEntry().address("+15555550200"))),
+                            new Contact().displayName("No address")))
+                    .build()));
+
+    assertThat(wrapper.getContactIdentitiesForQuestion(Duration.ofSeconds(5)))
+        .containsExactly(
+            new BlueBubblesContactIdentity("Display Name", List.of("+15555550199")),
+            new BlueBubblesContactIdentity("Nickname", List.of("nick@example.com")),
+            new BlueBubblesContactIdentity("First Last", List.of("+15555550200")));
   }
 
   @Test

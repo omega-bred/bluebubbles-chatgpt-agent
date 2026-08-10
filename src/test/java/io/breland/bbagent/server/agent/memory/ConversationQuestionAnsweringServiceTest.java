@@ -3,33 +3,39 @@ package io.breland.bbagent.server.agent.memory;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatIllegalArgumentException;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
+import static org.mockito.ArgumentMatchers.nullable;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
+import static org.mockito.Mockito.verifyNoMoreInteractions;
 import static org.mockito.Mockito.when;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import io.breland.bbagent.server.agent.memory.ConversationMemoryModels.AuthorizedGroup;
 import io.breland.bbagent.server.agent.memory.ConversationMemoryModels.ConversationRecord;
 import io.breland.bbagent.server.agent.memory.ConversationQuestionAnsweringModels.AnswerStatus;
 import io.breland.bbagent.server.agent.memory.ConversationQuestionAnsweringModels.Confidence;
-import io.breland.bbagent.server.agent.memory.ConversationQuestionAnsweringModels.CoverageStatus;
 import io.breland.bbagent.server.agent.memory.ConversationQuestionAnsweringModels.GroupQuestionAnswer;
+import io.breland.bbagent.server.agent.memory.ConversationQuestionAnsweringModels.HistorySource;
+import io.breland.bbagent.server.agent.memory.ConversationQuestionAnsweringModels.HistoryWindow;
+import io.breland.bbagent.server.agent.memory.ConversationQuestionAnsweringModels.HistoryWindowCursor;
 import io.breland.bbagent.server.agent.memory.ConversationQuestionAnsweringModels.MembershipInterval;
-import io.breland.bbagent.server.agent.memory.ConversationQuestionAnsweringModels.ModelAnswer;
+import io.breland.bbagent.server.agent.memory.ConversationQuestionAnsweringModels.ModelWindowDecision;
+import io.breland.bbagent.server.agent.memory.ConversationQuestionAnsweringModels.ParticipantHint;
 import io.breland.bbagent.server.agent.memory.ConversationQuestionAnsweringModels.QuestionFinding;
 import io.breland.bbagent.server.agent.memory.ConversationQuestionAnsweringModels.QuestionMessage;
-import io.breland.bbagent.server.agent.memory.ConversationQuestionAnsweringModels.RetrievalMode;
 import io.breland.bbagent.server.agent.memory.ConversationQuestionAnsweringModels.RetrievalRequest;
-import io.breland.bbagent.server.agent.memory.ConversationQuestionAnsweringModels.RetrievalResult;
-import io.breland.bbagent.server.agent.memory.ConversationQuestionAnsweringModels.RoutedModelAnswer;
-import io.breland.bbagent.server.agent.memory.ConversationQuestionAnsweringModels.RoutedReductionAnswer;
-import io.breland.bbagent.server.agent.memory.ConversationQuestionAnsweringModels.RoutedSupportVerification;
-import io.breland.bbagent.server.agent.memory.ConversationQuestionAnsweringModels.SearchPlan;
+import io.breland.bbagent.server.agent.memory.ConversationQuestionAnsweringModels.RoutedFindingReduction;
+import io.breland.bbagent.server.agent.memory.ConversationQuestionAnsweringModels.RoutedWindowDecision;
+import io.breland.bbagent.server.agent.memory.ConversationQuestionAnsweringModels.WindowAction;
+import io.breland.bbagent.server.agent.memory.ConversationQuestionAnsweringModels.WindowFinding;
 import io.breland.bbagent.server.metrics.OperationalMetricsService;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.time.Clock;
@@ -37,10 +43,8 @@ import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneId;
 import java.time.ZoneOffset;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
-import java.util.Set;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -48,25 +52,22 @@ import org.mockito.ArgumentCaptor;
 class ConversationQuestionAnsweringServiceTest {
   private static final String ACCOUNT = "account-1";
   private static final String CONVERSATION_ID = "conversation-1";
-  private static final String QUESTION = "Who is leading the current challenge?";
+  private static final String QUESTION = "Who posted the latest update?";
   private static final Instant FROM = Instant.parse("2026-08-08T00:00:00Z");
-  private static final Instant TO = Instant.parse("2026-08-09T00:00:00Z");
-  private static final Instant NOW = Instant.parse("2026-08-09T00:01:00Z");
+  private static final Instant NOW = Instant.parse("2026-08-10T17:00:00Z");
   private static final Instant DEADLINE = NOW.plusSeconds(90);
   private static final AuthorizedGroup GROUP =
-      new AuthorizedGroup(CONVERSATION_ID, "Weekend Updates", TO);
+      new AuthorizedGroup(CONVERSATION_ID, "Project Chat", NOW.minusSeconds(1));
   private static final ConversationRecord CONVERSATION =
       new ConversationRecord(
           CONVERSATION_ID,
           "bluebubbles",
           "iMessage;+;group",
           true,
-          "Weekend Updates",
+          "Project Chat",
           FROM.minusSeconds(1),
           ACCOUNT,
-          TO);
-  private static final SearchPlan REPORT_PLAN =
-      new SearchPlan(List.of("reported"), null, null, null);
+          NOW);
 
   private final ConversationMemoryStore store = mock(ConversationMemoryStore.class);
   private final ConversationQuestionHistoryRetriever retriever =
@@ -76,7 +77,7 @@ class ConversationQuestionAnsweringServiceTest {
   private final ConversationQuestionAnsweringModelClient payloadSizer =
       new ConversationQuestionAnsweringModelClient(
           mock(ConversationMemoryResponsesClient.class),
-          new com.fasterxml.jackson.databind.ObjectMapper().findAndRegisterModules());
+          new ObjectMapper().findAndRegisterModules());
   private final MutableClock clock = new MutableClock(NOW);
   private final SimpleMeterRegistry registry = new SimpleMeterRegistry();
   private final OperationalMetricsService metrics = new OperationalMetricsService(registry);
@@ -84,1131 +85,547 @@ class ConversationQuestionAnsweringServiceTest {
 
   @BeforeEach
   void setUp() {
-    service = service(100, 60_000, 5, 300_000);
+    service = service(500, 100, 60_000, 5, 300_000);
     when(store.findConversation(CONVERSATION_ID)).thenReturn(Optional.of(CONVERSATION));
-    when(store.findMembershipIntervals(CONVERSATION_ID, ACCOUNT, FROM, TO))
+    when(store.findMembershipIntervals(CONVERSATION_ID, ACCOUNT, Instant.EPOCH, NOW))
         .thenReturn(List.of(new MembershipInterval(FROM, null)));
-    when(model.plan(QUESTION, FROM, TO, DEADLINE)).thenReturn(REPORT_PLAN);
-    when(model.answerInputCharacters(anyString(), anyList()))
+    when(store.findMembershipIntervals(CONVERSATION_ID, ACCOUNT, FROM, NOW))
+        .thenReturn(List.of(new MembershipInterval(FROM, null)));
+    when(model.windowInputCharacters(anyString(), any(), nullable(String.class), anyList()))
         .thenAnswer(
             invocation ->
-                payloadSizer.answerInputCharacters(
-                    invocation.getArgument(0), invocation.getArgument(1)));
-    when(model.answerWorkCharacters(anyString(), anyList()))
-        .thenAnswer(
-            invocation ->
-                payloadSizer.answerWorkCharacters(
-                    invocation.getArgument(0), invocation.getArgument(1)));
-    when(model.reduceWorkCharacters(anyString(), anyList()))
-        .thenAnswer(
-            invocation ->
-                payloadSizer.reduceWorkCharacters(
-                    invocation.getArgument(0), invocation.getArgument(1)));
-    when(model.reduceInputCharacters(anyString(), anyList()))
-        .thenAnswer(
-            invocation ->
-                payloadSizer.reduceInputCharacters(
-                    invocation.getArgument(0), invocation.getArgument(1)));
-    when(model.verificationInputCharacters(anyString(), anyString(), anyList()))
-        .thenAnswer(
-            invocation ->
-                payloadSizer.verificationInputCharacters(
+                payloadSizer.windowInputCharacters(
                     invocation.getArgument(0),
                     invocation.getArgument(1),
-                    invocation.getArgument(2)));
-    when(model.reductionVerificationInputCharacters(anyString(), anyString(), anyList()))
+                    invocation.getArgument(2),
+                    invocation.getArgument(3)));
+    when(model.findingReductionInputCharacters(
+            anyString(), any(), nullable(String.class), anyList(), any(Boolean.class)))
         .thenAnswer(
             invocation ->
-                payloadSizer.reductionVerificationInputCharacters(
+                payloadSizer.findingReductionInputCharacters(
                     invocation.getArgument(0),
                     invocation.getArgument(1),
-                    invocation.getArgument(2)));
-    when(model.verifyAnswer(anyString(), anyString(), anyList(), any()))
-        .thenReturn(supportedVerification());
-    when(model.verifyReduction(anyString(), anyString(), anyList(), any()))
-        .thenReturn(supportedVerification());
+                    invocation.getArgument(2),
+                    invocation.getArgument(3),
+                    invocation.getArgument(4)));
   }
 
   @Test
-  void unsupportedExactAttributionFallsBackToVerifiedChronologicalEvidence() {
-    String question = "Who owns Project Atlas and what is its status?";
-    SearchPlan plan = new SearchPlan(List.of("Project Atlas"), null, null, null);
-    QuestionMessage exact = message("exact", "Alice", "I own Project Atlas.", 1);
-    QuestionMessage chronological =
-        message("chronological", "Alice", "Project Atlas is ready for review.", 2);
-    when(model.plan(question, FROM, TO, DEADLINE)).thenReturn(plan);
-    when(retriever.retrieveExact(any(), eq(plan))).thenReturn(completeExact(List.of(exact)));
-    when(retriever.retrieveChronological(any()))
-        .thenReturn(completeChronological(List.of(chronological)));
-    when(model.answer(question, List.of(exact), DEADLINE))
-        .thenReturn(routed(answered("Bob owns Project Atlas.", "exact")));
-    when(model.verifyAnswer(question, "Bob owns Project Atlas.", List.of(exact), DEADLINE))
-        .thenReturn(new RoutedSupportVerification(false, "openrouter/z-ai/glm-5.2", false));
-    when(model.answer(question, List.of(chronological), DEADLINE))
-        .thenReturn(routed(answered("Alice said Atlas is review-ready.", "chronological")));
+  void answersFromTheFirstNewestWindowWithOneModelCall() {
+    QuestionMessage message = message("m1", "Sam", "The update is ready.", 1);
+    when(retriever.retrieveWindow(any(), isNull(), eq(500)))
+        .thenReturn(window(List.of(message), null, true));
+    when(model.decide(QUESTION, NOW, null, List.of(message), DEADLINE))
+        .thenReturn(routed(answered("Sam posted the only update.", "m1", "Sam")));
 
-    GroupQuestionAnswer result = service.answer(ACCOUNT, GROUP, question, FROM, TO);
+    GroupQuestionAnswer answer = service.answer(ACCOUNT, GROUP, QUESTION, null, NOW, null);
 
-    assertThat(result.status()).isEqualTo(AnswerStatus.ANSWERED);
-    assertThat(result.answer()).isEqualTo("Alice said Atlas is review-ready.");
-    assertThat(result.retrievalMode()).isEqualTo(RetrievalMode.HYBRID);
-    verify(retriever).retrieveChronological(any());
-    assertQuestionModelWork(2, 1, 2);
+    assertThat(answer.status()).isEqualTo(AnswerStatus.ANSWERED);
+    assertThat(answer.answer()).isEqualTo("Sam posted the only update.");
+    assertThat(answer.clarificationQuestion()).isNull();
+    assertQuestionMetric("answered", true);
+    verify(model, times(1)).decide(anyString(), any(), nullable(String.class), anyList(), any());
+    verify(model, never())
+        .reduceFindings(
+            anyString(), any(), nullable(String.class), anyList(), any(Boolean.class), any());
   }
 
   @Test
-  void verifierReceivesOnlyMessagesCitedByTheProposedAnswer() {
-    QuestionMessage cited = message("cited", "Alice", "Inventory is 84 units.", 1);
-    QuestionMessage uncited = message("uncited", "Bob", "Private unrelated details.", 2);
-    when(retriever.retrieveExact(any(), eq(REPORT_PLAN)))
-        .thenReturn(completeExact(List.of(cited, uncited)));
-    when(model.answer(QUESTION, List.of(cited, uncited), DEADLINE))
-        .thenReturn(routed(answered("Alice reported 84 units.", "cited")));
+  void noRangeSearchesAllAuthorizedHistoryAndPropagatesTimezone() {
+    QuestionMessage message = message("m1", "Sam", "The update is ready.", 1);
+    when(retriever.retrieveWindow(any(), isNull(), eq(500)))
+        .thenReturn(window(List.of(message), null, true));
+    when(model.decide(QUESTION, NOW, "America/Los_Angeles", List.of(message), DEADLINE))
+        .thenReturn(routed(answered("Sam posted it today.", "m1", "Sam")));
 
-    service.answer(ACCOUNT, GROUP, QUESTION, FROM, TO);
+    service.answer(ACCOUNT, GROUP, QUESTION, null, NOW, "America/Los_Angeles");
 
-    @SuppressWarnings("unchecked")
-    ArgumentCaptor<List<QuestionMessage>> evidence = ArgumentCaptor.forClass(List.class);
-    verify(model)
-        .verifyAnswer(
-            eq(QUESTION), eq("Alice reported 84 units."), evidence.capture(), eq(DEADLINE));
-    assertThat(evidence.getValue()).containsExactly(cited).doesNotContain(uncited);
+    ArgumentCaptor<RetrievalRequest> request = ArgumentCaptor.forClass(RetrievalRequest.class);
+    verify(retriever).retrieveWindow(request.capture(), isNull(), eq(500));
+    assertThat(request.getValue().from()).isEqualTo(Instant.EPOCH);
+    assertThat(request.getValue().to()).isEqualTo(NOW);
+    verify(store).findMembershipIntervals(CONVERSATION_ID, ACCOUNT, Instant.EPOCH, NOW);
   }
 
   @Test
-  void verifierProviderFailureIsContainedWithoutReturningTheUnverifiedAnswer() {
-    QuestionMessage exact = message("exact", "Alice", "The launch inventory is 84 units.", 1);
-    QuestionMessage chronological =
-        message("chronological", "Alice", "The launch inventory remains 84 units.", 2);
-    when(retriever.retrieveExact(any(), eq(REPORT_PLAN))).thenReturn(completeExact(List.of(exact)));
-    when(retriever.retrieveChronological(any()))
-        .thenReturn(completeChronological(List.of(chronological)));
-    when(model.answer(QUESTION, List.of(exact), DEADLINE))
-        .thenReturn(routed(answered("Alice reported 84 units.", "exact")));
-    when(model.answer(QUESTION, List.of(chronological), DEADLINE))
-        .thenReturn(routed(answered("Alice still reported 84 units.", "chronological")));
-    when(model.verifyAnswer(anyString(), anyString(), anyList(), eq(DEADLINE)))
-        .thenThrow(new IllegalStateException("verifier unavailable"));
+  void explicitRangeRemainsAHardMembershipAndRetrievalBound() {
+    QuestionMessage message = message("m1", "Sam", "The update is ready.", 1);
+    when(retriever.retrieveWindow(any(), isNull(), eq(500)))
+        .thenReturn(window(List.of(message), null, true));
+    when(model.decide(QUESTION, NOW, null, List.of(message), DEADLINE))
+        .thenReturn(routed(answered("Sam posted it.", "m1", "Sam")));
 
-    GroupQuestionAnswer result = service.answer(ACCOUNT, GROUP, QUESTION, FROM, TO);
+    service.answer(ACCOUNT, GROUP, QUESTION, FROM, NOW, null);
 
-    assertThat(result.status()).isEqualTo(AnswerStatus.UNAVAILABLE);
-    assertThat(result.partialReason()).isEqualTo("model_unavailable");
-    assertThat(result.answer())
-        .doesNotContain("Alice reported 84 units", "Alice still reported 84 units");
-    verify(model, times(2)).verifyAnswer(anyString(), anyString(), anyList(), eq(DEADLINE));
-    assertQuestionModelWork(2, 1, 2);
+    ArgumentCaptor<RetrievalRequest> request = ArgumentCaptor.forClass(RetrievalRequest.class);
+    verify(retriever).retrieveWindow(request.capture(), isNull(), eq(500));
+    assertThat(request.getValue().from()).isEqualTo(FROM);
+    verify(store).findMembershipIntervals(CONVERSATION_ID, ACCOUNT, FROM, NOW);
   }
 
   @Test
-  void verifierFallbackModelMetadataIsReportedHonestly() {
-    QuestionMessage evidence =
-        message("inventory", "Alice", "The launch inventory is 84 units.", 1);
-    when(retriever.retrieveExact(any(), eq(REPORT_PLAN)))
-        .thenReturn(completeExact(List.of(evidence)));
-    when(model.answer(QUESTION, List.of(evidence), DEADLINE))
-        .thenReturn(routed(answered("Alice reported 84 units.", "inventory")));
-    when(model.verifyAnswer(QUESTION, "Alice reported 84 units.", List.of(evidence), DEADLINE))
-        .thenReturn(new RoutedSupportVerification(true, "openai/gpt-4.1-mini", true));
+  void modelCanRequestTheImmediatelyOlderWindow() {
+    HistoryWindowCursor cursor =
+        new HistoryWindowCursor(HistorySource.BLUEBUBBLES, 0, 500, null, null);
+    QuestionMessage recent = message("m1", "Sam", "That follows the earlier decision.", 2);
+    QuestionMessage older = message("m0", "Lee", "The decision was Tuesday.", 1);
+    when(retriever.retrieveWindow(any(), isNull(), eq(500)))
+        .thenReturn(window(List.of(recent), cursor, false));
+    when(retriever.retrieveWindow(any(), eq(cursor), eq(500)))
+        .thenReturn(window(List.of(older), null, true));
+    when(model.decide(QUESTION, NOW, null, List.of(recent), DEADLINE))
+        .thenReturn(routed(needOlder(provisional("An earlier decision is referenced.", "m1"))));
+    when(model.decide(QUESTION, NOW, null, List.of(older), DEADLINE))
+        .thenReturn(routed(answered("The earlier decision was Tuesday.", "m0", "Lee")));
+    when(model.reduceFindings(eq(QUESTION), eq(NOW), isNull(), anyList(), eq(false), eq(DEADLINE)))
+        .thenAnswer(
+            invocation -> {
+              List<QuestionFinding> findings = invocation.getArgument(3);
+              return routedReduction(
+                  answered(
+                      "The earlier decision was Tuesday.", List.of("m0", "m1"), List.of("Lee")),
+                  findings);
+            });
 
-    GroupQuestionAnswer result = service.answer(ACCOUNT, GROUP, QUESTION, FROM, TO);
+    GroupQuestionAnswer answer = service.answer(ACCOUNT, GROUP, QUESTION, null, NOW, null);
 
-    assertThat(result.status()).isEqualTo(AnswerStatus.ANSWERED);
-    assertThat(result.model()).isEqualTo("openai/gpt-4.1-mini");
-    assertThat(result.fallbackUsed()).isTrue();
+    assertThat(answer.status()).isEqualTo(AnswerStatus.ANSWERED);
+    assertThat(answer.answer()).contains("Tuesday");
+    verify(retriever).retrieveWindow(any(), eq(cursor), eq(500));
   }
 
   @Test
-  void overlongQuestionReturnsSafeTerminalResultWithoutSourceOrModelAccess() {
-    String overlongQuestion = "q".repeat(4_001);
+  void returnsNaturalClarificationWithoutFetchingOlderWindow() {
+    HistoryWindowCursor cursor =
+        new HistoryWindowCursor(HistorySource.BLUEBUBBLES, 0, 500, null, null);
+    QuestionMessage message = message("m1", "Sam", "I remember that happening.", 1);
+    when(retriever.retrieveWindow(any(), isNull(), eq(500)))
+        .thenReturn(window(List.of(message), cursor, false));
+    when(model.decide(QUESTION, NOW, null, List.of(message), DEADLINE))
+        .thenReturn(routed(clarification("About when did that happen?")));
 
-    GroupQuestionAnswer result = service.answer(ACCOUNT, GROUP, overlongQuestion, FROM, TO);
+    GroupQuestionAnswer answer = service.answer(ACCOUNT, GROUP, QUESTION, null, NOW, null);
 
-    assertThat(result.status()).isEqualTo(AnswerStatus.INSUFFICIENT_EVIDENCE);
-    assertThat(result.answer()).doesNotContain(overlongQuestion);
-    assertThat(result.coverageStatus()).isEqualTo(CoverageStatus.PARTIAL);
-    assertThat(result.partialReason()).isEqualTo("character_limit");
-    verifyNoInteractions(store, retriever);
-    verify(model, never()).plan(anyString(), any(), any(), any());
-    verify(model, never()).answer(anyString(), anyList(), any());
-    assertThat(totalQuestionAnswers()).isEqualTo(1.0);
-    assertQuestionModelWork(0, 0, 0);
+    assertThat(answer.status()).isEqualTo(AnswerStatus.CLARIFICATION_REQUIRED);
+    assertThat(answer.answer()).isNull();
+    assertThat(answer.clarificationQuestion()).isEqualTo("About when did that happen?");
+    assertQuestionMetric("clarification_required", true);
+    verify(retriever, never()).retrieveWindow(any(), eq(cursor), anyInt());
   }
 
   @Test
-  void serializedEscapingOverheadCannotCrossBatchCharacterLimit() {
-    String escapedText = "\"\\\n\t123456";
-    QuestionMessage escaped = message("escaped", "Dom", escapedText, 1);
-    int rawCharacters = QUESTION.length() + escapedText.length();
-    service = service(100, rawCharacters, 5, rawCharacters);
-    when(retriever.retrieveExact(any(), eq(REPORT_PLAN)))
-        .thenReturn(completeExact(List.of(escaped)));
-    when(retriever.retrieveChronological(any()))
-        .thenReturn(completeChronological(List.of(escaped)));
+  void exhaustedNoAnswerUsesNaturalModelCopy() {
+    QuestionMessage message = message("m1", "Sam", "An unrelated update.", 1);
+    when(retriever.retrieveWindow(any(), isNull(), eq(500)))
+        .thenReturn(window(List.of(message), null, true));
+    when(model.decide(QUESTION, NOW, null, List.of(message), DEADLINE))
+        .thenReturn(routed(noAnswer("I couldn't find that in this group's messages.")));
 
-    GroupQuestionAnswer result = service.answer(ACCOUNT, GROUP, QUESTION, FROM, TO);
+    GroupQuestionAnswer answer = service.answer(ACCOUNT, GROUP, QUESTION, null, NOW, null);
 
-    assertThat(result.status()).isEqualTo(AnswerStatus.INSUFFICIENT_EVIDENCE);
-    assertThat(result.partialReason()).isEqualTo("character_limit");
-    verify(model, never()).answer(anyString(), anyList(), any());
+    assertThat(answer.status()).isEqualTo(AnswerStatus.NO_ANSWER);
+    assertThat(answer.answer()).isEqualTo("I couldn't find that in this group's messages.");
+    assertThat(answer.answer()).doesNotContain("authorized", "coverage", "evidence");
+    assertQuestionMetric("no_answer", true);
   }
 
   @Test
-  void repeatedQuestionAndSerializationOverheadCountAgainstAggregateBudget() {
-    QuestionMessage first = message("first", "Dom", "Challenge round 1,877 result 4/6", 1);
-    QuestionMessage second = message("second", "Alice", "Challenge round 1,877 result 3/6", 2);
-    int generationCharacters = payloadSizer.answerInputCharacters(QUESTION, List.of(first));
-    int verificationCharacters =
-        payloadSizer.verificationInputCharacters(
-            QUESTION, "Dom only reported 4/6.", List.of(first));
-    service =
-        service(
-            1,
-            Math.max(generationCharacters, verificationCharacters),
-            5,
-            generationCharacters + verificationCharacters);
-    when(retriever.retrieveExact(any(), eq(REPORT_PLAN)))
-        .thenReturn(completeExact(List.of(first, second)));
-    when(model.answer(QUESTION, List.of(first), DEADLINE))
-        .thenReturn(routed(answered("Dom only reported 4/6.", "first")));
+  void emptyExhaustedHistoryDoesNotCallTheModel() {
+    when(retriever.retrieveWindow(any(), isNull(), eq(500)))
+        .thenReturn(window(List.of(), null, true));
 
-    GroupQuestionAnswer result = service.answer(ACCOUNT, GROUP, QUESTION, FROM, TO);
+    GroupQuestionAnswer answer = service.answer(ACCOUNT, GROUP, QUESTION, null, NOW, null);
 
-    assertThat(result.status()).isEqualTo(AnswerStatus.ANSWERED);
-    assertThat(result.coverageStatus()).isEqualTo(CoverageStatus.PARTIAL);
-    assertThat(result.partialReason()).isEqualTo("character_limit");
-    verify(model, times(1)).answer(QUESTION, List.of(first), DEADLINE);
-    verify(retriever, never()).retrieveChronological(any());
+    assertThat(answer.status()).isEqualTo(AnswerStatus.NO_ANSWER);
+    assertThat(answer.answer()).contains("couldn't find any group messages");
+    verify(model, never()).decide(anyString(), any(), nullable(String.class), anyList(), any());
   }
 
   @Test
-  void returnsOnlyReportedLeaderFromExactEvidence() {
-    QuestionMessage score =
-        message("score-guid", "participant ending 0199", "Challenge round 1,877 result 4/6", 1);
-    when(retriever.retrieveExact(any(), eq(REPORT_PLAN))).thenReturn(completeExact(List.of(score)));
-    when(model.answer(QUESTION, List.of(score), DEADLINE))
+  void multiWindowReductionUsesOnlyCitedFindingsAndHints() {
+    HistoryWindowCursor cursor =
+        new HistoryWindowCursor(HistorySource.BLUEBUBBLES, 0, 500, null, null);
+    QuestionMessage recent =
+        hintedMessage("recent", "participant ending 0199", "+15555550199", "Recent clue", 3);
+    QuestionMessage uncited =
+        hintedMessage("uncited", "participant ending 0300", "+15555550300", "Unrelated clue", 4);
+    QuestionMessage older =
+        hintedMessage("older", "participant ending 0200", "+15555550200", "Older fact", 1);
+    when(retriever.retrieveWindow(any(), isNull(), eq(500)))
+        .thenReturn(window(List.of(recent, uncited), cursor, false));
+    when(retriever.retrieveWindow(any(), eq(cursor), eq(500)))
+        .thenReturn(window(List.of(older), null, true));
+    ModelWindowDecision firstDecision =
+        new ModelWindowDecision(
+            WindowAction.NEED_OLDER_MESSAGES,
+            null,
+            null,
+            Confidence.MEDIUM,
+            List.of(),
+            List.of(
+                new WindowFinding(
+                    "The recent clue points backward.",
+                    Confidence.MEDIUM,
+                    List.of("recent"),
+                    List.of("participant ending 0199")),
+                new WindowFinding(
+                    "This clue is unrelated.",
+                    Confidence.LOW,
+                    List.of("uncited"),
+                    List.of("participant ending 0300"))),
+            List.of());
+    when(model.decide(QUESTION, NOW, null, List.of(recent, uncited), DEADLINE))
+        .thenReturn(routed(firstDecision));
+    when(model.decide(QUESTION, NOW, null, List.of(older), DEADLINE))
         .thenReturn(
-            new RoutedModelAnswer(
+            routed(
                 answered(
-                    "The only reported score is participant ending 0199 with 4/6.", "score-guid"),
+                    "The older fact completes the answer.", "older", "participant ending 0200")));
+    when(model.reduceFindings(eq(QUESTION), eq(NOW), isNull(), anyList(), eq(false), eq(DEADLINE)))
+        .thenAnswer(
+            invocation -> {
+              List<QuestionFinding> findings = invocation.getArgument(3);
+              List<QuestionFinding> cited =
+                  findings.stream()
+                      .filter(finding -> !finding.evidenceMessageGuids().contains("uncited"))
+                      .toList();
+              return routedReduction(
+                  answered(
+                      "The two cited participants supplied the answer.",
+                      List.of("older", "recent"),
+                      List.of("participant ending 0200", "participant ending 0199")),
+                  cited);
+            });
+
+    GroupQuestionAnswer answer = service.answer(ACCOUNT, GROUP, QUESTION, null, NOW, null);
+
+    assertThat(answer.status()).isEqualTo(AnswerStatus.ANSWERED);
+    assertThat(answer.unresolvedParticipants())
+        .extracting(ParticipantHint::normalizedIdentity)
+        .containsExactlyInAnyOrder("+15555550199", "+15555550200")
+        .doesNotContain("+15555550300");
+    @SuppressWarnings("unchecked")
+    ArgumentCaptor<List<QuestionFinding>> findings = ArgumentCaptor.forClass(List.class);
+    verify(model)
+        .reduceFindings(
+            eq(QUESTION), eq(NOW), isNull(), findings.capture(), eq(false), eq(DEADLINE));
+    assertThat(findings.getValue()).hasSize(3);
+  }
+
+  @Test
+  void oversizedWindowIsSplitIntoContiguousSubchunksThenReduced() {
+    QuestionMessage first = message("m1", "Sam", "a".repeat(500), 1);
+    QuestionMessage second = message("m2", "Lee", "b".repeat(500), 2);
+    QuestionMessage third = message("m3", "Alex", "c".repeat(500), 3);
+    int oneMessageCharacters =
+        List.of(first, second, third).stream()
+            .mapToInt(
+                message ->
+                    payloadSizer.windowInputCharacters(QUESTION, NOW, null, List.of(message)))
+            .max()
+            .orElseThrow();
+    service = service(500, 100, oneMessageCharacters, 5, oneMessageCharacters * 5);
+    when(retriever.retrieveWindow(any(), isNull(), eq(500)))
+        .thenReturn(window(List.of(first, second, third), null, true));
+    when(model.decide(eq(QUESTION), eq(NOW), isNull(), anyList(), eq(DEADLINE)))
+        .thenAnswer(
+            invocation -> {
+              List<QuestionMessage> batch = invocation.getArgument(3);
+              QuestionMessage only = batch.getFirst();
+              return routed(
+                  answered(
+                      only.participant() + " supplied a fact.",
+                      only.messageGuid(),
+                      only.participant()));
+            });
+    when(model.reduceFindings(eq(QUESTION), eq(NOW), isNull(), anyList(), eq(false), eq(DEADLINE)))
+        .thenAnswer(
+            invocation -> {
+              List<QuestionFinding> findings = invocation.getArgument(3);
+              return routedReduction(
+                  answered(
+                      "Sam, Lee, and Alex supplied the facts.",
+                      List.of("m1", "m2", "m3"),
+                      List.of("Sam", "Lee", "Alex")),
+                  findings);
+            });
+
+    GroupQuestionAnswer answer = service.answer(ACCOUNT, GROUP, QUESTION, null, NOW, null);
+
+    assertThat(answer.status()).isEqualTo(AnswerStatus.ANSWERED);
+    @SuppressWarnings("unchecked")
+    ArgumentCaptor<List<QuestionMessage>> chunks = ArgumentCaptor.forClass(List.class);
+    verify(model, times(3)).decide(eq(QUESTION), eq(NOW), isNull(), chunks.capture(), eq(DEADLINE));
+    assertThat(chunks.getAllValues())
+        .containsExactly(List.of(first), List.of(second), List.of(third));
+    verify(model)
+        .reduceFindings(eq(QUESTION), eq(NOW), isNull(), anyList(), eq(false), eq(DEADLINE));
+  }
+
+  @Test
+  void aSingleMessageTooLargeForTheModelAsksForANarrowerTime() {
+    QuestionMessage large = message("large", "Sam", "x".repeat(5_000), 1);
+    int tooSmall = payloadSizer.windowInputCharacters(QUESTION, NOW, null, List.of(large)) - 1;
+    service = service(500, 100, tooSmall, 5, 300_000);
+    when(retriever.retrieveWindow(any(), isNull(), eq(500)))
+        .thenReturn(window(List.of(large), null, true));
+
+    GroupQuestionAnswer answer = service.answer(ACCOUNT, GROUP, QUESTION, null, NOW, null);
+
+    assertThat(answer.status()).isEqualTo(AnswerStatus.CLARIFICATION_REQUIRED);
+    assertThat(answer.clarificationQuestion()).isEqualTo("About when should I look?");
+    verify(model, never()).decide(anyString(), any(), nullable(String.class), anyList(), any());
+  }
+
+  @Test
+  void finalRequestWideValidationBlocksMessageGuidLeakage() {
+    HistoryWindowCursor cursor =
+        new HistoryWindowCursor(HistorySource.BLUEBUBBLES, 0, 500, null, null);
+    QuestionMessage recent = message("recent-guid", "Sam", "Look earlier.", 2);
+    QuestionMessage older = message("older-guid", "Lee", "The answer is here.", 1);
+    when(retriever.retrieveWindow(any(), isNull(), eq(500)))
+        .thenReturn(window(List.of(recent), cursor, false));
+    when(retriever.retrieveWindow(any(), eq(cursor), eq(500)))
+        .thenReturn(window(List.of(older), null, true));
+    when(model.decide(QUESTION, NOW, null, List.of(recent), DEADLINE))
+        .thenReturn(routed(needOlder(provisional("Look earlier.", "recent-guid"))));
+    when(model.decide(QUESTION, NOW, null, List.of(older), DEADLINE))
+        .thenReturn(routed(answered("Lee supplied the fact.", "older-guid", "Lee")));
+    when(model.reduceFindings(eq(QUESTION), eq(NOW), isNull(), anyList(), eq(false), eq(DEADLINE)))
+        .thenAnswer(
+            invocation -> {
+              List<QuestionFinding> findings = invocation.getArgument(3);
+              return routedReduction(
+                  answered(
+                      "The answer leaks older-guid.",
+                      List.of("older-guid", "recent-guid"),
+                      List.of("Lee")),
+                  findings);
+            });
+
+    GroupQuestionAnswer answer = service.answer(ACCOUNT, GROUP, QUESTION, null, NOW, null);
+
+    assertThat(answer.status()).isEqualTo(AnswerStatus.UNAVAILABLE);
+    assertThat(answer.answer()).doesNotContain("older-guid", "authorized", "coverage");
+  }
+
+  @Test
+  void answerReturnedAtTheDeadlineIsDiscarded() {
+    QuestionMessage message = message("m1", "Sam", "The update is ready.", 1);
+    when(retriever.retrieveWindow(any(), isNull(), eq(500)))
+        .thenReturn(window(List.of(message), null, true));
+    when(model.decide(QUESTION, NOW, null, List.of(message), DEADLINE))
+        .thenAnswer(
+            ignored -> {
+              clock.set(DEADLINE);
+              return routed(answered("Sam posted it.", "m1", "Sam"));
+            });
+
+    GroupQuestionAnswer answer = service.answer(ACCOUNT, GROUP, QUESTION, null, NOW, null);
+
+    assertThat(answer.status()).isEqualTo(AnswerStatus.UNAVAILABLE);
+    assertThat(answer.answer()).doesNotContain("Sam posted it");
+  }
+
+  @Test
+  void sourceFailureReturnsNaturalUnavailableCopy() {
+    when(retriever.retrieveWindow(any(), isNull(), eq(500)))
+        .thenThrow(new IllegalStateException("source failed"));
+
+    GroupQuestionAnswer answer = service.answer(ACCOUNT, GROUP, QUESTION, null, NOW, null);
+
+    assertThat(answer.status()).isEqualTo(AnswerStatus.UNAVAILABLE);
+    assertThat(answer.answer())
+        .contains("couldn't search")
+        .doesNotContain("authorized", "coverage", "evidence", "source_unavailable");
+    assertQuestionMetric("unavailable", false);
+  }
+
+  @Test
+  void supportedAnswerFromPartialSourceHistoryIsStillReturned() {
+    QuestionMessage message = message("m1", "Sam", "The update is ready.", 1);
+    when(retriever.retrieveWindow(any(), isNull(), eq(500)))
+        .thenReturn(
+            new HistoryWindow(List.of(message), null, true, false, "source_unavailable", 1));
+    when(model.decide(QUESTION, NOW, null, List.of(message), DEADLINE))
+        .thenReturn(
+            new RoutedWindowDecision(
+                answered("Sam posted the available update.", "m1", "Sam"),
                 "openai/gpt-4.1-mini",
                 true));
 
-    GroupQuestionAnswer result = service.answer(ACCOUNT, GROUP, QUESTION, FROM, TO);
+    GroupQuestionAnswer answer = service.answer(ACCOUNT, GROUP, QUESTION, null, NOW, null);
 
-    assertThat(result.status()).isEqualTo(AnswerStatus.ANSWERED);
-    assertThat(result.answer()).contains("only reported").contains("4/6");
-    assertThat(result.evidenceMessageCount()).isEqualTo(1);
-    assertThat(result.model()).isEqualTo("openai/gpt-4.1-mini");
-    assertThat(result.fallbackUsed()).isTrue();
-    assertThat(result.retrievalMode()).isEqualTo(RetrievalMode.EXACT_SEARCH);
-    assertThat(result.coverageStatus()).isEqualTo(CoverageStatus.COMPLETE);
-    assertThat(result.coverageThrough()).isEqualTo(TO);
-    verify(retriever, never()).retrieveChronological(any());
-    assertThat(totalQuestionAnswers()).isEqualTo(1.0);
-    assertThat(
-            registry
-                .get("bbagent.memory.question.answer.count")
-                .tag("retrieval_mode", "exact_search")
-                .tag("coverage_status", "complete")
-                .tag("model", "openai/gpt-4.1-mini")
-                .tag("outcome", "success")
-                .counter()
-                .count())
-        .isEqualTo(1.0);
-    assertThat(registry.get("bbagent.memory.question.answer.message.count").counter().count())
-        .isEqualTo(1.0);
-    assertThat(registry.get("bbagent.memory.question.answer.page.count").counter().count())
-        .isEqualTo(1.0);
-    assertThat(registry.get("bbagent.memory.question.answer.model.batch.count").counter().count())
-        .isEqualTo(1.0);
-    assertQuestionModelWork(1, 1, 1);
+    assertThat(answer.status()).isEqualTo(AnswerStatus.ANSWERED);
+    assertThat(answer.answer()).isEqualTo("Sam posted the available update.");
+    assertThat(answer.model()).isEqualTo("openai/gpt-4.1-mini");
+    assertThat(answer.fallbackUsed()).isTrue();
   }
 
   @Test
-  void comparesSamePuzzleScoresWithoutUsingSemanticMemory() {
-    List<QuestionMessage> evidence =
-        List.of(
-            message("score-1", "participant ending 0199", "Wordle 1,877 4/6", 1),
-            message("score-2", "participant ending 0123", "Wordle 1,877 3/6", 2),
-            message("score-old", "participant ending 0456", "Wordle 1,876 2/6", 3));
-    when(retriever.retrieveExact(any(), eq(REPORT_PLAN))).thenReturn(completeExact(evidence));
-    when(model.answer(QUESTION, evidence, DEADLINE))
-        .thenReturn(
-            routed(
-                answered(
-                    "Of the reported Wordle 1,877 scores, participant ending 0123 leads with 3/6.",
-                    "score-2")));
+  void missingMembershipDoesNotTouchHistoryOrModel() {
+    when(store.findMembershipIntervals(CONVERSATION_ID, ACCOUNT, Instant.EPOCH, NOW))
+        .thenReturn(List.of());
 
-    GroupQuestionAnswer result = service.answer(ACCOUNT, GROUP, QUESTION, FROM, TO);
+    GroupQuestionAnswer answer = service.answer(ACCOUNT, GROUP, QUESTION, null, NOW, null);
 
-    assertThat(result.answer()).contains("3/6").doesNotContain("league");
-    ArgumentCaptor<List<QuestionMessage>> submitted = listCaptor();
-    verify(model).answer(eq(QUESTION), submitted.capture(), eq(DEADLINE));
-    assertThat(submitted.getValue())
-        .extracting(QuestionMessage::text)
-        .allMatch(text -> text.startsWith("Wordle"));
-  }
-
-  @Test
-  void exactMissUsesOneChronologicalFallback() {
-    QuestionMessage score =
-        message("score-guid", "participant ending 0199", "Challenge round 1,877 result 4/6", 1);
-    when(retriever.retrieveExact(any(), eq(REPORT_PLAN))).thenReturn(completeExact(List.of()));
-    when(retriever.retrieveChronological(any())).thenReturn(completeChronological(List.of(score)));
-    when(model.answer(QUESTION, List.of(score), DEADLINE))
-        .thenReturn(routed(answered("The only reported score is 4/6.", "score-guid")));
-
-    GroupQuestionAnswer result = service.answer(ACCOUNT, GROUP, QUESTION, FROM, TO);
-
-    assertThat(result.status()).isEqualTo(AnswerStatus.ANSWERED);
-    assertThat(result.retrievalMode()).isEqualTo(RetrievalMode.HYBRID);
-    verify(retriever, times(1)).retrieveChronological(any());
-    verify(model, times(1)).answer(eq(QUESTION), anyList(), eq(DEADLINE));
-  }
-
-  @Test
-  void plannerFailureSkipsExactSourceWorkAndUsesChronologicalEvidence() {
-    SearchPlan emptyPlan = new SearchPlan(List.of(), null, null, null);
-    QuestionMessage score =
-        message("score-guid", "participant ending 0199", "Challenge round 1,877 result 4/6", 1);
-    when(model.plan(QUESTION, FROM, TO, DEADLINE))
-        .thenThrow(new IllegalStateException("provider failed"));
-    when(retriever.retrieveExact(any(), eq(emptyPlan))).thenReturn(completeExact(List.of()));
-    when(retriever.retrieveChronological(any())).thenReturn(completeChronological(List.of(score)));
-    when(model.answer(QUESTION, List.of(score), DEADLINE))
-        .thenReturn(routed(answered("The only reported score is 4/6.", "score-guid")));
-
-    GroupQuestionAnswer result = service.answer(ACCOUNT, GROUP, QUESTION, FROM, TO);
-
-    assertThat(result.status()).isEqualTo(AnswerStatus.ANSWERED);
-    assertThat(result.retrievalMode()).isEqualTo(RetrievalMode.CHRONOLOGICAL);
-    verify(retriever).retrieveExact(any(), eq(emptyPlan));
-    verify(retriever, times(1)).retrieveChronological(any());
-  }
-
-  @Test
-  void needsMoreContextProducesOnlyOneChronologicalRetry() {
-    QuestionMessage exact =
-        message("exact", "participant ending 0199", "Challenge round 1,877 result 4/6", 1);
-    QuestionMessage context =
-        message("context-guid", "participant ending 0123", "Challenge round 1,877 result 3/6", 2);
-    when(retriever.retrieveExact(any(), eq(REPORT_PLAN))).thenReturn(completeExact(List.of(exact)));
-    when(retriever.retrieveChronological(any()))
-        .thenReturn(completeChronological(List.of(context)));
-    when(model.answer(QUESTION, List.of(exact), DEADLINE))
-        .thenReturn(
-            routed(
-                new ModelAnswer(
-                    AnswerStatus.ANSWERED,
-                    "Participant ending 0199 reported 4/6.",
-                    Confidence.LOW,
-                    List.of("exact"),
-                    true)));
-    when(model.answer(QUESTION, List.of(context), DEADLINE))
-        .thenReturn(routed(answered("The only contextual result is 3/6.", "context-guid")));
-
-    GroupQuestionAnswer result = service.answer(ACCOUNT, GROUP, QUESTION, FROM, TO);
-
-    assertThat(result.answer()).contains("3/6");
-    assertThat(result.retrievalMode()).isEqualTo(RetrievalMode.HYBRID);
-    verify(retriever, times(1)).retrieveChronological(any());
-    verify(model, times(2)).answer(eq(QUESTION), anyList(), eq(DEADLINE));
-  }
-
-  @Test
-  void boundsEveryExactEvidenceBatchAndReducesSupportedFindings() {
-    List<QuestionMessage> messages = messages(101, 10);
-    when(retriever.retrieveExact(any(), eq(REPORT_PLAN))).thenReturn(completeExact(messages));
-    answerEachBatchWithItsFirstEvidence();
-    stubReduction(
-        new RoutedModelAnswer(
-            answered("The reduced exact answer.", "message-0", "message-100"),
-            "openai/gpt-4.1-mini",
-            true));
-
-    GroupQuestionAnswer result = service.answer(ACCOUNT, GROUP, QUESTION, FROM, TO);
-
-    assertThat(result.status()).isEqualTo(AnswerStatus.ANSWERED);
-    assertThat(result.retrievalMode()).isEqualTo(RetrievalMode.EXACT_SEARCH);
-    assertThat(result.evidenceMessageCount()).isEqualTo(2);
-    assertThat(result.model()).isEqualTo("openai/gpt-4.1-mini");
-    assertThat(result.fallbackUsed()).isTrue();
-    assertSubmittedBatchBounds(2, 100, 60_000);
-    verify(model).reduceWithCitations(eq(QUESTION), anyList(), eq(DEADLINE));
-    verify(retriever, never()).retrieveChronological(any());
-  }
-
-  @Test
-  void firstBatchAnswerCannotExposeAGuidFromALaterBatch() {
-    service = service(1, 60_000, 5, 300_000);
-    List<QuestionMessage> messages = messages(2, 10);
-    when(retriever.retrieveExact(any(), eq(REPORT_PLAN))).thenReturn(completeExact(messages));
-    when(retriever.retrieveChronological(any())).thenReturn(completeChronological(List.of()));
-    when(model.answer(QUESTION, List.of(messages.get(0)), DEADLINE))
-        .thenReturn(
-            routed(
-                answered("The first finding exposes message-1 from a later batch.", "message-0")));
-    when(model.answer(QUESTION, List.of(messages.get(1)), DEADLINE))
-        .thenReturn(
-            routed(
-                new ModelAnswer(
-                    AnswerStatus.INSUFFICIENT_EVIDENCE,
-                    "There is not enough evidence.",
-                    Confidence.LOW,
-                    List.of(),
-                    false)));
-
-    GroupQuestionAnswer result = service.answer(ACCOUNT, GROUP, QUESTION, FROM, TO);
-
-    assertThat(result.status()).isNotEqualTo(AnswerStatus.ANSWERED);
-    assertThat(result.answer()).doesNotContain("message-1");
-  }
-
-  @Test
-  void reducedAnswerCannotExposeAGuidFromAnUnsupportedBatch() {
-    service = service(1, 60_000, 5, 300_000);
-    List<QuestionMessage> messages = messages(3, 10);
-    when(retriever.retrieveExact(any(), eq(REPORT_PLAN))).thenReturn(completeExact(messages));
-    when(model.answer(eq(QUESTION), anyList(), eq(DEADLINE)))
-        .thenAnswer(
-            invocation -> {
-              List<QuestionMessage> batch = invocation.getArgument(1);
-              return switch (batch.getFirst().messageGuid()) {
-                case "message-0" ->
-                    routed(answered("The first finding is supported.", "message-0"));
-                case "message-1" ->
-                    routed(
-                        new ModelAnswer(
-                            AnswerStatus.INSUFFICIENT_EVIDENCE,
-                            "There is not enough evidence.",
-                            Confidence.LOW,
-                            List.of(),
-                            false));
-                case "message-2" -> routed(answered("The last finding is supported.", "message-2"));
-                default -> throw new AssertionError("unexpected batch");
-              };
-            });
-    stubReduction(
-        routed(
-            answered(
-                "The reduced answer exposes message-1 from the unsupported batch.",
-                "message-0",
-                "message-2")));
-
-    GroupQuestionAnswer result = service.answer(ACCOUNT, GROUP, QUESTION, FROM, TO);
-
-    assertThat(result.answer())
-        .doesNotContain("The reduced answer exposes message-1 from the unsupported batch.");
-    verify(model, never()).verifyReduction(eq(QUESTION), anyString(), anyList(), eq(DEADLINE));
-  }
-
-  @Test
-  void exactBackupIsRevalidatedAgainstGuidsRetrievedLaterInTheRequest() {
-    QuestionMessage exact = message("exact-guid", "Dom", "More context is required.", 1);
-    QuestionMessage chronological =
-        message("chronological-guid", "Eve", "The chronological fallback found no answer.", 2);
-    when(retriever.retrieveExact(any(), eq(REPORT_PLAN))).thenReturn(completeExact(List.of(exact)));
-    when(retriever.retrieveChronological(any()))
-        .thenReturn(completeChronological(List.of(chronological)));
-    when(model.answer(QUESTION, List.of(exact), DEADLINE))
-        .thenReturn(
-            routed(
-                new ModelAnswer(
-                    AnswerStatus.ANSWERED,
-                    "The tentative answer exposes chronological-guid.",
-                    Confidence.LOW,
-                    List.of("exact-guid"),
-                    true)));
-    when(model.answer(QUESTION, List.of(chronological), DEADLINE))
-        .thenReturn(
-            routed(
-                new ModelAnswer(
-                    AnswerStatus.INSUFFICIENT_EVIDENCE,
-                    "There is not enough evidence.",
-                    Confidence.LOW,
-                    List.of(),
-                    false)));
-
-    GroupQuestionAnswer result = service.answer(ACCOUNT, GROUP, QUESTION, FROM, TO);
-
-    assertThat(result.status()).isNotEqualTo(AnswerStatus.ANSWERED);
-    assertThat(result.answer()).doesNotContain("chronological-guid");
-  }
-
-  @Test
-  void chronologicalFallbackBatchesByMessageCountAndReducesFindings() {
-    List<QuestionMessage> messages = messages(101, 10);
-    exactMissThenChronological(messages);
-    answerEachBatchWithItsFirstEvidence();
-    stubReduction(
-        routed(answered("The reduced chronological answer.", "message-0", "message-100")));
-
-    GroupQuestionAnswer result = service.answer(ACCOUNT, GROUP, QUESTION, FROM, TO);
-
-    assertThat(result.status()).isEqualTo(AnswerStatus.ANSWERED);
-    assertThat(result.evidenceMessageCount()).isEqualTo(2);
-    assertSubmittedBatchBounds(2, 100, 60_000);
-    ArgumentCaptor<List<QuestionFinding>> findings = findingListCaptor();
-    verify(model).reduceWithCitations(eq(QUESTION), findings.capture(), eq(DEADLINE));
-    assertThat(findings.getValue()).hasSize(2);
-    assertQuestionModelWork(3, 1, 3);
-  }
-
-  @Test
-  void reducedAnswerVerifierReceivesOnlyTheCitedVerifiedFinding() {
-    List<QuestionMessage> messages = messages(101, 10);
-    exactMissThenChronological(messages);
-    answerEachBatchWithItsFirstEvidence();
-    stubReduction(routed(answered("The later race result is decisive.", "message-100")));
-
-    service.answer(ACCOUNT, GROUP, QUESTION, FROM, TO);
-
-    @SuppressWarnings("unchecked")
-    ArgumentCaptor<List<QuestionFinding>> citedFindings = ArgumentCaptor.forClass(List.class);
-    verify(model)
-        .verifyReduction(
-            eq(QUESTION),
-            eq("The later race result is decisive."),
-            citedFindings.capture(),
-            eq(DEADLINE));
-    assertThat(citedFindings.getValue())
-        .singleElement()
-        .satisfies(
-            finding -> assertThat(finding.evidenceMessageGuids()).containsExactly("message-100"));
-  }
-
-  @Test
-  void reductionMetadataSelectsACompleteMultiEvidenceFindingWithoutUnrelatedFindings() {
-    service = service(2, 60_000, 5, 300_000);
-    List<QuestionMessage> messages = messages(4, 10);
-    exactMissThenChronological(messages);
-    when(model.answer(eq(QUESTION), anyList(), eq(DEADLINE)))
-        .thenAnswer(
-            invocation -> {
-              List<QuestionMessage> batch = invocation.getArgument(1);
-              return batch.getFirst().messageGuid().equals("message-0")
-                  ? routed(
-                      answered(
-                          "Atlas ownership and readiness are confirmed.", "message-0", "message-1"))
-                  : routed(answered("Beacon has a separate update.", "message-2", "message-3"));
-            });
-    when(model.reduceWithCitations(eq(QUESTION), anyList(), eq(DEADLINE)))
-        .thenAnswer(
-            invocation -> {
-              List<QuestionFinding> submitted = invocation.getArgument(1);
-              RoutedModelAnswer routed =
-                  routed(
-                      answered("The Atlas update confirms both facts.", "message-0", "message-1"));
-              return new RoutedReductionAnswer(routed, List.of(submitted.getFirst()));
-            });
-
-    GroupQuestionAnswer result = service.answer(ACCOUNT, GROUP, QUESTION, FROM, TO);
-
-    assertThat(result.status()).isEqualTo(AnswerStatus.ANSWERED);
-    assertThat(result.evidenceMessageCount()).isEqualTo(2);
-    @SuppressWarnings("unchecked")
-    ArgumentCaptor<List<QuestionFinding>> citedFindings = ArgumentCaptor.forClass(List.class);
-    verify(model)
-        .verifyReduction(
-            eq(QUESTION),
-            eq("The Atlas update confirms both facts."),
-            citedFindings.capture(),
-            eq(DEADLINE));
-    assertThat(citedFindings.getValue())
-        .singleElement()
-        .satisfies(
-            finding ->
-                assertThat(finding.evidenceMessageGuids())
-                    .containsExactly("message-0", "message-1"));
-  }
-
-  @Test
-  void chronologicalNeedsMoreContextContinuesRemainingBatchesAndReducesFindings() {
-    List<QuestionMessage> messages = messages(101, 10);
-    exactMissThenChronological(messages);
-    when(model.answer(eq(QUESTION), anyList(), eq(DEADLINE)))
-        .thenAnswer(
-            invocation -> {
-              List<QuestionMessage> batch = invocation.getArgument(1);
-              String evidenceGuid = batch.getFirst().messageGuid();
-              if (evidenceGuid.equals("message-0")) {
-                return routed(
-                    new ModelAnswer(
-                        AnswerStatus.ANSWERED,
-                        "The first batch needs later context.",
-                        Confidence.LOW,
-                        List.of(evidenceGuid),
-                        true));
-              }
-              return routed(answered("The later batch supports the answer.", evidenceGuid));
-            });
-    stubReduction(routed(answered("The reduced complete answer.", "message-0", "message-100")));
-
-    GroupQuestionAnswer result = service.answer(ACCOUNT, GROUP, QUESTION, FROM, TO);
-
-    assertThat(result.answer()).isEqualTo("The reduced complete answer.");
-    assertThat(result.coverageStatus()).isEqualTo(CoverageStatus.COMPLETE);
-    verify(model, times(2)).answer(eq(QUESTION), anyList(), eq(DEADLINE));
-    verify(model).reduceWithCitations(eq(QUESTION), anyList(), eq(DEADLINE));
-  }
-
-  @Test
-  void chronologicalFallbackBatchesByCharacterCount() {
-    List<QuestionMessage> messages = messages(3, 30_001);
-    exactMissThenChronological(messages);
-    answerEachBatchWithItsFirstEvidence();
-    stubReduction(
-        routed(
-            answered(
-                "The reduced character-bounded answer.", "message-0", "message-1", "message-2")));
-
-    GroupQuestionAnswer result = service.answer(ACCOUNT, GROUP, QUESTION, FROM, TO);
-
-    assertThat(result.status()).isEqualTo(AnswerStatus.ANSWERED);
-    assertSubmittedBatchBounds(3, 100, 60_000);
-  }
-
-  @Test
-  void modelBatchLimitReturnsBestSupportedPartialAnswer() {
-    service = service(100, 60_000, 2, 300_000);
-    List<QuestionMessage> messages = messages(201, 10);
-    exactMissThenChronological(messages);
-    answerEachBatchWithItsFirstEvidence();
-    stubReduction(routed(answered("The supported partial result.", "message-0", "message-100")));
-
-    GroupQuestionAnswer result = service.answer(ACCOUNT, GROUP, QUESTION, FROM, TO);
-
-    assertThat(result.status()).isEqualTo(AnswerStatus.ANSWERED);
-    assertThat(result.coverageStatus()).isEqualTo(CoverageStatus.PARTIAL);
-    assertThat(result.partialReason()).isEqualTo("model_batch_limit");
-    assertThat(result.coverageThrough()).isEqualTo(messages.get(199).timestamp());
-    assertThat(result.evidenceMessageCount()).isEqualTo(1);
-    verify(model, times(2)).answer(eq(QUESTION), anyList(), eq(DEADLINE));
-  }
-
-  @Test
-  void aggregateCharacterLimitReturnsBestSupportedPartialAnswer() {
-    service = service(100, 60_000, 5, 110_000);
-    List<QuestionMessage> messages = messages(3, 50_000);
-    exactMissThenChronological(messages);
-    answerEachBatchWithItsFirstEvidence();
-    stubReduction(routed(answered("The supported partial result.", "message-0", "message-1")));
-
-    GroupQuestionAnswer result = service.answer(ACCOUNT, GROUP, QUESTION, FROM, TO);
-
-    assertThat(result.status()).isEqualTo(AnswerStatus.ANSWERED);
-    assertThat(result.coverageStatus()).isEqualTo(CoverageStatus.PARTIAL);
-    assertThat(result.partialReason()).isEqualTo("character_limit");
-    assertThat(result.coverageThrough()).isEqualTo(messages.get(0).timestamp());
-    verify(model, times(1)).answer(eq(QUESTION), anyList(), eq(DEADLINE));
-  }
-
-  @Test
-  void exactFiveBatchLimitReturnsTheBestVerifiedFindingWithoutAnUnboundedReduction() {
-    List<QuestionMessage> messages = messages(500, 10);
-    when(retriever.retrieveExact(any(), eq(REPORT_PLAN))).thenReturn(completeExact(messages));
-    answerEachBatchWithItsFirstEvidence();
-    stubReduction(
-        routed(
-            answered(
-                "All five exact batches were reduced.",
-                "message-0",
-                "message-100",
-                "message-200",
-                "message-300",
-                "message-400")));
-
-    GroupQuestionAnswer result = service.answer(ACCOUNT, GROUP, QUESTION, FROM, TO);
-
-    assertThat(result.status()).isEqualTo(AnswerStatus.ANSWERED);
-    assertThat(result.coverageStatus()).isEqualTo(CoverageStatus.PARTIAL);
-    assertThat(result.partialReason()).isEqualTo("model_batch_limit");
-    verify(model, times(5)).answer(eq(QUESTION), anyList(), eq(DEADLINE));
-  }
-
-  @Test
-  void rawTextAggregateEqualityIsPartialWhenSerializedPayloadExceedsTheLimit() {
-    service = service(100, 60_000, 5, 110_000);
-    List<QuestionMessage> messages = messages(2, 50_000);
-    when(retriever.retrieveExact(any(), eq(REPORT_PLAN))).thenReturn(completeExact(messages));
-    answerEachBatchWithItsFirstEvidence();
-    stubReduction(routed(answered("Both exact batches were reduced.", "message-0", "message-1")));
-
-    GroupQuestionAnswer result = service.answer(ACCOUNT, GROUP, QUESTION, FROM, TO);
-
-    assertThat(result.status()).isEqualTo(AnswerStatus.ANSWERED);
-    assertThat(result.coverageStatus()).isEqualTo(CoverageStatus.PARTIAL);
-    assertThat(result.partialReason()).isEqualTo("character_limit");
-    verify(model, times(1)).answer(eq(QUESTION), anyList(), eq(DEADLINE));
-    verify(model, never()).reduceWithCitations(eq(QUESTION), anyList(), eq(DEADLINE));
-  }
-
-  @Test
-  void oneNinetySecondDeadlineIsSharedAndStopsFallbackWork() {
-    ArgumentCaptor<RetrievalRequest> exactRequest = ArgumentCaptor.forClass(RetrievalRequest.class);
-    when(retriever.retrieveExact(exactRequest.capture(), eq(REPORT_PLAN)))
-        .thenAnswer(
-            invocation -> {
-              clock.advance(Duration.ofSeconds(90));
-              return completeExact(List.of());
-            });
-
-    GroupQuestionAnswer result = service.answer(ACCOUNT, GROUP, QUESTION, FROM, TO);
-
-    assertThat(exactRequest.getValue().deadline()).isEqualTo(NOW.plusSeconds(90));
-    assertThat(result.status()).isEqualTo(AnswerStatus.UNAVAILABLE);
-    assertThat(result.coverageStatus()).isEqualTo(CoverageStatus.PARTIAL);
-    assertThat(result.partialReason()).isEqualTo("time_limit");
-    verify(retriever, never()).retrieveChronological(any());
-    verify(model, never()).answer(eq(QUESTION), anyList(), any());
-  }
-
-  @Test
-  void usesOneOperationDeadlineForEveryModelBoundary() {
-    List<QuestionMessage> messages = messages(101, 10);
-    when(retriever.retrieveExact(any(), eq(REPORT_PLAN))).thenReturn(completeExact(messages));
-    answerEachBatchWithItsFirstEvidence();
-    stubReduction(routed(answered("The reduced answer.", "message-0", "message-100")));
-
-    GroupQuestionAnswer result = service.answer(ACCOUNT, GROUP, QUESTION, FROM, TO);
-
-    assertThat(result.status()).isEqualTo(AnswerStatus.ANSWERED);
-    verify(model).plan(QUESTION, FROM, TO, DEADLINE);
-    verify(model, times(2)).answer(eq(QUESTION), anyList(), eq(DEADLINE));
-    verify(model, times(2)).verifyAnswer(eq(QUESTION), anyString(), anyList(), eq(DEADLINE));
-    verify(model).reduceWithCitations(eq(QUESTION), anyList(), eq(DEADLINE));
-    verify(model).verifyReduction(eq(QUESTION), anyString(), anyList(), eq(DEADLINE));
-  }
-
-  @Test
-  void generationCompletingAtTheDeadlineCannotBypassSupportVerification() {
-    QuestionMessage score =
-        message("score-guid", "participant ending 0199", "Challenge round 1,877 result 4/6", 1);
-    when(retriever.retrieveExact(any(), eq(REPORT_PLAN))).thenReturn(completeExact(List.of(score)));
-    when(model.answer(QUESTION, List.of(score), DEADLINE))
-        .thenAnswer(
-            invocation -> {
-              clock.advance(Duration.ofSeconds(90));
-              return routed(answered("The only reported score is 4/6.", "score-guid"));
-            });
-
-    GroupQuestionAnswer result = service.answer(ACCOUNT, GROUP, QUESTION, FROM, TO);
-
-    assertThat(result.status()).isEqualTo(AnswerStatus.UNAVAILABLE);
-    assertThat(result.coverageStatus()).isEqualTo(CoverageStatus.PARTIAL);
-    assertThat(result.partialReason()).isEqualTo("time_limit");
-    verify(retriever, never()).retrieveChronological(any());
-  }
-
-  @Test
-  void sourceCoverageFailureIsNotHiddenByAModelRequestForMoreContext() {
-    QuestionMessage score =
-        message("score-guid", "participant ending 0199", "Challenge round 1,877 result 4/6", 1);
-    when(retriever.retrieveExact(any(), eq(REPORT_PLAN))).thenReturn(completeExact(List.of()));
-    when(retriever.retrieveChronological(any()))
-        .thenReturn(
-            new RetrievalResult(
-                List.of(score),
-                RetrievalMode.CHRONOLOGICAL,
-                CoverageStatus.PARTIAL,
-                score.timestamp(),
-                "source_unavailable",
-                1));
-    when(model.answer(QUESTION, List.of(score), DEADLINE))
-        .thenReturn(
-            routed(
-                new ModelAnswer(
-                    AnswerStatus.ANSWERED,
-                    "The only reported score is 4/6.",
-                    Confidence.LOW,
-                    List.of("score-guid"),
-                    true)));
-
-    GroupQuestionAnswer result = service.answer(ACCOUNT, GROUP, QUESTION, FROM, TO);
-
-    assertThat(result.status()).isEqualTo(AnswerStatus.ANSWERED);
-    assertThat(result.coverageStatus()).isEqualTo(CoverageStatus.PARTIAL);
-    assertThat(result.partialReason()).isEqualTo("source_unavailable");
-    verify(retriever, times(1)).retrieveChronological(any());
-  }
-
-  @Test
-  void sourceAndModelExceptionsNeverEscapeAndCanStillReturnSupportedPartialEvidence() {
-    List<QuestionMessage> messages = messages(101, 10);
-    when(retriever.retrieveExact(any(), eq(REPORT_PLAN)))
-        .thenThrow(new IllegalStateException("source unavailable"));
-    when(retriever.retrieveChronological(any())).thenReturn(completeChronological(messages));
-    when(model.answer(eq(QUESTION), anyList(), eq(DEADLINE)))
-        .thenAnswer(
-            invocation -> {
-              List<QuestionMessage> batch = invocation.getArgument(1);
-              if (batch.get(0).messageGuid().equals("message-100")) {
-                throw new IllegalStateException("provider unavailable");
-              }
-              return new RoutedModelAnswer(
-                  answered("A supported first-batch result.", "message-0"),
-                  "openai/gpt-4.1-mini",
-                  true);
-            });
-
-    GroupQuestionAnswer result = service.answer(ACCOUNT, GROUP, QUESTION, FROM, TO);
-
-    assertThat(result.status()).isEqualTo(AnswerStatus.ANSWERED);
-    assertThat(result.answer()).isEqualTo("A supported first-batch result.");
-    assertThat(result.evidenceMessageCount()).isEqualTo(1);
-    assertThat(result.model()).isEqualTo("openai/gpt-4.1-mini");
-    assertThat(result.fallbackUsed()).isTrue();
-    assertThat(result.coverageStatus()).isEqualTo(CoverageStatus.PARTIAL);
-    assertThat(result.partialReason()).isEqualTo("model_unavailable");
-    assertThat(result.coverageThrough()).isEqualTo(messages.get(99).timestamp());
-    verify(model, never()).reduceWithCitations(eq(QUESTION), anyList(), any());
-  }
-
-  @Test
-  void totalSourceFailureReturnsUnavailableWithoutThrowing() {
-    when(retriever.retrieveExact(any(), eq(REPORT_PLAN)))
-        .thenThrow(new IllegalStateException("exact unavailable"));
-    when(retriever.retrieveChronological(any()))
-        .thenThrow(new IllegalStateException("chronological unavailable"));
-
-    GroupQuestionAnswer result = service.answer(ACCOUNT, GROUP, QUESTION, FROM, TO);
-
-    assertThat(result.status()).isEqualTo(AnswerStatus.UNAVAILABLE);
-    assertThat(result.evidenceMessageCount()).isZero();
-    assertThat(result.coverageStatus()).isEqualTo(CoverageStatus.PARTIAL);
-    assertThat(result.partialReason()).isEqualTo("source_unavailable");
-  }
-
-  @Test
-  void lateExactFailureRetainsSupportedPartialAnswerAndRecordsWorkOnce() {
-    QuestionMessage duplicate =
-        message("duplicate", "participant ending 0199", "Challenge round 1,877 result 4/6", 1);
-    RetrievalResult partialExact =
-        new RetrievalResult(
-            List.of(duplicate),
-            RetrievalMode.EXACT_SEARCH,
-            CoverageStatus.PARTIAL,
-            duplicate.timestamp(),
-            "source_unavailable",
-            4);
-    when(retriever.retrieveExact(any(), eq(REPORT_PLAN)))
-        .thenThrow(
-            new ConversationQuestionHistoryRetriever.PartialRetrievalException(
-                partialExact, new IllegalStateException("late source failure")));
-    when(retriever.retrieveChronological(any()))
-        .thenThrow(new IllegalStateException("chronological source unavailable"));
-    when(model.answer(QUESTION, List.of(duplicate), DEADLINE))
-        .thenReturn(routed(answered("The only reported score is 4/6.", "duplicate")));
-
-    GroupQuestionAnswer result = service.answer(ACCOUNT, GROUP, QUESTION, FROM, TO);
-
-    assertThat(result.status()).isEqualTo(AnswerStatus.ANSWERED);
-    assertThat(result.answer()).isEqualTo("The only reported score is 4/6.");
-    assertThat(result.coverageStatus()).isEqualTo(CoverageStatus.PARTIAL);
-    assertThat(result.partialReason()).isEqualTo("source_unavailable");
-    assertThat(result.evidenceMessageCount()).isEqualTo(1);
-    assertThat(totalQuestionAnswers()).isEqualTo(1.0);
-    assertThat(registry.get("bbagent.memory.question.answer.message.count").counter().count())
-        .isEqualTo(1.0);
-    assertThat(registry.get("bbagent.memory.question.answer.page.count").counter().count())
-        .isEqualTo(4.0);
-    verify(model, times(1)).answer(QUESTION, List.of(duplicate), DEADLINE);
-  }
-
-  @Test
-  void lateChronologicalProcessingFailureSynthesizesPartialMessagesAndRecordsWorkOnce() {
-    QuestionMessage completed =
-        message("completed", "participant ending 0199", "Challenge round 1,877 result 4/6", 1);
-    when(retriever.retrieveExact(any(), eq(REPORT_PLAN))).thenReturn(completeExact(List.of()));
-    when(retriever.retrieveChronological(any()))
-        .thenThrow(
-            new ConversationQuestionHistoryRetriever.PartialRetrievalException(
-                new RetrievalResult(
-                    List.of(completed),
-                    RetrievalMode.CHRONOLOGICAL,
-                    CoverageStatus.PARTIAL,
-                    completed.timestamp(),
-                    "source_unavailable",
-                    2),
-                new IllegalStateException("late processing failure")));
-    when(model.answer(QUESTION, List.of(completed), DEADLINE))
-        .thenReturn(routed(answered("The only reported score is 4/6.", "completed")));
-
-    GroupQuestionAnswer result = service.answer(ACCOUNT, GROUP, QUESTION, FROM, TO);
-
-    assertThat(result.status()).isEqualTo(AnswerStatus.ANSWERED);
-    assertThat(result.answer()).isEqualTo("The only reported score is 4/6.");
-    assertThat(result.coverageStatus()).isEqualTo(CoverageStatus.PARTIAL);
-    assertThat(result.partialReason()).isEqualTo("source_unavailable");
-    assertThat(result.evidenceMessageCount()).isEqualTo(1);
-    assertThat(totalQuestionAnswers()).isEqualTo(1.0);
-    assertThat(registry.get("bbagent.memory.question.answer.message.count").counter().count())
-        .isEqualTo(1.0);
-    assertThat(registry.get("bbagent.memory.question.answer.page.count").counter().count())
-        .isEqualTo(3.0);
-    verify(model, times(1)).answer(QUESTION, List.of(completed), DEADLINE);
-  }
-
-  @Test
-  void unsupportedEvidenceIsNotReportedAndDoesNotCauseAnotherFallbackLoop() {
-    QuestionMessage exact =
-        message("exact", "participant ending 0199", "Challenge round 1,877 result 4/6", 1);
-    QuestionMessage chronological =
-        message("chronological", "participant ending 0123", "Challenge round 1,877 result 3/6", 2);
-    when(retriever.retrieveExact(any(), eq(REPORT_PLAN))).thenReturn(completeExact(List.of(exact)));
-    when(retriever.retrieveChronological(any()))
-        .thenReturn(completeChronological(List.of(chronological)));
-    when(model.answer(QUESTION, List.of(exact), DEADLINE))
-        .thenReturn(routed(answered("Unsupported exact answer.", "not-submitted")));
-    when(model.answer(QUESTION, List.of(chronological), DEADLINE))
-        .thenReturn(routed(answered("Unsupported chronological answer.", "not-submitted")));
-
-    GroupQuestionAnswer result = service.answer(ACCOUNT, GROUP, QUESTION, FROM, TO);
-
-    assertThat(result.status()).isEqualTo(AnswerStatus.INSUFFICIENT_EVIDENCE);
-    assertThat(result.evidenceMessageCount()).isZero();
-    verify(retriever, times(1)).retrieveChronological(any());
-    assertQuestionModelWork(2, 1, 0);
-  }
-
-  @Test
-  void authorizedContentIsReturnedWhenTheGenericVerifierSupportsIt() {
-    QuestionMessage source = message("source-guid", "Dom", "Call +1 (555) 555-0199.", 1);
-    String answer = "Dom said to call +1 (555) 555-0199 or visit https://example.tech.";
-    when(retriever.retrieveExact(any(), eq(REPORT_PLAN)))
-        .thenReturn(completeExact(List.of(source)));
-    when(model.answer(QUESTION, List.of(source), DEADLINE))
-        .thenReturn(routed(answered(answer, source.messageGuid())));
-    when(model.verifyAnswer(QUESTION, answer, List.of(source), DEADLINE))
-        .thenReturn(new RoutedSupportVerification(true, "openrouter/z-ai/glm-5.2", false));
-
-    GroupQuestionAnswer result = service.answer(ACCOUNT, GROUP, QUESTION, FROM, TO);
-
-    assertThat(result.status()).isEqualTo(AnswerStatus.ANSWERED);
-    assertThat(result.answer()).isEqualTo(answer);
-  }
-
-  @Test
-  void crossMessageRaceAttributionCannotBypassTheGenericVerifier() {
-    QuestionMessage dom = message("m-dom", "Dom", "I finished heat 7 in 52.4 seconds.", 1);
-    QuestionMessage eve = message("m-eve", "Eve", "I finished heat 7 in 49.8 seconds.", 2);
-    when(retriever.retrieveExact(any(), eq(REPORT_PLAN)))
-        .thenReturn(completeExact(List.of(dom, eve)));
-    when(model.answer(QUESTION, List.of(dom, eve), DEADLINE))
-        .thenReturn(
-            routed(
-                answered(
-                    "Dom finished heat 7 in 49.8 seconds.", dom.messageGuid(), eve.messageGuid())));
-    when(model.verifyAnswer(
-            QUESTION, "Dom finished heat 7 in 49.8 seconds.", List.of(dom, eve), DEADLINE))
-        .thenReturn(new RoutedSupportVerification(false, "openrouter/z-ai/glm-5.2", false));
-    when(retriever.retrieveChronological(any()))
-        .thenThrow(new IllegalStateException("source unavailable"));
-
-    GroupQuestionAnswer result = service.answer(ACCOUNT, GROUP, QUESTION, FROM, TO);
-
-    assertThat(result.status()).isNotEqualTo(AnswerStatus.ANSWERED);
-    assertThat(result.answer()).doesNotContain("Dom finished heat 7 in 49.8 seconds");
-    assertThat(totalQuestionAnswers()).isEqualTo(1.0);
-  }
-
-  @Test
-  void emptyMembershipReturnsInsufficientEvidenceWithoutHistoryOrModelAccess() {
-    when(store.findMembershipIntervals(CONVERSATION_ID, ACCOUNT, FROM, TO)).thenReturn(List.of());
-
-    GroupQuestionAnswer result = service.answer(ACCOUNT, GROUP, QUESTION, FROM, TO);
-
-    assertThat(result.status()).isEqualTo(AnswerStatus.INSUFFICIENT_EVIDENCE);
-    assertThat(result.evidenceMessageCount()).isZero();
-    assertThat(result.coverageStatus()).isEqualTo(CoverageStatus.PARTIAL);
-    assertThat(result.partialReason()).isEqualTo("unauthorized_range");
+    assertThat(answer.status()).isEqualTo(AnswerStatus.UNAVAILABLE);
     verifyNoInteractions(retriever);
-    verifyNoInteractions(model);
-    assertThat(totalQuestionAnswers()).isEqualTo(1.0);
-    assertThat(
-            registry
-                .get("bbagent.memory.question.answer.count")
-                .tag("outcome", "failure")
-                .tag("failure_type", "unauthorized_range")
-                .counter()
-                .count())
-        .isEqualTo(1.0);
-    assertQuestionModelWork(0, 0, 0);
+    verify(model, never()).decide(anyString(), any(), nullable(String.class), anyList(), any());
   }
 
   @Test
-  void unexpectedSourceFailureRecordsOneUnavailableOutcome() {
-    when(store.findConversation(CONVERSATION_ID))
-        .thenThrow(new IllegalStateException("database unavailable"));
-
-    GroupQuestionAnswer result = service.answer(ACCOUNT, GROUP, QUESTION, FROM, TO);
-
-    assertThat(result.status()).isEqualTo(AnswerStatus.UNAVAILABLE);
-    assertThat(totalQuestionAnswers()).isEqualTo(1.0);
-    assertThat(
-            registry
-                .get("bbagent.memory.question.answer.count")
-                .tag("outcome", "failure")
-                .tag("failure_type", "source_unavailable")
-                .counter()
-                .count())
-        .isEqualTo(1.0);
-    assertQuestionModelWork(0, 0, 0);
-  }
-
-  @Test
-  void rejectsNonPositiveAndInternallyInconsistentLimits() {
-    assertThatIllegalArgumentException().isThrownBy(() -> service(0, 60_000, 5, 300_000));
-    assertThatIllegalArgumentException().isThrownBy(() -> service(100, 0, 5, 300_000));
-    assertThatIllegalArgumentException().isThrownBy(() -> service(100, 60_000, 0, 300_000));
-    assertThatIllegalArgumentException().isThrownBy(() -> service(100, 60_000, 5, 59_999));
+  void validatesConstructorAndRequestLimits() {
+    assertThatIllegalArgumentException().isThrownBy(() -> service(0, 100, 60_000, 5, 300_000));
+    assertThatIllegalArgumentException().isThrownBy(() -> service(501, 100, 60_000, 5, 300_000));
+    assertThatIllegalArgumentException().isThrownBy(() -> service(500, 0, 60_000, 5, 300_000));
+    assertThatIllegalArgumentException().isThrownBy(() -> service(500, 100, 60_001, 5, 300_000));
+    assertThatIllegalArgumentException().isThrownBy(() -> service(500, 100, 60_000, 6, 300_000));
+    assertThatIllegalArgumentException().isThrownBy(() -> service(500, 100, 60_000, 5, 59_999));
     assertThatIllegalArgumentException()
-        .isThrownBy(() -> service(100, 60_000, 5, 300_000, Duration.ZERO));
+        .isThrownBy(
+            () ->
+                new ConversationQuestionAnsweringService(
+                    store,
+                    retriever,
+                    model,
+                    metrics,
+                    500,
+                    100,
+                    60_000,
+                    5,
+                    300_000,
+                    Duration.ofSeconds(91),
+                    clock));
+    assertThatIllegalArgumentException()
+        .isThrownBy(() -> service.answer(" ", GROUP, QUESTION, null, NOW, null));
+    assertThatIllegalArgumentException()
+        .isThrownBy(() -> service.answer(ACCOUNT, GROUP, " ", null, NOW, null));
+    assertThatIllegalArgumentException()
+        .isThrownBy(() -> service.answer(ACCOUNT, GROUP, QUESTION, NOW, NOW, null));
+    assertThatIllegalArgumentException()
+        .isThrownBy(() -> service.answer(ACCOUNT, GROUP, QUESTION, null, NOW, "Not/AZone"));
+    verifyNoMoreInteractions(retriever);
   }
 
   private ConversationQuestionAnsweringService service(
-      int maxBatchMessages,
+      int windowMessages,
+      int maxHistoryPages,
       int maxBatchCharacters,
       int maxModelBatches,
       int maxAggregateCharacters) {
-    return service(
-        maxBatchMessages,
-        maxBatchCharacters,
-        maxModelBatches,
-        maxAggregateCharacters,
-        Duration.ofSeconds(90));
-  }
-
-  private ConversationQuestionAnsweringService service(
-      int maxBatchMessages,
-      int maxBatchCharacters,
-      int maxModelBatches,
-      int maxAggregateCharacters,
-      Duration requestTimeout) {
     return new ConversationQuestionAnsweringService(
         store,
         retriever,
         model,
         metrics,
-        maxBatchMessages,
+        windowMessages,
+        maxHistoryPages,
         maxBatchCharacters,
         maxModelBatches,
         maxAggregateCharacters,
-        requestTimeout,
+        Duration.ofSeconds(90),
         clock);
   }
 
-  private double totalQuestionAnswers() {
-    return registry.find("bbagent.memory.question.answer.count").counters().stream()
-        .mapToDouble(counter -> counter.count())
-        .sum();
+  private HistoryWindow window(
+      List<QuestionMessage> messages, HistoryWindowCursor nextCursor, boolean exhausted) {
+    return new HistoryWindow(messages, nextCursor, exhausted, true, null, 1);
   }
 
-  private void assertQuestionModelWork(
-      double expectedBatches, double expectedPlans, double expectedVerifications) {
-    assertThat(registry.get("bbagent.memory.question.answer.model.batch.count").counter().count())
-        .isEqualTo(expectedBatches);
-    assertThat(registry.get("bbagent.memory.question.answer.plan.count").counter().count())
-        .isEqualTo(expectedPlans);
-    assertThat(registry.get("bbagent.memory.question.answer.verification.count").counter().count())
-        .isEqualTo(expectedVerifications);
+  private void assertQuestionMetric(String action, boolean success) {
+    assertThat(
+            registry
+                .get("bbagent.memory.question.answer.count")
+                .tag("action", action)
+                .tag("outcome", success ? "success" : "failure")
+                .counter()
+                .count())
+        .isEqualTo(1.0);
+    assertThat(
+            registry.getMeters().stream()
+                .filter(
+                    meter -> meter.getId().getName().startsWith("bbagent.memory.question.answer"))
+                .flatMap(meter -> meter.getId().getTags().stream())
+                .map(tag -> tag.getValue()))
+        .noneMatch(
+            value ->
+                value.contains(QUESTION)
+                    || value.contains(CONVERSATION_ID)
+                    || value.contains(ACCOUNT));
   }
 
-  private void exactMissThenChronological(List<QuestionMessage> messages) {
-    when(retriever.retrieveExact(any(), eq(REPORT_PLAN))).thenReturn(completeExact(List.of()));
-    when(retriever.retrieveChronological(any())).thenReturn(completeChronological(messages));
+  private RoutedWindowDecision routed(ModelWindowDecision decision) {
+    return new RoutedWindowDecision(decision, "openrouter/z-ai/glm-5.2", false);
   }
 
-  private void answerEachBatchWithItsFirstEvidence() {
-    when(model.answer(eq(QUESTION), anyList(), eq(DEADLINE)))
-        .thenAnswer(
-            invocation -> {
-              List<QuestionMessage> batch = invocation.getArgument(1);
-              String evidenceGuid = batch.get(0).messageGuid();
-              return routed(answered("A supported factual finding.", evidenceGuid));
-            });
+  private RoutedFindingReduction routedReduction(
+      ModelWindowDecision decision, List<QuestionFinding> findings) {
+    return new RoutedFindingReduction(decision, findings, "openrouter/z-ai/glm-5.2", false);
   }
 
-  private void stubReduction(RoutedModelAnswer routed) {
-    when(model.reduceWithCitations(eq(QUESTION), anyList(), eq(DEADLINE)))
-        .thenAnswer(
-            invocation -> {
-              List<QuestionFinding> submitted = invocation.getArgument(1);
-              Set<String> cited = Set.copyOf(routed.answer().evidenceMessageGuids());
-              List<QuestionFinding> selected =
-                  submitted.stream()
-                      .filter(finding -> cited.containsAll(finding.evidenceMessageGuids()))
-                      .toList();
-              return new RoutedReductionAnswer(routed, selected);
-            });
+  private ModelWindowDecision answered(String answer, String evidenceGuid, String participant) {
+    return answered(answer, List.of(evidenceGuid), List.of(participant));
   }
 
-  private void assertSubmittedBatchBounds(
-      int expectedBatchCount, int maxMessages, int maxCharacters) {
-    ArgumentCaptor<List<QuestionMessage>> batches = listCaptor();
-    verify(model, times(expectedBatchCount)).answer(eq(QUESTION), batches.capture(), eq(DEADLINE));
-    assertThat(batches.getAllValues()).hasSize(expectedBatchCount);
-    assertThat(batches.getAllValues())
-        .allSatisfy(
-            batch -> {
-              assertThat(batch).hasSizeLessThanOrEqualTo(maxMessages);
-              assertThat(payloadSizer.answerInputCharacters(QUESTION, batch))
-                  .isLessThanOrEqualTo(maxCharacters);
-            });
+  private ModelWindowDecision answered(
+      String answer, List<String> evidenceGuids, List<String> participants) {
+    return new ModelWindowDecision(
+        WindowAction.ANSWERED,
+        answer,
+        null,
+        Confidence.HIGH,
+        evidenceGuids,
+        List.of(),
+        participants);
   }
 
-  @SuppressWarnings({"unchecked", "rawtypes"})
-  private static ArgumentCaptor<List<QuestionMessage>> listCaptor() {
-    return (ArgumentCaptor) ArgumentCaptor.forClass(List.class);
+  private ModelWindowDecision needOlder(WindowFinding finding) {
+    return new ModelWindowDecision(
+        WindowAction.NEED_OLDER_MESSAGES,
+        null,
+        null,
+        Confidence.MEDIUM,
+        List.of(),
+        List.of(finding),
+        List.of());
   }
 
-  @SuppressWarnings({"unchecked", "rawtypes"})
-  private static ArgumentCaptor<List<QuestionFinding>> findingListCaptor() {
-    return (ArgumentCaptor) ArgumentCaptor.forClass(List.class);
+  private WindowFinding provisional(String answer, String evidenceGuid) {
+    return new WindowFinding(answer, Confidence.MEDIUM, List.of(evidenceGuid), List.of());
   }
 
-  private static List<QuestionMessage> messages(int count, int textLength) {
-    List<QuestionMessage> messages = new ArrayList<>();
-    for (int index = 0; index < count; index++) {
-      String prefix = "m" + index + "-";
-      String text = prefix + "x".repeat(Math.max(0, textLength - prefix.length()));
-      messages.add(
-          message(
-              "message-" + index,
-              "participant ending %04d".formatted(index % 10_000),
-              text,
-              index));
-    }
-    return List.copyOf(messages);
+  private ModelWindowDecision clarification(String question) {
+    return new ModelWindowDecision(
+        WindowAction.NEED_TIME_CLARIFICATION,
+        null,
+        question,
+        Confidence.LOW,
+        List.of(),
+        List.of(),
+        List.of());
   }
 
-  private static QuestionMessage message(
-      String guid, String participant, String text, int secondsAfterFrom) {
-    return new QuestionMessage(guid, participant, FROM.plusSeconds(secondsAfterFrom), text);
+  private ModelWindowDecision noAnswer(String answer) {
+    return new ModelWindowDecision(
+        WindowAction.NO_ANSWER, answer, null, Confidence.LOW, List.of(), List.of(), List.of());
   }
 
-  private static RetrievalResult completeExact(List<QuestionMessage> messages) {
-    return new RetrievalResult(
-        messages, RetrievalMode.EXACT_SEARCH, CoverageStatus.COMPLETE, TO, null, 1);
+  private QuestionMessage message(
+      String guid, String participant, String text, long chronologicalPosition) {
+    return new QuestionMessage(
+        guid, participant, NOW.minusSeconds(1_000 - chronologicalPosition), text);
   }
 
-  private static RetrievalResult completeChronological(List<QuestionMessage> messages) {
-    return new RetrievalResult(
-        messages, RetrievalMode.CHRONOLOGICAL, CoverageStatus.COMPLETE, TO, null, 1);
-  }
-
-  private static ModelAnswer answered(String answer, String... evidenceGuids) {
-    return new ModelAnswer(
-        AnswerStatus.ANSWERED, answer, Confidence.HIGH, List.of(evidenceGuids), false);
-  }
-
-  private static RoutedModelAnswer routed(ModelAnswer answer) {
-    return new RoutedModelAnswer(answer, "openrouter/z-ai/glm-5.2");
-  }
-
-  private static RoutedSupportVerification supportedVerification() {
-    return new RoutedSupportVerification(true, "openrouter/z-ai/glm-5.2", false);
+  private QuestionMessage hintedMessage(
+      String guid, String participant, String identity, String text, long chronologicalPosition) {
+    return new QuestionMessage(
+        guid,
+        participant,
+        NOW.minusSeconds(1_000 - chronologicalPosition),
+        text,
+        new ParticipantHint(participant, identity));
   }
 
   private static final class MutableClock extends Clock {
@@ -1218,8 +635,8 @@ class ConversationQuestionAnsweringServiceTest {
       this.instant = instant;
     }
 
-    private void advance(Duration duration) {
-      instant = instant.plus(duration);
+    private void set(Instant instant) {
+      this.instant = instant;
     }
 
     @Override
