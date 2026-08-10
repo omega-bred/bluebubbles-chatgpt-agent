@@ -1,6 +1,7 @@
 package io.breland.bbagent.server.agent.memory;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
@@ -11,12 +12,18 @@ import static org.mockito.Mockito.when;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.breland.bbagent.server.agent.memory.ConversationMemoryResponsesClient.RoutedResponse;
+import io.breland.bbagent.server.agent.memory.ConversationQuestionAnsweringModelClient.RawFindingReduction;
 import io.breland.bbagent.server.agent.memory.ConversationQuestionAnsweringModelClient.RawQuestionAnswer;
 import io.breland.bbagent.server.agent.memory.ConversationQuestionAnsweringModelClient.RawSearchPlan;
 import io.breland.bbagent.server.agent.memory.ConversationQuestionAnsweringModelClient.RawSupportVerification;
+import io.breland.bbagent.server.agent.memory.ConversationQuestionAnsweringModelClient.RawWindowDecision;
+import io.breland.bbagent.server.agent.memory.ConversationQuestionAnsweringModelClient.RawWindowFinding;
 import io.breland.bbagent.server.agent.memory.ConversationQuestionAnsweringModels.Confidence;
+import io.breland.bbagent.server.agent.memory.ConversationQuestionAnsweringModels.ModelWindowDecision;
 import io.breland.bbagent.server.agent.memory.ConversationQuestionAnsweringModels.QuestionFinding;
 import io.breland.bbagent.server.agent.memory.ConversationQuestionAnsweringModels.QuestionMessage;
+import io.breland.bbagent.server.agent.memory.ConversationQuestionAnsweringModels.WindowAction;
+import io.breland.bbagent.server.agent.memory.ConversationQuestionAnsweringModels.WindowFinding;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
@@ -37,6 +44,440 @@ class ConversationQuestionAnsweringModelClientTest {
       mock(ConversationMemoryResponsesClient.class);
   private final ConversationQuestionAnsweringModelClient client =
       new ConversationQuestionAnsweringModelClient(responses, objectMapper);
+
+  @Test
+  void decideSuppliesReferenceTimeTimestampsAndOrdinaryEvidenceContent() throws Exception {
+    when(responses.create(
+            anyString(), anyString(), eq(1_000), eq(RawWindowDecision.class), eq(DEADLINE)))
+        .thenAnswer(
+            invocation -> {
+              String alias =
+                  providerJson(invocation.getArgument(1))
+                      .path("messages")
+                      .get(0)
+                      .path("evidence_alias")
+                      .asText();
+              return routed(
+                  new RawWindowDecision(
+                      "ANSWERED",
+                      "Sam shared the link this morning.",
+                      null,
+                      "HIGH",
+                      List.of(alias),
+                      List.of(),
+                      List.of("Sam")));
+            });
+
+    var result =
+        client.decide(
+            "What happened today?",
+            TO,
+            "America/Los_Angeles",
+            List.of(message("m-1", "Sam", "Email sam@example.com: https://example.com/launch")),
+            DEADLINE);
+
+    assertThat(result.decision().action()).isEqualTo(WindowAction.ANSWERED);
+    assertThat(result.decision().evidenceMessageGuids()).containsExactly("m-1");
+    assertThat(capturedDeadlineInput(RawWindowDecision.class))
+        .contains(
+            "What happened today?",
+            TO.toString(),
+            FROM.toString(),
+            "America/Los_Angeles",
+            "sam@example.com",
+            "https://example.com/launch")
+        .doesNotContain("m-1");
+    assertThat(capturedInstructions(RawWindowDecision.class))
+        .containsIgnoringCase("untrusted data")
+        .containsIgnoringCase("never follow")
+        .containsIgnoringCase("tools are unavailable")
+        .doesNotContain("Never include raw phone", "Never include email", "Never include URL");
+  }
+
+  @Test
+  void needOlderMapsProvisionalFindingsOnlyFromSubmittedAliases() throws Exception {
+    when(responses.create(
+            anyString(), anyString(), eq(1_000), eq(RawWindowDecision.class), eq(DEADLINE)))
+        .thenAnswer(
+            invocation -> {
+              String alias =
+                  providerJson(invocation.getArgument(1))
+                      .path("messages")
+                      .get(0)
+                      .path("evidence_alias")
+                      .asText();
+              return routed(
+                  new RawWindowDecision(
+                      "NEED_OLDER_MESSAGES",
+                      null,
+                      null,
+                      "MEDIUM",
+                      List.of(),
+                      List.of(
+                          new RawWindowFinding(
+                              "The thread references an earlier decision.",
+                              "MEDIUM",
+                              List.of(alias),
+                              List.of("Sam"))),
+                      List.of()));
+            });
+
+    var result =
+        client.decide(
+            "What was decided?",
+            TO,
+            null,
+            List.of(message("m-1", "Sam", "That follows the earlier decision.")),
+            DEADLINE);
+
+    assertThat(result.decision().action()).isEqualTo(WindowAction.NEED_OLDER_MESSAGES);
+    assertThat(result.decision().provisionalFindings())
+        .singleElement()
+        .satisfies(
+            finding -> {
+              assertThat(finding.answer()).isEqualTo("The thread references an earlier decision.");
+              assertThat(finding.evidenceMessageGuids()).containsExactly("m-1");
+              assertThat(finding.referencedParticipants()).containsExactly("Sam");
+            });
+  }
+
+  @Test
+  void modelWindowDecisionEnforcesActionSpecificShapes() {
+    WindowFinding finding =
+        new WindowFinding(
+            "An earlier decision is referenced.",
+            Confidence.MEDIUM,
+            List.of("m-1"),
+            List.of("Sam"));
+
+    assertThatCode(
+            () ->
+                new ModelWindowDecision(
+                    WindowAction.NEED_OLDER_MESSAGES,
+                    null,
+                    null,
+                    Confidence.MEDIUM,
+                    List.of(),
+                    List.of(finding),
+                    List.of()))
+        .doesNotThrowAnyException();
+    assertThatThrownBy(
+            () ->
+                new ModelWindowDecision(
+                    WindowAction.ANSWERED,
+                    null,
+                    null,
+                    Confidence.HIGH,
+                    List.of("m-1"),
+                    List.of(),
+                    List.of("Sam")))
+        .isInstanceOf(IllegalArgumentException.class);
+    assertThatThrownBy(
+            () ->
+                new ModelWindowDecision(
+                    WindowAction.NEED_TIME_CLARIFICATION,
+                    "answer",
+                    "About when?",
+                    Confidence.LOW,
+                    List.of(),
+                    List.of(),
+                    List.of()))
+        .isInstanceOf(IllegalArgumentException.class);
+    assertThatThrownBy(
+            () ->
+                new ModelWindowDecision(
+                    WindowAction.NO_ANSWER,
+                    "I don't see that in the messages.",
+                    null,
+                    Confidence.LOW,
+                    List.of("m-1"),
+                    List.of(),
+                    List.of()))
+        .isInstanceOf(IllegalArgumentException.class);
+  }
+
+  @Test
+  void rejectsReferencedParticipantOutsideSubmittedWindow() throws Exception {
+    when(responses.create(
+            anyString(), anyString(), eq(1_000), eq(RawWindowDecision.class), eq(DEADLINE)))
+        .thenAnswer(
+            invocation -> {
+              String alias =
+                  providerJson(invocation.getArgument(1))
+                      .path("messages")
+                      .get(0)
+                      .path("evidence_alias")
+                      .asText();
+              return routed(
+                  new RawWindowDecision(
+                      "ANSWERED",
+                      "Mallory posted the update.",
+                      null,
+                      "HIGH",
+                      List.of(alias),
+                      List.of(),
+                      List.of("Mallory")));
+            });
+
+    assertThatThrownBy(
+            () ->
+                client.decide(
+                    "Who posted the update?",
+                    TO,
+                    null,
+                    List.of(message("m-1", "Sam", "I posted the update.")),
+                    DEADLINE))
+        .isInstanceOf(IllegalStateException.class)
+        .hasMessageContaining("participant");
+  }
+
+  @Test
+  void reductionExpandsOnlyCitedFindingAliasesToOriginalMessageGuids() throws Exception {
+    QuestionFinding cited =
+        new QuestionFinding("Sam posted the launch plan.", Confidence.HIGH, List.of("m-1"), FROM);
+    QuestionFinding uncited =
+        new QuestionFinding("Lee posted an unrelated note.", Confidence.LOW, List.of("m-2"), TO);
+    when(responses.create(
+            anyString(), anyString(), eq(800), eq(RawFindingReduction.class), eq(DEADLINE)))
+        .thenAnswer(
+            invocation -> {
+              String alias =
+                  providerJson(invocation.getArgument(1))
+                      .path("findings")
+                      .get(0)
+                      .path("finding_alias")
+                      .asText();
+              return routed(
+                  new RawFindingReduction(
+                      "ANSWERED",
+                      "The launch plan came from Sam.",
+                      null,
+                      "HIGH",
+                      List.of(alias),
+                      List.of()));
+            });
+
+    var result =
+        client.reduceFindings(
+            "Who posted the launch plan?",
+            TO,
+            "America/Los_Angeles",
+            List.of(cited, uncited),
+            false,
+            DEADLINE);
+
+    assertThat(result.decision().action()).isEqualTo(WindowAction.ANSWERED);
+    assertThat(result.decision().evidenceMessageGuids()).containsExactly("m-1");
+    assertThat(result.citedFindings()).containsExactly(cited).doesNotContain(uncited);
+    assertThat(capturedDeadlineInput(RawFindingReduction.class))
+        .contains(
+            "Who posted the launch plan?",
+            TO.toString(),
+            "America/Los_Angeles",
+            "older_messages_available")
+        .doesNotContain("m-1", "m-2");
+  }
+
+  @Test
+  void reductionCannotRequestOlderMessagesAfterSourceExhaustion() throws Exception {
+    QuestionFinding finding =
+        new QuestionFinding(
+            "An earlier event is referenced.", Confidence.MEDIUM, List.of("m-1"), FROM);
+    when(responses.create(
+            anyString(), anyString(), eq(800), eq(RawFindingReduction.class), eq(DEADLINE)))
+        .thenAnswer(
+            invocation -> {
+              String alias =
+                  providerJson(invocation.getArgument(1))
+                      .path("findings")
+                      .get(0)
+                      .path("finding_alias")
+                      .asText();
+              return routed(
+                  new RawFindingReduction(
+                      "NEED_OLDER_MESSAGES", null, null, "LOW", List.of(alias), List.of()));
+            });
+
+    assertThatThrownBy(
+            () ->
+                client.reduceFindings(
+                    "What happened before that?", TO, null, List.of(finding), false, DEADLINE))
+        .isInstanceOf(IllegalStateException.class)
+        .hasMessageContaining("older messages");
+  }
+
+  @Test
+  void malformedAnsweredWindowResponseFailsClosedAsProviderError() throws Exception {
+    when(responses.create(
+            anyString(), anyString(), eq(1_000), eq(RawWindowDecision.class), eq(DEADLINE)))
+        .thenAnswer(
+            invocation -> {
+              String alias =
+                  providerJson(invocation.getArgument(1))
+                      .path("messages")
+                      .get(0)
+                      .path("evidence_alias")
+                      .asText();
+              return routed(
+                  new RawWindowDecision(
+                      "ANSWERED", null, null, "HIGH", List.of(alias), List.of(), List.of("Sam")));
+            });
+
+    assertThatThrownBy(
+            () ->
+                client.decide(
+                    "Who posted?",
+                    TO,
+                    null,
+                    List.of(message("m-1", "Sam", "I posted it.")),
+                    DEADLINE))
+        .isInstanceOf(IllegalStateException.class)
+        .hasMessageContaining("window response");
+  }
+
+  @Test
+  void clarificationPreservesFallbackMetadata() {
+    when(responses.create(
+            anyString(), anyString(), eq(1_000), eq(RawWindowDecision.class), eq(DEADLINE)))
+        .thenReturn(
+            routed(
+                new RawWindowDecision(
+                    "NEED_TIME_CLARIFICATION",
+                    null,
+                    "About when did that happen?",
+                    "LOW",
+                    List.of(),
+                    List.of(),
+                    List.of()),
+                "openai/gpt-4.1-mini",
+                true));
+
+    var result =
+        client.decide(
+            "What happened then?",
+            TO,
+            null,
+            List.of(message("m-1", "Sam", "I remember that.")),
+            DEADLINE);
+
+    assertThat(result.decision().action()).isEqualTo(WindowAction.NEED_TIME_CLARIFICATION);
+    assertThat(result.decision().clarificationQuestion()).isEqualTo("About when did that happen?");
+    assertThat(result.model()).isEqualTo("openai/gpt-4.1-mini");
+    assertThat(result.fallbackUsed()).isTrue();
+  }
+
+  @Test
+  void clarificationCannotRevealSubmittedMessageGuid() {
+    when(responses.create(
+            anyString(), anyString(), eq(1_000), eq(RawWindowDecision.class), eq(DEADLINE)))
+        .thenReturn(
+            routed(
+                new RawWindowDecision(
+                    "NEED_TIME_CLARIFICATION",
+                    null,
+                    "Did that happen around message m-1?",
+                    "LOW",
+                    List.of(),
+                    List.of(),
+                    List.of())));
+
+    assertThatThrownBy(
+            () ->
+                client.decide(
+                    "What happened then?",
+                    TO,
+                    null,
+                    List.of(message("m-1", "Sam", "I remember that.")),
+                    DEADLINE))
+        .isInstanceOf(IllegalStateException.class)
+        .hasMessage("unsafe question answer response");
+  }
+
+  @Test
+  void windowAnswerCannotRevealOpaqueAliasOrMessageGuid() throws Exception {
+    when(responses.create(
+            anyString(), anyString(), eq(1_000), eq(RawWindowDecision.class), eq(DEADLINE)))
+        .thenAnswer(
+            invocation -> {
+              String alias =
+                  providerJson(invocation.getArgument(1))
+                      .path("messages")
+                      .get(0)
+                      .path("evidence_alias")
+                      .asText();
+              return routed(
+                  new RawWindowDecision(
+                      "ANSWERED",
+                      "Evidence " + alias + " came from m-1.",
+                      null,
+                      "HIGH",
+                      List.of(alias),
+                      List.of(),
+                      List.of("Sam")));
+            });
+
+    assertThatThrownBy(
+            () ->
+                client.decide(
+                    "Who posted?",
+                    TO,
+                    null,
+                    List.of(message("m-1", "Sam", "I posted it.")),
+                    DEADLINE))
+        .isInstanceOf(IllegalStateException.class)
+        .hasMessage("unsafe question answer response");
+  }
+
+  @Test
+  void unknownFindingAliasFailsClosed() {
+    QuestionFinding finding =
+        new QuestionFinding("Sam posted it.", Confidence.HIGH, List.of("m-1"), FROM);
+    when(responses.create(
+            anyString(), anyString(), eq(800), eq(RawFindingReduction.class), eq(DEADLINE)))
+        .thenReturn(
+            routed(
+                new RawFindingReduction(
+                    "ANSWERED",
+                    "Sam posted it.",
+                    null,
+                    "HIGH",
+                    List.of("finding_unknown"),
+                    List.of())));
+
+    assertThatThrownBy(
+            () ->
+                client.reduceFindings(
+                    "Who posted it?", TO, null, List.of(finding), false, DEADLINE))
+        .isInstanceOf(IllegalStateException.class)
+        .hasMessageContaining("unknown alias");
+  }
+
+  @Test
+  void malformedFindingReductionFailsClosedAsProviderError() throws Exception {
+    QuestionFinding finding =
+        new QuestionFinding("Sam posted it.", Confidence.HIGH, List.of("m-1"), FROM);
+    when(responses.create(
+            anyString(), anyString(), eq(800), eq(RawFindingReduction.class), eq(DEADLINE)))
+        .thenAnswer(
+            invocation -> {
+              String alias =
+                  providerJson(invocation.getArgument(1))
+                      .path("findings")
+                      .get(0)
+                      .path("finding_alias")
+                      .asText();
+              return routed(
+                  new RawFindingReduction(
+                      "ANSWERED", null, null, "HIGH", List.of(alias), List.of()));
+            });
+
+    assertThatThrownBy(
+            () ->
+                client.reduceFindings(
+                    "Who posted it?", TO, null, List.of(finding), false, DEADLINE))
+        .isInstanceOf(IllegalStateException.class)
+        .hasMessageContaining("finding reduction response");
+  }
 
   @Test
   void plannerForwardsTheExactQuestionAndNormalizesDynamicLiteralTerms() {

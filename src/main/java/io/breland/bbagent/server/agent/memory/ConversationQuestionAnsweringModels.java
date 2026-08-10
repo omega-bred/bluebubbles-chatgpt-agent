@@ -4,6 +4,7 @@ import io.breland.bbagent.server.agent.memory.ConversationMemoryModels.Conversat
 import java.time.Instant;
 import java.util.List;
 import java.util.Locale;
+import java.util.Objects;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.lang.Nullable;
 
@@ -27,6 +28,104 @@ public final class ConversationQuestionAnsweringModels {
 
     public String wireValue() {
       return name().toLowerCase(Locale.ROOT);
+    }
+  }
+
+  public enum WindowAction {
+    ANSWERED,
+    NEED_OLDER_MESSAGES,
+    NEED_TIME_CLARIFICATION,
+    NO_ANSWER
+  }
+
+  public record WindowFinding(
+      String answer,
+      Confidence confidence,
+      List<String> evidenceMessageGuids,
+      List<String> referencedParticipants) {
+    public WindowFinding {
+      requireNotBlank(answer, "finding answer");
+      Objects.requireNonNull(confidence, "finding confidence");
+      evidenceMessageGuids = List.copyOf(evidenceMessageGuids);
+      referencedParticipants = List.copyOf(referencedParticipants);
+      if (evidenceMessageGuids.isEmpty()) {
+        throw new IllegalArgumentException("finding evidence must not be empty");
+      }
+    }
+  }
+
+  public record ModelWindowDecision(
+      WindowAction action,
+      @Nullable String answer,
+      @Nullable String clarificationQuestion,
+      Confidence confidence,
+      List<String> evidenceMessageGuids,
+      List<WindowFinding> provisionalFindings,
+      List<String> referencedParticipants) {
+    public ModelWindowDecision {
+      Objects.requireNonNull(action, "window action");
+      answer = StringUtils.trimToNull(answer);
+      clarificationQuestion = StringUtils.trimToNull(clarificationQuestion);
+      Objects.requireNonNull(confidence, "window confidence");
+      evidenceMessageGuids = List.copyOf(evidenceMessageGuids);
+      provisionalFindings = List.copyOf(provisionalFindings);
+      referencedParticipants = List.copyOf(referencedParticipants);
+      switch (action) {
+        case ANSWERED -> {
+          if (answer == null
+              || clarificationQuestion != null
+              || evidenceMessageGuids.isEmpty()
+              || !provisionalFindings.isEmpty()) {
+            throw new IllegalArgumentException("answered window decision has invalid shape");
+          }
+        }
+        case NEED_OLDER_MESSAGES -> {
+          if (answer != null
+              || clarificationQuestion != null
+              || !evidenceMessageGuids.isEmpty()
+              || !referencedParticipants.isEmpty()) {
+            throw new IllegalArgumentException("older-window decision has invalid shape");
+          }
+        }
+        case NEED_TIME_CLARIFICATION -> {
+          if (answer != null
+              || clarificationQuestion == null
+              || !evidenceMessageGuids.isEmpty()
+              || !provisionalFindings.isEmpty()
+              || !referencedParticipants.isEmpty()) {
+            throw new IllegalArgumentException("clarification decision has invalid shape");
+          }
+        }
+        case NO_ANSWER -> {
+          if (answer == null
+              || clarificationQuestion != null
+              || !evidenceMessageGuids.isEmpty()
+              || !provisionalFindings.isEmpty()
+              || !referencedParticipants.isEmpty()) {
+            throw new IllegalArgumentException("no-answer decision has invalid shape");
+          }
+        }
+      }
+    }
+  }
+
+  public record RoutedWindowDecision(
+      ModelWindowDecision decision, String model, boolean fallbackUsed) {
+    public RoutedWindowDecision {
+      Objects.requireNonNull(decision, "window decision");
+      requireNotBlank(model, "window decision model");
+    }
+  }
+
+  public record RoutedFindingReduction(
+      ModelWindowDecision decision,
+      List<QuestionFinding> citedFindings,
+      String model,
+      boolean fallbackUsed) {
+    public RoutedFindingReduction {
+      Objects.requireNonNull(decision, "finding reduction decision");
+      citedFindings = List.copyOf(citedFindings);
+      requireNotBlank(model, "finding reduction model");
     }
   }
 
@@ -268,12 +367,22 @@ public final class ConversationQuestionAnsweringModels {
     private final Confidence confidence;
     private final List<String> evidenceMessageGuids;
     private final Instant coverageThrough;
+    private final List<String> referencedParticipants;
 
     public QuestionFinding(
         String answer,
         Confidence confidence,
         List<String> evidenceMessageGuids,
         Instant coverageThrough) {
+      this(answer, confidence, evidenceMessageGuids, coverageThrough, List.of());
+    }
+
+    public QuestionFinding(
+        String answer,
+        Confidence confidence,
+        List<String> evidenceMessageGuids,
+        Instant coverageThrough,
+        List<String> referencedParticipants) {
       requireNotBlank(answer, "answer");
       if (confidence == null) {
         throw new IllegalArgumentException("confidence must not be null");
@@ -285,6 +394,7 @@ public final class ConversationQuestionAnsweringModels {
       this.confidence = confidence;
       this.evidenceMessageGuids = List.copyOf(evidenceMessageGuids);
       this.coverageThrough = coverageThrough;
+      this.referencedParticipants = List.copyOf(referencedParticipants);
     }
 
     public String answer() {
@@ -301,6 +411,10 @@ public final class ConversationQuestionAnsweringModels {
 
     public Instant coverageThrough() {
       return coverageThrough;
+    }
+
+    public List<String> referencedParticipants() {
+      return referencedParticipants;
     }
   }
 
