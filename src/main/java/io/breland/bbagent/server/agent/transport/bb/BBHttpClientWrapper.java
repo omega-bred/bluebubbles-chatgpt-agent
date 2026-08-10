@@ -1278,8 +1278,8 @@ public class BBHttpClientWrapper {
                       chatGuid,
                       password,
                       "handle,chats",
-                      after == null ? null : Long.toString(after.getEpochSecond()),
-                      before == null ? null : Long.toString(before.getEpochSecond()),
+                      after == null ? null : Long.toString(after.toEpochMilli()),
+                      before == null ? null : Long.toString(before.toEpochMilli()),
                       offset,
                       limit,
                       normalizedSort)
