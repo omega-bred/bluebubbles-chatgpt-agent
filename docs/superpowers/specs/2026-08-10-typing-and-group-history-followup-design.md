@@ -2,7 +2,7 @@
 
 **Date:** 2026-08-10
 
-**Status:** Approved design; pending implementation
+**Status:** Implemented and locally verified; pending PR deployment
 
 ## Context
 
@@ -188,6 +188,17 @@ Implementation follows a red-green cycle and proves:
 Verification includes Spotless, focused wrapper/tool/prompt/transport/Cadence tests, all memory and
 memory-tool tests, the Spring context test, `git diff --check`, and the applicable full test suite.
 The documented local live-service failures remain separately classified if they recur.
+
+Implementation verification on 2026-08-10 produced the following evidence:
+
+- Spotless completed successfully.
+- The focused history, tool, prompt, QA, transport, and Cadence matrix passed 110/110 tests.
+- The broader memory, memory-tool, legacy wrapper, and Spring-context matrix passed 174/174 tests.
+- The full compile/test run compiled successfully and ran 473 tests: 461 passed, 3 skipped, and 9
+  documented ambient live-service tests failed (7 local BlueBubbles client probes, Giphy, and
+  Nominatim). No affected unit, integration, compile, or Spring-context test failed.
+- `git diff --check` passed, production QA sources contained no example-domain terms, and the
+  application OpenAPI document was unchanged.
 
 After deployment, a scoped production canary will ask the authorized one-to-one chat a relative-time
 question about Wordling Wonders and verify that the current-day messages are retrieved, the answer

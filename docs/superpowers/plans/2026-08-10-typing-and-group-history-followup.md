@@ -33,7 +33,7 @@
 - Consumes: `BBHttpClientWrapper.getMessagesInChatForQuestion(String, Instant, Instant, int, int, String, Duration)` and `ConversationDigestService.answerQuestion(...)`.
 - Produces: BlueBubbles query strings using `Instant.toEpochMilli()` and question-mode `QuestionRange(from, to, timezone)` that ignores `lookback_hours` when `from` is absent.
 
-- [ ] **Step 1: Change the timestamp forwarding test to require milliseconds**
+- [x] **Step 1: Change the timestamp forwarding test to require milliseconds**
 
 Update `newestQuestionWindowForwardsDescendingFiveHundredMessageBounds` so the generated client verification is:
 
@@ -50,7 +50,7 @@ verify(chatApi)
         eq("DESC"));
 ```
 
-- [ ] **Step 2: Change the question-lookback regression to require an unbounded lower range**
+- [x] **Step 2: Change the question-lookback regression to require an unbounded lower range**
 
 Rename `explicitQuestionLookbackCreatesAHardLowerBound` to
 `questionModeLeavesRelativeLookbackInsideTheQuestion` and verify:
@@ -71,7 +71,7 @@ verify(digestService)
 Add a schema assertion that the `lookback_hours` property description contains `summary` and does
 not instruct question callers to manufacture a relative cutoff.
 
-- [ ] **Step 3: Run the two focused test classes and capture RED**
+- [x] **Step 3: Run the two focused test classes and capture RED**
 
 Run:
 
@@ -84,7 +84,7 @@ nix develop --command ./gradlew test \
 Expected: the generated-client verification fails because seconds are forwarded, and the tool test
 fails because `lookback_hours` becomes a hard lower bound.
 
-- [ ] **Step 4: Convert history bounds at the HTTP boundary**
+- [x] **Step 4: Convert history bounds at the HTTP boundary**
 
 In `BBHttpClientWrapper.getMessagesInChat`, replace both epoch-second conversions:
 
@@ -95,7 +95,7 @@ before == null ? null : Long.toString(before.toEpochMilli()),
 
 Do not change `TimeSupport`, authorization comparisons, paging, or journal timestamps.
 
-- [ ] **Step 5: Make lookback summary-only in question mode**
+- [x] **Step 5: Make lookback summary-only in question mode**
 
 Annotate the request components with explicit schema descriptions, including:
 
@@ -113,11 +113,11 @@ Instant from = request.from() == null ? null : Instant.parse(request.from());
 
 Retain range ordering, future-time, and timezone validation. Do not change `resolveCatchupRange`.
 
-- [ ] **Step 6: Run focused tests and capture GREEN**
+- [x] **Step 6: Run focused tests and capture GREEN**
 
 Run the Step 3 command. Expected: both classes pass.
 
-- [ ] **Step 7: Commit the transport/range fix**
+- [x] **Step 7: Commit the transport/range fix**
 
 ```bash
 git add src/main/java/io/breland/bbagent/server/agent/transport/bb/BBHttpClientWrapper.java \
@@ -137,7 +137,7 @@ git commit -m "fix: retrieve bounded BlueBubbles history"
 - Consumes: question-mode tool JSON containing `unresolved_participants` with `label` and `identity`.
 - Produces: developer guidance that uses visible one-to-one context first, otherwise makes one `memory_get` identity lookup, preserves group facts, and falls back to safe labels.
 
-- [ ] **Step 1: Strengthen direct, LXMF, and group prompt tests**
+- [x] **Step 1: Strengthen direct, LXMF, and group prompt tests**
 
 For each existing precise-group-question prompt test, assert the catch-up guidance contains all of:
 
@@ -152,7 +152,7 @@ assertThat(catchupGuidance)
 
 Keep the existing domain-genericity and internal-jargon absence assertions.
 
-- [ ] **Step 2: Run the prompt tests and capture RED**
+- [x] **Step 2: Run the prompt tests and capture RED**
 
 Run:
 
@@ -165,7 +165,7 @@ nix develop --command ./gradlew test \
 
 Expected: failures on the new summary-only lookback and mandatory single identity-lookup wording.
 
-- [ ] **Step 3: Update all three transport prompt variants consistently**
+- [x] **Step 3: Update all three transport prompt variants consistently**
 
 Replace the current relative-time/unresolved-participant guidance with behavior equivalent to:
 
@@ -181,11 +181,11 @@ evidence validation, aliases, models, or internal answer states.
 Apply the same rule to direct BlueBubbles, direct LXMF, and current-group guidance without adding
 topic examples or domain keywords.
 
-- [ ] **Step 4: Run prompt tests and capture GREEN**
+- [x] **Step 4: Run prompt tests and capture GREEN**
 
 Run the Step 2 command. Expected: all three tests pass.
 
-- [ ] **Step 5: Commit the prompt behavior**
+- [x] **Step 5: Commit the prompt behavior**
 
 ```bash
 git add src/main/java/io/breland/bbagent/server/agent/AgentPromptBuilder.java \
@@ -209,7 +209,7 @@ git commit -m "fix: resolve group answer participants from context"
   both non-blocking and exception-contained.
 - Produces: per-chat compare-and-remove ownership in `BlueBubblesMessageTransport`.
 
-- [ ] **Step 1: Add failing wrapper subscription tests**
+- [x] **Step 1: Add failing wrapper subscription tests**
 
 Create `BBHttpClientWrapperTypingTest` with a mocked `V1ChatApi`. Use `Mono.create` to record
 subscription without completing:
@@ -228,7 +228,7 @@ Add the equivalent delete test and tests where the generated method throws synch
 `Mono.error(new IllegalStateException("private API unavailable"))`; neither public wrapper method may
 throw.
 
-- [ ] **Step 2: Add failing transport ownership tests**
+- [x] **Step 2: Add failing transport ownership tests**
 
 Extend the capturing wrapper in `BlueBubblesMessageTransportTest` to record typing starts/stops. Add:
 
@@ -250,7 +250,7 @@ transport.stopTyping(message, "turn-2");
 assertThat(wrapper.typingStops).containsExactly(message.chatGuid());
 ```
 
-- [ ] **Step 3: Run focused typing tests and capture RED**
+- [x] **Step 3: Run focused typing tests and capture RED**
 
 Run:
 
@@ -262,7 +262,7 @@ nix develop --command ./gradlew test \
 
 Expected: compilation fails because the typing interfaces do not exist.
 
-- [ ] **Step 4: Add transport hooks and asynchronous wrapper operations**
+- [x] **Step 4: Add transport hooks and asynchronous wrapper operations**
 
 Add default methods to `MessageTransport`:
 
@@ -291,7 +291,7 @@ public void stopTyping(String chatGuid) {
 The helper accepts `Supplier<Mono<Void>>`, uses `timeout(apiTimeout)`, has completion/error metric
 callbacks, and logs no GUID, message, account, identity, or token.
 
-- [ ] **Step 5: Add compare-and-remove turn ownership**
+- [x] **Step 5: Add compare-and-remove turn ownership**
 
 In `BlueBubblesMessageTransport`, add:
 
@@ -303,11 +303,11 @@ Validate nonblank chat GUID and token. `startTyping` stores the token then invok
 `stopTyping` invokes wrapper DELETE only when `activeTypingTurns.remove(chatGuid, turnToken)` returns
 true. Starting a newer turn replaces the previous token.
 
-- [ ] **Step 6: Run focused typing tests and capture GREEN**
+- [x] **Step 6: Run focused typing tests and capture GREEN**
 
 Run the Step 3 command. Expected: both classes pass without waiting for an uncompleted Mono.
 
-- [ ] **Step 7: Commit the transport typing layer**
+- [x] **Step 7: Commit the transport typing layer**
 
 ```bash
 git add src/main/java/io/breland/bbagent/server/agent/transport/MessageTransport.java \
@@ -334,7 +334,7 @@ git commit -m "feat: add best-effort BlueBubbles typing"
   deterministic direct unit tests; the public no-argument constructor retains the real activity
   stub.
 
-- [ ] **Step 1: Add a direct workflow lifecycle test fixture**
+- [x] **Step 1: Add a direct workflow lifecycle test fixture**
 
 Refactor only the test seam in the planned test first: instantiate
 `new CadenceMessageWorkflowImpl(activities)` with a mocked `CadenceAgentActivities`, an unscheduled
@@ -354,13 +354,13 @@ when(activities.sendThreadAwareText(message, "done", context)).thenReturn(true);
 Verify with `InOrder` that start precedes `createResponseBundle`, finalization follows send, and stop
 is last. Verify start and stop are each called once.
 
-- [ ] **Step 2: Add tool-loop and exceptional-exit regressions**
+- [x] **Step 2: Add tool-loop and exceptional-exit regressions**
 
 Add a two-bundle tool loop where the first bundle has one `CadenceToolCall` and the second has final
 text. Assert typing starts/stops once around both model calls. Add a test where
 `createResponseBundle` throws and assert `stopTyping` still runs before the exception escapes.
 
-- [ ] **Step 3: Run the workflow test and capture RED**
+- [x] **Step 3: Run the workflow test and capture RED**
 
 Run:
 
@@ -371,7 +371,7 @@ nix develop --command ./gradlew test \
 
 Expected: compilation fails because the activity methods and injectable constructor do not exist.
 
-- [ ] **Step 4: Add activity implementations**
+- [x] **Step 4: Add activity implementations**
 
 Add both methods to `CadenceAgentActivities`. In `CadenceAgentActivitiesImpl`, resolve the transport
 and call it with a stable token derived from the workflow context's message GUID. Catch all runtime
@@ -383,7 +383,7 @@ transportRegistry.resolve(message).startTyping(message, workflowContext.messageG
 
 Use the same token for stop. Null/blank context values are no-op.
 
-- [ ] **Step 5: Wrap the full model/tool body in start/finally-stop**
+- [x] **Step 5: Wrap the full model/tool body in start/finally-stop**
 
 Move creation of the activity stub into the public constructor and add the package-private injection
 constructor. In `run`, preserve schedule and response-limit behavior. Build conversation input, then:
@@ -401,7 +401,7 @@ Extract only enough of the existing method into `runModelTurn` to make the `fina
 existing return path. Do not change tool-loop limits, response behavior, finalization calls, send
 ordering, or retry semantics.
 
-- [ ] **Step 6: Run workflow and transport tests and capture GREEN**
+- [x] **Step 6: Run workflow and transport tests and capture GREEN**
 
 Run:
 
@@ -414,7 +414,7 @@ nix develop --command ./gradlew test \
 
 Expected: all pass.
 
-- [ ] **Step 7: Commit the workflow lifecycle**
+- [x] **Step 7: Commit the workflow lifecycle**
 
 ```bash
 git add src/main/java/io/breland/bbagent/server/agent/cadence/CadenceAgentActivities.java \
@@ -434,13 +434,13 @@ git commit -m "feat: hold typing through model turns"
 - Consumes: all prior task commits.
 - Produces: formatted verified branch and a ready follow-up PR.
 
-- [ ] **Step 1: Run formatting**
+- [x] **Step 1: Run formatting**
 
 ```bash
 nix develop --command ./gradlew spotlessApply
 ```
 
-- [ ] **Step 2: Run the complete focused feature matrix**
+- [x] **Step 2: Run the complete focused feature matrix**
 
 ```bash
 nix develop --command ./gradlew test \
@@ -454,7 +454,7 @@ nix develop --command ./gradlew test \
   --tests io.breland.bbagent.server.agent.memory.ConversationQuestionAnsweringServiceTest
 ```
 
-- [ ] **Step 3: Run broader memory, transport, and Spring gates**
+- [x] **Step 3: Run broader memory, transport, and Spring gates**
 
 ```bash
 nix develop --command ./gradlew test \
@@ -464,7 +464,7 @@ nix develop --command ./gradlew test \
   --tests io.breland.bbagent.server.BBChatGptAgentApplicationTests
 ```
 
-- [ ] **Step 4: Run static and full-suite gates**
+- [x] **Step 4: Run static and full-suite gates**
 
 ```bash
 nix develop --command ./gradlew compileTestJava test
@@ -475,7 +475,7 @@ git diff --exit-code origin/main...HEAD -- src/main/resources/openapi.yaml
 Classify only the AGENTS.md-documented live BlueBubbles, Giphy, or Nominatim failures as ambient;
 all affected compile, unit, integration, and Spring-context failures are blockers.
 
-- [ ] **Step 5: Update docs with exact verification evidence**
+- [x] **Step 5: Update docs with exact verification evidence**
 
 Set the design status to `Implemented` and append the exact focused/broader/full test counts, skipped
 tests, any documented ambient failures, and static-gate results. Mark every completed plan checkbox.
