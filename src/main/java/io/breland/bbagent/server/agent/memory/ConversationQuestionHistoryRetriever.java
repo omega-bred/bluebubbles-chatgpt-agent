@@ -8,6 +8,9 @@ import io.breland.bbagent.server.TimeSupport;
 import io.breland.bbagent.server.agent.IncomingMessage;
 import io.breland.bbagent.server.agent.memory.ConversationMemoryModels.JournalMessage;
 import io.breland.bbagent.server.agent.memory.ConversationQuestionAnsweringModels.CoverageStatus;
+import io.breland.bbagent.server.agent.memory.ConversationQuestionAnsweringModels.HistorySource;
+import io.breland.bbagent.server.agent.memory.ConversationQuestionAnsweringModels.HistoryWindow;
+import io.breland.bbagent.server.agent.memory.ConversationQuestionAnsweringModels.HistoryWindowCursor;
 import io.breland.bbagent.server.agent.memory.ConversationQuestionAnsweringModels.QuestionMessage;
 import io.breland.bbagent.server.agent.memory.ConversationQuestionAnsweringModels.RetrievalMode;
 import io.breland.bbagent.server.agent.memory.ConversationQuestionAnsweringModels.RetrievalRequest;
@@ -19,6 +22,7 @@ import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
@@ -198,6 +202,245 @@ public class ConversationQuestionHistoryRetriever {
     }
     return result(
         candidates.values(), RetrievalMode.EXACT_SEARCH, bounds, budget, plan.senderHint());
+  }
+
+  public HistoryWindow retrieveWindow(
+      RetrievalRequest request, @Nullable HistoryWindowCursor cursor, int windowMessageCount) {
+    Objects.requireNonNull(request, "request");
+    if (windowMessageCount < 1 || windowMessageCount > 500) {
+      throw new IllegalArgumentException("window message count must be between 1 and 500");
+    }
+    List<Bounds> newestFirst =
+        new ArrayList<>(authorizedBounds(request, new Bounds(request.from(), request.to())));
+    Collections.reverse(newestFirst);
+    if (newestFirst.isEmpty()) {
+      return new HistoryWindow(List.of(), null, true, true, null, 0);
+    }
+    if (cursor != null && (!isBlueBubbles(request) && cursor.source() != HistorySource.JOURNAL)) {
+      throw new IllegalArgumentException("history cursor source does not match conversation");
+    }
+    if (!isBlueBubbles(request) || (cursor != null && cursor.source() == HistorySource.JOURNAL)) {
+      String partialReason = isBlueBubbles(request) && cursor != null ? SOURCE_UNAVAILABLE : null;
+      return retrieveJournalWindow(request, newestFirst, cursor, windowMessageCount, partialReason);
+    }
+    return retrieveBlueBubblesWindow(request, newestFirst, cursor, windowMessageCount);
+  }
+
+  private HistoryWindow retrieveJournalWindow(
+      RetrievalRequest request,
+      List<Bounds> newestFirst,
+      @Nullable HistoryWindowCursor cursor,
+      int windowMessageCount,
+      @Nullable String inheritedPartialReason) {
+    return retrieveJournalWindow(
+        request,
+        newestFirst,
+        cursor,
+        windowMessageCount,
+        new ArrayList<>(windowMessageCount),
+        new RawGuidTracker(),
+        new CallBudget(),
+        inheritedPartialReason);
+  }
+
+  private HistoryWindow retrieveJournalWindow(
+      RetrievalRequest request,
+      List<Bounds> newestFirst,
+      @Nullable HistoryWindowCursor cursor,
+      int windowMessageCount,
+      List<QuestionMessage> accepted,
+      RawGuidTracker seenRawGuids,
+      CallBudget budget,
+      @Nullable String inheritedPartialReason) {
+    int membershipIndex = cursor == null ? 0 : cursor.membershipIndex();
+    Instant beforeTimestamp = cursor == null ? null : cursor.journalBeforeTimestamp();
+    String beforeGuid = cursor == null ? null : cursor.journalBeforeGuid();
+    if (membershipIndex >= newestFirst.size()) {
+      throw new IllegalArgumentException("history cursor membership is outside the request");
+    }
+    while (accepted.size() < windowMessageCount && membershipIndex < newestFirst.size()) {
+      Bounds bound = newestFirst.get(membershipIndex);
+      Duration remaining = budget.reserve(request.deadline());
+      if (remaining == null) {
+        return historyWindow(
+            accepted,
+            new HistoryWindowCursor(
+                HistorySource.JOURNAL, membershipIndex, 0, beforeTimestamp, beforeGuid),
+            false,
+            partialReason(budget, inheritedPartialReason),
+            budget.pages());
+      }
+      int requested = Math.min(500, windowMessageCount - accepted.size());
+      List<JournalMessage> page =
+          Objects.requireNonNull(
+              store.findMessagePageDescending(
+                  request.conversation().conversationId(),
+                  bound.from(),
+                  bound.to(),
+                  beforeTimestamp,
+                  beforeGuid,
+                  requested,
+                  remaining),
+              "journal history window returned no page");
+      for (JournalMessage raw : page) {
+        mapAuthorized(raw, request, bound, seenRawGuids)
+            .ifPresent(message -> addWindowMessage(accepted, message));
+      }
+      if (!page.isEmpty()) {
+        JournalMessage oldest = page.getLast();
+        beforeTimestamp = oldest.sourceTimestamp();
+        beforeGuid = oldest.messageGuid();
+      }
+      if (page.size() < requested) {
+        membershipIndex++;
+        beforeTimestamp = null;
+        beforeGuid = null;
+      }
+    }
+    boolean exhausted = membershipIndex >= newestFirst.size();
+    HistoryWindowCursor nextCursor =
+        exhausted
+            ? null
+            : new HistoryWindowCursor(
+                HistorySource.JOURNAL, membershipIndex, 0, beforeTimestamp, beforeGuid);
+    return historyWindow(
+        accepted,
+        nextCursor,
+        exhausted,
+        partialReason(budget, inheritedPartialReason),
+        budget.pages());
+  }
+
+  private HistoryWindow retrieveBlueBubblesWindow(
+      RetrievalRequest request,
+      List<Bounds> newestFirst,
+      @Nullable HistoryWindowCursor cursor,
+      int windowMessageCount) {
+    int membershipIndex = cursor == null ? 0 : cursor.membershipIndex();
+    int rawOffset = cursor == null ? 0 : cursor.rawOffset();
+    Instant journalBeforeTimestamp = cursor == null ? null : cursor.journalBeforeTimestamp();
+    String journalBeforeGuid = cursor == null ? null : cursor.journalBeforeGuid();
+    if (membershipIndex >= newestFirst.size()) {
+      throw new IllegalArgumentException("history cursor membership is outside the request");
+    }
+    List<QuestionMessage> accepted = new ArrayList<>(windowMessageCount);
+    RawGuidTracker seenRawGuids = new RawGuidTracker();
+    CallBudget budget = new CallBudget();
+    while (accepted.size() < windowMessageCount && membershipIndex < newestFirst.size()) {
+      Bounds bound = newestFirst.get(membershipIndex);
+      Duration remaining = budget.reserve(request.deadline());
+      if (remaining == null) {
+        return historyWindow(
+            accepted,
+            new HistoryWindowCursor(
+                HistorySource.BLUEBUBBLES,
+                membershipIndex,
+                rawOffset,
+                journalBeforeTimestamp,
+                journalBeforeGuid),
+            false,
+            budget.partialReason(),
+            budget.pages());
+      }
+      int requested = Math.min(500, windowMessageCount - accepted.size());
+      List<ApiV1ChatChatGuidMessageGet200ResponseDataInner> page;
+      try {
+        page =
+            Objects.requireNonNull(
+                bb.getMessagesInChatForQuestion(
+                    request.conversation().externalConversationId(),
+                    bound.from(),
+                    bound.to(),
+                    rawOffset,
+                    requested,
+                    "DESC",
+                    remaining),
+                "question history window returned no page");
+      } catch (RuntimeException ignored) {
+        budget.limit(SOURCE_UNAVAILABLE);
+        return retrieveJournalWindow(
+            request,
+            newestFirst,
+            new HistoryWindowCursor(
+                HistorySource.JOURNAL,
+                membershipIndex,
+                0,
+                journalBeforeTimestamp,
+                journalBeforeGuid),
+            windowMessageCount,
+            accepted,
+            seenRawGuids,
+            budget,
+            SOURCE_UNAVAILABLE);
+      }
+      for (ApiV1ChatChatGuidMessageGet200ResponseDataInner raw : page) {
+        mapAuthorized(raw, request, bound, seenRawGuids)
+            .ifPresent(message -> addWindowMessage(accepted, message));
+      }
+      for (int index = page.size() - 1; index >= 0; index--) {
+        ApiV1ChatChatGuidMessageGet200ResponseDataInner raw = page.get(index);
+        if (raw != null && StringUtils.isNotBlank(raw.getGuid()) && raw.getDateCreated() != null) {
+          Instant rawTimestamp = TimeSupport.epochSecondsOrMillisOrNow(raw.getDateCreated());
+          if (authorized(rawTimestamp, request, bound)) {
+            journalBeforeTimestamp = rawTimestamp;
+            journalBeforeGuid = raw.getGuid();
+            break;
+          }
+        }
+      }
+      rawOffset += page.size();
+      if (page.size() < requested) {
+        membershipIndex++;
+        rawOffset = 0;
+        journalBeforeTimestamp = null;
+        journalBeforeGuid = null;
+      }
+    }
+    boolean exhausted = membershipIndex >= newestFirst.size();
+    HistoryWindowCursor nextCursor =
+        exhausted
+            ? null
+            : new HistoryWindowCursor(
+                HistorySource.BLUEBUBBLES,
+                membershipIndex,
+                rawOffset,
+                journalBeforeTimestamp,
+                journalBeforeGuid);
+    return historyWindow(accepted, nextCursor, exhausted, null, budget.pages());
+  }
+
+  private @Nullable String partialReason(
+      CallBudget budget, @Nullable String inheritedPartialReason) {
+    return budget.partialReason() == null ? inheritedPartialReason : budget.partialReason();
+  }
+
+  private void addWindowMessage(List<QuestionMessage> messages, QuestionMessage candidate) {
+    for (int index = 0; index < messages.size(); index++) {
+      QuestionMessage existing = messages.get(index);
+      if (!normalizeGuid(existing.messageGuid()).equals(normalizeGuid(candidate.messageGuid()))) {
+        continue;
+      }
+      if (labelQuality(candidate.participant()) > labelQuality(existing.participant())) {
+        messages.set(index, candidate);
+      }
+      return;
+    }
+    messages.add(candidate);
+  }
+
+  private HistoryWindow historyWindow(
+      List<QuestionMessage> messages,
+      @Nullable HistoryWindowCursor nextCursor,
+      boolean sourceExhausted,
+      @Nullable String partialReason,
+      int pageCount) {
+    return new HistoryWindow(
+        sort(messages, null),
+        nextCursor,
+        sourceExhausted,
+        partialReason == null,
+        partialReason,
+        pageCount);
   }
 
   public RetrievalResult retrieveChronological(RetrievalRequest request) {
@@ -762,18 +1005,18 @@ public class ConversationQuestionHistoryRetriever {
       return true;
     }
 
-    private int labelQuality(String participant) {
-      if ("unknown participant".equals(participant)) {
-        return 0;
-      }
-      if (participant.startsWith("participant ending ")) {
-        return 1;
-      }
-      return 2;
-    }
-
     private List<QuestionMessage> values() {
       return new ArrayList<>(messages.values());
     }
+  }
+
+  private static int labelQuality(String participant) {
+    if ("unknown participant".equals(participant)) {
+      return 0;
+    }
+    if (participant.startsWith("participant ending ")) {
+      return 1;
+    }
+    return 2;
   }
 }

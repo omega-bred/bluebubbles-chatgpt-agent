@@ -38,6 +38,54 @@ public final class ConversationQuestionAnsweringModels {
     NO_ANSWER
   }
 
+  enum HistorySource {
+    BLUEBUBBLES,
+    JOURNAL
+  }
+
+  record HistoryWindowCursor(
+      HistorySource source,
+      int membershipIndex,
+      int rawOffset,
+      @Nullable Instant journalBeforeTimestamp,
+      @Nullable String journalBeforeGuid) {
+    HistoryWindowCursor {
+      Objects.requireNonNull(source, "history source");
+      if (membershipIndex < 0 || rawOffset < 0) {
+        throw new IllegalArgumentException("history cursor values must not be negative");
+      }
+      journalBeforeGuid = StringUtils.trimToNull(journalBeforeGuid);
+      if ((journalBeforeTimestamp == null) != (journalBeforeGuid == null)) {
+        throw new IllegalArgumentException("journal cursor must be complete");
+      }
+      if (source == HistorySource.JOURNAL && rawOffset != 0) {
+        throw new IllegalArgumentException("journal cursor must not contain a raw offset");
+      }
+    }
+  }
+
+  record HistoryWindow(
+      List<QuestionMessage> messages,
+      @Nullable HistoryWindowCursor nextCursor,
+      boolean sourceExhausted,
+      boolean windowComplete,
+      @Nullable String partialReason,
+      int pageCount) {
+    HistoryWindow {
+      messages = List.copyOf(messages);
+      partialReason = StringUtils.trimToNull(partialReason);
+      if (pageCount < 0) {
+        throw new IllegalArgumentException("history window page count must not be negative");
+      }
+      if (windowComplete == (partialReason != null)) {
+        throw new IllegalArgumentException("history window completion state is inconsistent");
+      }
+      if ((sourceExhausted && nextCursor != null) || (!sourceExhausted && nextCursor == null)) {
+        throw new IllegalArgumentException("history window cursor state is inconsistent");
+      }
+    }
+  }
+
   public record WindowFinding(
       String answer,
       Confidence confidence,

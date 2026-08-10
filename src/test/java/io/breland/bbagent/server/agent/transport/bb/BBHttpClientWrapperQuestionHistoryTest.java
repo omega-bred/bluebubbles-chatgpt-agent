@@ -2,6 +2,7 @@ package io.breland.bbagent.server.agent.transport.bb;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -68,6 +69,40 @@ class BBHttpClientWrapperQuestionHistoryTest {
         .isEmpty();
 
     verify(response).block(Duration.ofSeconds(30));
+  }
+
+  @Test
+  @SuppressWarnings("unchecked")
+  void newestQuestionWindowForwardsDescendingFiveHundredMessageBounds() {
+    V1ChatApi chatApi = mock(V1ChatApi.class);
+    Mono<ApiV1ChatChatGuidMessageGet200Response> response = mock(Mono.class);
+    when(chatApi.apiV1ChatChatGuidMessageGet(
+            any(), any(), any(), any(), any(), any(), any(), any()))
+        .thenReturn(response);
+    when(response.block(Duration.ofSeconds(5)))
+        .thenReturn(
+            ApiV1ChatChatGuidMessageGet200Response.builder()
+                .status(200)
+                .message("ok")
+                .data(List.of())
+                .build());
+    BBHttpClientWrapper wrapper = wrapper(mock(V1MessageApi.class), chatApi);
+
+    assertThat(
+            wrapper.getMessagesInChatForQuestion(
+                "group", FROM, TO, 0, 500, "DESC", Duration.ofSeconds(5)))
+        .isEmpty();
+
+    verify(chatApi)
+        .apiV1ChatChatGuidMessageGet(
+            eq("group"),
+            eq("pw"),
+            eq("handle,chats"),
+            eq(Long.toString(FROM.getEpochSecond())),
+            eq(Long.toString(TO.getEpochSecond())),
+            eq(0),
+            eq(500),
+            eq("DESC"));
   }
 
   private static BBHttpClientWrapper wrapper(V1MessageApi messageApi, V1ChatApi chatApi) {
