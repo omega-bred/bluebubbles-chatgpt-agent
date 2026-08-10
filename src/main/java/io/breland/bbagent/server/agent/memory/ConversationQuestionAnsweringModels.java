@@ -2,6 +2,7 @@ package io.breland.bbagent.server.agent.memory;
 
 import io.breland.bbagent.server.agent.memory.ConversationMemoryModels.ConversationRecord;
 import java.time.Instant;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Objects;
@@ -13,6 +14,8 @@ public final class ConversationQuestionAnsweringModels {
 
   public enum AnswerStatus {
     ANSWERED,
+    CLARIFICATION_REQUIRED,
+    NO_ANSWER,
     INSUFFICIENT_EVIDENCE,
     UNAVAILABLE;
 
@@ -196,17 +199,6 @@ public final class ConversationQuestionAnsweringModels {
     }
   }
 
-  public record SearchPlan(
-      List<String> terms,
-      @Nullable String senderHint,
-      @Nullable Instant fromHint,
-      @Nullable Instant toHint) {
-    public SearchPlan {
-      terms = List.copyOf(terms);
-      senderHint = StringUtils.trimToNull(senderHint);
-    }
-  }
-
   public record ParticipantHint(String label, String normalizedIdentity) {
     public ParticipantHint {
       requireNotBlank(label, "participant hint label");
@@ -303,87 +295,10 @@ public final class ConversationQuestionAnsweringModels {
     }
   }
 
-  public record RetrievalResult(
-      List<QuestionMessage> messages,
-      RetrievalMode mode,
-      CoverageStatus coverageStatus,
-      Instant coverageThrough,
-      @Nullable String partialReason,
-      int pageCount) {
-    public RetrievalResult {
-      messages = List.copyOf(messages);
-      if (mode == null) {
-        throw new IllegalArgumentException("retrieval mode must not be null");
-      }
-      if (coverageStatus == null) {
-        throw new IllegalArgumentException("coverage status must not be null");
-      }
-      if (coverageThrough == null) {
-        throw new IllegalArgumentException("coverage through must not be null");
-      }
-      partialReason = StringUtils.trimToNull(partialReason);
-      if (coverageStatus == CoverageStatus.COMPLETE && partialReason != null) {
-        throw new IllegalArgumentException("complete retrieval must not have a partial reason");
-      }
-      if (coverageStatus == CoverageStatus.PARTIAL && partialReason == null) {
-        throw new IllegalArgumentException("partial retrieval must have a reason");
-      }
-      if (pageCount < 0) {
-        throw new IllegalArgumentException("page count must not be negative");
-      }
-    }
-  }
-
-  public record ModelAnswer(
-      AnswerStatus status,
-      String answer,
-      Confidence confidence,
-      List<String> evidenceMessageGuids,
-      boolean needsMoreContext) {
-    public ModelAnswer {
-      if (status == null) {
-        throw new IllegalArgumentException("answer status must not be null");
-      }
-      requireNotBlank(answer, "answer");
-      if (confidence == null) {
-        throw new IllegalArgumentException("confidence must not be null");
-      }
-      evidenceMessageGuids = List.copyOf(evidenceMessageGuids);
-    }
-  }
-
-  public record RoutedModelAnswer(ModelAnswer answer, String model, boolean fallbackUsed) {
-    public RoutedModelAnswer {
-      if (answer == null) {
-        throw new IllegalArgumentException("answer must not be null");
-      }
-      requireNotBlank(model, "model");
-    }
-
-    public RoutedModelAnswer(ModelAnswer answer, String model) {
-      this(answer, model, false);
-    }
-  }
-
-  public record RoutedReductionAnswer(
-      RoutedModelAnswer routed, List<QuestionFinding> citedFindings) {
-    public RoutedReductionAnswer {
-      if (routed == null) {
-        throw new IllegalArgumentException("routed reduction answer must not be null");
-      }
-      citedFindings = List.copyOf(citedFindings);
-    }
-  }
-
-  public record RoutedSupportVerification(boolean supported, String model, boolean fallbackUsed) {
-    public RoutedSupportVerification {
-      requireNotBlank(model, "verification model");
-    }
-  }
-
   public record GroupQuestionAnswer(
       AnswerStatus status,
-      String answer,
+      @Nullable String answer,
+      @Nullable String clarificationQuestion,
       Confidence confidence,
       @Nullable String model,
       boolean fallbackUsed,
@@ -393,12 +308,21 @@ public final class ConversationQuestionAnsweringModels {
       Instant from,
       Instant to,
       Instant coverageThrough,
-      @Nullable String partialReason) {
+      @Nullable String partialReason,
+      List<ParticipantHint> unresolvedParticipants) {
     public GroupQuestionAnswer {
       if (status == null) {
         throw new IllegalArgumentException("answer status must not be null");
       }
-      requireNotBlank(answer, "answer");
+      answer = StringUtils.trimToNull(answer);
+      clarificationQuestion = StringUtils.trimToNull(clarificationQuestion);
+      if (status == AnswerStatus.CLARIFICATION_REQUIRED) {
+        if (answer != null || clarificationQuestion == null) {
+          throw new IllegalArgumentException("clarification result has invalid shape");
+        }
+      } else if (answer == null || clarificationQuestion != null) {
+        throw new IllegalArgumentException("answer result has invalid shape");
+      }
       if (confidence == null) {
         throw new IllegalArgumentException("confidence must not be null");
       }
@@ -434,6 +358,41 @@ public final class ConversationQuestionAnsweringModels {
       if (coverageStatus == CoverageStatus.PARTIAL && partialReason == null) {
         throw new IllegalArgumentException("partial answer must have a reason");
       }
+      LinkedHashMap<String, ParticipantHint> hints = new LinkedHashMap<>();
+      for (ParticipantHint hint : unresolvedParticipants) {
+        hints.putIfAbsent(hint.normalizedIdentity(), hint);
+      }
+      unresolvedParticipants = List.copyOf(hints.values());
+    }
+
+    public GroupQuestionAnswer(
+        AnswerStatus status,
+        String answer,
+        Confidence confidence,
+        @Nullable String model,
+        boolean fallbackUsed,
+        int evidenceMessageCount,
+        RetrievalMode retrievalMode,
+        CoverageStatus coverageStatus,
+        Instant from,
+        Instant to,
+        Instant coverageThrough,
+        @Nullable String partialReason) {
+      this(
+          status,
+          answer,
+          null,
+          confidence,
+          model,
+          fallbackUsed,
+          evidenceMessageCount,
+          retrievalMode,
+          coverageStatus,
+          from,
+          to,
+          coverageThrough,
+          partialReason,
+          List.of());
     }
   }
 

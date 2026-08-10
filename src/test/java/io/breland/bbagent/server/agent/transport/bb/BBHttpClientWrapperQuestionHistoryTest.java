@@ -13,7 +13,6 @@ import io.breland.bbagent.generated.bluebubblesclient.api.V1ContactApi;
 import io.breland.bbagent.generated.bluebubblesclient.api.V1MessageApi;
 import io.breland.bbagent.generated.bluebubblesclient.model.ApiV1ChatChatGuidMessageGet200Response;
 import io.breland.bbagent.generated.bluebubblesclient.model.ApiV1ContactGet200Response;
-import io.breland.bbagent.generated.bluebubblesclient.model.ApiV1MessageQueryPost200Response;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
@@ -23,29 +22,6 @@ import reactor.core.publisher.Mono;
 class BBHttpClientWrapperQuestionHistoryTest {
   private static final Instant FROM = Instant.parse("2026-08-09T10:00:00Z");
   private static final Instant TO = Instant.parse("2026-08-09T14:00:00Z");
-
-  @Test
-  @SuppressWarnings("unchecked")
-  void exactQuestionHistoryBlocksForTheLesserOfRemainingTimeAndApiTimeout() {
-    V1MessageApi messageApi = mock(V1MessageApi.class);
-    Mono<ApiV1MessageQueryPost200Response> response = mock(Mono.class);
-    when(messageApi.apiV1MessageQueryPost(any(), any())).thenReturn(response);
-    when(response.block(Duration.ofSeconds(5)))
-        .thenReturn(
-            ApiV1MessageQueryPost200Response.builder()
-                .status(200)
-                .message("success")
-                .data(List.of())
-                .build());
-    BBHttpClientWrapper wrapper = wrapper(messageApi, mock(V1ChatApi.class));
-
-    assertThat(
-            wrapper.searchConversationHistoryForQuestion(
-                "group", "Wordle", FROM, TO, 10, 0, Duration.ofSeconds(5)))
-        .isEmpty();
-
-    verify(response).block(Duration.ofSeconds(5));
-  }
 
   @Test
   @SuppressWarnings("unchecked")

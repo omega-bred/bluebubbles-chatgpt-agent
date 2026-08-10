@@ -650,18 +650,6 @@ public class BBHttpClientWrapper {
         chatGuid, literalQuery, after, before, limit, offset, Duration.of(120, ChronoUnit.SECONDS));
   }
 
-  public List<Message> searchConversationHistoryForQuestion(
-      String chatGuid,
-      String literalQuery,
-      Instant after,
-      Instant before,
-      int limit,
-      int offset,
-      Duration remaining) {
-    return searchConversationHistory(
-        chatGuid, literalQuery, after, before, limit, offset, questionHistoryTimeout(remaining));
-  }
-
   private List<Message> searchConversationHistory(
       String chatGuid,
       String literalQuery,
