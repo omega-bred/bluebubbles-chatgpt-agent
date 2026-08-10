@@ -192,8 +192,7 @@ public class BBHttpClientWrapper {
       Mono<Void> request = Objects.requireNonNull(call.get(), "BlueBubbles typing request");
       request
           .timeout(apiTimeout)
-          .doOnSuccess(
-              ignored -> recordOperationMetric(operation, true, null, startedNanos))
+          .doOnSuccess(ignored -> recordOperationMetric(operation, true, null, startedNanos))
           .doOnError(
               error -> {
                 String failureType = OperationalMetricsService.failureType(error);

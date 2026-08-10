@@ -43,8 +43,7 @@ class BlueBubblesMessageTransportTest {
   void typingStartAndOwnedStopUseTheIncomingChat() {
     CapturingBBHttpClientWrapper wrapper = new CapturingBBHttpClientWrapper();
     BlueBubblesMessageTransport transport = new BlueBubblesMessageTransport(wrapper);
-    IncomingMessage message =
-        incomingMessage("any;+;chat293505621450166166", "iMessage", true);
+    IncomingMessage message = incomingMessage("any;+;chat293505621450166166", "iMessage", true);
 
     transport.startTyping(message, "turn-1");
     transport.stopTyping(message, "turn-1");
@@ -57,8 +56,7 @@ class BlueBubblesMessageTransportTest {
   void obsoleteTurnCannotStopNewerTyping() {
     CapturingBBHttpClientWrapper wrapper = new CapturingBBHttpClientWrapper();
     BlueBubblesMessageTransport transport = new BlueBubblesMessageTransport(wrapper);
-    IncomingMessage message =
-        incomingMessage("any;+;chat293505621450166166", "iMessage", true);
+    IncomingMessage message = incomingMessage("any;+;chat293505621450166166", "iMessage", true);
 
     transport.startTyping(message, "turn-1");
     transport.startTyping(message, "turn-2");

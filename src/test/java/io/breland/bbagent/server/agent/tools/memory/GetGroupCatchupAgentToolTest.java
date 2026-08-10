@@ -146,12 +146,7 @@ class GetGroupCatchupAgentToolTest {
 
     verify(digestService)
         .answerQuestion(
-            "account-1",
-            "Project chat",
-            "What changed in the last 48 hours?",
-            null,
-            NOW,
-            null);
+            "account-1", "Project chat", "What changed in the last 48 hours?", null, NOW, null);
   }
 
   @Test
