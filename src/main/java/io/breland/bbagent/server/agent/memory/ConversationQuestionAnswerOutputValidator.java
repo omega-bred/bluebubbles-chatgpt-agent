@@ -330,9 +330,11 @@ final class ConversationQuestionAnswerOutputValidator {
     List<String> candidates = new ArrayList<>();
     int index = 0;
     while (index < text.length()) {
-      if (!Character.isDigit(text.charAt(index))
-          || (index > 0 && Character.isLetterOrDigit(text.charAt(index - 1)))) {
-        index++;
+      int leadingCodePoint = text.codePointAt(index);
+      int leadingWidth = Character.charCount(leadingCodePoint);
+      if (!Character.isDigit(leadingCodePoint)
+          || (index > 0 && Character.isLetterOrDigit(text.codePointBefore(index)))) {
+        index += leadingWidth;
         continue;
       }
       int cursor = index;
@@ -340,31 +342,37 @@ final class ConversationQuestionAnswerOutputValidator {
       int lastDigitEnd = index;
       StringBuilder digits = new StringBuilder(19);
       while (cursor < text.length()) {
-        char value = text.charAt(cursor);
+        int value = text.codePointAt(cursor);
+        int valueWidth = Character.charCount(value);
         if (Character.isDigit(value)) {
           digitCount++;
-          lastDigitEnd = cursor + 1;
+          lastDigitEnd = cursor + valueWidth;
           if (digitCount <= 19) {
-            digits.append(value);
+            digits.appendCodePoint(value);
           }
-          cursor++;
+          cursor += valueWidth;
           continue;
         }
         if (!isPaymentCardSeparator(value)) {
           break;
         }
         int nextDigit = cursor;
-        while (nextDigit < text.length() && isPaymentCardSeparator(text.charAt(nextDigit))) {
-          nextDigit++;
+        while (nextDigit < text.length()) {
+          int separator = text.codePointAt(nextDigit);
+          if (!isPaymentCardSeparator(separator)) {
+            break;
+          }
+          nextDigit += Character.charCount(separator);
         }
-        if (nextDigit == text.length() || !Character.isDigit(text.charAt(nextDigit))) {
+        if (nextDigit == text.length() || !Character.isDigit(text.codePointAt(nextDigit))) {
           cursor = nextDigit;
           break;
         }
         cursor = nextDigit;
       }
       boolean tokenEnd =
-          lastDigitEnd == text.length() || !Character.isLetterOrDigit(text.charAt(lastDigitEnd));
+          lastDigitEnd == text.length()
+              || !Character.isLetterOrDigit(text.codePointAt(lastDigitEnd));
       String rawCandidate = text.substring(index, lastDigitEnd);
       if (tokenEnd
           && digitCount >= 13
@@ -375,7 +383,7 @@ final class ConversationQuestionAnswerOutputValidator {
           throw new IllegalStateException("payment-card work budget exceeded");
         }
       }
-      index = Math.max(index + 1, cursor);
+      index = Math.max(index + leadingWidth, cursor);
     }
     return List.copyOf(candidates);
   }
@@ -385,8 +393,9 @@ final class ConversationQuestionAnswerOutputValidator {
     int groupCount = 0;
     boolean separated = false;
     boolean betweenGroups = false;
-    for (int index = 0; index < candidate.length(); index++) {
-      char value = candidate.charAt(index);
+    for (int index = 0; index < candidate.length(); ) {
+      int value = candidate.codePointAt(index);
+      index += Character.charCount(value);
       if (Character.isDigit(value)) {
         if (betweenGroups) {
           if (groupDigits < 3 || groupDigits > 6) {
@@ -413,15 +422,8 @@ final class ConversationQuestionAnswerOutputValidator {
     return groupCount + 1 >= 3;
   }
 
-  private static boolean isPaymentCardSeparator(char value) {
-    return Character.isWhitespace(value)
-        || Character.isSpaceChar(value)
-        || value == '-'
-        || (value >= '\u2010' && value <= '\u2015')
-        || value == '\u2212'
-        || value == '\uFE58'
-        || value == '\uFE63'
-        || value == '\uFF0D';
+  private static boolean isPaymentCardSeparator(int value) {
+    return !Character.isLetterOrDigit(value);
   }
 
   private static boolean containsSensitiveNumberMatch(

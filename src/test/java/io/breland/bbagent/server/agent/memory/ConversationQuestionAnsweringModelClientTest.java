@@ -24,9 +24,11 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.stream.Stream;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
-import org.junit.jupiter.params.provider.CsvSource;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.ArgumentCaptor;
 
@@ -198,6 +200,12 @@ class ConversationQuestionAnsweringModelClientTest {
         "4111     1111     1111     1111",
         "4111\t1111\t1111\t1111",
         "4111 \t—\n1111-\r\n1111\u2003–\t1111",
+        "4111\u00851111\u00851111\u00851111",
+        "4111\u200B1111\u200B1111\u200B1111",
+        "4111\u202E1111\u20661111\u200F1111",
+        "4111🔒1111🔒1111🔒1111",
+        "4111•1111:1111/1111",
+        "4111 \u200B—\u0085\t1111🔒 1111\u2066-1111",
         "4111-1111-1111-1111",
         "4111–1111–1111–1111",
         "4111—1111—1111—1111"
@@ -226,14 +234,7 @@ class ConversationQuestionAnsweringModelClientTest {
   }
 
   @ParameterizedTest
-  @CsvSource(
-      delimiter = '|',
-      textBlock =
-          """
-          4111     1111     1111     1111|41111     11111     111111
-          4111\t1111\t1111\t1111|41111\t11111\t111111
-          4111 — 1111\t1111 - 1111|41111\t— 11111     111111
-          """)
+  @MethodSource("regroupedPaymentCardCandidates")
   void rejectsRegroupedPaymentCardIdentifiersAcrossSourceAndAnswer(
       String sourceCandidate, String answerCandidate) {
     assertThat(
@@ -244,11 +245,20 @@ class ConversationQuestionAnsweringModelClientTest {
         .isFalse();
   }
 
+  private static Stream<Arguments> regroupedPaymentCardCandidates() {
+    return Stream.of(
+        Arguments.of("4111     1111     1111     1111", "41111     11111     111111"),
+        Arguments.of("4111\t1111\t1111\t1111", "41111\t11111\t111111"),
+        Arguments.of("4111 — 1111\t1111 - 1111", "41111\t— 11111     111111"),
+        Arguments.of("4111\u00851111\u200B1111\u202E1111", "41111\u206611111🔒111111"),
+        Arguments.of("4111🔒1111•1111/1111", "41111\u200B11111\u0085111111"));
+  }
+
   @Test
   void paymentCardScannerRemainsBoundedAcrossNearCapSeparatorRuns() {
-    String answerSeparatorRun = " \t—".repeat(1_300);
+    String answerSeparatorRun = "\u200B\u0085🔒—".repeat(780);
     String nearAnswerCap = "4111" + answerSeparatorRun + "1111 1111 1111";
-    String nearSourceCap = "4111" + " ".repeat(299_970) + "1111 1111 1111";
+    String nearSourceCap = "4111" + "\u200B".repeat(299_970) + "1111 1111 1111";
 
     assertTimeoutPreemptively(
         Duration.ofSeconds(3),
@@ -277,6 +287,12 @@ class ConversationQuestionAnsweringModelClientTest {
     assertThat(
             ConversationQuestionAnswerOutputValidator.isSafe(
                 "References 4111 1111 1111 and 41111111111111111111.", Set.of(), List.of()))
+        .isTrue();
+    assertThat(
+            ConversationQuestionAnswerOutputValidator.isSafe(
+                "The date is 08/09/2026, the count is 123,456,789,012, and the short reference is 4111•1111•1111.",
+                Set.of(),
+                List.of()))
         .isTrue();
   }
 
