@@ -27,6 +27,7 @@ import io.breland.bbagent.server.agent.transport.OutgoingTextMessage;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayDeque;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Queue;
 import java.util.UUID;
@@ -37,6 +38,38 @@ import org.mockito.Mockito;
 import reactor.core.publisher.Mono;
 
 class BlueBubblesMessageTransportTest {
+
+  @Test
+  void typingStartAndOwnedStopUseTheIncomingChat() {
+    CapturingBBHttpClientWrapper wrapper = new CapturingBBHttpClientWrapper();
+    BlueBubblesMessageTransport transport = new BlueBubblesMessageTransport(wrapper);
+    IncomingMessage message =
+        incomingMessage("any;+;chat293505621450166166", "iMessage", true);
+
+    transport.startTyping(message, "turn-1");
+    transport.stopTyping(message, "turn-1");
+
+    assertEquals(List.of(message.chatGuid()), wrapper.typingStarts);
+    assertEquals(List.of(message.chatGuid()), wrapper.typingStops);
+  }
+
+  @Test
+  void obsoleteTurnCannotStopNewerTyping() {
+    CapturingBBHttpClientWrapper wrapper = new CapturingBBHttpClientWrapper();
+    BlueBubblesMessageTransport transport = new BlueBubblesMessageTransport(wrapper);
+    IncomingMessage message =
+        incomingMessage("any;+;chat293505621450166166", "iMessage", true);
+
+    transport.startTyping(message, "turn-1");
+    transport.startTyping(message, "turn-2");
+    transport.stopTyping(message, "turn-1");
+
+    assertTrue(wrapper.typingStops.isEmpty());
+
+    transport.stopTyping(message, "turn-2");
+
+    assertEquals(List.of(message.chatGuid()), wrapper.typingStops);
+  }
 
   @Test
   void sendTextPreservesAnyDirectGuidForWrapperConfirmation() {
@@ -405,6 +438,8 @@ class BlueBubblesMessageTransportTest {
   private static final class CapturingBBHttpClientWrapper extends BBHttpClientWrapper {
     private ApiV1MessageTextPostRequest lastText;
     private final boolean sendResult;
+    private final List<String> typingStarts = new ArrayList<>();
+    private final List<String> typingStops = new ArrayList<>();
 
     CapturingBBHttpClientWrapper() {
       this(true);
@@ -419,6 +454,16 @@ class BlueBubblesMessageTransportTest {
     public boolean sendTextDirect(ApiV1MessageTextPostRequest request) {
       this.lastText = request;
       return sendResult;
+    }
+
+    @Override
+    public void startTyping(String chatGuid) {
+      typingStarts.add(chatGuid);
+    }
+
+    @Override
+    public void stopTyping(String chatGuid) {
+      typingStops.add(chatGuid);
     }
   }
 
