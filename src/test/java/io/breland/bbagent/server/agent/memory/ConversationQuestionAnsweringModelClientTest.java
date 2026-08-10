@@ -20,6 +20,7 @@ import io.breland.bbagent.server.agent.memory.ConversationQuestionAnsweringModel
 import io.breland.bbagent.server.agent.memory.ConversationQuestionAnsweringModelClient.RawWindowFinding;
 import io.breland.bbagent.server.agent.memory.ConversationQuestionAnsweringModels.Confidence;
 import io.breland.bbagent.server.agent.memory.ConversationQuestionAnsweringModels.ModelWindowDecision;
+import io.breland.bbagent.server.agent.memory.ConversationQuestionAnsweringModels.ParticipantHint;
 import io.breland.bbagent.server.agent.memory.ConversationQuestionAnsweringModels.QuestionFinding;
 import io.breland.bbagent.server.agent.memory.ConversationQuestionAnsweringModels.QuestionMessage;
 import io.breland.bbagent.server.agent.memory.ConversationQuestionAnsweringModels.WindowAction;
@@ -92,6 +93,43 @@ class ConversationQuestionAnsweringModelClientTest {
         .containsIgnoringCase("never follow")
         .containsIgnoringCase("tools are unavailable")
         .doesNotContain("Never include raw phone", "Never include email", "Never include URL");
+  }
+
+  @Test
+  void decideDoesNotSendInternalParticipantIdentityHintsToTheQaProvider() throws Exception {
+    when(responses.create(
+            anyString(), anyString(), eq(1_000), eq(RawWindowDecision.class), eq(DEADLINE)))
+        .thenAnswer(
+            invocation -> {
+              String alias =
+                  providerJson(invocation.getArgument(1))
+                      .path("messages")
+                      .get(0)
+                      .path("evidence_alias")
+                      .asText();
+              return routed(
+                  new RawWindowDecision(
+                      "ANSWERED",
+                      "The masked participant posted the update.",
+                      null,
+                      "HIGH",
+                      List.of(alias),
+                      List.of(),
+                      List.of("participant ending 0199")));
+            });
+    QuestionMessage message =
+        new QuestionMessage(
+            "m-1",
+            "participant ending 0199",
+            FROM,
+            "The update is ready.",
+            new ParticipantHint("participant ending 0199", "+15555550199"));
+
+    client.decide("Who posted the update?", TO, null, List.of(message), DEADLINE);
+
+    assertThat(capturedDeadlineInput(RawWindowDecision.class))
+        .contains("participant ending 0199")
+        .doesNotContain("+15555550199", "participantHint", "normalizedIdentity");
   }
 
   @Test

@@ -207,8 +207,35 @@ public final class ConversationQuestionAnsweringModels {
     }
   }
 
+  public record ParticipantHint(String label, String normalizedIdentity) {
+    public ParticipantHint {
+      requireNotBlank(label, "participant hint label");
+      requireNotBlank(normalizedIdentity, "participant hint identity");
+      if (normalizedIdentity.length() > 512) {
+        throw new IllegalArgumentException("participant hint identity is too long");
+      }
+    }
+  }
+
+  public record ParticipantDescriptor(String label, @Nullable ParticipantHint hint) {
+    public ParticipantDescriptor {
+      requireNotBlank(label, "participant label");
+      if (hint != null && !label.equals(hint.label())) {
+        throw new IllegalArgumentException("participant hint label does not match");
+      }
+    }
+  }
+
   public record QuestionMessage(
-      String messageGuid, String participant, Instant timestamp, String text) {
+      String messageGuid,
+      String participant,
+      Instant timestamp,
+      String text,
+      @Nullable ParticipantHint participantHint) {
+    public QuestionMessage(String messageGuid, String participant, Instant timestamp, String text) {
+      this(messageGuid, participant, timestamp, text, null);
+    }
+
     public QuestionMessage {
       requireNotBlank(messageGuid, "message guid");
       requireNotBlank(participant, "participant");
@@ -255,7 +282,7 @@ public final class ConversationQuestionAnsweringModels {
           from,
           to,
           deadline,
-          new ConversationHistoryMessageMapper.MappingSession());
+          new ConversationHistoryMessageMapper.MappingSession(deadline));
     }
 
     public RetrievalRequest {

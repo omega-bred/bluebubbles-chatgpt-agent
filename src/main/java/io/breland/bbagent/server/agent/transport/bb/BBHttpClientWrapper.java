@@ -404,6 +404,42 @@ public class BBHttpClientWrapper {
         });
   }
 
+  public List<BlueBubblesContactIdentity> getContactIdentitiesForQuestion(Duration remaining) {
+    Duration timeout = questionHistoryTimeout(remaining);
+    return measuredOperation(
+        "get_contacts",
+        () -> {
+          ApiV1ContactGet200Response response = contactApi.apiV1ContactGet(password).block(timeout);
+          response = requirePresent(response, "get contacts");
+          requireSuccessfulResponse(response.getStatus(), response.getMessage(), "get contacts");
+          if (response.getData() == null || response.getData().isEmpty()) {
+            return List.of();
+          }
+          return response.getData().stream()
+              .filter(Objects::nonNull)
+              .map(BBHttpClientWrapper::contactIdentity)
+              .filter(identity -> !identity.addresses().isEmpty())
+              .toList();
+        });
+  }
+
+  private static BlueBubblesContactIdentity contactIdentity(Contact contact) {
+    String displayName = StringUtils.trimToNull(contact.getDisplayName());
+    if (displayName == null) {
+      displayName = StringUtils.trimToNull(contact.getNickname());
+    }
+    if (displayName == null) {
+      displayName =
+          String.join(
+              " ",
+              java.util.stream.Stream.of(contact.getFirstName(), contact.getLastName())
+                  .map(StringUtils::trimToNull)
+                  .filter(Objects::nonNull)
+                  .toList());
+    }
+    return new BlueBubblesContactIdentity(displayName, contactAddresses(contact));
+  }
+
   private static List<String> contactAddresses(Contact contact) {
     if (contact == null) {
       return List.of();

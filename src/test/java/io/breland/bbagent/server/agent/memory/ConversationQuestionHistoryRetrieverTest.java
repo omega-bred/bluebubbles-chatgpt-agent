@@ -61,7 +61,10 @@ class ConversationQuestionHistoryRetrieverTest {
   private final ConversationMemoryStore store = Mockito.mock(ConversationMemoryStore.class);
   private final AgentAccountResolver accountResolver = Mockito.mock(AgentAccountResolver.class);
   private final ConversationHistoryMessageMapper mapper =
-      Mockito.spy(new ConversationHistoryMessageMapper(accountResolver));
+      Mockito.spy(
+          new ConversationHistoryMessageMapper(
+              new ConversationParticipantResolver(
+                  accountResolver, bb, Clock.fixed(NOW, ZoneOffset.UTC))));
   private ConversationQuestionHistoryRetriever retriever;
 
   @BeforeEach

@@ -12,6 +12,7 @@ import io.breland.bbagent.generated.bluebubblesclient.api.V1ChatApi;
 import io.breland.bbagent.generated.bluebubblesclient.api.V1ContactApi;
 import io.breland.bbagent.generated.bluebubblesclient.api.V1MessageApi;
 import io.breland.bbagent.generated.bluebubblesclient.model.ApiV1ChatChatGuidMessageGet200Response;
+import io.breland.bbagent.generated.bluebubblesclient.model.ApiV1ContactGet200Response;
 import io.breland.bbagent.generated.bluebubblesclient.model.ApiV1MessageQueryPost200Response;
 import java.time.Duration;
 import java.time.Instant;
@@ -103,6 +104,33 @@ class BBHttpClientWrapperQuestionHistoryTest {
             eq(0),
             eq(500),
             eq("DESC"));
+  }
+
+  @Test
+  @SuppressWarnings("unchecked")
+  void questionContactDirectoryUsesTheRemainingRequestTime() {
+    V1ContactApi contactApi = mock(V1ContactApi.class);
+    Mono<ApiV1ContactGet200Response> response = mock(Mono.class);
+    when(contactApi.apiV1ContactGet("pw")).thenReturn(response);
+    when(response.block(Duration.ofSeconds(5)))
+        .thenReturn(
+            ApiV1ContactGet200Response.builder()
+                .status(200)
+                .message("Successfully fetched contacts")
+                .data(List.of())
+                .build());
+    BBHttpClientWrapper wrapper =
+        new BBHttpClientWrapper(
+            "pw",
+            mock(V1MessageApi.class),
+            contactApi,
+            mock(V1ChatApi.class),
+            new ObjectMapper().findAndRegisterModules(),
+            Duration.ofSeconds(30));
+
+    assertThat(wrapper.getContactIdentitiesForQuestion(Duration.ofSeconds(5))).isEmpty();
+
+    verify(response).block(Duration.ofSeconds(5));
   }
 
   private static BBHttpClientWrapper wrapper(V1MessageApi messageApi, V1ChatApi chatApi) {
