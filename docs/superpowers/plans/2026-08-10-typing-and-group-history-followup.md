@@ -480,7 +480,7 @@ all affected compile, unit, integration, and Spring-context failures are blocker
 Set the design status to `Implemented` and append the exact focused/broader/full test counts, skipped
 tests, any documented ambient failures, and static-gate results. Mark every completed plan checkbox.
 
-- [ ] **Step 6: Commit final formatting and evidence**
+- [x] **Step 6: Commit final formatting and evidence**
 
 ```bash
 git add docs/superpowers/specs/2026-08-10-typing-and-group-history-followup-design.md \
@@ -489,7 +489,7 @@ git add docs/superpowers/specs/2026-08-10-typing-and-group-history-followup-desi
 git commit -m "docs: verify typing and history follow-up"
 ```
 
-- [ ] **Step 7: Re-fetch and verify freshness**
+- [x] **Step 7: Re-fetch and verify freshness**
 
 ```bash
 git fetch origin main
