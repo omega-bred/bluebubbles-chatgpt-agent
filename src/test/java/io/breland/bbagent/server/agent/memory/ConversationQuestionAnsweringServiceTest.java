@@ -27,6 +27,7 @@ import io.breland.bbagent.server.agent.memory.ConversationQuestionAnsweringModel
 import io.breland.bbagent.server.agent.memory.ConversationQuestionAnsweringModels.RetrievalRequest;
 import io.breland.bbagent.server.agent.memory.ConversationQuestionAnsweringModels.RetrievalResult;
 import io.breland.bbagent.server.agent.memory.ConversationQuestionAnsweringModels.RoutedModelAnswer;
+import io.breland.bbagent.server.agent.memory.ConversationQuestionAnsweringModels.RoutedReductionAnswer;
 import io.breland.bbagent.server.agent.memory.ConversationQuestionAnsweringModels.RoutedSupportVerification;
 import io.breland.bbagent.server.agent.memory.ConversationQuestionAnsweringModels.SearchPlan;
 import io.breland.bbagent.server.metrics.OperationalMetricsService;
@@ -39,6 +40,7 @@ import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -151,6 +153,7 @@ class ConversationQuestionAnsweringServiceTest {
     assertThat(result.answer()).isEqualTo("Alice said Atlas is review-ready.");
     assertThat(result.retrievalMode()).isEqualTo(RetrievalMode.HYBRID);
     verify(retriever).retrieveChronological(any());
+    assertQuestionModelWork(2, 1, 2);
   }
 
   @Test
@@ -194,6 +197,7 @@ class ConversationQuestionAnsweringServiceTest {
     assertThat(result.answer())
         .doesNotContain("Alice reported 84 units", "Alice still reported 84 units");
     verify(model, times(2)).verifyAnswer(anyString(), anyString(), anyList(), eq(DEADLINE));
+    assertQuestionModelWork(2, 1, 2);
   }
 
   @Test
@@ -228,6 +232,7 @@ class ConversationQuestionAnsweringServiceTest {
     verify(model, never()).plan(anyString(), any(), any(), any());
     verify(model, never()).answer(anyString(), anyList(), any());
     assertThat(totalQuestionAnswers()).isEqualTo(1.0);
+    assertQuestionModelWork(0, 0, 0);
   }
 
   @Test
@@ -316,7 +321,8 @@ class ConversationQuestionAnsweringServiceTest {
     assertThat(registry.get("bbagent.memory.question.answer.page.count").counter().count())
         .isEqualTo(1.0);
     assertThat(registry.get("bbagent.memory.question.answer.model.batch.count").counter().count())
-        .isEqualTo(2.0);
+        .isEqualTo(1.0);
+    assertQuestionModelWork(1, 1, 1);
   }
 
   @Test
@@ -415,12 +421,11 @@ class ConversationQuestionAnsweringServiceTest {
     List<QuestionMessage> messages = messages(101, 10);
     when(retriever.retrieveExact(any(), eq(REPORT_PLAN))).thenReturn(completeExact(messages));
     answerEachBatchWithItsFirstEvidence();
-    when(model.reduce(eq(QUESTION), anyList(), eq(DEADLINE)))
-        .thenReturn(
-            new RoutedModelAnswer(
-                answered("The reduced exact answer.", "message-0", "message-100"),
-                "openai/gpt-4.1-mini",
-                true));
+    stubReduction(
+        new RoutedModelAnswer(
+            answered("The reduced exact answer.", "message-0", "message-100"),
+            "openai/gpt-4.1-mini",
+            true));
 
     GroupQuestionAnswer result = service.answer(ACCOUNT, GROUP, QUESTION, FROM, TO);
 
@@ -430,7 +435,7 @@ class ConversationQuestionAnsweringServiceTest {
     assertThat(result.model()).isEqualTo("openai/gpt-4.1-mini");
     assertThat(result.fallbackUsed()).isTrue();
     assertSubmittedBatchBounds(2, 100, 60_000);
-    verify(model).reduce(eq(QUESTION), anyList(), eq(DEADLINE));
+    verify(model).reduceWithCitations(eq(QUESTION), anyList(), eq(DEADLINE));
     verify(retriever, never()).retrieveChronological(any());
   }
 
@@ -439,9 +444,8 @@ class ConversationQuestionAnsweringServiceTest {
     List<QuestionMessage> messages = messages(101, 10);
     exactMissThenChronological(messages);
     answerEachBatchWithItsFirstEvidence();
-    when(model.reduce(eq(QUESTION), anyList(), eq(DEADLINE)))
-        .thenReturn(
-            routed(answered("The reduced chronological answer.", "message-0", "message-100")));
+    stubReduction(
+        routed(answered("The reduced chronological answer.", "message-0", "message-100")));
 
     GroupQuestionAnswer result = service.answer(ACCOUNT, GROUP, QUESTION, FROM, TO);
 
@@ -449,8 +453,9 @@ class ConversationQuestionAnsweringServiceTest {
     assertThat(result.evidenceMessageCount()).isEqualTo(2);
     assertSubmittedBatchBounds(2, 100, 60_000);
     ArgumentCaptor<List<QuestionFinding>> findings = findingListCaptor();
-    verify(model).reduce(eq(QUESTION), findings.capture(), eq(DEADLINE));
+    verify(model).reduceWithCitations(eq(QUESTION), findings.capture(), eq(DEADLINE));
     assertThat(findings.getValue()).hasSize(2);
+    assertQuestionModelWork(3, 1, 3);
   }
 
   @Test
@@ -458,8 +463,7 @@ class ConversationQuestionAnsweringServiceTest {
     List<QuestionMessage> messages = messages(101, 10);
     exactMissThenChronological(messages);
     answerEachBatchWithItsFirstEvidence();
-    when(model.reduce(eq(QUESTION), anyList(), eq(DEADLINE)))
-        .thenReturn(routed(answered("The later race result is decisive.", "message-100")));
+    stubReduction(routed(answered("The later race result is decisive.", "message-100")));
 
     service.answer(ACCOUNT, GROUP, QUESTION, FROM, TO);
 
@@ -475,6 +479,51 @@ class ConversationQuestionAnsweringServiceTest {
         .singleElement()
         .satisfies(
             finding -> assertThat(finding.evidenceMessageGuids()).containsExactly("message-100"));
+  }
+
+  @Test
+  void reductionMetadataSelectsACompleteMultiEvidenceFindingWithoutUnrelatedFindings() {
+    service = service(2, 60_000, 5, 300_000);
+    List<QuestionMessage> messages = messages(4, 10);
+    exactMissThenChronological(messages);
+    when(model.answer(eq(QUESTION), anyList(), eq(DEADLINE)))
+        .thenAnswer(
+            invocation -> {
+              List<QuestionMessage> batch = invocation.getArgument(1);
+              return batch.getFirst().messageGuid().equals("message-0")
+                  ? routed(
+                      answered(
+                          "Atlas ownership and readiness are confirmed.", "message-0", "message-1"))
+                  : routed(answered("Beacon has a separate update.", "message-2", "message-3"));
+            });
+    when(model.reduceWithCitations(eq(QUESTION), anyList(), eq(DEADLINE)))
+        .thenAnswer(
+            invocation -> {
+              List<QuestionFinding> submitted = invocation.getArgument(1);
+              RoutedModelAnswer routed =
+                  routed(
+                      answered("The Atlas update confirms both facts.", "message-0", "message-1"));
+              return new RoutedReductionAnswer(routed, List.of(submitted.getFirst()));
+            });
+
+    GroupQuestionAnswer result = service.answer(ACCOUNT, GROUP, QUESTION, FROM, TO);
+
+    assertThat(result.status()).isEqualTo(AnswerStatus.ANSWERED);
+    assertThat(result.evidenceMessageCount()).isEqualTo(2);
+    @SuppressWarnings("unchecked")
+    ArgumentCaptor<List<QuestionFinding>> citedFindings = ArgumentCaptor.forClass(List.class);
+    verify(model)
+        .verifyReduction(
+            eq(QUESTION),
+            eq("The Atlas update confirms both facts."),
+            citedFindings.capture(),
+            eq(DEADLINE));
+    assertThat(citedFindings.getValue())
+        .singleElement()
+        .satisfies(
+            finding ->
+                assertThat(finding.evidenceMessageGuids())
+                    .containsExactly("message-0", "message-1"));
   }
 
   @Test
@@ -497,15 +546,14 @@ class ConversationQuestionAnsweringServiceTest {
               }
               return routed(answered("The later batch supports the answer.", evidenceGuid));
             });
-    when(model.reduce(eq(QUESTION), anyList(), eq(DEADLINE)))
-        .thenReturn(routed(answered("The reduced complete answer.", "message-0", "message-100")));
+    stubReduction(routed(answered("The reduced complete answer.", "message-0", "message-100")));
 
     GroupQuestionAnswer result = service.answer(ACCOUNT, GROUP, QUESTION, FROM, TO);
 
     assertThat(result.answer()).isEqualTo("The reduced complete answer.");
     assertThat(result.coverageStatus()).isEqualTo(CoverageStatus.COMPLETE);
     verify(model, times(2)).answer(eq(QUESTION), anyList(), eq(DEADLINE));
-    verify(model).reduce(eq(QUESTION), anyList(), eq(DEADLINE));
+    verify(model).reduceWithCitations(eq(QUESTION), anyList(), eq(DEADLINE));
   }
 
   @Test
@@ -513,14 +561,10 @@ class ConversationQuestionAnsweringServiceTest {
     List<QuestionMessage> messages = messages(3, 30_001);
     exactMissThenChronological(messages);
     answerEachBatchWithItsFirstEvidence();
-    when(model.reduce(eq(QUESTION), anyList(), eq(DEADLINE)))
-        .thenReturn(
-            routed(
-                answered(
-                    "The reduced character-bounded answer.",
-                    "message-0",
-                    "message-1",
-                    "message-2")));
+    stubReduction(
+        routed(
+            answered(
+                "The reduced character-bounded answer.", "message-0", "message-1", "message-2")));
 
     GroupQuestionAnswer result = service.answer(ACCOUNT, GROUP, QUESTION, FROM, TO);
 
@@ -534,8 +578,7 @@ class ConversationQuestionAnsweringServiceTest {
     List<QuestionMessage> messages = messages(201, 10);
     exactMissThenChronological(messages);
     answerEachBatchWithItsFirstEvidence();
-    when(model.reduce(eq(QUESTION), anyList(), eq(DEADLINE)))
-        .thenReturn(routed(answered("The supported partial result.", "message-0", "message-100")));
+    stubReduction(routed(answered("The supported partial result.", "message-0", "message-100")));
 
     GroupQuestionAnswer result = service.answer(ACCOUNT, GROUP, QUESTION, FROM, TO);
 
@@ -553,8 +596,7 @@ class ConversationQuestionAnsweringServiceTest {
     List<QuestionMessage> messages = messages(3, 50_000);
     exactMissThenChronological(messages);
     answerEachBatchWithItsFirstEvidence();
-    when(model.reduce(eq(QUESTION), anyList(), eq(DEADLINE)))
-        .thenReturn(routed(answered("The supported partial result.", "message-0", "message-1")));
+    stubReduction(routed(answered("The supported partial result.", "message-0", "message-1")));
 
     GroupQuestionAnswer result = service.answer(ACCOUNT, GROUP, QUESTION, FROM, TO);
 
@@ -570,16 +612,15 @@ class ConversationQuestionAnsweringServiceTest {
     List<QuestionMessage> messages = messages(500, 10);
     when(retriever.retrieveExact(any(), eq(REPORT_PLAN))).thenReturn(completeExact(messages));
     answerEachBatchWithItsFirstEvidence();
-    when(model.reduce(eq(QUESTION), anyList(), eq(DEADLINE)))
-        .thenReturn(
-            routed(
-                answered(
-                    "All five exact batches were reduced.",
-                    "message-0",
-                    "message-100",
-                    "message-200",
-                    "message-300",
-                    "message-400")));
+    stubReduction(
+        routed(
+            answered(
+                "All five exact batches were reduced.",
+                "message-0",
+                "message-100",
+                "message-200",
+                "message-300",
+                "message-400")));
 
     GroupQuestionAnswer result = service.answer(ACCOUNT, GROUP, QUESTION, FROM, TO);
 
@@ -595,8 +636,7 @@ class ConversationQuestionAnsweringServiceTest {
     List<QuestionMessage> messages = messages(2, 50_000);
     when(retriever.retrieveExact(any(), eq(REPORT_PLAN))).thenReturn(completeExact(messages));
     answerEachBatchWithItsFirstEvidence();
-    when(model.reduce(eq(QUESTION), anyList(), eq(DEADLINE)))
-        .thenReturn(routed(answered("Both exact batches were reduced.", "message-0", "message-1")));
+    stubReduction(routed(answered("Both exact batches were reduced.", "message-0", "message-1")));
 
     GroupQuestionAnswer result = service.answer(ACCOUNT, GROUP, QUESTION, FROM, TO);
 
@@ -604,7 +644,7 @@ class ConversationQuestionAnsweringServiceTest {
     assertThat(result.coverageStatus()).isEqualTo(CoverageStatus.PARTIAL);
     assertThat(result.partialReason()).isEqualTo("character_limit");
     verify(model, times(1)).answer(eq(QUESTION), anyList(), eq(DEADLINE));
-    verify(model, never()).reduce(eq(QUESTION), anyList(), eq(DEADLINE));
+    verify(model, never()).reduceWithCitations(eq(QUESTION), anyList(), eq(DEADLINE));
   }
 
   @Test
@@ -632,8 +672,7 @@ class ConversationQuestionAnsweringServiceTest {
     List<QuestionMessage> messages = messages(101, 10);
     when(retriever.retrieveExact(any(), eq(REPORT_PLAN))).thenReturn(completeExact(messages));
     answerEachBatchWithItsFirstEvidence();
-    when(model.reduce(eq(QUESTION), anyList(), eq(DEADLINE)))
-        .thenReturn(routed(answered("The reduced answer.", "message-0", "message-100")));
+    stubReduction(routed(answered("The reduced answer.", "message-0", "message-100")));
 
     GroupQuestionAnswer result = service.answer(ACCOUNT, GROUP, QUESTION, FROM, TO);
 
@@ -641,7 +680,7 @@ class ConversationQuestionAnsweringServiceTest {
     verify(model).plan(QUESTION, FROM, TO, DEADLINE);
     verify(model, times(2)).answer(eq(QUESTION), anyList(), eq(DEADLINE));
     verify(model, times(2)).verifyAnswer(eq(QUESTION), anyString(), anyList(), eq(DEADLINE));
-    verify(model).reduce(eq(QUESTION), anyList(), eq(DEADLINE));
+    verify(model).reduceWithCitations(eq(QUESTION), anyList(), eq(DEADLINE));
     verify(model).verifyReduction(eq(QUESTION), anyString(), anyList(), eq(DEADLINE));
   }
 
@@ -726,7 +765,7 @@ class ConversationQuestionAnsweringServiceTest {
     assertThat(result.coverageStatus()).isEqualTo(CoverageStatus.PARTIAL);
     assertThat(result.partialReason()).isEqualTo("model_unavailable");
     assertThat(result.coverageThrough()).isEqualTo(messages.get(99).timestamp());
-    verify(model, never()).reduce(eq(QUESTION), anyList(), any());
+    verify(model, never()).reduceWithCitations(eq(QUESTION), anyList(), any());
   }
 
   @Test
@@ -833,6 +872,7 @@ class ConversationQuestionAnsweringServiceTest {
     assertThat(result.status()).isEqualTo(AnswerStatus.INSUFFICIENT_EVIDENCE);
     assertThat(result.evidenceMessageCount()).isZero();
     verify(retriever, times(1)).retrieveChronological(any());
+    assertQuestionModelWork(2, 1, 0);
   }
 
   @Test
@@ -900,6 +940,7 @@ class ConversationQuestionAnsweringServiceTest {
                 .counter()
                 .count())
         .isEqualTo(1.0);
+    assertQuestionModelWork(0, 0, 0);
   }
 
   @Test
@@ -919,6 +960,7 @@ class ConversationQuestionAnsweringServiceTest {
                 .counter()
                 .count())
         .isEqualTo(1.0);
+    assertQuestionModelWork(0, 0, 0);
   }
 
   @Test
@@ -969,6 +1011,16 @@ class ConversationQuestionAnsweringServiceTest {
         .sum();
   }
 
+  private void assertQuestionModelWork(
+      double expectedBatches, double expectedPlans, double expectedVerifications) {
+    assertThat(registry.get("bbagent.memory.question.answer.model.batch.count").counter().count())
+        .isEqualTo(expectedBatches);
+    assertThat(registry.get("bbagent.memory.question.answer.plan.count").counter().count())
+        .isEqualTo(expectedPlans);
+    assertThat(registry.get("bbagent.memory.question.answer.verification.count").counter().count())
+        .isEqualTo(expectedVerifications);
+  }
+
   private void exactMissThenChronological(List<QuestionMessage> messages) {
     when(retriever.retrieveExact(any(), eq(REPORT_PLAN))).thenReturn(completeExact(List.of()));
     when(retriever.retrieveChronological(any())).thenReturn(completeChronological(messages));
@@ -981,6 +1033,20 @@ class ConversationQuestionAnsweringServiceTest {
               List<QuestionMessage> batch = invocation.getArgument(1);
               String evidenceGuid = batch.get(0).messageGuid();
               return routed(answered("A supported factual finding.", evidenceGuid));
+            });
+  }
+
+  private void stubReduction(RoutedModelAnswer routed) {
+    when(model.reduceWithCitations(eq(QUESTION), anyList(), eq(DEADLINE)))
+        .thenAnswer(
+            invocation -> {
+              List<QuestionFinding> submitted = invocation.getArgument(1);
+              Set<String> cited = Set.copyOf(routed.answer().evidenceMessageGuids());
+              List<QuestionFinding> selected =
+                  submitted.stream()
+                      .filter(finding -> cited.containsAll(finding.evidenceMessageGuids()))
+                      .toList();
+              return new RoutedReductionAnswer(routed, selected);
             });
   }
 

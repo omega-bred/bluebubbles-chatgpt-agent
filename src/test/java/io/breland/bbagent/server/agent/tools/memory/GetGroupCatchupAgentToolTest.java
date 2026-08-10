@@ -50,6 +50,19 @@ class GetGroupCatchupAgentToolTest {
   }
 
   @Test
+  void toolDefinitionRoutesExactEvidenceQuestionsWithoutTopicExamples() {
+    String description = new GetGroupCatchupAgentTool(scopeResolver).getTool().description();
+
+    assertThat(description)
+        .contains(
+            "precise question requiring exact evidence",
+            "user's exact question",
+            "authoritative question coverage")
+        .doesNotContainIgnoringCase(
+            "count", "score", "game", "puzzle", "round", "wordle", "wordling");
+  }
+
+  @Test
   void returnsStructuredCoverageForADirectChatRequest() throws Exception {
     Instant from = NOW.minusSeconds(6 * 60 * 60);
     when(digestService.catchUp("account-1", "Trip", from, NOW, null))

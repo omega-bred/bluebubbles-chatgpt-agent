@@ -166,6 +166,8 @@ class ConversationQuestionAnsweringModelClientTest {
         "vault.example.tech/secret",
         "foo.company?x=1",
         "foo.company#section",
+        "localhost",
+        "LOCALHOST",
         "localhost:8080/private",
         "[2001:db8::1]:443/private",
         "[fe80::1%en0]:8080",
@@ -184,6 +186,55 @@ class ConversationQuestionAnsweringModelClientTest {
                     List.of(message("real-message-guid", "Alice", "A safe status was reported."))))
         .isInstanceOf(IllegalStateException.class)
         .hasMessage("unsafe question answer response");
+  }
+
+  @ParameterizedTest
+  @ValueSource(
+      strings = {
+        "4111 1111 1111 1",
+        "4111 1111 1111 1111",
+        "4111 1111 1111 1111 111",
+        "4111-1111-1111-1111",
+        "4111–1111–1111–1111",
+        "4111—1111—1111—1111"
+      })
+  void rejectsPaymentCardCandidatesAcrossCommonGroupingSeparators(String candidate) {
+    assertThat(
+            ConversationQuestionAnswerOutputValidator.isSafe(
+                "Payment reference " + candidate + ".", Set.of(), List.of()))
+        .isFalse();
+  }
+
+  @Test
+  void canonicalizesSourcePaymentCardIdentifiersAcrossFormattingChanges() {
+    assertThat(
+            ConversationQuestionAnswerOutputValidator.isSafe(
+                "The payment reference was 4111-1111-1111-1111.",
+                Set.of(),
+                List.of("Payment reference: 4111 1111 1111 1111")))
+        .isFalse();
+    assertThat(
+            ConversationQuestionAnswerOutputValidator.isSafe(
+                "Reference 4111 1111 1111 1111" + " ".repeat(80) + "was submitted.",
+                Set.of(),
+                List.of()))
+        .isFalse();
+  }
+
+  @Test
+  void paymentCardBoundaryDoesNotClassifyDatesOrGroupedCounts() {
+    assertThat(
+            ConversationQuestionAnswerOutputValidator.isSafe(
+                "The date is 2026-08-09 and the count is 1,234,567,890,123.", Set.of(), List.of()))
+        .isTrue();
+    assertThat(
+            ConversationQuestionAnswerOutputValidator.isSafe(
+                "The date and count are 2026-08-09 12345.", Set.of(), List.of()))
+        .isTrue();
+    assertThat(
+            ConversationQuestionAnswerOutputValidator.isSafe(
+                "References 4111 1111 1111 and 41111111111111111111.", Set.of(), List.of()))
+        .isTrue();
   }
 
   @Test
@@ -289,19 +340,36 @@ class ConversationQuestionAnsweringModelClientTest {
   }
 
   @Test
-  void verifierPayloadContainsOnlyCitedAuthorizedEvidenceAndNoMessageIdentifiers() {
+  void verifierPayloadUsesUniqueOpaqueAliasesAndOnlyCitedAuthorizedEvidence() throws Exception {
     QuestionMessage cited = message("cited-guid", "Alice", "Project Atlas is ready.");
+    QuestionMessage second = message("second-guid", "Dana", "The launch review is Tuesday.");
     QuestionMessage uncited = message("uncited-guid", "Bob", "Private unrelated transcript.");
     when(responses.create(
             anyString(), anyString(), eq(100), eq(RawSupportVerification.class), eq(DEADLINE)))
         .thenReturn(routed(new RawSupportVerification(true)));
 
     client.verifyAnswer(
-        "What is the project status?", "Project Atlas is ready.", List.of(cited), DEADLINE);
+        "What is the project status?",
+        "Project Atlas is ready and review is Tuesday.",
+        List.of(cited, second),
+        DEADLINE);
 
-    assertThat(capturedDeadlineInput(RawSupportVerification.class))
-        .contains("What is the project status?", cited.text(), "Project Atlas is ready.")
-        .doesNotContain(uncited.text(), cited.messageGuid(), uncited.messageGuid());
+    String payload = capturedDeadlineInput(RawSupportVerification.class);
+    JsonNode root = providerJson(payload);
+    List<String> aliases = new ArrayList<>();
+    root.path("cited_evidence").forEach(item -> aliases.add(item.path("evidence_alias").asText()));
+    assertThat(aliases)
+        .hasSize(2)
+        .doesNotHaveDuplicates()
+        .allSatisfy(alias -> assertThat(alias).startsWith("ev_").hasSize(35));
+    assertThat(payload)
+        .contains(
+            "What is the project status?",
+            cited.text(),
+            second.text(),
+            "Project Atlas is ready and review is Tuesday.")
+        .doesNotContain(
+            uncited.text(), cited.messageGuid(), second.messageGuid(), uncited.messageGuid());
   }
 
   @Test
@@ -322,16 +390,27 @@ class ConversationQuestionAnsweringModelClientTest {
   }
 
   @Test
-  void reductionUsesOpaqueAliasesAndVerifierUsesOnlyCitedFindingText() {
+  void reductionUsesOneOpaqueAliasPerFindingAndExpandsCompleteSelectedEvidence() throws Exception {
     QuestionFinding cited =
-        new QuestionFinding("Alice owns Atlas.", Confidence.HIGH, List.of("m-alice"), TO);
+        new QuestionFinding(
+            "Alice owns Atlas and it is ready.",
+            Confidence.HIGH,
+            List.of("m-alice-owner", "m-alice-status"),
+            TO);
     QuestionFinding uncited =
         new QuestionFinding("Bob owns Beacon.", Confidence.HIGH, List.of("m-bob"), TO);
+    AtomicReference<String> reductionPayload = new AtomicReference<>();
     when(responses.create(
             anyString(), anyString(), eq(800), eq(RawQuestionAnswer.class), eq(DEADLINE)))
         .thenAnswer(
             invocation -> {
-              String alias = submittedAliases(invocation.getArgument(1)).getFirst();
+              reductionPayload.set(invocation.getArgument(1));
+              JsonNode findings = providerJson(reductionPayload.get()).path("findings");
+              JsonNode first = findings.get(0);
+              String alias =
+                  first.hasNonNull("finding_alias")
+                      ? first.path("finding_alias").asText()
+                      : first.path("evidence_aliases").get(0).asText();
               return routed(
                   new RawQuestionAnswer(
                       "ANSWERED", "Atlas belongs to Alice.", "HIGH", List.of(alias), false));
@@ -340,12 +419,58 @@ class ConversationQuestionAnsweringModelClientTest {
             anyString(), anyString(), eq(100), eq(RawSupportVerification.class), eq(DEADLINE)))
         .thenReturn(routed(new RawSupportVerification(true)));
 
-    var reduced = client.reduce("Who owns Atlas?", List.of(cited, uncited), DEADLINE);
+    var reduction =
+        client.reduceWithCitations("Who owns Atlas?", List.of(cited, uncited), DEADLINE);
+    var reduced = reduction.routed();
     client.verifyReduction("Who owns Atlas?", reduced.answer().answer(), List.of(cited), DEADLINE);
 
-    assertThat(capturedDeadlineInput(RawSupportVerification.class))
+    JsonNode reductionRoot = providerJson(reductionPayload.get());
+    List<String> findingAliases = new ArrayList<>();
+    reductionRoot
+        .path("findings")
+        .forEach(item -> findingAliases.add(item.path("finding_alias").asText()));
+    assertThat(findingAliases)
+        .hasSize(2)
+        .doesNotHaveDuplicates()
+        .allSatisfy(alias -> assertThat(alias).startsWith("finding_").hasSize(40));
+    assertThat(reductionPayload.get())
+        .doesNotContain("m-alice-owner", "m-alice-status", "m-bob", "evidence_aliases");
+    assertThat(capturedInstructions(RawQuestionAnswer.class))
+        .contains("finding_alias", "structured evidence_aliases field");
+    assertThat(reduced.answer().evidenceMessageGuids())
+        .containsExactly("m-alice-owner", "m-alice-status");
+    assertThat(reduction.citedFindings()).containsExactly(cited).doesNotContain(uncited);
+
+    String verifierPayload = capturedDeadlineInput(RawSupportVerification.class);
+    JsonNode citedFindings = providerJson(verifierPayload).path("cited_findings");
+    assertThat(citedFindings.size()).isEqualTo(1);
+    assertThat(citedFindings.get(0).path("finding_alias").asText())
+        .startsWith("finding_")
+        .hasSize(40);
+    assertThat(verifierPayload)
         .contains(cited.answer())
-        .doesNotContain(uncited.answer(), "m-alice", "m-bob");
+        .doesNotContain(uncited.answer(), "m-alice-owner", "m-alice-status", "m-bob");
+  }
+
+  @Test
+  void reductionCannotSelectAFindingByCitingOneUnderlyingMessageIdentifier() {
+    QuestionFinding finding =
+        new QuestionFinding(
+            "Alice owns Atlas and it is ready.",
+            Confidence.HIGH,
+            List.of("m-owner", "m-status"),
+            TO);
+    when(responses.create(
+            anyString(), anyString(), eq(800), eq(RawQuestionAnswer.class), eq(DEADLINE)))
+        .thenReturn(
+            routed(
+                new RawQuestionAnswer(
+                    "ANSWERED", "Atlas is ready.", "HIGH", List.of("m-owner"), false)));
+
+    assertThatThrownBy(
+            () -> client.reduceWithCitations("What is Atlas's status?", List.of(finding), DEADLINE))
+        .isInstanceOf(IllegalStateException.class)
+        .hasMessage("question answer evidence is outside submitted messages");
   }
 
   @Test
@@ -405,15 +530,23 @@ class ConversationQuestionAnsweringModelClientTest {
   }
 
   private List<String> submittedAliases(String providerInput) throws Exception {
-    String json = providerInput.substring(providerInput.indexOf('\n') + 1);
-    JsonNode root = objectMapper.readTree(json);
+    JsonNode root = providerJson(providerInput);
     List<String> aliases = new ArrayList<>();
     root.path("evidence").forEach(item -> aliases.add(item.path("evidence_alias").asText()));
     root.path("findings")
         .forEach(
-            finding ->
-                finding.path("evidence_aliases").forEach(alias -> aliases.add(alias.asText())));
+            finding -> {
+              if (finding.hasNonNull("finding_alias")) {
+                aliases.add(finding.path("finding_alias").asText());
+              }
+              finding.path("evidence_aliases").forEach(alias -> aliases.add(alias.asText()));
+            });
     return aliases.stream().distinct().toList();
+  }
+
+  private JsonNode providerJson(String providerInput) throws Exception {
+    String json = providerInput.substring(providerInput.indexOf('\n') + 1);
+    return objectMapper.readTree(json);
   }
 
   private String capturedInputWithoutDeadline(Class<?> outputType) {

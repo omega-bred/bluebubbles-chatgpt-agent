@@ -258,6 +258,8 @@ public class OperationalMetricsService {
       long messageCount,
       long pageCount,
       long modelBatchCount,
+      long planCount,
+      long verificationCount,
       boolean success,
       @Nullable String failureType,
       Duration duration) {
@@ -294,6 +296,16 @@ public class OperationalMetricsService {
         "Group question model batches",
         tags,
         Math.max(0L, modelBatchCount));
+    incrementCounter(
+        "bbagent.memory.question.answer.plan.count",
+        "Group question logical planning calls",
+        tags,
+        Math.max(0L, planCount));
+    incrementCounter(
+        "bbagent.memory.question.answer.verification.count",
+        "Group question logical support verification calls",
+        tags,
+        Math.max(0L, verificationCount));
   }
 
   public void recordMemoryProactiveDelivery(

@@ -49,8 +49,7 @@ final class ConversationQuestionAnswerOutputValidator {
       Pattern.compile("(?<![\\p{L}\\p{N}])\\d{7,}(?![\\p{L}\\p{N}])");
   private static final Pattern GROUPED_LONG_NUMBER =
       Pattern.compile("(?<![\\p{L}\\p{N}])\\d{1,3}(?:,\\d{3}){2,}(?![\\p{L}\\p{N}])");
-  private static final Pattern PAYMENT_CARD_LIKE =
-      Pattern.compile("(?<![\\p{L}\\p{N}])\\d{13,19}(?![\\p{L}\\p{N}])");
+  private static final int MAX_PAYMENT_CARD_CANDIDATE_CHARACTERS = 64;
   private static final Pattern PHONE_CONTEXT =
       Pattern.compile("(?i)\\b(?:phone|call|text|contact|mobile|telephone|tel|sms|fax|reach)\\b");
   private static final Pattern PHONE_FORMAT =
@@ -130,7 +129,7 @@ final class ConversationQuestionAnswerOutputValidator {
         || containsForbiddenIdentifier(normalizedAnswer, forbiddenEvidenceIdentifiers, false)
         || containsForbiddenIdentifier(normalizedAnswer, opaqueEvidenceAliases, true)
         || containsDirectEmailOrUrl(normalizedAnswer)
-        || PAYMENT_CARD_LIKE.matcher(normalizedAnswer).find()
+        || containsPaymentCardLike(normalizedAnswer)
         || INSTRUCTION_LEAKAGE.matcher(normalizedAnswer).find()) {
       return false;
     }
@@ -241,6 +240,7 @@ final class ConversationQuestionAnswerOutputValidator {
       identifiers.addPath(endpoint.path());
     }
     collectMatches(source, PATH_IDENTIFIER, identifiers::addPath);
+    collectPaymentCardIdentifiers(source, identifiers);
 
     Matcher formattedMatcher = NUMBER_CANDIDATE.matcher(source);
     while (formattedMatcher.find()) {
@@ -311,6 +311,123 @@ final class ConversationQuestionAnswerOutputValidator {
     }
     return containsSensitiveNumberMatch(answer, BARE_LONG_NUMBER, identifiers)
         || containsSensitiveNumberMatch(answer, GROUPED_LONG_NUMBER, identifiers);
+  }
+
+  private static void collectPaymentCardIdentifiers(String source, SourceIdentifiers identifiers) {
+    for (String candidate : paymentCardCandidates(source)) {
+      identifiers.addSensitiveNumber(candidate);
+    }
+  }
+
+  private static boolean containsPaymentCardLike(String text) {
+    return !paymentCardCandidates(text).isEmpty();
+  }
+
+  private static List<String> paymentCardCandidates(String text) {
+    List<String> candidates = new ArrayList<>();
+    int index = 0;
+    while (index < text.length()) {
+      if (!Character.isDigit(text.charAt(index))
+          || (index > 0 && Character.isLetterOrDigit(text.charAt(index - 1)))) {
+        index++;
+        continue;
+      }
+      int cursor = index;
+      int digitCount = 0;
+      int lastDigitEnd = index;
+      StringBuilder digits = new StringBuilder(19);
+      while (cursor < text.length() && cursor - index < MAX_PAYMENT_CARD_CANDIDATE_CHARACTERS) {
+        char value = text.charAt(cursor);
+        if (Character.isDigit(value)) {
+          digitCount++;
+          lastDigitEnd = cursor + 1;
+          if (digitCount <= 19) {
+            digits.append(value);
+          }
+          cursor++;
+          continue;
+        }
+        if (!isPaymentCardSeparator(value)) {
+          break;
+        }
+        int nextDigit = cursor;
+        while (nextDigit < text.length()
+            && nextDigit - cursor < 4
+            && isPaymentCardSeparator(text.charAt(nextDigit))) {
+          nextDigit++;
+        }
+        if (nextDigit == text.length() || !Character.isDigit(text.charAt(nextDigit))) {
+          break;
+        }
+        cursor = nextDigit;
+      }
+      boolean workBudgetExhausted =
+          cursor < text.length()
+              && cursor - index >= MAX_PAYMENT_CARD_CANDIDATE_CHARACTERS
+              && isPaymentCardCandidateCharacter(text.charAt(cursor));
+      boolean tokenEnd =
+          lastDigitEnd == text.length() || !Character.isLetterOrDigit(text.charAt(lastDigitEnd));
+      String rawCandidate = text.substring(index, lastDigitEnd);
+      if (!workBudgetExhausted
+          && tokenEnd
+          && digitCount >= 13
+          && digitCount <= 19
+          && isPlausiblePaymentCardGrouping(rawCandidate)) {
+        candidates.add(digits.toString());
+        if (candidates.size() > MAX_SENSITIVE_SOURCE_IDENTIFIERS) {
+          throw new IllegalStateException("payment-card work budget exceeded");
+        }
+      }
+      index = Math.max(index + 1, cursor);
+    }
+    return List.copyOf(candidates);
+  }
+
+  private static boolean isPaymentCardCandidateCharacter(char value) {
+    return Character.isDigit(value) || isPaymentCardSeparator(value);
+  }
+
+  private static boolean isPlausiblePaymentCardGrouping(String candidate) {
+    int groupDigits = 0;
+    int groupCount = 0;
+    boolean separated = false;
+    boolean betweenGroups = false;
+    for (int index = 0; index < candidate.length(); index++) {
+      char value = candidate.charAt(index);
+      if (Character.isDigit(value)) {
+        if (betweenGroups) {
+          if (groupDigits < 3 || groupDigits > 6) {
+            return false;
+          }
+          groupCount++;
+          groupDigits = 0;
+          betweenGroups = false;
+        }
+        groupDigits++;
+      } else if (isPaymentCardSeparator(value)) {
+        separated = true;
+        betweenGroups = groupDigits > 0;
+      } else {
+        return false;
+      }
+    }
+    if (!separated) {
+      return true;
+    }
+    if (groupDigits < 1 || groupDigits > 6) {
+      return false;
+    }
+    return groupCount + 1 >= 3;
+  }
+
+  private static boolean isPaymentCardSeparator(char value) {
+    return Character.isSpaceChar(value)
+        || value == '-'
+        || (value >= '\u2010' && value <= '\u2015')
+        || value == '\u2212'
+        || value == '\uFE58'
+        || value == '\uFE63'
+        || value == '\uFF0D';
   }
 
   private static boolean containsSensitiveNumberMatch(
@@ -494,7 +611,7 @@ final class ConversationQuestionAnswerOutputValidator {
     boolean validHost =
         isValidIpv4(normalizedHost)
             || isValidDomain(normalizedHost)
-            || ("localhost".equals(normalizedHost) && (port != null || hasPathOrQuery))
+            || "localhost".equals(normalizedHost)
             || (port != null
                 && containsAsciiLetter(normalizedHost)
                 && isValidHostnameLabel(normalizedHost));

@@ -191,6 +191,16 @@ public final class ConversationQuestionAnsweringModels {
     }
   }
 
+  public record RoutedReductionAnswer(
+      RoutedModelAnswer routed, List<QuestionFinding> citedFindings) {
+    public RoutedReductionAnswer {
+      if (routed == null) {
+        throw new IllegalArgumentException("routed reduction answer must not be null");
+      }
+      citedFindings = List.copyOf(citedFindings);
+    }
+  }
+
   public record RoutedSupportVerification(boolean supported, String model, boolean fallbackUsed) {
     public RoutedSupportVerification {
       requireNotBlank(model, "verification model");

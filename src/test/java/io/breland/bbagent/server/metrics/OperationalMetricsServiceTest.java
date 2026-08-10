@@ -203,6 +203,8 @@ class OperationalMetricsServiceTest {
         3,
         2,
         1,
+        1,
+        2,
         true,
         null,
         Duration.ofMillis(250));
@@ -224,6 +226,9 @@ class OperationalMetricsServiceTest {
     assertEquals(2.0, registry.get("bbagent.memory.question.answer.page.count").counter().count());
     assertEquals(
         1.0, registry.get("bbagent.memory.question.answer.model.batch.count").counter().count());
+    assertEquals(1.0, registry.get("bbagent.memory.question.answer.plan.count").counter().count());
+    assertEquals(
+        2.0, registry.get("bbagent.memory.question.answer.verification.count").counter().count());
     org.assertj.core.api.Assertions.assertThat(
             registry.getMeters().stream()
                 .filter(

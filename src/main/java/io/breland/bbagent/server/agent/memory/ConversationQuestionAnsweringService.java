@@ -14,6 +14,7 @@ import io.breland.bbagent.server.agent.memory.ConversationQuestionAnsweringModel
 import io.breland.bbagent.server.agent.memory.ConversationQuestionAnsweringModels.RetrievalRequest;
 import io.breland.bbagent.server.agent.memory.ConversationQuestionAnsweringModels.RetrievalResult;
 import io.breland.bbagent.server.agent.memory.ConversationQuestionAnsweringModels.RoutedModelAnswer;
+import io.breland.bbagent.server.agent.memory.ConversationQuestionAnsweringModels.RoutedReductionAnswer;
 import io.breland.bbagent.server.agent.memory.ConversationQuestionAnsweringModels.RoutedSupportVerification;
 import io.breland.bbagent.server.agent.memory.ConversationQuestionAnsweringModels.SearchPlan;
 import io.breland.bbagent.server.metrics.OperationalMetricsService;
@@ -147,7 +148,9 @@ public class ConversationQuestionAnsweringService {
         result.model(),
         work.messageCount(),
         work.pageCount,
-        budget.totalModelCalls(),
+        budget.modelBatches,
+        budget.plannerCalls,
+        budget.verificationCalls,
         success,
         success ? null : firstReason(result.partialReason(), result.status().name()),
         Duration.between(startedAt, clock.instant()));
@@ -181,7 +184,7 @@ public class ConversationQuestionAnsweringService {
 
       RetrievalRequest request =
           new RetrievalRequest(accountId, conversation, memberships, from, to, deadline);
-      SearchPlan plan = safePlan(question, from, to, deadline);
+      SearchPlan plan = safePlan(question, from, to, deadline, budget);
       boolean exactSourceAttempted = !plan.terms().isEmpty();
       RetrievalResult exact = null;
       Synthesis exactSynthesis = null;
@@ -271,11 +274,13 @@ public class ConversationQuestionAnsweringService {
     }
   }
 
-  private SearchPlan safePlan(String question, Instant from, Instant to, Instant deadline) {
+  private SearchPlan safePlan(
+      String question, Instant from, Instant to, Instant deadline, ModelBudget budget) {
     if (deadlineReached(deadline)) {
       return emptyPlan();
     }
     try {
+      budget.plannerCalls++;
       return Objects.requireNonNull(
           model.plan(question, from, to, deadline), "model returned no search plan");
     } catch (RuntimeException ignored) {
@@ -447,7 +452,9 @@ public class ConversationQuestionAnsweringService {
     budget.modelBatches++;
     budget.characters += reductionCharacters;
     try {
-      RoutedModelAnswer reduced = model.reduce(question, questionFindings, deadline);
+      RoutedReductionAnswer reduction =
+          model.reduceWithCitations(question, questionFindings, deadline);
+      RoutedModelAnswer reduced = reduction.routed();
       ModelAnswer validated =
           validateAnswer(
               reduced,
@@ -459,7 +466,8 @@ public class ConversationQuestionAnsweringService {
       RoutedModelAnswer accepted = reduced;
       if (validated.status() == AnswerStatus.ANSWERED) {
         VerificationOutcome verification =
-            verifyReducedAnswer(question, reduced, questionFindings, deadline, budget);
+            verifyReducedAnswer(
+                question, reduced, questionFindings, reduction.citedFindings(), deadline, budget);
         if (verification.failureReason() != null) {
           return bestFinding(
               findings, processedThrough, firstReason(verification.failureReason(), partialReason));
@@ -566,7 +574,7 @@ public class ConversationQuestionAnsweringService {
         return VerificationOutcome.failure(CHARACTER_LIMIT);
       }
       budget.characters += verificationCharacters;
-      budget.verifierCalls++;
+      budget.verificationCalls++;
       RoutedSupportVerification verification =
           model.verifyAnswer(question, proposed.answer().answer(), citedMessages, deadline);
       return VerificationOutcome.success(applyVerification(proposed, verification));
@@ -579,15 +587,17 @@ public class ConversationQuestionAnsweringService {
       String question,
       RoutedModelAnswer proposed,
       List<QuestionFinding> submittedFindings,
+      List<QuestionFinding> citedFindings,
       Instant deadline,
       ModelBudget budget) {
     Set<String> cited = Set.copyOf(proposed.answer().evidenceMessageGuids());
-    List<QuestionFinding> citedFindings =
-        submittedFindings.stream()
-            .filter(finding -> finding.evidenceMessageGuids().stream().anyMatch(cited::contains))
-            .toList();
-    if (citedFindings.isEmpty() || deadlineReached(deadline)) {
-      return VerificationOutcome.failure(citedFindings.isEmpty() ? MODEL_INVALID : TIME_LIMIT);
+    Set<String> expandedFindingEvidence = findingGuids(citedFindings);
+    boolean invalidCitations =
+        citedFindings.isEmpty()
+            || !new LinkedHashSet<>(submittedFindings).containsAll(citedFindings)
+            || !expandedFindingEvidence.equals(cited);
+    if (invalidCitations || deadlineReached(deadline)) {
+      return VerificationOutcome.failure(invalidCitations ? MODEL_INVALID : TIME_LIMIT);
     }
     try {
       int verificationCharacters =
@@ -598,7 +608,7 @@ public class ConversationQuestionAnsweringService {
         return VerificationOutcome.failure(CHARACTER_LIMIT);
       }
       budget.characters += verificationCharacters;
-      budget.verifierCalls++;
+      budget.verificationCalls++;
       RoutedSupportVerification verification =
           model.verifyReduction(question, proposed.answer().answer(), citedFindings, deadline);
       return VerificationOutcome.success(applyVerification(proposed, verification));
@@ -845,12 +855,9 @@ public class ConversationQuestionAnsweringService {
 
   private final class ModelBudget {
     private int modelBatches;
-    private int verifierCalls;
+    private int plannerCalls;
+    private int verificationCalls;
     private int characters;
-
-    private int totalModelCalls() {
-      return modelBatches + verifierCalls;
-    }
   }
 
   private static final class QuestionAnswerWork {

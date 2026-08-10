@@ -148,7 +148,7 @@ Raw questions and messages must not appear in application logs, exception messag
 
 The natural-language question is sent to the configured model provider for search planning. Only bounded, authorized candidate messages are sent for answer synthesis. These provider calls use the same application-controlled routing and retention posture as group-memory extraction; no raw question, search plan, candidate transcript, or provider response is added to application persistence by this feature.
 
-Operational instrumentation uses existing `bbagent.memory.*` conventions with low-cardinality tags only. Record question-answer count and latency with tags for `operation`, `outcome`, `retrieval_mode`, `coverage_status`, `model`, and `failure_type`. Record message, page, and model-batch counts as summaries without group, account, chat, sender, query, or content tags. If a new meter is required, update the BlueBubbles Grafana dashboard in the same implementation pass.
+Operational instrumentation uses existing `bbagent.memory.*` conventions with low-cardinality tags only. Record question-answer count and latency with tags for `operation`, `outcome`, `retrieval_mode`, `coverage_status`, `model`, and `failure_type`. Record message, page, generation/reduction model-batch, logical planning-call, and logical support-verification-call counts without group, account, chat, sender, query, or content tags. Lower-level provider-attempt telemetry remains distinct from these logical request-scoped counts. If a new meter is required, update the BlueBubbles Grafana dashboard in the same implementation pass.
 
 ## Configuration
 

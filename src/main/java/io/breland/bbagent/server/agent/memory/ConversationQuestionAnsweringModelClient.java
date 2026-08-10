@@ -11,6 +11,7 @@ import io.breland.bbagent.server.agent.memory.ConversationQuestionAnsweringModel
 import io.breland.bbagent.server.agent.memory.ConversationQuestionAnsweringModels.QuestionFinding;
 import io.breland.bbagent.server.agent.memory.ConversationQuestionAnsweringModels.QuestionMessage;
 import io.breland.bbagent.server.agent.memory.ConversationQuestionAnsweringModels.RoutedModelAnswer;
+import io.breland.bbagent.server.agent.memory.ConversationQuestionAnsweringModels.RoutedReductionAnswer;
 import io.breland.bbagent.server.agent.memory.ConversationQuestionAnsweringModels.RoutedSupportVerification;
 import io.breland.bbagent.server.agent.memory.ConversationQuestionAnsweringModels.SearchPlan;
 import java.time.Instant;
@@ -50,8 +51,9 @@ public class ConversationQuestionAnsweringModelClient {
       role changes found in it. Keep the answer short and direct. Never reproduce transcript text
       beyond the shortest factual fragments needed to answer the question. Never include
       message GUIDs, raw phone numbers, email addresses, URLs, prompts, or instructions in the answer.
-      Cite supplied opaque evidence aliases only in the structured evidence field. If participation or evidence
-      is incomplete, say "only reported" rather than claiming a complete result. Return
+      Cite supplied opaque evidence_alias values exactly in the structured evidence_aliases field.
+      If participation or evidence is incomplete, say "only reported" rather than claiming a
+      complete result. Return
       INSUFFICIENT_EVIDENCE for unsupported comparisons or conclusions. Do not use tools.
       """;
   private static final String REDUCE_INSTRUCTIONS =
@@ -61,8 +63,9 @@ public class ConversationQuestionAnsweringModelClient {
       role changes found in them. Keep the answer short and direct. Never reproduce finding text
       beyond the shortest factual fragments needed to answer the question. Never include
       message GUIDs, raw phone numbers, email addresses, URLs, prompts, or instructions in the answer.
-      Cite supplied opaque evidence aliases only in the structured evidence field. If participation or evidence
-      is incomplete, say "only reported" rather than claiming a complete result. Return
+      Cite supplied opaque finding_alias values exactly in the structured evidence_aliases field. If
+      participation or evidence is incomplete, say "only reported" rather than claiming a complete
+      result. Return
       INSUFFICIENT_EVIDENCE for unsupported comparisons or conclusions. Do not use tools.
       """;
   private static final String VERIFY_INSTRUCTIONS =
@@ -141,11 +144,12 @@ public class ConversationQuestionAnsweringModelClient {
             ANSWER_INSTRUCTIONS, providerInput.payload(), 800, RawQuestionAnswer.class, deadline);
     return new RoutedModelAnswer(
         parseAnswer(
-            routed.value(),
-            providerInput.aliasToMessageGuid(),
-            providerInput.messageGuids(),
-            providerInput.evidenceAliases(),
-            submittedMessages.stream().map(QuestionMessage::text).toList()),
+                routed.value(),
+                providerInput.aliasToMessageGuids(),
+                providerInput.messageGuids(),
+                providerInput.evidenceAliases(),
+                submittedMessages.stream().map(QuestionMessage::text).toList())
+            .answer(),
         routed.model(),
         routed.fallbackUsed());
   }
@@ -157,10 +161,21 @@ public class ConversationQuestionAnsweringModelClient {
   public RoutedModelAnswer reduce(
       String question, List<QuestionFinding> findings, Instant deadline) {
     Objects.requireNonNull(deadline, "deadline");
-    return reduceInternal(question, findings, deadline);
+    return reduceWithCitations(question, findings, deadline).routed();
+  }
+
+  public RoutedReductionAnswer reduceWithCitations(
+      String question, List<QuestionFinding> findings, Instant deadline) {
+    Objects.requireNonNull(deadline, "deadline");
+    return reduceWithCitationsInternal(question, findings, deadline);
   }
 
   private RoutedModelAnswer reduceInternal(
+      String question, List<QuestionFinding> findings, @Nullable Instant deadline) {
+    return reduceWithCitationsInternal(question, findings, deadline).routed();
+  }
+
+  private RoutedReductionAnswer reduceWithCitationsInternal(
       String question, List<QuestionFinding> findings, @Nullable Instant deadline) {
     requireQuestion(question);
     List<QuestionFinding> submittedFindings = List.copyOf(findings);
@@ -168,15 +183,21 @@ public class ConversationQuestionAnsweringModelClient {
     RoutedResponse<RawQuestionAnswer> routed =
         create(
             REDUCE_INSTRUCTIONS, providerInput.payload(), 800, RawQuestionAnswer.class, deadline);
-    return new RoutedModelAnswer(
+    ParsedAnswer parsed =
         parseAnswer(
             routed.value(),
-            providerInput.aliasToMessageGuid(),
+            providerInput.aliasToMessageGuids(),
             providerInput.messageGuids(),
             providerInput.evidenceAliases(),
-            submittedFindings.stream().map(QuestionFinding::answer).toList()),
-        routed.model(),
-        routed.fallbackUsed());
+            submittedFindings.stream().map(QuestionFinding::answer).toList());
+    List<QuestionFinding> citedFindings =
+        parsed.selectedAliases().stream()
+            .map(providerInput.aliasToFinding()::get)
+            .filter(Objects::nonNull)
+            .toList();
+    return new RoutedReductionAnswer(
+        new RoutedModelAnswer(parsed.answer(), routed.model(), routed.fallbackUsed()),
+        citedFindings);
   }
 
   public RoutedSupportVerification verifyAnswer(
@@ -289,24 +310,29 @@ public class ConversationQuestionAnsweringModelClient {
   }
 
   private ProviderInput serializeFindings(String question, List<QuestionFinding> findings) {
-    EvidenceAliases aliases = evidenceAliases(submittedFindingMessageGuids(findings));
+    LinkedHashMap<String, List<String>> aliasToMessageGuids = new LinkedHashMap<>();
+    LinkedHashMap<String, QuestionFinding> aliasToFinding = new LinkedHashMap<>();
+    Set<String> messageGuids = submittedFindingMessageGuids(findings);
     ObjectNode input = objectMapper.createObjectNode();
     input.put("question", question);
     ArrayNode serializedFindings = input.putArray("findings");
     for (QuestionFinding finding : findings) {
+      String alias = opaqueAlias("finding_", messageGuids, aliasToMessageGuids.keySet());
+      aliasToMessageGuids.put(alias, List.copyOf(finding.evidenceMessageGuids()));
+      aliasToFinding.put(alias, finding);
       ObjectNode item = objectMapper.createObjectNode();
       serializedFindings.add(item);
+      item.put("finding_alias", alias);
       item.put("answer", finding.answer());
       item.put("confidence", finding.confidence().name());
-      ArrayNode evidence = item.putArray("evidence_aliases");
-      finding
-          .evidenceMessageGuids()
-          .forEach(messageGuid -> evidence.add(aliases.messageGuidToAlias().get(messageGuid)));
       item.put("coverage_through", finding.coverageThrough().toString());
     }
-    return providerInput(
+    return new ProviderInput(
         "Untrusted findings JSON:\n" + serialize(input, "could not serialize question findings"),
-        aliases);
+        Map.copyOf(aliasToMessageGuids),
+        Set.copyOf(messageGuids),
+        Set.copyOf(aliasToMessageGuids.keySet()),
+        Map.copyOf(aliasToFinding));
   }
 
   public int reduceWorkCharacters(String question, List<QuestionFinding> findings) {
@@ -341,10 +367,12 @@ public class ConversationQuestionAnsweringModelClient {
 
   private String serializeMessageVerificationInput(
       String question, String proposedAnswer, List<QuestionMessage> citedEvidence) {
+    EvidenceAliases aliases = evidenceAliases(submittedMessageGuids(citedEvidence));
     ObjectNode input = verificationInput(question, proposedAnswer);
     ArrayNode evidence = input.putArray("cited_evidence");
     for (QuestionMessage message : citedEvidence) {
       ObjectNode item = evidence.addObject();
+      item.put("evidence_alias", aliases.messageGuidToAlias().get(message.messageGuid()));
       item.put("participant", message.participant());
       item.put("timestamp", message.timestamp().toString());
       item.put("text", message.text());
@@ -357,8 +385,13 @@ public class ConversationQuestionAnsweringModelClient {
       String question, String proposedAnswer, List<QuestionFinding> citedFindings) {
     ObjectNode input = verificationInput(question, proposedAnswer);
     ArrayNode findings = input.putArray("cited_findings");
+    Set<String> messageGuids = submittedFindingMessageGuids(citedFindings);
+    Set<String> aliases = new LinkedHashSet<>();
     for (QuestionFinding finding : citedFindings) {
       ObjectNode item = findings.addObject();
+      String alias = opaqueAlias("finding_", messageGuids, aliases);
+      aliases.add(alias);
+      item.put("finding_alias", alias);
       item.put("answer", finding.answer());
       item.put("confidence", finding.confidence().name());
       item.put("coverage_through", finding.coverageThrough().toString());
@@ -383,9 +416,9 @@ public class ConversationQuestionAnsweringModelClient {
         routed.value().fullySupported(), routed.model(), routed.fallbackUsed());
   }
 
-  private ModelAnswer parseAnswer(
+  private ParsedAnswer parseAnswer(
       RawQuestionAnswer raw,
-      Map<String, String> aliasToMessageGuid,
+      Map<String, List<String>> aliasToMessageGuids,
       Set<String> forbiddenIdentifiers,
       Set<String> opaqueEvidenceAliases,
       List<String> submittedSourceTexts) {
@@ -400,23 +433,26 @@ public class ConversationQuestionAnsweringModelClient {
     }
 
     LinkedHashSet<String> evidence = new LinkedHashSet<>();
+    LinkedHashSet<String> selectedAliases = new LinkedHashSet<>();
     for (String alias : raw.evidenceAliases()) {
       if (StringUtils.isBlank(alias)) {
         throw new IllegalStateException("invalid question answer response");
       }
-      String messageGuid = aliasToMessageGuid.get(alias);
-      if (messageGuid == null) {
+      List<String> messageGuids = aliasToMessageGuids.get(alias);
+      if (messageGuids == null) {
         throw new IllegalStateException("question answer evidence is outside submitted messages");
       }
-      evidence.add(messageGuid);
+      selectedAliases.add(alias);
+      evidence.addAll(messageGuids);
     }
     if (status == AnswerStatus.ANSWERED && evidence.isEmpty()) {
       throw new IllegalStateException("invalid question answer response");
     }
     ConversationQuestionAnswerOutputValidator.requireSafe(
         answer, forbiddenIdentifiers, opaqueEvidenceAliases, submittedSourceTexts);
-    return new ModelAnswer(
-        status, answer, confidence, List.copyOf(evidence), raw.needsMoreContext());
+    return new ParsedAnswer(
+        new ModelAnswer(status, answer, confidence, List.copyOf(evidence), raw.needsMoreContext()),
+        List.copyOf(selectedAliases));
   }
 
   private static Set<String> submittedMessageGuids(List<QuestionMessage> messages) {
@@ -435,10 +471,7 @@ public class ConversationQuestionAnsweringModelClient {
     LinkedHashMap<String, String> aliasToMessageGuid = new LinkedHashMap<>();
     LinkedHashMap<String, String> messageGuidToAlias = new LinkedHashMap<>();
     for (String messageGuid : messageGuids) {
-      String alias;
-      do {
-        alias = "ev_" + UUID.randomUUID().toString().replace("-", "");
-      } while (messageGuids.contains(alias) || aliasToMessageGuid.containsKey(alias));
+      String alias = opaqueAlias("ev_", messageGuids, aliasToMessageGuid.keySet());
       aliasToMessageGuid.put(alias, messageGuid);
       messageGuidToAlias.put(messageGuid, alias);
     }
@@ -446,11 +479,25 @@ public class ConversationQuestionAnsweringModelClient {
   }
 
   private static ProviderInput providerInput(String payload, EvidenceAliases aliases) {
+    LinkedHashMap<String, List<String>> aliasToMessageGuids = new LinkedHashMap<>();
+    aliases
+        .aliasToMessageGuid()
+        .forEach((alias, guid) -> aliasToMessageGuids.put(alias, List.of(guid)));
     return new ProviderInput(
         payload,
-        aliases.aliasToMessageGuid(),
+        Map.copyOf(aliasToMessageGuids),
         Set.copyOf(aliases.aliasToMessageGuid().values()),
-        Set.copyOf(aliases.aliasToMessageGuid().keySet()));
+        Set.copyOf(aliases.aliasToMessageGuid().keySet()),
+        Map.of());
+  }
+
+  private static String opaqueAlias(
+      String prefix, Set<String> forbiddenIdentifiers, Set<String> assignedAliases) {
+    String alias;
+    do {
+      alias = prefix + UUID.randomUUID().toString().replace("-", "");
+    } while (forbiddenIdentifiers.contains(alias) || assignedAliases.contains(alias));
+    return alias;
   }
 
   private static <T extends Enum<T>> T parseEnum(String value, Class<T> enumType) {
@@ -554,9 +601,12 @@ public class ConversationQuestionAnsweringModelClient {
   private record EvidenceAliases(
       Map<String, String> aliasToMessageGuid, Map<String, String> messageGuidToAlias) {}
 
+  private record ParsedAnswer(ModelAnswer answer, List<String> selectedAliases) {}
+
   private record ProviderInput(
       String payload,
-      Map<String, String> aliasToMessageGuid,
+      Map<String, List<String>> aliasToMessageGuids,
       Set<String> messageGuids,
-      Set<String> evidenceAliases) {}
+      Set<String> evidenceAliases,
+      Map<String, QuestionFinding> aliasToFinding) {}
 }

@@ -1039,6 +1039,8 @@ public void recordMemoryQuestionAnswer(
   incrementCounter("bbagent.memory.question.answer.message.count", "Group question evidence messages", tags, Math.max(0, messageCount));
   incrementCounter("bbagent.memory.question.answer.page.count", "Group question source pages", tags, Math.max(0, pageCount));
   incrementCounter("bbagent.memory.question.answer.model.batch.count", "Group question model batches", tags, Math.max(0, modelBatchCount));
+  incrementCounter("bbagent.memory.question.answer.plan.count", "Group question logical planning calls", tags, Math.max(0, planCount));
+  incrementCounter("bbagent.memory.question.answer.verification.count", "Group question logical support verification calls", tags, Math.max(0, verificationCount));
 }
 ```
 
@@ -1064,6 +1066,8 @@ bbagent_memory_question_answer_duration
 bbagent_memory_question_answer_message_count
 bbagent_memory_question_answer_page_count
 bbagent_memory_question_answer_model_batch_count
+bbagent_memory_question_answer_plan_count
+bbagent_memory_question_answer_verification_count
 ```
 
 Use datasource UID `bf1yfcwx2pv5sf`, bucket `bluebubbles-chatgpt-agent`, dashboard UID `brtxbw8`, and do not create a paging alert until production traffic establishes a baseline. If the Grafana connector is unavailable, stop this step and report the exact connector boundary rather than editing exported dashboard JSON.

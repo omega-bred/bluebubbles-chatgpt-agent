@@ -40,10 +40,10 @@ public class GetGroupCatchupAgentTool implements ToolProvider {
         TOOL_NAME,
         "Get a time-bounded catch-up for group conversations the current user was authorized to"
             + " see. Use for what happened, what did I miss, summaries, decisions, and open"
-            + " questions over a requested time range. For precise who, what, which, when, count,"
-            + " score, or comparison questions, pass the user's exact question in question. Unlike"
-            + " semantic memory search, this returns authoritative question coverage and a coverage"
-            + " watermark.",
+            + " questions over a requested time range. For a precise question requiring exact"
+            + " evidence from authorized group history, pass the user's exact question in question."
+            + " Unlike semantic memory search, this returns authoritative question coverage and a"
+            + " coverage watermark.",
         jsonSchema(GetGroupCatchupRequest.class),
         false,
         (context, args) -> {

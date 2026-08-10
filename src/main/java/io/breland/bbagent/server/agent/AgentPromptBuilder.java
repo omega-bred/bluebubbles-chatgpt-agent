@@ -309,7 +309,7 @@ public final class AgentPromptBuilder {
                   + " for questions like what happened, what did I miss, or summaries of a group over a time range. Use "
                   + MemoryGetAgentTool.TOOL_NAME
                   + " for semantic facts and decisions; its limited search results are not proof of complete time-range coverage. "
-                  + "For precise questions about who, what, which, when, counts, scores, or comparisons in an authorized group, call "
+                  + "For a precise question requiring exact evidence from an authorized group, call "
                   + GetGroupCatchupAgentTool.TOOL_NAME
                   + " with the user's exact question. Treat question_answer coverage and insufficient_evidence as authoritative for that requested range; do not substitute unrelated semantic memory as current group evidence. "
                   + "When the user asks to enable, disable, or schedule proactive summaries from a group into this one-to-one chat, call "
@@ -366,13 +366,13 @@ public final class AgentPromptBuilder {
                 + (message != null && message.isGroup()
                     ? "In a group chat, use "
                         + GetGroupCatchupAgentTool.TOOL_NAME
-                        + " for precise questions about the current group's own history. The server always scopes this tool to the current group; do not use it to ask about another conversation. Treat question_answer coverage and insufficient_evidence as authoritative for that requested range; do not substitute unrelated semantic memory as current group evidence. "
+                        + " for precise questions requiring exact evidence from the current group's own history. The server always scopes this tool to the current group; do not use it to ask about another conversation. Treat question_answer coverage and insufficient_evidence as authoritative for that requested range; do not substitute unrelated semantic memory as current group evidence. "
                     : "In a one-to-one chat, use "
                         + GetGroupCatchupAgentTool.TOOL_NAME
                         + " for questions like what happened, what did I miss, or summaries of a group over a time range. Use "
                         + MemoryGetAgentTool.TOOL_NAME
                         + " for semantic facts and decisions; its limited search results are not proof of complete time-range coverage. "
-                        + "For precise questions about who, what, which, when, counts, scores, or comparisons in an authorized group, call "
+                        + "For a precise question requiring exact evidence from an authorized group, call "
                         + GetGroupCatchupAgentTool.TOOL_NAME
                         + " with the user's exact question. Treat question_answer coverage and insufficient_evidence as authoritative for that requested range; do not substitute unrelated semantic memory as current group evidence. "
                         + "When the user asks to enable, disable, or schedule proactive summaries from a group into this one-to-one chat, call "
