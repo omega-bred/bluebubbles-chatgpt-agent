@@ -58,7 +58,9 @@ class GetGroupCatchupAgentToolTest {
 
   @Test
   void descriptionExplainsProgressiveQuestionModeWithoutTopicsOrInternalJargon() {
-    String description = new GetGroupCatchupAgentTool(scopeResolver).getTool().description();
+    var tool = new GetGroupCatchupAgentTool(scopeResolver).getTool();
+    String description = tool.description();
+    String schema = String.valueOf(tool.parameters()._additionalProperties());
 
     assertThat(description)
         .containsIgnoringCase("question")
@@ -77,6 +79,10 @@ class GetGroupCatchupAgentToolTest {
             "round",
             "wordle",
             "wordling");
+    assertThat(schema)
+        .contains("lookback_hours")
+        .contains("Summary-mode lookback")
+        .contains("Omit when question is present");
   }
 
   @Test
@@ -134,17 +140,13 @@ class GetGroupCatchupAgentToolTest {
   }
 
   @Test
-  void explicitQuestionLookbackCreatesAHardLowerBound() throws Exception {
-    invokeTool("{\"group\":\"Project chat\",\"question\":\"What changed?\",\"lookback_hours\":48}");
+  void questionModeLeavesRelativeLookbackInsideTheQuestion() throws Exception {
+    invokeTool(
+        "{\"group\":\"Project chat\",\"question\":\"What changed in the last 48 hours?\",\"lookback_hours\":48}");
 
     verify(digestService)
         .answerQuestion(
-            "account-1",
-            "Project chat",
-            "What changed?",
-            NOW.minusSeconds(48L * 60 * 60),
-            NOW,
-            null);
+            "account-1", "Project chat", "What changed in the last 48 hours?", null, NOW, null);
   }
 
   @Test

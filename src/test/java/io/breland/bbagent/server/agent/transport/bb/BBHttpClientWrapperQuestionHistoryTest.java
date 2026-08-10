@@ -75,8 +75,8 @@ class BBHttpClientWrapperQuestionHistoryTest {
             eq("group"),
             eq("pw"),
             eq("handle,chats"),
-            eq(Long.toString(FROM.getEpochSecond())),
-            eq(Long.toString(TO.getEpochSecond())),
+            eq(Long.toString(FROM.toEpochMilli())),
+            eq(Long.toString(TO.toEpochMilli())),
             eq(0),
             eq(500),
             eq("DESC"));

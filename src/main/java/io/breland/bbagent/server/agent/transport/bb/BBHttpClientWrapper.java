@@ -39,6 +39,7 @@ import org.springframework.lang.Nullable;
 import org.springframework.stereotype.Component;
 import org.springframework.util.LinkedMultiValueMap;
 import org.springframework.util.MultiValueMap;
+import reactor.core.publisher.Mono;
 
 @Slf4j
 @Component
@@ -174,6 +175,44 @@ public class BBHttpClientWrapper {
   public record AttachmentData(String filename, byte[] bytes) {}
 
   public record PollSendOption(String text, String optionIdentifier) {}
+
+  public void startTyping(String chatGuid) {
+    fireAndForgetTyping(
+        "start_typing", () -> chatApi.apiV1ChatChatGuidTypingPost(chatGuid, password));
+  }
+
+  public void stopTyping(String chatGuid) {
+    fireAndForgetTyping(
+        "stop_typing", () -> chatApi.apiV1ChatChatGuidTypingDelete(chatGuid, password));
+  }
+
+  private void fireAndForgetTyping(String operation, java.util.function.Supplier<Mono<Void>> call) {
+    long startedNanos = System.nanoTime();
+    try {
+      Mono<Void> request = Objects.requireNonNull(call.get(), "BlueBubbles typing request");
+      request
+          .timeout(apiTimeout)
+          .doOnSuccess(ignored -> recordOperationMetric(operation, true, null, startedNanos))
+          .doOnError(
+              error -> {
+                String failureType = OperationalMetricsService.failureType(error);
+                recordOperationMetric(operation, false, failureType, startedNanos);
+                log.debug(
+                    "BlueBubbles typing operation failed operation={} failureType={}",
+                    operation,
+                    failureType);
+              })
+          .onErrorComplete()
+          .subscribe();
+    } catch (RuntimeException error) {
+      String failureType = OperationalMetricsService.failureType(error);
+      recordOperationMetric(operation, false, failureType, startedNanos);
+      log.debug(
+          "BlueBubbles typing operation failed operation={} failureType={}",
+          operation,
+          failureType);
+    }
+  }
 
   @JsonInclude(JsonInclude.Include.NON_NULL)
   private record MultipartMessageRequest(String chatGuid, List<MultipartMessagePart> parts) {}
@@ -1278,8 +1317,8 @@ public class BBHttpClientWrapper {
                       chatGuid,
                       password,
                       "handle,chats",
-                      after == null ? null : Long.toString(after.getEpochSecond()),
-                      before == null ? null : Long.toString(before.getEpochSecond()),
+                      after == null ? null : Long.toString(after.toEpochMilli()),
+                      before == null ? null : Long.toString(before.toEpochMilli()),
                       offset,
                       limit,
                       normalizedSort)

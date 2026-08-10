@@ -34,7 +34,11 @@ public class GetGroupCatchupAgentTool implements ToolProvider {
       String group,
       String from,
       String to,
-      @JsonProperty("lookback_hours") Integer lookbackHours,
+      @Schema(
+              description =
+                  "Summary-mode lookback in hours. Omit when question is present; relative time stays in the exact question.")
+          @JsonProperty("lookback_hours")
+          Integer lookbackHours,
       String question,
       String timezone) {}
 
@@ -138,12 +142,6 @@ public class GetGroupCatchupAgentTool implements ToolProvider {
   private QuestionRange resolveQuestionRange(GetGroupCatchupRequest request, Instant now) {
     Instant to = request.to() == null ? now : Instant.parse(request.to());
     Instant from = request.from() == null ? null : Instant.parse(request.from());
-    if (from == null && request.lookbackHours() != null) {
-      if (request.lookbackHours() <= 0) {
-        throw new IllegalArgumentException("lookback must be positive");
-      }
-      from = to.minus(Duration.ofHours(request.lookbackHours()));
-    }
     if ((from != null && !from.isBefore(to)) || to.isAfter(now)) {
       throw new IllegalArgumentException("question range must be ordered and not in the future");
     }

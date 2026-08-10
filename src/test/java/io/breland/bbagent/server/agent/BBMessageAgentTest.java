@@ -506,6 +506,13 @@ class BBMessageAgentTest {
     assertTrue(
         prompt.contains("If it returns clarification_question, ask that naturally and wait"));
     assertTrue(prompt.contains("only to resolve unresolved_participants"));
+    assertThat(catchupGuidance)
+        .contains(
+            "omit lookback_hours when question is present",
+            "If unresolved_participants is nonempty",
+            "call memory_get once",
+            "do not change group-derived facts",
+            "keep the returned safe label");
     assertThat(catchupGuidance.toLowerCase(Locale.ROOT))
         .doesNotContain(
             "authorized group",
@@ -548,6 +555,13 @@ class BBMessageAgentTest {
             prompt.indexOf("Use get_group_catchup for questions like"),
             prompt.indexOf(
                 "When the user asks to enable, disable, or schedule proactive summaries"));
+    assertThat(catchupGuidance)
+        .contains(
+            "omit lookback_hours when question is present",
+            "If unresolved_participants is nonempty",
+            "call memory_get once",
+            "do not change group-derived facts",
+            "keep the returned safe label");
     assertThat(catchupGuidance.toLowerCase(Locale.ROOT))
         .doesNotContain(
             "authorized group",
@@ -591,7 +605,13 @@ class BBMessageAgentTest {
             prompt.indexOf("In a group chat, use get_group_catchup"),
             prompt.indexOf("Use web_search for current info"));
     assertThat(catchupGuidance)
-        .contains("only to resolve unresolved_participants")
+        .contains(
+            "only to resolve unresolved_participants",
+            "omit lookback_hours when question is present",
+            "If unresolved_participants is nonempty",
+            "call memory_get once",
+            "do not change group-derived facts",
+            "keep the returned safe label")
         .doesNotContain(
             "authorized group",
             "question_answer coverage",
