@@ -2,7 +2,7 @@
 
 **Date:** 2026-08-10
 
-**Status:** Approved architecture
+**Status:** Implemented
 
 ## Context
 
@@ -388,6 +388,14 @@ Implementation follows a red-green cycle and proves:
 The implementation gate includes Spotless, focused QA/tool/prompt/identity tests, all memory and
 memory-tool tests, the Spring context test, static scans proving no domain keywords or content
 categories exist in production QA routing, and the applicable full test suite.
+
+Implementation verification on 2026-08-10 completed with 150 focused tests and 158 memory/tool
+tests passing with no failures or skips. The full suite ran 464 tests: 452 passed, 3 were skipped,
+and the only 9 failures were the documented local live-service cases (7 BlueBubbles client tests,
+Giphy, and Nominatim). Spotless, test compilation, Spring binding, Kustomize rendering, domain and
+retired-path scans, the unchanged OpenAPI contract, and `git diff --check` passed. The live Grafana
+dashboard contained no planner, verifier, or progressive group-QA panel queries, so it required no
+mutation.
 
 After the intended image is deployed, run a scoped production canary in an enabled test group:
 

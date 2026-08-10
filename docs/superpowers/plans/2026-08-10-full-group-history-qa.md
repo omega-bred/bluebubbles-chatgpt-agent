@@ -68,7 +68,7 @@
 - Produces: `reduceFindings(String, Instant, @Nullable String, List<QuestionFinding>, boolean, Instant)` returning `RoutedFindingReduction` with a citation-scoped union of original message GUIDs; the boolean is server-derived `olderMessagesAvailable`.
 - Preserves temporarily: legacy `plan`, `answer`, `reduceWithCitations`, and support-verification methods so this commit compiles before orchestration migrates.
 
-- [ ] **Step 1: Write failing decision parsing and prompt tests**
+- [x] **Step 1: Write failing decision parsing and prompt tests**
 
 ```java
 @Test
@@ -132,7 +132,7 @@ Also cover `NEED_TIME_CLARIFICATION` requiring a nonblank `clarification_questio
 
 Add private fixtures with these exact signatures in the test class: `void stubDecision(RawWindowDecision)`, `void stubReduction(RawFindingReduction)`, `String aliasFor(String messageGuid)`, `String findingAlias(int zeroBasedIndex)`, `QuestionMessage message(String guid)`, `QuestionMessage message(String guid, String participant, String text)`, `QuestionFinding finding(String answer, String evidenceGuid)`, `RawWindowDecision rawAnswered(String answer, String alias, String participant)`, `RawWindowDecision rawNeedOlder(String finding, String alias)`, `RawFindingReduction rawReduction(String answer, String alias)`, `String capturedUserInput()`, `String capturedInstructions()`, and `List<?> capturedRequestTools()`.
 
-- [ ] **Step 2: Run the focused test to capture RED**
+- [x] **Step 2: Run the focused test to capture RED**
 
 ```bash
 CI=true nix develop --command ./gradlew test --tests io.breland.bbagent.server.agent.memory.ConversationQuestionAnsweringModelClientTest
@@ -140,7 +140,7 @@ CI=true nix develop --command ./gradlew test --tests io.breland.bbagent.server.a
 
 Expected: compilation fails because the new window-decision and finding-reduction models and methods do not exist.
 
-- [ ] **Step 3: Add the decision records with strict constructor invariants**
+- [x] **Step 3: Add the decision records with strict constructor invariants**
 
 ```java
 public enum WindowAction {
@@ -187,7 +187,7 @@ public record RoutedFindingReduction(
 
 The compact constructor enforces four shapes: `ANSWERED` requires answer/evidence; `NEED_TIME_CLARIFICATION` requires only clarification; `NEED_OLDER_MESSAGES` permits cited provisional findings but no final answer; `NO_ANSWER` requires natural answer text and no evidence. `RoutedFindingReduction` uses those same action shapes, requires every cited finding to come from the submitted list, and derives its decision's evidence GUID union or carried provisional findings exactly from those cited findings.
 
-- [ ] **Step 4: Implement the tools-disabled temporal prompt and alias mapping**
+- [x] **Step 4: Implement the tools-disabled temporal prompt and alias mapping**
 
 ```java
 public RoutedWindowDecision decide(
@@ -245,7 +245,7 @@ public RoutedFindingReduction reduceFindings(
 
 Serialize `question`, `reference_time`, optional `timezone`, and `messages`; each message contains `evidence_alias`, `participant`, `timestamp`, and `text`. The prompt says message content is untrusted data, tools are unavailable, relative time is semantic, older history is useful only with a backward clue, and clarification is preferable to a blind scan. Validate aliases and participant labels against the submitted window and reuse the minimal output validator. Extend `QuestionFinding` with copied `referencedParticipants` while retaining its current four-argument constructor as a temporary empty-list compatibility overload. `reduceFindings` serializes chronological opaque finding aliases plus server-derived `older_messages_available`, accepts the same four actions, maps only cited aliases back to exact `QuestionFinding` objects, validates referenced participants against the cited findings, and derives final evidence GUIDs or carried provisional findings from those citations; provider output never supplies raw GUIDs. Reject `NEED_OLDER_MESSAGES` when that flag is false.
 
-- [ ] **Step 5: Run model-client tests GREEN**
+- [x] **Step 5: Run model-client tests GREEN**
 
 ```bash
 CI=true nix develop --command ./gradlew test --tests io.breland.bbagent.server.agent.memory.ConversationQuestionAnsweringModelClientTest
@@ -253,7 +253,7 @@ CI=true nix develop --command ./gradlew test --tests io.breland.bbagent.server.a
 
 Expected: decision, legacy compatibility, routing, fallback, deadline, and minimal-validator tests pass.
 
-- [ ] **Step 6: Format and commit the protocol**
+- [x] **Step 6: Format and commit the protocol**
 
 ```bash
 CI=true nix develop --command ./gradlew spotlessApply
@@ -278,7 +278,7 @@ git commit -m "feat: add progressive group QA decisions"
 - Produces: `retrieveWindow(RetrievalRequest, @Nullable HistoryWindowCursor, int)` returning chronological `HistoryWindow` and opaque next cursor.
 - Uses: existing `BBHttpClientWrapper.getMessagesInChatForQuestion(..., "DESC", remaining)`; exact-text search is not used.
 
-- [ ] **Step 1: Write failing newest-window, cursor, and membership tests**
+- [x] **Step 1: Write failing newest-window, cursor, and membership tests**
 
 ```java
 @Test
@@ -316,7 +316,7 @@ Add equal-timestamp/GUID tie-breaking, disjoint membership intervals newest-firs
 
 Keep the existing raw-message builder and add `RetrievalRequest request()`, `RetrievalRequest requestWithMembership(Instant startedAt, @Nullable Instant endedAt)`, `List<ApiV1ChatChatGuidMessageGet200ResponseDataInner> rawMessagesDescending(int count)`, and `HistoryWindow window(List<QuestionMessage>, @Nullable HistoryWindowCursor, boolean exhausted)` as deterministic test fixtures.
 
-- [ ] **Step 2: Run focused tests and capture RED**
+- [x] **Step 2: Run focused tests and capture RED**
 
 ```bash
 CI=true nix develop --command ./gradlew test --tests io.breland.bbagent.server.agent.memory.ConversationQuestionHistoryRetrieverTest --tests io.breland.bbagent.server.agent.memory.ConversationMemoryStoreTest --tests io.breland.bbagent.server.agent.transport.bb.BBHttpClientWrapperQuestionHistoryTest
@@ -324,7 +324,7 @@ CI=true nix develop --command ./gradlew test --tests io.breland.bbagent.server.a
 
 Expected: compilation fails because the window/cursor APIs and descending journal page do not exist.
 
-- [ ] **Step 3: Add opaque cursor and window records**
+- [x] **Step 3: Add opaque cursor and window records**
 
 ```java
 enum HistorySource {
@@ -360,7 +360,7 @@ record HistoryWindow(
 
 Validate copied messages, nonnegative pages, and consistency between `windowComplete` and `partialReason`. Keep both records package-private; they never enter provider or tool JSON.
 
-- [ ] **Step 4: Add descending journal paging**
+- [x] **Step 4: Add descending journal paging**
 
 Implement `findMessagePageDescending` with fixed no-cursor and cursor SQL branches. The cursor branch uses:
 
@@ -374,7 +374,7 @@ limit ?
 
 Validate complete cursor pairs, ordered bounds, 1–500 limit, and positive remaining duration.
 
-- [ ] **Step 5: Implement progressive BlueBubbles and journal windows**
+- [x] **Step 5: Implement progressive BlueBubbles and journal windows**
 
 ```java
 public HistoryWindow retrieveWindow(
@@ -396,7 +396,7 @@ public HistoryWindow retrieveWindow(
 
 Fetch raw BlueBubbles pages in `DESC` order and advance offset by raw rows consumed. Move to the next older membership bound only after exhausting the current one. Sort accepted messages ascending before return. On BlueBubbles failure, fill remaining eligible slots from journal, switch the next cursor to `HistorySource.JOURNAL`, mark `windowComplete=false`, and retain `source_unavailable`. The provider never receives either cursor form.
 
-- [ ] **Step 6: Run retrieval/store/wrapper tests GREEN**
+- [x] **Step 6: Run retrieval/store/wrapper tests GREEN**
 
 ```bash
 CI=true nix develop --command ./gradlew test --tests io.breland.bbagent.server.agent.memory.ConversationQuestionHistoryRetrieverTest --tests io.breland.bbagent.server.agent.memory.ConversationMemoryStoreTest --tests io.breland.bbagent.server.agent.transport.bb.BBHttpClientWrapperQuestionHistoryTest
@@ -404,7 +404,7 @@ CI=true nix develop --command ./gradlew test --tests io.breland.bbagent.server.a
 
 Expected: progressive and legacy retrieval pass; wrapper captures `DESC`, 500, explicit bounds, and remaining time.
 
-- [ ] **Step 7: Format and commit window retrieval**
+- [x] **Step 7: Format and commit window retrieval**
 
 ```bash
 CI=true nix develop --command ./gradlew spotlessApply
@@ -430,7 +430,7 @@ git commit -m "feat: page group QA through recent history"
 - Consumes: read-only canonical resolution, raw sender, BlueBubbles contacts, requester account, and deadline.
 - Produces: `ParticipantDescriptor(label, @Nullable ParticipantHint)` attached to `QuestionMessage`; unresolved hints contain only fallback label and normalized transport identity.
 
-- [ ] **Step 1: Write failing precedence, caching, and hint tests**
+- [x] **Step 1: Write failing precedence, caching, and hint tests**
 
 ```java
 @Test
@@ -464,7 +464,7 @@ Also cover `you`, contact display-name fallback to nickname then first/last, inv
 
 Define test fixtures `ParticipantDescriptor resolve(AgentAccountEntity, BlueBubblesContactIdentity)`, `ParticipantDescriptor resolveUnknown(String)`, `AgentAccountEntity accountWithGlobalName(String)`, `AgentAccountEntity accountWithWebsiteName(String)`, `AgentAccountEntity accountWithoutNames()`, and `BlueBubblesContactIdentity contact(String)`; each fixture must construct real production records and use the same normalized phone identity.
 
-- [ ] **Step 2: Run identity tests and capture RED**
+- [x] **Step 2: Run identity tests and capture RED**
 
 ```bash
 CI=true nix develop --command ./gradlew test --tests io.breland.bbagent.server.agent.memory.ConversationParticipantResolverTest --tests io.breland.bbagent.server.agent.memory.ConversationHistoryMessageMapperTest --tests io.breland.bbagent.server.agent.BBHttpClientWrapperTest
@@ -472,7 +472,7 @@ CI=true nix develop --command ./gradlew test --tests io.breland.bbagent.server.a
 
 Expected: compilation fails because resolver, contact view, hint, and contact-directory method do not exist.
 
-- [ ] **Step 3: Add the contact view and deadline-bounded directory read**
+- [x] **Step 3: Add the contact view and deadline-bounded directory read**
 
 ```java
 public record BlueBubblesContactIdentity(String displayName, List<String> addresses) {
@@ -497,7 +497,7 @@ public List<BlueBubblesContactIdentity> getContactIdentitiesForQuestion(Duration
 
 `contactIdentity` chooses trimmed display name, then nickname, then nonblank first/last joined with one space. Do not log contact fields.
 
-- [ ] **Step 4: Add participant descriptors and request-local resolver**
+- [x] **Step 4: Add participant descriptors and request-local resolver**
 
 ```java
 public record ParticipantHint(String label, String normalizedIdentity) {}
@@ -518,7 +518,7 @@ public record QuestionMessage(
 
 Create `ConversationParticipantResolver.resolve(IncomingMessage, String, Session)` and `resolve(String senderAccountId, String requesterAccountId, Session)`. `Session` owns identity/account caches, absolute deadline, and one lazy contact directory. Use only `AgentAccountResolver.resolve`/`resolveById`; match addresses with `AgentAccountIdentifiers.equivalent`.
 
-- [ ] **Step 5: Make the mapper delegate naming**
+- [x] **Step 5: Make the mapper delegate naming**
 
 ```java
 ParticipantDescriptor participant =
@@ -533,7 +533,7 @@ return Optional.of(new QuestionMessage(
 
 Keep eligibility unchanged. Construct `MappingSession` with the retrieval deadline so contact lookup cannot outlive the request.
 
-- [ ] **Step 6: Run identity and mapper tests GREEN**
+- [x] **Step 6: Run identity and mapper tests GREEN**
 
 ```bash
 CI=true nix develop --command ./gradlew test --tests io.breland.bbagent.server.agent.memory.ConversationParticipantResolverTest --tests io.breland.bbagent.server.agent.memory.ConversationHistoryMessageMapperTest --tests io.breland.bbagent.server.agent.BBHttpClientWrapperTest
@@ -541,7 +541,7 @@ CI=true nix develop --command ./gradlew test --tests io.breland.bbagent.server.a
 
 Expected: naming precedence, single contact read, timeout, fallback, and non-mutation tests pass.
 
-- [ ] **Step 7: Format and commit identity enrichment**
+- [x] **Step 7: Format and commit identity enrichment**
 
 ```bash
 CI=true nix develop --command ./gradlew spotlessApply
@@ -572,7 +572,7 @@ git commit -m "feat: enrich group QA participant identities"
 - Produces: `answer(String, AuthorizedGroup, String, @Nullable Instant, Instant, @Nullable String)` returning natural `GroupQuestionAnswer`.
 - Deletes: search planning, exact-term/neighbor retrieval, support verification, and their settings after migration.
 
-- [ ] **Step 1: Replace service fixtures with failing progressive-flow tests**
+- [x] **Step 1: Replace service fixtures with failing progressive-flow tests**
 
 ```java
 @Test
@@ -625,7 +625,7 @@ The multi-window test must verify `model.reduceFindings(QUESTION, NOW, null, fin
 
 Add deterministic test builders with these signatures: `HistoryWindow window(List<QuestionMessage>, @Nullable HistoryWindowCursor, boolean exhausted)`, `HistoryWindow firstWindow(HistoryWindowCursor)`, `HistoryWindow secondWindow()`, `RoutedWindowDecision routed(ModelWindowDecision)`, `RoutedFindingReduction routedReduction(ModelWindowDecision, QuestionFinding...)`, `ModelWindowDecision answered(String, String evidenceGuid)`, `ModelWindowDecision needOlder(WindowFinding)`, `WindowFinding provisional(String, String evidenceGuid)`, `QuestionFinding finding(String, String evidenceGuid, Instant coverageThrough)`, and `ModelWindowDecision clarification(String)`.
 
-- [ ] **Step 2: Run core tests and capture RED**
+- [x] **Step 2: Run core tests and capture RED**
 
 ```bash
 CI=true nix develop --command ./gradlew test --tests io.breland.bbagent.server.agent.memory.ConversationQuestionAnsweringServiceTest --tests io.breland.bbagent.server.agent.memory.ConversationQuestionAnsweringModelClientTest --tests io.breland.bbagent.server.agent.memory.ConversationQuestionHistoryRetrieverTest
@@ -633,7 +633,7 @@ CI=true nix develop --command ./gradlew test --tests io.breland.bbagent.server.a
 
 Expected: progressive assertions fail against the legacy exact-search/fallback/verifier pipeline.
 
-- [ ] **Step 3: Simplify the final group-answer model**
+- [x] **Step 3: Simplify the final group-answer model**
 
 ```java
 public enum AnswerStatus {
@@ -654,7 +654,7 @@ public record GroupQuestionAnswer(
 
 The constructor requires natural answer text for `ANSWERED`, `NO_ANSWER`, and `UNAVAILABLE`; requires only clarification for `CLARIFICATION_REQUIRED`; copies/deduplicates hints by normalized identity; and forbids simultaneous answer/clarification.
 
-- [ ] **Step 4: Implement the progressive orchestration loop**
+- [x] **Step 4: Implement the progressive orchestration loop**
 
 ```java
 public GroupQuestionAnswer answer(
@@ -773,11 +773,11 @@ private GroupQuestionAnswer recordAndReturn(
 
 `decideWindow` checks remaining deadline, model-call, and aggregate-character capacity before every `decide` or `reduceFindings` call, calls `model.decide` for each bounded chunk, and adapts a citation-scoped `RoutedFindingReduction` back to `RoutedWindowDecision` when synthesis is required. `terminalAnswer` returns nonnull only for accepted `ANSWERED`, `NEED_TIME_CLARIFICATION`, `NO_ANSWER`, source exhaustion after reduction, or unavailable failure. `validatedFindings` accepts only window GUIDs and minimal-validator-safe text. `withinBudgets` checks deadline and the request-local history-page, logical model-call, and aggregate-character counts against their configured maxima. `recordAndReturn` emits metrics once and returns the unchanged result.
 
-- [ ] **Step 5: Remove planner, verifier, and exact-search APIs**
+- [x] **Step 5: Remove planner, verifier, and exact-search APIs**
 
 Delete `SEARCH_PLAN_INSTRUCTIONS`, `VERIFY_INSTRUCTIONS`, `plan`, legacy `answer`, legacy `reduceWithCitations`, `verifyAnswer`, `verifyReduction`, verification sizing/serialization, `RawSearchPlan`, `RawQuestionAnswer`, and `RawSupportVerification` from the model client. Delete `retrieveExact`, term normalization, neighbors, exact `Message` mapping, and search-term fields from the retriever. Remove the now-unused `searchConversationHistoryForQuestion` wrapper method while preserving the general `searchConversationHistory` tool path. Delete unused `SearchPlan`, `RetrievalMode`, `CoverageStatus`, `RetrievalResult`, `ModelAnswer`, `RoutedModelAnswer`, `RoutedReductionAnswer`, and `RoutedSupportVerification` models. Keep `ConversationQuestionAnswerOutputValidator` semantically unchanged.
 
-- [ ] **Step 6: Replace QA configuration in main, test, and manifest**
+- [x] **Step 6: Replace QA configuration in main, test, and manifest**
 
 ```properties
 bbagent.memory.group.qa.window-message-count=${BBAGENT_GROUP_MEMORY_QA_WINDOW_MESSAGE_COUNT:500}
@@ -790,7 +790,7 @@ bbagent.memory.group.qa.request-timeout=${BBAGENT_GROUP_MEMORY_QA_REQUEST_TIMEOU
 
 Remove max-search-terms, search-page-size, neighbor-message-count, max-batch-messages, and their environment variables. Add production `BBAGENT_GROUP_MEMORY_QA_WINDOW_MESSAGE_COUNT=500`.
 
-- [ ] **Step 7: Run migrated QA core GREEN**
+- [x] **Step 7: Run migrated QA core GREEN**
 
 ```bash
 CI=true nix develop --command ./gradlew test --tests io.breland.bbagent.server.agent.memory.ConversationQuestionAnsweringServiceTest --tests io.breland.bbagent.server.agent.memory.ConversationQuestionAnsweringModelClientTest --tests io.breland.bbagent.server.agent.memory.ConversationQuestionHistoryRetrieverTest --tests io.breland.bbagent.server.agent.memory.ConversationHistoryMessageMapperTest
@@ -798,7 +798,7 @@ CI=true nix develop --command ./gradlew test --tests io.breland.bbagent.server.a
 
 Expected: progressive, temporal, citation, hint, deadline, fallback, and validator tests pass with zero planner/verifier calls.
 
-- [ ] **Step 8: Format and commit the replacement**
+- [x] **Step 8: Format and commit the replacement**
 
 ```bash
 CI=true nix develop --command ./gradlew spotlessApply
@@ -823,7 +823,7 @@ git commit -m "feat: answer group questions from progressive history"
 - Consumes: summary or question request, server-derived account/current chat, optional hard range/timezone, and `GroupQuestionAnswer`.
 - Produces: unchanged `CatchupResult` for summaries; `GroupQuestionResult` for questions; minimal tool JSON with `answer` or `clarification_question`.
 
-- [ ] **Step 1: Write failing separation and relative-time tests**
+- [x] **Step 1: Write failing separation and relative-time tests**
 
 ```java
 @Test
@@ -874,7 +874,7 @@ Also prove catch-up mode still defaults to 24 hours and retains existing fields,
 
 Add deterministic tool fixtures with these exact signatures: `String invokeTool(String argumentsJson)`, `String invokeQuestion()`, `void stubQuestionResult(GroupQuestionResult result)`, `GroupQuestionResult answered(String answer, List<ParticipantHint> hints)`, and `GroupQuestionResult clarification(String question)`. Reuse the existing fixed `Clock`, account context, authorized-group builders, and JSON mapper from `GetGroupCatchupAgentToolTest`.
 
-- [ ] **Step 2: Run digest/tool/prompt tests and capture RED**
+- [x] **Step 2: Run digest/tool/prompt tests and capture RED**
 
 ```bash
 CI=true nix develop --command ./gradlew test --tests io.breland.bbagent.server.agent.memory.ConversationDigestServiceTest --tests io.breland.bbagent.server.agent.tools.memory.GetGroupCatchupAgentToolTest --tests io.breland.bbagent.server.agent.BBMessageAgentTest
@@ -882,7 +882,7 @@ CI=true nix develop --command ./gradlew test --tests io.breland.bbagent.server.a
 
 Expected: question mode still shares catch-up range/JSON and prompts still expose internal vocabulary.
 
-- [ ] **Step 3: Add a question-only result model**
+- [x] **Step 3: Add a question-only result model**
 
 ```java
 public record QuestionGroup(String group, GroupQuestionAnswer answer) {}
@@ -902,7 +902,7 @@ public record GroupQuestionResult(
 
 Remove `questionAnswer` from `CatchupGroup` after callers migrate; its summary-only constructor becomes the sole constructor.
 
-- [ ] **Step 4: Split question delegation from summary assembly**
+- [x] **Step 4: Split question delegation from summary assembly**
 
 ```java
 public GroupQuestionResult answerQuestion(
@@ -925,7 +925,7 @@ public GroupQuestionResult answerQuestionForChat(
 
 Direct selection uses `store.findCurrentlyAuthorizedGroups(accountId, to)` plus existing disambiguation. Group selection uses only `findCurrentlyAuthorizedGroup(accountId, transport, chatGuid, to)`. Both delegate directly to the QA service and never read digests, segments, decisions, open questions, checkpoints, or semantic memory. Restore `catchUp`/`catchUpForChat` to summary-only signatures.
 
-- [ ] **Step 5: Branch tool range resolution before invocation**
+- [x] **Step 5: Branch tool range resolution before invocation**
 
 ```java
 public record GetGroupCatchupRequest(
@@ -955,7 +955,7 @@ private QuestionRange resolveQuestionRange(GetGroupCatchupRequest request, Insta
 
 Blank question uses the existing 24-hour `resolveCatchupRange`. Question results serialize directly: answer states emit `answer`, clarification emits `clarification_question`, and only accepted answers include `unresolved_participants`. Remove the `question_answer` wrapper and catch-up fields.
 
-- [ ] **Step 6: Replace main-agent and tool wording**
+- [x] **Step 6: Replace main-agent and tool wording**
 
 Use behavior-only copy equivalent to:
 
@@ -965,7 +965,7 @@ Use get_group_catchup with the user's exact question for questions about another
 
 The tool description distinguishes summary/question modes, says recent messages may page older or ask for approximate time, and includes no topic examples or internal security wording.
 
-- [ ] **Step 7: Run digest/tool/prompt tests GREEN**
+- [x] **Step 7: Run digest/tool/prompt tests GREEN**
 
 ```bash
 CI=true nix develop --command ./gradlew test --tests io.breland.bbagent.server.agent.memory.ConversationDigestServiceTest --tests io.breland.bbagent.server.agent.tools.memory.GetGroupCatchupAgentToolTest --tests io.breland.bbagent.server.agent.BBMessageAgentTest
@@ -973,7 +973,7 @@ CI=true nix develop --command ./gradlew test --tests io.breland.bbagent.server.a
 
 Expected: summary compatibility, relative-time routing, minimal JSON, clarification, self-group scope, disambiguation, and prompt tests pass.
 
-- [ ] **Step 8: Format and commit tool integration**
+- [x] **Step 8: Format and commit tool integration**
 
 ```bash
 CI=true nix develop --command ./gradlew spotlessApply
@@ -998,7 +998,7 @@ git commit -m "feat: return natural group history answers"
 - Consumes: final action, model, unique message/page/window counts, logical QA/reduction calls, reductions, outcome/failure, and duration; provider attempts remain distinct client metrics.
 - Produces: low-cardinality `bbagent.memory.question.answer.*` metrics without planner/verifier measurements.
 
-- [ ] **Step 1: Write failing metric-contract tests**
+- [x] **Step 1: Write failing metric-contract tests**
 
 ```java
 @Test
@@ -1030,7 +1030,7 @@ void recordsProgressiveQuestionAnswerMetricsWithoutSensitiveTags() {
 
 Add service assertions that `ANSWERED`, `CLARIFICATION_REQUIRED`, `NO_ANSWER`, and `UNAVAILABLE` use stable lowercase actions and no raw question, interval, group, or identity reaches a tag.
 
-- [ ] **Step 2: Run metrics/context tests and capture RED**
+- [x] **Step 2: Run metrics/context tests and capture RED**
 
 ```bash
 CI=true nix develop --command ./gradlew test --tests io.breland.bbagent.server.metrics.OperationalMetricsServiceTest --tests io.breland.bbagent.server.BBChatGptAgentApplicationTests
@@ -1038,7 +1038,7 @@ CI=true nix develop --command ./gradlew test --tests io.breland.bbagent.server.m
 
 Expected: metrics still require retrieval/coverage/planner/verifier arguments or context exposes removed bindings.
 
-- [ ] **Step 3: Replace the metric method and counters**
+- [x] **Step 3: Replace the metric method and counters**
 
 ```java
 public void recordMemoryQuestionAnswer(
@@ -1069,7 +1069,7 @@ public void recordMemoryQuestionAnswer(
 
 Remove plan, verification, retrieval-mode, and coverage-status meters/tags. Keep provider-attempt telemetry distinct.
 
-- [ ] **Step 4: Verify properties and rendered manifest exactly**
+- [x] **Step 4: Verify properties and rendered manifest exactly**
 
 ```bash
 rg -n "bbagent.memory.group.qa" src/main/resources/application.properties src/test/resources/application.properties
@@ -1078,7 +1078,7 @@ nix develop --command kubectl kustomize manifests/bluebubbles-chatgpt-agent | rg
 
 Expected: the six approved properties appear in both property files. Rendered production contains `WINDOW_MESSAGE_COUNT=500`, `MAX_HISTORY_PAGES=100`, `MAX_BATCH_CHARACTERS=60000`, `MAX_MODEL_BATCHES=5`, `MAX_AGGREGATE_CHARACTERS=300000`, and `REQUEST_TIMEOUT=PT90S` exactly once; no removed QA variable remains.
 
-- [ ] **Step 5: Inspect/update Grafana only after authorization**
+- [x] **Step 5: Inspect/update Grafana only after authorization**
 
 Read dashboard UID `brtxbw8` through the Grafana MCP. If panels query `bbagent_memory_question_answer_plan_count` or `bbagent_memory_question_answer_verification_count`, replace them with:
 
@@ -1090,7 +1090,7 @@ bbagent_memory_question_answer_reduction_count
 
 Split rate/count by low-cardinality `action` and retain latency/outcome panels. If no panel references removed measurements, record read-only verification and make no mutation.
 
-- [ ] **Step 6: Run metrics/context tests GREEN**
+- [x] **Step 6: Run metrics/context tests GREEN**
 
 ```bash
 CI=true nix develop --command ./gradlew test --tests io.breland.bbagent.server.metrics.OperationalMetricsServiceTest --tests io.breland.bbagent.server.BBChatGptAgentApplicationTests
@@ -1098,7 +1098,7 @@ CI=true nix develop --command ./gradlew test --tests io.breland.bbagent.server.m
 
 Expected: metric values/tags and Spring binding pass; no planner/verifier meter exists.
 
-- [ ] **Step 7: Format and commit observability changes**
+- [x] **Step 7: Format and commit observability changes**
 
 ```bash
 CI=true nix develop --command ./gradlew spotlessApply
@@ -1119,7 +1119,7 @@ git commit -m "feat: instrument progressive group QA"
 - Consumes: complete branch after Tasks 1–6.
 - Produces: clean, formatted, locally verified revision ready for user-approved push/PR and post-deploy canary.
 
-- [ ] **Step 1: Run the complete focused suite**
+- [x] **Step 1: Run the complete focused suite**
 
 ```bash
 CI=true nix develop --command ./gradlew test \
@@ -1139,7 +1139,7 @@ CI=true nix develop --command ./gradlew test \
 
 Expected: zero failures and zero unexpected skips.
 
-- [ ] **Step 2: Run all memory and memory-tool regressions**
+- [x] **Step 2: Run all memory and memory-tool regressions**
 
 ```bash
 CI=true nix develop --command ./gradlew test \
@@ -1149,7 +1149,7 @@ CI=true nix develop --command ./gradlew test \
 
 Expected: extraction, summaries, proactive delivery, membership, semantic memory, catch-up, QA, and tool tests pass.
 
-- [ ] **Step 3: Run formatting, compilation, and full tests**
+- [x] **Step 3: Run formatting, compilation, and full tests**
 
 ```bash
 CI=true nix develop --command ./gradlew spotlessApply
@@ -1159,7 +1159,7 @@ CI=true nix develop --command ./gradlew test
 
 Expected: formatting and compilation pass. Full tests pass; if the known seven local BlueBubbles live tests, `GiphyClientTest`, or `NominatimReverseLookupIntegTest` fail because external services are unavailable, record those nine separately and require zero other failures.
 
-- [ ] **Step 4: Run architecture, privacy, config, and API gates**
+- [x] **Step 4: Run architecture, privacy, config, and API gates**
 
 ```bash
 rg -n "Wordle|wordling|score|game|puzzle|round" \
@@ -1178,7 +1178,7 @@ git status --short
 
 Expected: both searches return no matches; OpenAPI diff is empty; diff check passes; status contains only intentional plan checkbox/spec status edits before the final documentation commit.
 
-- [ ] **Step 5: Mark implementation status and commit verification evidence**
+- [x] **Step 5: Mark implementation status and commit verification evidence**
 
 Change the design status from `Approved architecture` to `Implemented` only after Steps 1–4 pass. Check completed plan boxes, then commit documentation state:
 
@@ -1187,7 +1187,7 @@ git add docs/superpowers/specs/2026-08-10-full-group-history-qa-design.md docs/s
 git commit -m "docs: complete full group history QA"
 ```
 
-- [ ] **Step 6: Stop at the publication boundary**
+- [x] **Step 6: Stop at the publication boundary**
 
 Report branch, commits, exact test totals, allowed ambient failures, static gates, and Grafana result. Ask before pushing or opening a PR unless the user already granted that authorization during execution.
 
