@@ -41,6 +41,8 @@ public class ConversationQuestionAnsweringModelClient {
       messages are likely to resolve it, NEED_TIME_CLARIFICATION when an approximate time would make
       the search actionable, or NO_ANSWER when the history does not contain the answer. Never reveal
       message GUIDs or opaque aliases in answer text.
+      Only put exact participant field values from cited messages in referenced_participants. Names
+      found inside message text may appear in the answer without being added to that metadata field.
       """;
   private static final String FINDING_REDUCTION_INSTRUCTIONS =
       """
@@ -52,6 +54,8 @@ public class ConversationQuestionAnsweringModelClient {
       answer. Return NEED_OLDER_MESSAGES only when the server says older messages are available and
       an earlier window is likely to resolve the question. Otherwise return NEED_TIME_CLARIFICATION
       or NO_ANSWER. Never reveal message GUIDs or opaque aliases in answer text.
+      Only put exact referenced_participants values from cited findings in the corresponding output
+      field. Other names from finding text may remain in the answer without being added there.
       """;
 
   private final ConversationMemoryResponsesClient responsesClient;
@@ -235,7 +239,7 @@ public class ConversationQuestionAnsweringModelClient {
     Set<String> participants = new LinkedHashSet<>();
     submittedMessages.forEach(message -> participants.add(message.participant()));
     List<String> referencedParticipants =
-        validateParticipants(raw.referencedParticipants(), participants);
+        recognizedParticipants(raw.referencedParticipants(), participants);
     List<WindowFinding> provisionalFindings =
         raw.provisionalFindings().stream()
             .map(finding -> parseWindowFinding(finding, input, participants))
@@ -269,7 +273,7 @@ public class ConversationQuestionAnsweringModelClient {
         answer,
         requireEnum(raw.confidence(), "invalid question window response"),
         expandAliases(raw.evidenceAliases(), input.aliasToMessageGuids()),
-        validateParticipants(raw.referencedParticipants(), submittedParticipants));
+        recognizedParticipants(raw.referencedParticipants(), submittedParticipants));
   }
 
   private ParsedFindingReduction parseFindingReduction(
@@ -300,7 +304,7 @@ public class ConversationQuestionAnsweringModelClient {
           availableParticipants.addAll(finding.referencedParticipants());
         });
     List<String> referencedParticipants =
-        validateParticipants(raw.referencedParticipants(), availableParticipants);
+        recognizedParticipants(raw.referencedParticipants(), availableParticipants);
     String answer = StringUtils.trimToNull(raw.answer());
     String clarification = StringUtils.trimToNull(raw.clarificationQuestion());
     requireSafeText(answer, input);
@@ -345,14 +349,12 @@ public class ConversationQuestionAnsweringModelClient {
         value, input.messageGuids(), input.evidenceAliases());
   }
 
-  private static List<String> validateParticipants(List<String> proposed, Set<String> submitted) {
+  private static List<String> recognizedParticipants(List<String> proposed, Set<String> submitted) {
     LinkedHashSet<String> participants = new LinkedHashSet<>();
     for (String participant : proposed) {
-      if (StringUtils.isBlank(participant) || !submitted.contains(participant)) {
-        throw new IllegalStateException(
-            "question window participant is outside submitted messages");
+      if (StringUtils.isNotBlank(participant) && submitted.contains(participant)) {
+        participants.add(participant);
       }
-      participants.add(participant);
     }
     return List.copyOf(participants);
   }

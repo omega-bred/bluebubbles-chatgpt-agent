@@ -233,7 +233,7 @@ class ConversationQuestionAnsweringModelClientTest {
   }
 
   @Test
-  void rejectsReferencedParticipantOutsideSubmittedWindow() throws Exception {
+  void ignoresUnrecognizedParticipantMetadataWithoutDiscardingMessageTextNames() throws Exception {
     when(responses.createValidated(
             anyString(), anyString(), eq(1_000), eq(RawWindowDecision.class), eq(DEADLINE), any()))
         .thenAnswer(
@@ -256,16 +256,16 @@ class ConversationQuestionAnsweringModelClientTest {
                       List.of("Mallory")));
             });
 
-    assertThatThrownBy(
-            () ->
-                client.decide(
-                    "Who posted the update?",
-                    TO,
-                    null,
-                    List.of(message("m-1", "Sam", "I posted the update.")),
-                    DEADLINE))
-        .isInstanceOf(IllegalStateException.class)
-        .hasMessageContaining("participant");
+    var result =
+        client.decide(
+            "Who posted the update?",
+            TO,
+            null,
+            List.of(message("m-1", "Sam", "Mallory posted the update.")),
+            DEADLINE);
+
+    assertThat(result.decision().answer()).isEqualTo("Mallory posted the update.");
+    assertThat(result.decision().referencedParticipants()).isEmpty();
   }
 
   @Test
