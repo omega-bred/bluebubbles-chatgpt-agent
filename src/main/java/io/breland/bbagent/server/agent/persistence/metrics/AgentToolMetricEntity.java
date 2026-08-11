@@ -5,6 +5,7 @@ import jakarta.persistence.Entity;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import java.time.Instant;
+import lombok.AllArgsConstructor;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
@@ -13,6 +14,7 @@ import lombok.Setter;
 @Table(name = "agent_tool_metrics")
 @Getter
 @Setter
+@AllArgsConstructor
 @NoArgsConstructor
 public class AgentToolMetricEntity {
 
@@ -67,41 +69,4 @@ public class AgentToolMetricEntity {
 
   @Column(name = "created_at", nullable = false)
   private Instant createdAt;
-
-  public AgentToolMetricEntity(
-      String id,
-      Instant occurredAt,
-      String transport,
-      String messageGuid,
-      String chatGuidHash,
-      String userKeyHash,
-      String toolName,
-      String toolCategory,
-      boolean success,
-      String failureType,
-      long durationMillis,
-      String modelKey,
-      String modelLabel,
-      String responsesModel,
-      boolean premium,
-      String workflowMode,
-      Instant createdAt) {
-    this.id = id;
-    this.occurredAt = occurredAt;
-    this.transport = transport;
-    this.messageGuid = messageGuid;
-    this.chatGuidHash = chatGuidHash;
-    this.userKeyHash = userKeyHash;
-    this.toolName = toolName;
-    this.toolCategory = toolCategory;
-    this.success = success;
-    this.failureType = failureType;
-    this.durationMillis = durationMillis;
-    this.modelKey = modelKey;
-    this.modelLabel = modelLabel;
-    this.responsesModel = responsesModel;
-    this.premium = premium;
-    this.workflowMode = workflowMode;
-    this.createdAt = createdAt;
-  }
 }
