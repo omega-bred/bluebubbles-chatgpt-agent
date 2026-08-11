@@ -132,6 +132,33 @@ class ConversationQuestionAnsweringServiceTest {
   }
 
   @Test
+  void answersAcrossBatchesWhenCitationMetadataIsOmitted() {
+    QuestionMessage first = message("m1", "Sam", "The first fact.", 1);
+    QuestionMessage second = message("m2", "Lee", "The second fact.", 2);
+    int splitBeforeTwoMessages =
+        payloadSizer.windowInputCharacters(QUESTION, NOW, null, List.of(first, second)) - 1;
+    service = service(500, 100, splitBeforeTwoMessages, 5, splitBeforeTwoMessages * 5);
+    when(retriever.retrieveWindow(any(), isNull(), eq(500)))
+        .thenReturn(window(List.of(first, second), null, true));
+    when(model.decide(eq(QUESTION), eq(NOW), isNull(), anyList(), eq(DEADLINE)))
+        .thenReturn(routed(answered("The batch contains a relevant fact.", List.of(), List.of())));
+    when(model.reduceFindings(eq(QUESTION), eq(NOW), isNull(), anyList(), eq(false), eq(DEADLINE)))
+        .thenReturn(
+            routedReduction(
+                answered("Sam and Lee supplied the relevant facts.", List.of(), List.of()),
+                List.of()));
+
+    GroupQuestionAnswer answer = service.answer(ACCOUNT, GROUP, QUESTION, null, NOW, null);
+
+    assertThat(answer.status()).isEqualTo(AnswerStatus.ANSWERED);
+    assertThat(answer.answer()).isEqualTo("Sam and Lee supplied the relevant facts.");
+    assertThat(answer.unresolvedParticipants()).isEmpty();
+    verify(model, times(2)).decide(eq(QUESTION), eq(NOW), isNull(), anyList(), eq(DEADLINE));
+    verify(model)
+        .reduceFindings(eq(QUESTION), eq(NOW), isNull(), anyList(), eq(false), eq(DEADLINE));
+  }
+
+  @Test
   void noRangeSearchesAllAuthorizedHistoryAndPropagatesTimezone() {
     QuestionMessage message = message("m1", "Sam", "The update is ready.", 1);
     when(retriever.retrieveWindow(any(), isNull(), eq(500)))

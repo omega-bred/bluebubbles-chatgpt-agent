@@ -92,6 +92,37 @@ class ConversationQuestionAnsweringModelClientTest {
   }
 
   @Test
+  void answeredWindowKeepsAnAnswerWhenTheModelOmitsOptionalEvidenceMetadata() {
+    when(responses.createValidated(
+            anyString(), anyString(), eq(1_000), eq(RawWindowDecision.class), eq(DEADLINE), any()))
+        .thenAnswer(
+            invocation ->
+                validated(
+                    invocation,
+                    new RawWindowDecision(
+                        WindowAction.ANSWERED,
+                        "Sam and Lee tied for the best result.",
+                        null,
+                        Confidence.HIGH,
+                        List.of(),
+                        List.of(),
+                        List.of("Sam"))));
+
+    var result =
+        client.decide(
+            "Who had the best result?",
+            TO,
+            null,
+            List.of(message("m-1", "Sam", "Sam and Lee tied for the best result.")),
+            DEADLINE);
+
+    assertThat(result.decision().action()).isEqualTo(WindowAction.ANSWERED);
+    assertThat(result.decision().answer()).isEqualTo("Sam and Lee tied for the best result.");
+    assertThat(result.decision().evidenceMessageGuids()).isEmpty();
+    assertThat(result.decision().referencedParticipants()).isEmpty();
+  }
+
+  @Test
   void decideDoesNotSendInternalParticipantIdentityHintsToTheQaProvider() throws Exception {
     when(responses.createValidated(
             anyString(), anyString(), eq(1_000), eq(RawWindowDecision.class), eq(DEADLINE), any()))

@@ -124,8 +124,8 @@ public final class ConversationQuestionAnsweringModels {
         case ANSWERED -> {
           if (answer == null
               || clarificationQuestion != null
-              || evidenceMessageGuids.isEmpty()
-              || !provisionalFindings.isEmpty()) {
+              || !provisionalFindings.isEmpty()
+              || (evidenceMessageGuids.isEmpty() && !referencedParticipants.isEmpty())) {
             throw new IllegalArgumentException("answered window decision has invalid shape");
           }
         }

@@ -667,12 +667,14 @@ public class ConversationQuestionAnsweringService {
     }
 
     private Instant coverageThrough(List<String> evidenceGuids) {
-      return evidenceGuids.stream()
-          .map(messagesByGuid::get)
-          .filter(Objects::nonNull)
+      return java.util.stream.Stream.concat(
+              evidenceGuids.stream().map(messagesByGuid::get).filter(Objects::nonNull),
+              evidenceGuids.isEmpty()
+                  ? messagesByGuid.values().stream()
+                  : java.util.stream.Stream.empty())
           .map(QuestionMessage::timestamp)
           .max(Comparator.naturalOrder())
-          .orElseThrow(() -> new IllegalStateException("finding has no submitted evidence"));
+          .orElseThrow(() -> new IllegalStateException("finding has no submitted messages"));
     }
 
     private List<ParticipantHint> hints(
