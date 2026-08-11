@@ -41,9 +41,9 @@ public class ConversationJournalService {
     this(store, accountResolver, debounce, true);
   }
 
-  public boolean recordEligibleMessage(IncomingMessage message) {
+  public void recordEligibleMessage(IncomingMessage message) {
     if (!isEligible(message)) {
-      return false;
+      return;
     }
     String accountId =
         accountResolver
@@ -51,7 +51,7 @@ public class ConversationJournalService {
             .map(resolved -> resolved.account().getAccountId())
             .orElse(null);
     if (StringUtils.isBlank(accountId)) {
-      return false;
+      return;
     }
     Instant observedAt = message.timestamp() == null ? Instant.now() : message.timestamp();
     String conversationId =
@@ -64,7 +64,7 @@ public class ConversationJournalService {
             .findEnabledConversationId(message.transportOrDefault(), message.chatGuid())
             .isEmpty()
         || StringUtils.isBlank(message.messageGuid())) {
-      return true;
+      return;
     }
     String text = message.text().trim();
     store.recordMessage(
@@ -78,7 +78,6 @@ public class ConversationJournalService {
             false,
             sha256(text)));
     store.scheduleExtraction(conversationId, observedAt.plus(debounce));
-    return true;
   }
 
   private boolean isEligible(IncomingMessage message) {
