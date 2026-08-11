@@ -17,7 +17,6 @@ import java.time.Instant;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
@@ -226,8 +225,8 @@ public class ConversationQuestionAnsweringModelClient {
         || raw.referencedParticipants() == null) {
       throw new IllegalStateException("invalid question window response");
     }
-    WindowAction action = parseEnum(raw.action(), WindowAction.class);
-    Confidence confidence = parseEnum(raw.confidence(), Confidence.class);
+    WindowAction action = requireEnum(raw.action(), "invalid question window response");
+    Confidence confidence = requireEnum(raw.confidence(), "invalid question window response");
     List<String> evidence = expandAliases(raw.evidenceAliases(), input.aliasToMessageGuids());
     String answer = StringUtils.trimToNull(raw.answer());
     String clarification = StringUtils.trimToNull(raw.clarificationQuestion());
@@ -268,7 +267,7 @@ public class ConversationQuestionAnsweringModelClient {
         answer, input.messageGuids(), input.evidenceAliases());
     return new WindowFinding(
         answer,
-        parseEnum(raw.confidence(), Confidence.class),
+        requireEnum(raw.confidence(), "invalid question window response"),
         expandAliases(raw.evidenceAliases(), input.aliasToMessageGuids()),
         validateParticipants(raw.referencedParticipants(), submittedParticipants));
   }
@@ -281,7 +280,7 @@ public class ConversationQuestionAnsweringModelClient {
     if (raw.citedFindingAliases() == null || raw.referencedParticipants() == null) {
       throw new IllegalStateException("invalid finding reduction response");
     }
-    WindowAction action = parseEnum(raw.action(), WindowAction.class);
+    WindowAction action = requireEnum(raw.action(), "invalid finding reduction response");
     if (action == WindowAction.NEED_OLDER_MESSAGES && !olderMessagesAvailable) {
       throw new IllegalStateException("finding reduction requested unavailable older messages");
     }
@@ -325,7 +324,7 @@ public class ConversationQuestionAnsweringModelClient {
               action,
               answer,
               clarification,
-              parseEnum(raw.confidence(), Confidence.class),
+              requireEnum(raw.confidence(), "invalid finding reduction response"),
               action == WindowAction.ANSWERED ? List.copyOf(evidence) : List.of(),
               provisional,
               action == WindowAction.ANSWERED ? referencedParticipants : List.of());
@@ -419,15 +418,11 @@ public class ConversationQuestionAnsweringModelClient {
     return alias;
   }
 
-  private static <T extends Enum<T>> T parseEnum(String value, Class<T> enumType) {
-    try {
-      if (StringUtils.isBlank(value)) {
-        throw new IllegalArgumentException("blank enum");
-      }
-      return Enum.valueOf(enumType, value.trim().toUpperCase(Locale.ROOT));
-    } catch (IllegalArgumentException e) {
-      throw new IllegalStateException("invalid question answer response", e);
+  private static <T extends Enum<T>> T requireEnum(@Nullable T value, String failureMessage) {
+    if (value == null) {
+      throw new IllegalStateException(failureMessage);
     }
+    return value;
   }
 
   private String serialize(ObjectNode node, String failureMessage) {
@@ -448,25 +443,25 @@ public class ConversationQuestionAnsweringModelClient {
   }
 
   public record RawWindowDecision(
-      String action,
+      WindowAction action,
       @Nullable String answer,
       @JsonProperty("clarification_question") @Nullable String clarificationQuestion,
-      String confidence,
+      Confidence confidence,
       @JsonProperty("evidence_aliases") List<String> evidenceAliases,
       @JsonProperty("provisional_findings") List<RawWindowFinding> provisionalFindings,
       @JsonProperty("referenced_participants") List<String> referencedParticipants) {}
 
   public record RawWindowFinding(
       String answer,
-      String confidence,
+      Confidence confidence,
       @JsonProperty("evidence_aliases") List<String> evidenceAliases,
       @JsonProperty("referenced_participants") List<String> referencedParticipants) {}
 
   public record RawFindingReduction(
-      String action,
+      WindowAction action,
       @Nullable String answer,
       @JsonProperty("clarification_question") @Nullable String clarificationQuestion,
-      String confidence,
+      Confidence confidence,
       @JsonProperty("cited_finding_aliases") List<String> citedFindingAliases,
       @JsonProperty("referenced_participants") List<String> referencedParticipants) {}
 

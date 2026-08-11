@@ -19,6 +19,9 @@ import com.openai.models.responses.StructuredResponseCreateParams;
 import com.openai.models.responses.StructuredResponseOutputItem;
 import com.openai.models.responses.StructuredResponseOutputMessage;
 import com.openai.services.blocking.ResponseService;
+import io.breland.bbagent.server.agent.memory.ConversationQuestionAnsweringModelClient.RawWindowDecision;
+import io.breland.bbagent.server.agent.memory.ConversationQuestionAnsweringModels.Confidence;
+import io.breland.bbagent.server.agent.memory.ConversationQuestionAnsweringModels.WindowAction;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
@@ -106,6 +109,41 @@ class ConversationMemoryResponsesClientTest {
         .contains("require_parameters=true")
         .contains("prompt=0.4")
         .contains("completion=1.6");
+  }
+
+  @Test
+  @SuppressWarnings({"unchecked", "rawtypes"})
+  void constrainsQuestionDecisionEnumsInTheStructuredOutputSchema() {
+    OpenAIClient openAIClient = mock(OpenAIClient.class);
+    ResponseService responseService = mock(ResponseService.class);
+    StructuredResponse<RawWindowDecision> response =
+        successfulResponse(
+            new RawWindowDecision(
+                WindowAction.NO_ANSWER,
+                "No matching message.",
+                null,
+                Confidence.LOW,
+                List.of(),
+                List.of(),
+                List.of()));
+    List<StructuredResponseCreateParams<?>> requests = new ArrayList<>();
+    when(openAIClient.responses()).thenReturn(responseService);
+    when(responseService.create(any(StructuredResponseCreateParams.class)))
+        .thenAnswer(
+            invocation -> {
+              StructuredResponseCreateParams<?> request = invocation.getArgument(0);
+              requests.add(request);
+              return response;
+            });
+    ConversationMemoryResponsesClient client =
+        new ConversationMemoryResponsesClient(() -> openAIClient, "primary", "fallback", 0.4, 1.6);
+
+    client.create("instructions", "input", 200, RawWindowDecision.class);
+
+    assertThat(requests).singleElement();
+    assertThat(requests.getFirst().toString())
+        .contains("ANSWERED", "NEED_OLDER_MESSAGES", "NEED_TIME_CLARIFICATION", "NO_ANSWER")
+        .contains("HIGH", "MEDIUM", "LOW");
   }
 
   @Test
@@ -333,12 +371,11 @@ class ConversationMemoryResponsesClientTest {
   }
 
   @SuppressWarnings({"unchecked", "rawtypes"})
-  private static StructuredResponse<TestOutput> successfulResponse(TestOutput output) {
-    StructuredResponse<TestOutput> response = mock(StructuredResponse.class);
-    StructuredResponseOutputItem<TestOutput> outputItem = mock(StructuredResponseOutputItem.class);
-    StructuredResponseOutputMessage<TestOutput> outputMessage =
-        mock(StructuredResponseOutputMessage.class);
-    StructuredResponseOutputMessage.Content<TestOutput> outputContent =
+  private static <T> StructuredResponse<T> successfulResponse(T output) {
+    StructuredResponse<T> response = mock(StructuredResponse.class);
+    StructuredResponseOutputItem<T> outputItem = mock(StructuredResponseOutputItem.class);
+    StructuredResponseOutputMessage<T> outputMessage = mock(StructuredResponseOutputMessage.class);
+    StructuredResponseOutputMessage.Content<T> outputContent =
         mock(StructuredResponseOutputMessage.Content.class);
     when(response.output()).thenReturn(List.of(outputItem));
     when(outputItem.message()).thenReturn(Optional.of(outputMessage));

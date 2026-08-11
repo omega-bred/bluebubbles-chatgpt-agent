@@ -172,10 +172,18 @@ class ConversationHistoryMessageMapperTest {
               assertThat(hint.normalizedIdentity()).isEqualTo("+15555550199");
             });
     assertThat(mapper.fromBlueBubbles(reactionMessage(), "account-1")).isEmpty();
-    assertThat(mapper.fromBlueBubbles(fromMeMessage(), "account-1")).isEmpty();
     assertThat(mapper.fromBlueBubbles(systemMessage(), "account-1")).isEmpty();
     assertThat(mapper.fromBlueBubbles(serviceMessage(), "account-1")).isEmpty();
     assertThat(mapper.fromBlueBubbles(blankMessage(), "account-1")).isEmpty();
+  }
+
+  @Test
+  void includesRequestingUsersOwnGroupMessagesAsYou() {
+    QuestionMessage mapped = mapper.fromBlueBubbles(fromMeMessage(), "account-1").orElseThrow();
+
+    assertThat(mapped.participant()).isEqualTo("you");
+    assertThat(mapped.text()).isEqualTo("My own message");
+    verifyNoInteractions(accountResolver, bb);
   }
 
   @Test
@@ -221,7 +229,7 @@ class ConversationHistoryMessageMapperTest {
   }
 
   private ApiV1ChatChatGuidMessageGet200ResponseDataInner fromMeMessage() {
-    return message("from-me-1", "My own message", true, false, false, "+15555550199");
+    return message("from-me-1", "My own message", true, false, false, null);
   }
 
   private ApiV1ChatChatGuidMessageGet200ResponseDataInner systemMessage() {

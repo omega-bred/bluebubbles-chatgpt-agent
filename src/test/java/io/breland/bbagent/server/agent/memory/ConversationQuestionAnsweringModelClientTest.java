@@ -56,10 +56,10 @@ class ConversationQuestionAnsweringModelClientTest {
               return validated(
                   invocation,
                   new RawWindowDecision(
-                      "ANSWERED",
+                      WindowAction.ANSWERED,
                       "Sam shared the link this morning.",
                       null,
-                      "HIGH",
+                      Confidence.HIGH,
                       List.of(alias),
                       List.of(),
                       List.of("Sam")));
@@ -106,10 +106,10 @@ class ConversationQuestionAnsweringModelClientTest {
               return validated(
                   invocation,
                   new RawWindowDecision(
-                      "ANSWERED",
+                      WindowAction.ANSWERED,
                       "The masked participant posted the update.",
                       null,
-                      "HIGH",
+                      Confidence.HIGH,
                       List.of(alias),
                       List.of(),
                       List.of("participant ending 0199")));
@@ -144,15 +144,15 @@ class ConversationQuestionAnsweringModelClientTest {
               return validated(
                   invocation,
                   new RawWindowDecision(
-                      "NEED_OLDER_MESSAGES",
+                      WindowAction.NEED_OLDER_MESSAGES,
                       null,
                       null,
-                      "MEDIUM",
+                      Confidence.MEDIUM,
                       List.of(),
                       List.of(
                           new RawWindowFinding(
                               "The thread references an earlier decision.",
-                              "MEDIUM",
+                              Confidence.MEDIUM,
                               List.of(alias),
                               List.of("Sam"))),
                       List.of()));
@@ -247,10 +247,10 @@ class ConversationQuestionAnsweringModelClientTest {
               return validated(
                   invocation,
                   new RawWindowDecision(
-                      "ANSWERED",
+                      WindowAction.ANSWERED,
                       "Mallory posted the update.",
                       null,
-                      "HIGH",
+                      Confidence.HIGH,
                       List.of(alias),
                       List.of(),
                       List.of("Mallory")));
@@ -287,10 +287,10 @@ class ConversationQuestionAnsweringModelClientTest {
               return validated(
                   invocation,
                   new RawFindingReduction(
-                      "ANSWERED",
+                      WindowAction.ANSWERED,
                       "The launch plan came from Sam.",
                       null,
-                      "HIGH",
+                      Confidence.HIGH,
                       List.of(alias),
                       List.of()));
             });
@@ -334,7 +334,12 @@ class ConversationQuestionAnsweringModelClientTest {
               return validated(
                   invocation,
                   new RawFindingReduction(
-                      "NEED_OLDER_MESSAGES", null, null, "LOW", List.of(alias), List.of()));
+                      WindowAction.NEED_OLDER_MESSAGES,
+                      null,
+                      null,
+                      Confidence.LOW,
+                      List.of(alias),
+                      List.of()));
             });
 
     assertThatThrownBy(
@@ -360,7 +365,13 @@ class ConversationQuestionAnsweringModelClientTest {
               return validated(
                   invocation,
                   new RawWindowDecision(
-                      "ANSWERED", null, null, "HIGH", List.of(alias), List.of(), List.of("Sam")));
+                      WindowAction.ANSWERED,
+                      null,
+                      null,
+                      Confidence.HIGH,
+                      List.of(alias),
+                      List.of(),
+                      List.of("Sam")));
             });
 
     assertThatThrownBy(
@@ -384,10 +395,10 @@ class ConversationQuestionAnsweringModelClientTest {
                 validated(
                     invocation,
                     new RawWindowDecision(
-                        "NEED_TIME_CLARIFICATION",
+                        WindowAction.NEED_TIME_CLARIFICATION,
                         null,
                         "About when did that happen?",
-                        "LOW",
+                        Confidence.LOW,
                         List.of(),
                         List.of(),
                         List.of()),
@@ -417,10 +428,10 @@ class ConversationQuestionAnsweringModelClientTest {
                 validated(
                     invocation,
                     new RawWindowDecision(
-                        "NEED_TIME_CLARIFICATION",
+                        WindowAction.NEED_TIME_CLARIFICATION,
                         null,
                         "Did that happen around message m-1?",
-                        "LOW",
+                        Confidence.LOW,
                         List.of(),
                         List.of(),
                         List.of())));
@@ -452,10 +463,10 @@ class ConversationQuestionAnsweringModelClientTest {
               return validated(
                   invocation,
                   new RawWindowDecision(
-                      "ANSWERED",
+                      WindowAction.ANSWERED,
                       "Evidence " + alias + " came from m-1.",
                       null,
-                      "HIGH",
+                      Confidence.HIGH,
                       List.of(alias),
                       List.of(),
                       List.of("Sam")));
@@ -484,10 +495,10 @@ class ConversationQuestionAnsweringModelClientTest {
                 validated(
                     invocation,
                     new RawFindingReduction(
-                        "ANSWERED",
+                        WindowAction.ANSWERED,
                         "Sam posted it.",
                         null,
-                        "HIGH",
+                        Confidence.HIGH,
                         List.of("finding_unknown"),
                         List.of())));
 
@@ -516,7 +527,12 @@ class ConversationQuestionAnsweringModelClientTest {
               return validated(
                   invocation,
                   new RawFindingReduction(
-                      "ANSWERED", null, null, "HIGH", List.of(alias), List.of()));
+                      WindowAction.ANSWERED,
+                      null,
+                      null,
+                      Confidence.HIGH,
+                      List.of(alias),
+                      List.of()));
             });
 
     assertThatThrownBy(

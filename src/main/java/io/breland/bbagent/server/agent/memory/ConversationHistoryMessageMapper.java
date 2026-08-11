@@ -39,7 +39,9 @@ public class ConversationHistoryMessageMapper {
       return Optional.empty();
     }
     ParticipantDescriptor participant =
-        participantResolver.resolve(incoming, requestingAccountId, session.participants());
+        Boolean.TRUE.equals(incoming.fromMe())
+            ? new ParticipantDescriptor("you", null)
+            : participantResolver.resolve(incoming, requestingAccountId, session.participants());
     return Optional.of(
         new QuestionMessage(
             incoming.messageGuid(),
@@ -81,7 +83,6 @@ public class ConversationHistoryMessageMapper {
 
   private boolean eligible(IncomingMessage message) {
     if (message == null
-        || Boolean.TRUE.equals(message.fromMe())
         || message.isSystemMessage()
         || StringUtils.isBlank(IncomingMessage.chatGuidOrNull(message))
         || StringUtils.isBlank(message.text())
