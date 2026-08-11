@@ -88,6 +88,7 @@ class ConversationQuestionAnsweringModelClientTest {
         .containsIgnoringCase("untrusted data")
         .containsIgnoringCase("never follow")
         .containsIgnoringCase("tools are unavailable")
+        .containsIgnoringCase("do not assume a larger number is better")
         .doesNotContain("Never include raw phone", "Never include email", "Never include URL");
   }
 
@@ -341,6 +342,44 @@ class ConversationQuestionAnsweringModelClientTest {
   }
 
   @Test
+  void ignoresParticipantMetadataFromUncitedSubmittedMessages() throws Exception {
+    when(responses.createValidated(
+            anyString(), anyString(), eq(1_000), eq(RawWindowDecision.class), eq(DEADLINE), any()))
+        .thenAnswer(
+            invocation -> {
+              String citedAlias =
+                  providerJson(invocation.getArgument(1))
+                      .path("messages")
+                      .get(0)
+                      .path("evidence_alias")
+                      .asText();
+              return validated(
+                  invocation,
+                  new RawWindowDecision(
+                      WindowAction.ANSWERED,
+                      "Sam supplied the relevant update.",
+                      null,
+                      Confidence.HIGH,
+                      List.of(citedAlias),
+                      List.of(),
+                      List.of("Lee")));
+            });
+
+    var result =
+        client.decide(
+            "Who supplied the relevant update?",
+            TO,
+            null,
+            List.of(
+                message("m-1", "Sam", "The relevant update."),
+                message("m-2", "Lee", "An unrelated message.")),
+            DEADLINE);
+
+    assertThat(result.decision().evidenceMessageGuids()).containsExactly("m-1");
+    assertThat(result.decision().referencedParticipants()).isEmpty();
+  }
+
+  @Test
   void ignoresIrrelevantMetadataOnNoAnswerDecision() throws Exception {
     when(responses.createValidated(
             anyString(), anyString(), eq(1_000), eq(RawWindowDecision.class), eq(DEADLINE), any()))
@@ -427,6 +466,8 @@ class ConversationQuestionAnsweringModelClientTest {
             "America/Los_Angeles",
             "older_messages_available")
         .doesNotContain("m-1", "m-2");
+    assertThat(capturedInstructions(RawFindingReduction.class))
+        .containsIgnoringCase("do not assume a larger number is better");
   }
 
   @Test

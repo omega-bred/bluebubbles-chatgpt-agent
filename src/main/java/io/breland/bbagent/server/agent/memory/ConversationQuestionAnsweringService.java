@@ -169,8 +169,9 @@ public class ConversationQuestionAnsweringService {
               accountId, group, question, effectiveFrom, to, timezone, startedAt, deadline, run);
     } catch (RuntimeException failure) {
       log.warn(
-          "Group question answering failed failureType={} messages={} pages={} windows={} modelCalls={}",
+          "Group question answering failed failureType={} detail={} messages={} pages={} windows={} modelCalls={}",
           OperationalMetricsService.failureType(failure),
+          ConversationMemoryResponsesClient.safeFailureDetail(failure),
           run.messagesByGuid.size(),
           run.pageCount,
           run.windowCount,
