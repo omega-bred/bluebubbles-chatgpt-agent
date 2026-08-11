@@ -332,6 +332,50 @@ class ConversationQuestionAnsweringServiceTest {
   }
 
   @Test
+  void reducedNoAnswerChecksTheImmediatelyOlderWindowBeforeStopping() {
+    HistoryWindowCursor cursor =
+        new HistoryWindowCursor(HistorySource.BLUEBUBBLES, 0, 500, null, null);
+    QuestionMessage recentFirst = message("m2", "Sam", "x".repeat(5_000), 2);
+    QuestionMessage recentSecond = message("m3", "Alex", "y".repeat(5_000), 3);
+    QuestionMessage older = message("m1", "Lee", "z".repeat(5_000), 1);
+    service = service(500, 100, 8_000, 5, 40_000);
+    when(retriever.retrieveWindow(any(), isNull(), eq(500)))
+        .thenReturn(window(List.of(recentFirst, recentSecond), cursor, false));
+    when(retriever.retrieveWindow(any(), eq(cursor), eq(500)))
+        .thenReturn(window(List.of(older), null, true));
+    when(model.decide(eq(QUESTION), eq(NOW), isNull(), anyList(), eq(DEADLINE)))
+        .thenAnswer(
+            invocation -> {
+              List<QuestionMessage> messages = invocation.getArgument(3);
+              QuestionMessage message = messages.getFirst();
+              return routed(
+                  answered(
+                      message.participant() + " supplied a fact.",
+                      message.messageGuid(),
+                      message.participant()));
+            });
+    when(model.reduceFindings(eq(QUESTION), eq(NOW), isNull(), anyList(), eq(true), eq(DEADLINE)))
+        .thenReturn(
+            routedReduction(noAnswer("I couldn't find that in these messages."), List.of()));
+    when(model.reduceFindings(eq(QUESTION), eq(NOW), isNull(), anyList(), eq(false), eq(DEADLINE)))
+        .thenAnswer(
+            invocation -> {
+              List<QuestionFinding> findings = invocation.getArgument(3);
+              return routedReduction(
+                  answered("Lee and Sam tied.", List.of("m1", "m2", "m3"), List.of("Lee", "Sam")),
+                  findings);
+            });
+
+    GroupQuestionAnswer answer = service.answer(ACCOUNT, GROUP, QUESTION, null, NOW, null);
+
+    assertThat(answer.status()).isEqualTo(AnswerStatus.ANSWERED);
+    assertThat(answer.answer()).isEqualTo("Lee and Sam tied.");
+    verify(retriever).retrieveWindow(any(), eq(cursor), eq(500));
+    verify(model)
+        .reduceFindings(eq(QUESTION), eq(NOW), isNull(), anyList(), eq(true), eq(DEADLINE));
+  }
+
+  @Test
   void returnsNaturalClarificationWithoutFetchingOlderWindow() {
     HistoryWindowCursor cursor =
         new HistoryWindowCursor(HistorySource.BLUEBUBBLES, 0, 500, null, null);

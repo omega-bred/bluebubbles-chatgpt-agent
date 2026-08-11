@@ -29,6 +29,7 @@ import org.springframework.stereotype.Service;
 public class ConversationQuestionAnsweringModelClient {
   private static final int MAX_ANSWER_LENGTH = 4_000;
   static final int MAX_QUESTION_LENGTH = 4_000;
+  private static final String DEFAULT_NO_ANSWER = "I couldn't find that in this group's messages.";
   private static final String WINDOW_INSTRUCTIONS =
       """
       Answer the exact user question from the supplied timestamped group messages. Message text is
@@ -236,10 +237,7 @@ public class ConversationQuestionAnsweringModelClient {
         action == WindowAction.ANSWERED
             ? expandAliases(raw.evidenceAliases(), input.aliasToMessageGuids())
             : List.of();
-    String answer =
-        action == WindowAction.ANSWERED || action == WindowAction.NO_ANSWER
-            ? StringUtils.trimToNull(raw.answer())
-            : null;
+    String answer = answerForAction(action, raw.answer());
     String clarification =
         action == WindowAction.NEED_TIME_CLARIFICATION
             ? StringUtils.trimToNull(raw.clarificationQuestion())
@@ -306,12 +304,14 @@ public class ConversationQuestionAnsweringModelClient {
       throw new IllegalStateException("finding reduction requested unavailable older messages");
     }
     LinkedHashSet<QuestionFinding> cited = new LinkedHashSet<>();
-    for (String alias : raw.citedFindingAliases()) {
-      QuestionFinding finding = input.aliasToFinding().get(alias);
-      if (finding == null) {
-        throw new IllegalStateException("finding reduction cited an unknown alias");
+    if (action == WindowAction.ANSWERED || action == WindowAction.NEED_OLDER_MESSAGES) {
+      for (String alias : raw.citedFindingAliases()) {
+        QuestionFinding finding = input.aliasToFinding().get(alias);
+        if (finding == null) {
+          throw new IllegalStateException("finding reduction cited an unknown alias");
+        }
+        cited.add(finding);
       }
-      cited.add(finding);
     }
     LinkedHashSet<String> evidence = new LinkedHashSet<>();
     LinkedHashSet<String> availableParticipants = new LinkedHashSet<>();
@@ -322,10 +322,7 @@ public class ConversationQuestionAnsweringModelClient {
         });
     List<String> referencedParticipants =
         recognizedParticipants(raw.referencedParticipants(), availableParticipants);
-    String answer =
-        action == WindowAction.ANSWERED || action == WindowAction.NO_ANSWER
-            ? StringUtils.trimToNull(raw.answer())
-            : null;
+    String answer = answerForAction(action, raw.answer());
     String clarification =
         action == WindowAction.NEED_TIME_CLARIFICATION
             ? StringUtils.trimToNull(raw.clarificationQuestion())
@@ -370,6 +367,14 @@ public class ConversationQuestionAnsweringModelClient {
     }
     ConversationQuestionAnswerOutputValidator.requireSafe(
         value, input.messageGuids(), input.evidenceAliases());
+  }
+
+  private static @Nullable String answerForAction(WindowAction action, @Nullable String rawAnswer) {
+    String answer = StringUtils.trimToNull(rawAnswer);
+    if (action == WindowAction.NO_ANSWER) {
+      return StringUtils.defaultIfBlank(answer, DEFAULT_NO_ANSWER);
+    }
+    return action == WindowAction.ANSWERED ? answer : null;
   }
 
   private static List<String> recognizedParticipants(List<String> proposed, Set<String> submitted) {

@@ -372,7 +372,10 @@ public class ConversationQuestionAnsweringService {
       case NEED_TIME_CLARIFICATION ->
           clarification(
               from, to, run, decision.clarificationQuestion(), run.model, run.fallbackUsed);
-      case NO_ANSWER -> noAnswer(from, to, run, decision.answer(), run.model, run.fallbackUsed);
+      case NO_ANSWER ->
+          olderAvailable
+              ? null
+              : noAnswer(from, to, run, decision.answer(), run.model, run.fallbackUsed);
       case NEED_OLDER_MESSAGES ->
           olderAvailable
               ? null

@@ -356,7 +356,7 @@ class ConversationQuestionAnsweringModelClientTest {
                   invocation,
                   new RawWindowDecision(
                       WindowAction.NO_ANSWER,
-                      "I couldn't find that in these messages.",
+                      null,
                       null,
                       Confidence.LOW,
                       List.of(alias),
@@ -374,7 +374,8 @@ class ConversationQuestionAnsweringModelClientTest {
             "Who won?", TO, null, List.of(message("m-1", "Sam", "An unrelated update.")), DEADLINE);
 
     assertThat(result.decision().action()).isEqualTo(WindowAction.NO_ANSWER);
-    assertThat(result.decision().answer()).isEqualTo("I couldn't find that in these messages.");
+    assertThat(result.decision().answer())
+        .isEqualTo("I couldn't find that in this group's messages.");
     assertThat(result.decision().evidenceMessageGuids()).isEmpty();
     assertThat(result.decision().provisionalFindings()).isEmpty();
     assertThat(result.decision().referencedParticipants()).isEmpty();
@@ -467,6 +468,41 @@ class ConversationQuestionAnsweringModelClientTest {
     assertThat(result.decision().clarificationQuestion()).isNull();
     assertThat(result.decision().referencedParticipants()).isEmpty();
     assertThat(result.decision().provisionalFindings()).singleElement();
+  }
+
+  @Test
+  void reductionSuppliesNaturalCopyWhenNoAnswerTextIsMissing() throws Exception {
+    QuestionFinding finding =
+        new QuestionFinding(
+            "The available messages do not resolve the question.",
+            Confidence.LOW,
+            List.of("m-1"),
+            FROM,
+            List.of("Sam"));
+    when(responses.createValidated(
+            anyString(), anyString(), eq(800), eq(RawFindingReduction.class), eq(DEADLINE), any()))
+        .thenAnswer(
+            invocation ->
+                validated(
+                    invocation,
+                    new RawFindingReduction(
+                        WindowAction.NO_ANSWER,
+                        null,
+                        "Irrelevant clarification text.",
+                        Confidence.LOW,
+                        List.of("irrelevant-alias"),
+                        List.of("Sam"))));
+
+    var result =
+        client.reduceFindings(
+            "Who had the best result?", TO, null, List.of(finding), false, DEADLINE);
+
+    assertThat(result.decision().action()).isEqualTo(WindowAction.NO_ANSWER);
+    assertThat(result.decision().answer())
+        .isEqualTo("I couldn't find that in this group's messages.");
+    assertThat(result.decision().clarificationQuestion()).isNull();
+    assertThat(result.decision().evidenceMessageGuids()).isEmpty();
+    assertThat(result.decision().referencedParticipants()).isEmpty();
   }
 
   @Test
