@@ -195,14 +195,19 @@ public class ConversationQuestionAnsweringService {
     if (conversationValue.isEmpty() || !enabledGroup(conversationValue.get())) {
       return unavailable(from, to, run, SOURCE_UNAVAILABLE);
     }
+    ConversationRecord conversation = conversationValue.get();
     List<MembershipInterval> memberships =
         store.findMembershipIntervals(group.conversationId(), accountId, from, to);
     if (memberships.isEmpty()) {
       return unavailable(from, to, run, SOURCE_UNAVAILABLE);
     }
+    if (accountId.equals(conversation.memoryEnabledByAccountId())
+        && memberships.stream().anyMatch(interval -> interval.endedAt() == null)) {
+      memberships = List.of(new MembershipInterval(Instant.EPOCH, null));
+    }
 
     RetrievalRequest request =
-        new RetrievalRequest(accountId, conversationValue.get(), memberships, from, to, deadline);
+        new RetrievalRequest(accountId, conversation, memberships, from, to, deadline);
     HistoryWindowCursor cursor = null;
     Set<HistoryWindowCursor> seenCursors = new LinkedHashSet<>();
     while (true) {
@@ -262,7 +267,9 @@ public class ConversationQuestionAnsweringService {
                 from, to, run, decision.clarificationQuestion(), run.model, run.fallbackUsed);
           }
           case NO_ANSWER -> {
-            return noAnswer(from, to, run, decision.answer(), run.model, run.fallbackUsed);
+            if (window.nextCursor() == null) {
+              return noAnswer(from, to, run, decision.answer(), run.model, run.fallbackUsed);
+            }
           }
           case NEED_OLDER_MESSAGES -> addProvisionalFindings(decision, run);
         }
@@ -294,7 +301,7 @@ public class ConversationQuestionAnsweringService {
             return reduced;
           }
           needsOlder = true;
-        } else if (!needsOlder) {
+        } else if (!needsOlder && !olderAvailable) {
           return noAnswer(
               from,
               to,

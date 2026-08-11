@@ -231,19 +231,32 @@ public class ConversationQuestionAnsweringModelClient {
     }
     WindowAction action = requireEnum(raw.action(), "invalid question window response");
     Confidence confidence = requireEnum(raw.confidence(), "invalid question window response");
-    List<String> evidence = expandAliases(raw.evidenceAliases(), input.aliasToMessageGuids());
-    String answer = StringUtils.trimToNull(raw.answer());
-    String clarification = StringUtils.trimToNull(raw.clarificationQuestion());
+    List<String> evidence =
+        action == WindowAction.ANSWERED
+            ? expandAliases(raw.evidenceAliases(), input.aliasToMessageGuids())
+            : List.of();
+    String answer =
+        action == WindowAction.ANSWERED || action == WindowAction.NO_ANSWER
+            ? StringUtils.trimToNull(raw.answer())
+            : null;
+    String clarification =
+        action == WindowAction.NEED_TIME_CLARIFICATION
+            ? StringUtils.trimToNull(raw.clarificationQuestion())
+            : null;
     requireSafeText(answer, input);
     requireSafeText(clarification, input);
     Set<String> participants = new LinkedHashSet<>();
     submittedMessages.forEach(message -> participants.add(message.participant()));
     List<String> referencedParticipants =
-        recognizedParticipants(raw.referencedParticipants(), participants);
+        action == WindowAction.ANSWERED
+            ? recognizedParticipants(raw.referencedParticipants(), participants)
+            : List.of();
     List<WindowFinding> provisionalFindings =
-        raw.provisionalFindings().stream()
-            .map(finding -> parseWindowFinding(finding, input, participants))
-            .toList();
+        action == WindowAction.NEED_OLDER_MESSAGES
+            ? raw.provisionalFindings().stream()
+                .map(finding -> parseWindowFinding(finding, input, participants))
+                .toList()
+            : List.of();
     try {
       return new ModelWindowDecision(
           action,

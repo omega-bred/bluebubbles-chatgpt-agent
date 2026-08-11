@@ -145,7 +145,54 @@ class ConversationQuestionAnsweringServiceTest {
     verify(retriever).retrieveWindow(request.capture(), isNull(), eq(500));
     assertThat(request.getValue().from()).isEqualTo(Instant.EPOCH);
     assertThat(request.getValue().to()).isEqualTo(NOW);
+    assertThat(request.getValue().memberships())
+        .containsExactly(new MembershipInterval(Instant.EPOCH, null));
     verify(store).findMembershipIntervals(CONVERSATION_ID, ACCOUNT, Instant.EPOCH, NOW);
+  }
+
+  @Test
+  void nonEnablerRemainsLimitedToObservedMembershipIntervals() {
+    ConversationRecord enabledByAnotherAccount =
+        new ConversationRecord(
+            CONVERSATION_ID,
+            "bluebubbles",
+            "iMessage;+;group",
+            true,
+            "Project Chat",
+            FROM.minusSeconds(1),
+            "account-2",
+            NOW);
+    when(store.findConversation(CONVERSATION_ID)).thenReturn(Optional.of(enabledByAnotherAccount));
+    QuestionMessage message = message("m1", "Sam", "The update is ready.", 1);
+    when(retriever.retrieveWindow(any(), isNull(), eq(500)))
+        .thenReturn(window(List.of(message), null, true));
+    when(model.decide(QUESTION, NOW, null, List.of(message), DEADLINE))
+        .thenReturn(routed(answered("Sam posted it.", "m1", "Sam")));
+
+    service.answer(ACCOUNT, GROUP, QUESTION, null, NOW, null);
+
+    ArgumentCaptor<RetrievalRequest> request = ArgumentCaptor.forClass(RetrievalRequest.class);
+    verify(retriever).retrieveWindow(request.capture(), isNull(), eq(500));
+    assertThat(request.getValue().memberships())
+        .containsExactly(new MembershipInterval(FROM, null));
+  }
+
+  @Test
+  void enablerWithoutActiveMembershipRemainsLimitedToObservedInterval() {
+    MembershipInterval endedMembership = new MembershipInterval(FROM, NOW.minusSeconds(1));
+    when(store.findMembershipIntervals(CONVERSATION_ID, ACCOUNT, Instant.EPOCH, NOW))
+        .thenReturn(List.of(endedMembership));
+    QuestionMessage message = message("m1", "Sam", "The update is ready.", 1);
+    when(retriever.retrieveWindow(any(), isNull(), eq(500)))
+        .thenReturn(window(List.of(message), null, true));
+    when(model.decide(QUESTION, NOW, null, List.of(message), DEADLINE))
+        .thenReturn(routed(answered("Sam posted it.", "m1", "Sam")));
+
+    service.answer(ACCOUNT, GROUP, QUESTION, null, NOW, null);
+
+    ArgumentCaptor<RetrievalRequest> request = ArgumentCaptor.forClass(RetrievalRequest.class);
+    verify(retriever).retrieveWindow(request.capture(), isNull(), eq(500));
+    assertThat(request.getValue().memberships()).containsExactly(endedMembership);
   }
 
   @Test
@@ -192,6 +239,28 @@ class ConversationQuestionAnsweringServiceTest {
 
     assertThat(answer.status()).isEqualTo(AnswerStatus.ANSWERED);
     assertThat(answer.answer()).contains("Tuesday");
+    verify(retriever).retrieveWindow(any(), eq(cursor), eq(500));
+  }
+
+  @Test
+  void noAnswerChecksTheImmediatelyOlderWindowBeforeStopping() {
+    HistoryWindowCursor cursor =
+        new HistoryWindowCursor(HistorySource.BLUEBUBBLES, 0, 500, null, null);
+    QuestionMessage recent = message("m1", "Sam", "An unrelated recent update.", 2);
+    QuestionMessage older = message("m0", "Lee", "Lee and Sam tied for the win.", 1);
+    when(retriever.retrieveWindow(any(), isNull(), eq(500)))
+        .thenReturn(window(List.of(recent), cursor, false));
+    when(retriever.retrieveWindow(any(), eq(cursor), eq(500)))
+        .thenReturn(window(List.of(older), null, true));
+    when(model.decide(QUESTION, NOW, null, List.of(recent), DEADLINE))
+        .thenReturn(routed(noAnswer("I couldn't find that in these messages.")));
+    when(model.decide(QUESTION, NOW, null, List.of(older), DEADLINE))
+        .thenReturn(routed(answered("Lee and Sam tied.", "m0", "Lee")));
+
+    GroupQuestionAnswer answer = service.answer(ACCOUNT, GROUP, QUESTION, null, NOW, null);
+
+    assertThat(answer.status()).isEqualTo(AnswerStatus.ANSWERED);
+    assertThat(answer.answer()).isEqualTo("Lee and Sam tied.");
     verify(retriever).retrieveWindow(any(), eq(cursor), eq(500));
   }
 

@@ -269,6 +269,46 @@ class ConversationQuestionAnsweringModelClientTest {
   }
 
   @Test
+  void ignoresIrrelevantMetadataOnNoAnswerDecision() throws Exception {
+    when(responses.createValidated(
+            anyString(), anyString(), eq(1_000), eq(RawWindowDecision.class), eq(DEADLINE), any()))
+        .thenAnswer(
+            invocation -> {
+              String alias =
+                  providerJson(invocation.getArgument(1))
+                      .path("messages")
+                      .get(0)
+                      .path("evidence_alias")
+                      .asText();
+              return validated(
+                  invocation,
+                  new RawWindowDecision(
+                      WindowAction.NO_ANSWER,
+                      "I couldn't find that in these messages.",
+                      null,
+                      Confidence.LOW,
+                      List.of(alias),
+                      List.of(
+                          new RawWindowFinding(
+                              "The messages were unrelated.",
+                              Confidence.LOW,
+                              List.of(alias),
+                              List.of("Sam"))),
+                      List.of("Sam")));
+            });
+
+    var result =
+        client.decide(
+            "Who won?", TO, null, List.of(message("m-1", "Sam", "An unrelated update.")), DEADLINE);
+
+    assertThat(result.decision().action()).isEqualTo(WindowAction.NO_ANSWER);
+    assertThat(result.decision().answer()).isEqualTo("I couldn't find that in these messages.");
+    assertThat(result.decision().evidenceMessageGuids()).isEmpty();
+    assertThat(result.decision().provisionalFindings()).isEmpty();
+    assertThat(result.decision().referencedParticipants()).isEmpty();
+  }
+
+  @Test
   void reductionExpandsOnlyCitedFindingAliasesToOriginalMessageGuids() throws Exception {
     QuestionFinding cited =
         new QuestionFinding("Sam posted the launch plan.", Confidence.HIGH, List.of("m-1"), FROM);

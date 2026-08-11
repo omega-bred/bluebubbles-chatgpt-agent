@@ -22,7 +22,11 @@ import java.time.Duration;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicLong;
+import java.util.function.BooleanSupplier;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
@@ -40,6 +44,7 @@ import org.springframework.stereotype.Component;
 import org.springframework.util.LinkedMultiValueMap;
 import org.springframework.util.MultiValueMap;
 import reactor.core.publisher.Mono;
+import reactor.util.retry.Retry;
 
 @Slf4j
 @Component
@@ -52,6 +57,8 @@ public class BBHttpClientWrapper {
   private static final int DIRECT_SEND_PING_ATTEMPTS = 2;
   private static final int DIRECT_SEND_CONFIRMATION_ATTEMPTS = 3;
   private static final Duration DIRECT_SEND_MATCH_WINDOW_SKEW = Duration.ofSeconds(10);
+  private static final Duration DEFAULT_STOP_TYPING_RETRY_DELAY = Duration.ofSeconds(1);
+  private static final int STOP_TYPING_MAX_ATTEMPTS = 3;
   private static final int BLUEBUBBLES_MAX_IN_MEMORY_BYTES = 2 * 1024 * 1024;
   private static final String ANY_DIRECT_CHAT_PREFIX = "any;-;";
 
@@ -65,7 +72,10 @@ public class BBHttpClientWrapper {
 
   private final String password;
   private final Duration apiTimeout;
+  private final Duration stopTypingRetryDelay;
   private final @Nullable OperationalMetricsService operationalMetricsService;
+  private final AtomicLong typingGenerationSequence = new AtomicLong();
+  private final ConcurrentMap<String, Long> typingGenerations = new ConcurrentHashMap<>();
 
   @Getter private final ObjectMapper objectMapper;
 
@@ -78,6 +88,7 @@ public class BBHttpClientWrapper {
       @Nullable OperationalMetricsService operationalMetricsService) {
     this.password = password;
     this.apiTimeout = normalizedTimeout(requestTimeoutSeconds);
+    this.stopTypingRetryDelay = DEFAULT_STOP_TYPING_RETRY_DELAY;
     this.apiClient = blueBubblesApiClient(basePath);
     this.messageApi = new V1MessageApi(apiClient);
     this.contactApi = new V1ContactApi(apiClient);
@@ -128,6 +139,7 @@ public class BBHttpClientWrapper {
       @Nullable OperationalMetricsService operationalMetricsService) {
     this.password = password;
     this.apiTimeout = DEFAULT_API_TIMEOUT;
+    this.stopTypingRetryDelay = DEFAULT_STOP_TYPING_RETRY_DELAY;
     this.apiClient = blueBubblesApiClient();
     this.messageApi = messageApi;
     this.contactApi = contactApi;
@@ -146,8 +158,28 @@ public class BBHttpClientWrapper {
       V1ChatApi chatApi,
       ObjectMapper objectMapper,
       Duration apiTimeout) {
+    this(
+        password,
+        messageApi,
+        contactApi,
+        chatApi,
+        objectMapper,
+        apiTimeout,
+        DEFAULT_STOP_TYPING_RETRY_DELAY);
+  }
+
+  BBHttpClientWrapper(
+      String password,
+      V1MessageApi messageApi,
+      V1ContactApi contactApi,
+      V1ChatApi chatApi,
+      ObjectMapper objectMapper,
+      Duration apiTimeout,
+      Duration stopTypingRetryDelay) {
     this.password = password;
     this.apiTimeout = Objects.requireNonNull(apiTimeout, "apiTimeout");
+    this.stopTypingRetryDelay =
+        Objects.requireNonNull(stopTypingRetryDelay, "stopTypingRetryDelay");
     this.apiClient = blueBubblesApiClient();
     this.messageApi = Objects.requireNonNull(messageApi, "messageApi");
     this.contactApi = Objects.requireNonNull(contactApi, "contactApi");
@@ -177,13 +209,36 @@ public class BBHttpClientWrapper {
   public record PollSendOption(String text, String optionIdentifier) {}
 
   public void startTyping(String chatGuid) {
+    typingGenerations.put(chatGuid, typingGenerationSequence.incrementAndGet());
     fireAndForgetTyping(
         "start_typing", () -> chatApi.apiV1ChatChatGuidTypingPost(chatGuid, password));
   }
 
   public void stopTyping(String chatGuid) {
+    Long observedGeneration = typingGenerations.get(chatGuid);
+    long expectedGeneration =
+        observedGeneration == null
+            ? typingGenerationSequence.incrementAndGet()
+            : observedGeneration;
+    BooleanSupplier stillCurrent =
+        () -> {
+          Long current = typingGenerations.get(chatGuid);
+          return current == null || current == expectedGeneration;
+        };
     fireAndForgetTyping(
-        "stop_typing", () -> chatApi.apiV1ChatChatGuidTypingDelete(chatGuid, password));
+        "stop_typing",
+        () ->
+            Mono.defer(
+                    () ->
+                        stillCurrent.getAsBoolean()
+                            ? Objects.requireNonNull(
+                                chatApi.apiV1ChatChatGuidTypingDelete(chatGuid, password),
+                                "BlueBubbles stop typing request")
+                            : Mono.empty())
+                .retryWhen(
+                    Retry.fixedDelay(STOP_TYPING_MAX_ATTEMPTS - 1, stopTypingRetryDelay)
+                        .filter(ignored -> stillCurrent.getAsBoolean()))
+                .doOnSuccess(ignored -> typingGenerations.remove(chatGuid, expectedGeneration)));
   }
 
   private void fireAndForgetTyping(String operation, java.util.function.Supplier<Mono<Void>> call) {
@@ -197,7 +252,7 @@ public class BBHttpClientWrapper {
               error -> {
                 String failureType = OperationalMetricsService.failureType(error);
                 recordOperationMetric(operation, false, failureType, startedNanos);
-                log.debug(
+                log.warn(
                     "BlueBubbles typing operation failed operation={} failureType={}",
                     operation,
                     failureType);
@@ -207,7 +262,7 @@ public class BBHttpClientWrapper {
     } catch (RuntimeException error) {
       String failureType = OperationalMetricsService.failureType(error);
       recordOperationMetric(operation, false, failureType, startedNanos);
-      log.debug(
+      log.warn(
           "BlueBubbles typing operation failed operation={} failureType={}",
           operation,
           failureType);
