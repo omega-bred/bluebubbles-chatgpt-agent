@@ -283,11 +283,14 @@ public class ConversationQuestionAnsweringModelClient {
     }
     ConversationQuestionAnswerOutputValidator.requireSafe(
         answer, input.messageGuids(), input.evidenceAliases());
+    List<String> evidence = expandAliases(raw.evidenceAliases(), input.aliasToMessageGuids());
     return new WindowFinding(
         answer,
         requireEnum(raw.confidence(), "invalid question window response"),
-        expandAliases(raw.evidenceAliases(), input.aliasToMessageGuids()),
-        recognizedParticipants(raw.referencedParticipants(), submittedParticipants));
+        evidence,
+        evidence.isEmpty()
+            ? List.of()
+            : recognizedParticipants(raw.referencedParticipants(), submittedParticipants));
   }
 
   private ParsedFindingReduction parseFindingReduction(

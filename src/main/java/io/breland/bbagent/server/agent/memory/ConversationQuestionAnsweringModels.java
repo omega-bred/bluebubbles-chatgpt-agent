@@ -98,8 +98,8 @@ public final class ConversationQuestionAnsweringModels {
       Objects.requireNonNull(confidence, "finding confidence");
       evidenceMessageGuids = List.copyOf(evidenceMessageGuids);
       referencedParticipants = List.copyOf(referencedParticipants);
-      if (evidenceMessageGuids.isEmpty()) {
-        throw new IllegalArgumentException("finding evidence must not be empty");
+      if (evidenceMessageGuids.isEmpty() && !referencedParticipants.isEmpty()) {
+        throw new IllegalArgumentException("uncited finding must not reference participants");
       }
     }
   }

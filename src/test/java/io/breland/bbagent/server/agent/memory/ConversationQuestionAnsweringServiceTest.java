@@ -270,6 +270,46 @@ class ConversationQuestionAnsweringServiceTest {
   }
 
   @Test
+  void uncitedProvisionalFindingStillSearchesTheImmediatelyOlderWindow() {
+    HistoryWindowCursor cursor =
+        new HistoryWindowCursor(HistorySource.BLUEBUBBLES, 0, 500, null, null);
+    QuestionMessage recent = message("m1", "Sam", "That result was posted earlier.", 2);
+    QuestionMessage older = message("m0", "Lee", "Lee and Sam tied for the win.", 1);
+    when(retriever.retrieveWindow(any(), isNull(), eq(500)))
+        .thenReturn(window(List.of(recent), cursor, false));
+    when(retriever.retrieveWindow(any(), eq(cursor), eq(500)))
+        .thenReturn(window(List.of(older), null, true));
+    when(model.decide(QUESTION, NOW, null, List.of(recent), DEADLINE))
+        .thenReturn(
+            routed(
+                needOlder(
+                    new WindowFinding(
+                        "The thread points to an older result.",
+                        Confidence.MEDIUM,
+                        List.of(),
+                        List.of()))));
+    when(model.decide(QUESTION, NOW, null, List.of(older), DEADLINE))
+        .thenReturn(routed(answered("Lee and Sam tied.", "m0", "Lee")));
+    when(model.reduceFindings(eq(QUESTION), eq(NOW), isNull(), anyList(), eq(false), eq(DEADLINE)))
+        .thenAnswer(
+            invocation -> {
+              List<QuestionFinding> findings = invocation.getArgument(3);
+              List<QuestionFinding> cited =
+                  findings.stream()
+                      .filter(finding -> !finding.evidenceMessageGuids().isEmpty())
+                      .toList();
+              return routedReduction(
+                  answered("Lee and Sam tied.", List.of("m0"), List.of("Lee")), cited);
+            });
+
+    GroupQuestionAnswer answer = service.answer(ACCOUNT, GROUP, QUESTION, null, NOW, null);
+
+    assertThat(answer.status()).isEqualTo(AnswerStatus.ANSWERED);
+    assertThat(answer.answer()).isEqualTo("Lee and Sam tied.");
+    verify(retriever).retrieveWindow(any(), eq(cursor), eq(500));
+  }
+
+  @Test
   void noAnswerChecksTheImmediatelyOlderWindowBeforeStopping() {
     HistoryWindowCursor cursor =
         new HistoryWindowCursor(HistorySource.BLUEBUBBLES, 0, 500, null, null);

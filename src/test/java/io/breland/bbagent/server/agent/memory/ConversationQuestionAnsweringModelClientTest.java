@@ -209,6 +209,47 @@ class ConversationQuestionAnsweringModelClientTest {
   }
 
   @Test
+  void needOlderKeepsAProvisionalFindingWhenOptionalEvidenceMetadataIsOmitted() {
+    when(responses.createValidated(
+            anyString(), anyString(), eq(1_000), eq(RawWindowDecision.class), eq(DEADLINE), any()))
+        .thenAnswer(
+            invocation ->
+                validated(
+                    invocation,
+                    new RawWindowDecision(
+                        WindowAction.NEED_OLDER_MESSAGES,
+                        null,
+                        null,
+                        Confidence.MEDIUM,
+                        List.of(),
+                        List.of(
+                            new RawWindowFinding(
+                                "The thread points to an older result.",
+                                Confidence.MEDIUM,
+                                List.of(),
+                                List.of("Sam"))),
+                        List.of())));
+
+    var result =
+        client.decide(
+            "Who had the best result?",
+            TO,
+            null,
+            List.of(message("m-1", "Sam", "That result was posted earlier.")),
+            DEADLINE);
+
+    assertThat(result.decision().action()).isEqualTo(WindowAction.NEED_OLDER_MESSAGES);
+    assertThat(result.decision().provisionalFindings())
+        .singleElement()
+        .satisfies(
+            finding -> {
+              assertThat(finding.answer()).isEqualTo("The thread points to an older result.");
+              assertThat(finding.evidenceMessageGuids()).isEmpty();
+              assertThat(finding.referencedParticipants()).isEmpty();
+            });
+  }
+
+  @Test
   void modelWindowDecisionEnforcesActionSpecificShapes() {
     WindowFinding finding =
         new WindowFinding(
