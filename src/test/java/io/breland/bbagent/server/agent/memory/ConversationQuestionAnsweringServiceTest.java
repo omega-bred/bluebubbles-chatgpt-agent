@@ -3,6 +3,7 @@ package io.breland.bbagent.server.agent.memory;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatIllegalArgumentException;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -544,6 +545,29 @@ class ConversationQuestionAnsweringServiceTest {
   }
 
   @Test
+  void fullNewestWindowAboveLegacyCharacterLimitUsesOneModelCall() {
+    QuestionMessage first = message("m1", "Sam", "a".repeat(40_000), 1);
+    QuestionMessage second = message("m2", "Lee", "b".repeat(40_000), 2);
+    List<QuestionMessage> messages = List.of(first, second);
+    assertThat(payloadSizer.windowInputCharacters(QUESTION, NOW, null, messages))
+        .isGreaterThan(60_000)
+        .isLessThan(300_000);
+    service = service(500, 100, 300_000, 5, 600_000);
+    when(retriever.retrieveWindow(any(), isNull(), eq(500)))
+        .thenReturn(window(messages, null, true));
+    when(model.decide(QUESTION, NOW, null, messages, DEADLINE))
+        .thenReturn(routed(answered("Lee supplied the answer.", "m2", "Lee")));
+
+    GroupQuestionAnswer answer = service.answer(ACCOUNT, GROUP, QUESTION, null, NOW, null);
+
+    assertThat(answer.status()).isEqualTo(AnswerStatus.ANSWERED);
+    assertThat(answer.answer()).isEqualTo("Lee supplied the answer.");
+    verify(model, times(1)).decide(QUESTION, NOW, null, messages, DEADLINE);
+    verify(model, never())
+        .reduceFindings(anyString(), any(), any(), anyList(), anyBoolean(), any());
+  }
+
+  @Test
   void aSingleMessageTooLargeForTheModelAsksForANarrowerTime() {
     QuestionMessage large = message("large", "Sam", "x".repeat(5_000), 1);
     int tooSmall = payloadSizer.windowInputCharacters(QUESTION, NOW, null, List.of(large)) - 1;
@@ -660,9 +684,10 @@ class ConversationQuestionAnsweringServiceTest {
     assertThatIllegalArgumentException().isThrownBy(() -> service(0, 100, 60_000, 5, 300_000));
     assertThatIllegalArgumentException().isThrownBy(() -> service(501, 100, 60_000, 5, 300_000));
     assertThatIllegalArgumentException().isThrownBy(() -> service(500, 0, 60_000, 5, 300_000));
-    assertThatIllegalArgumentException().isThrownBy(() -> service(500, 100, 60_001, 5, 300_000));
+    assertThatIllegalArgumentException().isThrownBy(() -> service(500, 100, 300_001, 5, 600_000));
     assertThatIllegalArgumentException().isThrownBy(() -> service(500, 100, 60_000, 6, 300_000));
-    assertThatIllegalArgumentException().isThrownBy(() -> service(500, 100, 60_000, 5, 59_999));
+    assertThatIllegalArgumentException().isThrownBy(() -> service(500, 100, 300_000, 5, 299_999));
+    assertThatIllegalArgumentException().isThrownBy(() -> service(500, 100, 300_000, 5, 1_500_001));
     assertThatIllegalArgumentException()
         .isThrownBy(
             () ->

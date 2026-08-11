@@ -32,9 +32,9 @@ class BBChatGptAgentApplicationTests {
   void contextLoadsWithGroupQuestionAnsweringLimits() {
     assertThat(windowMessageCount).isEqualTo(500);
     assertThat(maxHistoryPages).isEqualTo(100);
-    assertThat(maxBatchCharacters).isEqualTo(60_000);
+    assertThat(maxBatchCharacters).isEqualTo(300_000);
     assertThat(maxModelBatches).isEqualTo(5);
-    assertThat(maxAggregateCharacters).isEqualTo(300_000);
+    assertThat(maxAggregateCharacters).isEqualTo(600_000);
     assertThat(requestTimeout).isEqualTo(Duration.ofSeconds(90));
   }
 }

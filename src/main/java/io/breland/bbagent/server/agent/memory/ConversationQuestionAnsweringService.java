@@ -44,9 +44,9 @@ import org.springframework.stereotype.Service;
 public class ConversationQuestionAnsweringService {
   private static final int HARD_MAX_WINDOW_MESSAGES = 500;
   private static final int HARD_MAX_HISTORY_PAGES = 100;
-  private static final int HARD_MAX_BATCH_CHARACTERS = 60_000;
+  private static final int HARD_MAX_BATCH_CHARACTERS = 300_000;
   private static final int HARD_MAX_MODEL_BATCHES = 5;
-  private static final int HARD_MAX_AGGREGATE_CHARACTERS = 300_000;
+  private static final int HARD_MAX_AGGREGATE_CHARACTERS = 1_500_000;
   private static final Duration HARD_MAX_REQUEST_TIMEOUT = Duration.ofSeconds(90);
 
   private static final String EMPTY_HISTORY_ANSWER =
@@ -120,7 +120,7 @@ public class ConversationQuestionAnsweringService {
       throw new IllegalArgumentException("max history pages must be between 1 and 100");
     }
     if (maxBatchCharacters < 1 || maxBatchCharacters > HARD_MAX_BATCH_CHARACTERS) {
-      throw new IllegalArgumentException("max batch characters must be between 1 and 60000");
+      throw new IllegalArgumentException("max batch characters must be between 1 and 300000");
     }
     if (maxModelBatches < 1 || maxModelBatches > HARD_MAX_MODEL_BATCHES) {
       throw new IllegalArgumentException("max model batches must be between 1 and 5");
@@ -128,7 +128,7 @@ public class ConversationQuestionAnsweringService {
     if (maxAggregateCharacters < maxBatchCharacters
         || maxAggregateCharacters > HARD_MAX_AGGREGATE_CHARACTERS) {
       throw new IllegalArgumentException(
-          "max aggregate characters must be between max batch characters and 300000");
+          "max aggregate characters must be between max batch characters and 1500000");
     }
     if (requestTimeout == null
         || requestTimeout.isZero()
