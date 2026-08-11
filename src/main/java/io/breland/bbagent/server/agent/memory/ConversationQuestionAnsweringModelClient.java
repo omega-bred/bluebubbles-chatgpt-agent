@@ -322,8 +322,14 @@ public class ConversationQuestionAnsweringModelClient {
         });
     List<String> referencedParticipants =
         recognizedParticipants(raw.referencedParticipants(), availableParticipants);
-    String answer = StringUtils.trimToNull(raw.answer());
-    String clarification = StringUtils.trimToNull(raw.clarificationQuestion());
+    String answer =
+        action == WindowAction.ANSWERED || action == WindowAction.NO_ANSWER
+            ? StringUtils.trimToNull(raw.answer())
+            : null;
+    String clarification =
+        action == WindowAction.NEED_TIME_CLARIFICATION
+            ? StringUtils.trimToNull(raw.clarificationQuestion())
+            : null;
     requireSafeText(answer, input);
     requireSafeText(clarification, input);
     List<WindowFinding> provisional =

@@ -429,6 +429,47 @@ class ConversationQuestionAnsweringModelClientTest {
   }
 
   @Test
+  void reductionIgnoresIrrelevantTextMetadataWhenRequestingOlderMessages() throws Exception {
+    QuestionFinding finding =
+        new QuestionFinding(
+            "The thread points to an older result.",
+            Confidence.MEDIUM,
+            List.of("m-1"),
+            FROM,
+            List.of("Sam"));
+    when(responses.createValidated(
+            anyString(), anyString(), eq(800), eq(RawFindingReduction.class), eq(DEADLINE), any()))
+        .thenAnswer(
+            invocation -> {
+              String alias =
+                  providerJson(invocation.getArgument(1))
+                      .path("findings")
+                      .get(0)
+                      .path("finding_alias")
+                      .asText();
+              return validated(
+                  invocation,
+                  new RawFindingReduction(
+                      WindowAction.NEED_OLDER_MESSAGES,
+                      "Keep searching earlier messages.",
+                      "This field is irrelevant for this action.",
+                      Confidence.MEDIUM,
+                      List.of(alias),
+                      List.of("Sam")));
+            });
+
+    var result =
+        client.reduceFindings(
+            "Who had the best result?", TO, null, List.of(finding), true, DEADLINE);
+
+    assertThat(result.decision().action()).isEqualTo(WindowAction.NEED_OLDER_MESSAGES);
+    assertThat(result.decision().answer()).isNull();
+    assertThat(result.decision().clarificationQuestion()).isNull();
+    assertThat(result.decision().referencedParticipants()).isEmpty();
+    assertThat(result.decision().provisionalFindings()).singleElement();
+  }
+
+  @Test
   void reductionCannotRequestOlderMessagesAfterSourceExhaustion() throws Exception {
     QuestionFinding finding =
         new QuestionFinding(
