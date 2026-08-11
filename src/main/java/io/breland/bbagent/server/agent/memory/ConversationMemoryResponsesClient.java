@@ -4,10 +4,12 @@ import com.openai.client.OpenAIClient;
 import com.openai.client.okhttp.OpenAIOkHttpClient;
 import com.openai.core.JsonValue;
 import com.openai.core.RequestOptions;
+import com.openai.errors.OpenAIServiceException;
 import com.openai.models.responses.EasyInputMessage;
 import com.openai.models.responses.ResponseCreateParams;
 import com.openai.models.responses.ResponseInputItem;
 import com.openai.models.responses.StructuredResponseCreateParams;
+import io.breland.bbagent.server.metrics.OperationalMetricsService;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
@@ -16,6 +18,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.function.Function;
 import java.util.function.Supplier;
+import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
@@ -23,6 +26,7 @@ import org.springframework.lang.Nullable;
 import org.springframework.stereotype.Service;
 
 @Service
+@Slf4j
 public class ConversationMemoryResponsesClient {
   static final String DEFAULT_PRIMARY_MODEL = "openrouter/z-ai/glm-5.2";
   static final String DEFAULT_FALLBACK_MODEL = "openai/gpt-4.1-mini";
@@ -156,6 +160,7 @@ public class ConversationMemoryResponsesClient {
           deadline,
           validator);
     } catch (RuntimeException e) {
+      logAttemptFailure(primaryModel, false, e);
       primaryFailure = e;
     }
     if (primaryModel.equals(fallbackModel)) {
@@ -173,9 +178,61 @@ public class ConversationMemoryResponsesClient {
           deadline,
           validator);
     } catch (RuntimeException fallbackFailure) {
+      logAttemptFailure(fallbackModel, true, fallbackFailure);
       fallbackFailure.addSuppressed(primaryFailure);
       throw fallbackFailure;
     }
+  }
+
+  private static void logAttemptFailure(
+      String model, boolean fallbackUsed, RuntimeException failure) {
+    log.warn(
+        "Conversation memory model attempt failed model={} fallback={} failureType={} detail={}",
+        model,
+        fallbackUsed,
+        OperationalMetricsService.failureType(failure),
+        safeFailureDetail(failure));
+  }
+
+  static String safeFailureDetail(Throwable failure) {
+    String detail = failure.getClass().getSimpleName();
+    Throwable current = failure;
+    for (int depth = 0; current != null && depth < 12; depth++) {
+      if (current instanceof OpenAIServiceException serviceFailure) {
+        return "provider_http_" + serviceFailure.statusCode();
+      }
+      String knownDetail = knownFailureDetail(current.getMessage());
+      if (knownDetail != null) {
+        detail = knownDetail;
+      }
+      Throwable next = current.getCause();
+      if (next == current) {
+        break;
+      }
+      current = next;
+    }
+    return detail;
+  }
+
+  private static @Nullable String knownFailureDetail(@Nullable String message) {
+    if (message == null) {
+      return null;
+    }
+    return switch (message) {
+      case "answered window decision has invalid shape" -> "answered_shape";
+      case "older-window decision has invalid shape" -> "older_messages_shape";
+      case "clarification decision has invalid shape" -> "clarification_shape";
+      case "no-answer decision has invalid shape" -> "no_answer_shape";
+      case "question answer evidence is outside submitted messages" -> "unknown_evidence";
+      case "question window participant is outside submitted messages" -> "unknown_participant";
+      case "finding reduction cited an unknown alias" -> "unknown_finding";
+      case "finding reduction requested unavailable older messages" -> "unavailable_older_messages";
+      case "memory response returned no structured output" -> "missing_structured_output";
+      case "invalid question window response" -> "invalid_window_response";
+      case "invalid finding reduction response" -> "invalid_reduction_response";
+      case "invalid question answer response" -> "invalid_answer_response";
+      default -> null;
+    };
   }
 
   private <T, R> RoutedResponse<R> createWithModel(

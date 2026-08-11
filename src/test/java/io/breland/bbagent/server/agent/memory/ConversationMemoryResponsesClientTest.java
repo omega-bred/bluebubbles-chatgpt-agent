@@ -208,6 +208,26 @@ class ConversationMemoryResponsesClientTest {
   }
 
   @Test
+  void safeAttemptDiagnosticsNeverExposeProviderErrorText() {
+    String diagnostic =
+        ConversationMemoryResponsesClient.safeFailureDetail(
+            new IllegalStateException("SECRET provider response body"));
+
+    assertThat(diagnostic).isEqualTo("IllegalStateException").doesNotContain("SECRET");
+  }
+
+  @Test
+  void identifiesRejectedAnsweredShapeInSafeAttemptDiagnostics() {
+    String diagnostic =
+        ConversationMemoryResponsesClient.safeFailureDetail(
+            new IllegalStateException(
+                "invalid question window response",
+                new IllegalArgumentException("answered window decision has invalid shape")));
+
+    assertThat(diagnostic).isEqualTo("answered_shape");
+  }
+
+  @Test
   @SuppressWarnings({"unchecked", "rawtypes"})
   void boundsEachProviderAttemptToTheRemainingOperationDeadlineWithoutSdkRetries() {
     Instant now = Instant.parse("2026-08-09T12:00:00Z");
