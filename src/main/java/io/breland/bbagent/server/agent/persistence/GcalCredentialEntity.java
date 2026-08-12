@@ -4,6 +4,7 @@ import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
+import lombok.AllArgsConstructor;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
@@ -12,6 +13,7 @@ import lombok.Setter;
 @Table(name = "gcal_oauth_credentials")
 @Getter
 @Setter
+@AllArgsConstructor
 @NoArgsConstructor
 public class GcalCredentialEntity {
 
@@ -39,23 +41,4 @@ public class GcalCredentialEntity {
 
   @Column(name = "expiration_time_ms")
   private Long expirationTimeMs;
-
-  public GcalCredentialEntity(
-      String id,
-      String storeId,
-      String accountKey,
-      String agentAccountId,
-      String googleAccountId,
-      String accessToken,
-      String refreshToken,
-      Long expirationTimeMs) {
-    this.id = id;
-    this.storeId = storeId;
-    this.accountKey = accountKey;
-    this.agentAccountId = agentAccountId;
-    this.googleAccountId = googleAccountId;
-    this.accessToken = accessToken;
-    this.refreshToken = refreshToken;
-    this.expirationTimeMs = expirationTimeMs;
-  }
 }
