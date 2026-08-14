@@ -231,12 +231,8 @@ spec:
               value: "500"
             - name: BBAGENT_GROUP_MEMORY_QA_MAX_HISTORY_PAGES
               value: "100"
-            - name: BBAGENT_GROUP_MEMORY_QA_MAX_BATCH_CHARACTERS
-              value: "300000"
             - name: BBAGENT_GROUP_MEMORY_QA_MAX_MODEL_BATCHES
               value: "5"
-            - name: BBAGENT_GROUP_MEMORY_QA_MAX_AGGREGATE_CHARACTERS
-              value: "600000"
             - name: BBAGENT_GROUP_MEMORY_QA_REQUEST_TIMEOUT
               value: "PT90S"
             - name: BBAGENT_MEMORY_PROJECTION_POLL_INTERVAL
