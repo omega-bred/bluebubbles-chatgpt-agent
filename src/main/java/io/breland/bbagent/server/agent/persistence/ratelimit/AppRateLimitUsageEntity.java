@@ -5,6 +5,7 @@ import jakarta.persistence.Entity;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import java.time.Instant;
+import lombok.AllArgsConstructor;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
@@ -13,6 +14,7 @@ import lombok.Setter;
 @Table(name = "app_rate_limit_usage")
 @Getter
 @Setter
+@AllArgsConstructor
 @NoArgsConstructor
 public class AppRateLimitUsageEntity {
 
@@ -43,25 +45,4 @@ public class AppRateLimitUsageEntity {
 
   @Column(name = "updated_at", nullable = false)
   private Instant updatedAt;
-
-  public AppRateLimitUsageEntity(
-      String id,
-      String limitKey,
-      String scopeType,
-      String scopeKey,
-      Instant windowStart,
-      Instant windowEnd,
-      long amount,
-      Instant createdAt,
-      Instant updatedAt) {
-    this.id = id;
-    this.limitKey = limitKey;
-    this.scopeType = scopeType;
-    this.scopeKey = scopeKey;
-    this.windowStart = windowStart;
-    this.windowEnd = windowEnd;
-    this.amount = amount;
-    this.createdAt = createdAt;
-    this.updatedAt = updatedAt;
-  }
 }
