@@ -259,7 +259,7 @@ class BBMessageAgentTest {
   }
 
   @Test
-  void groupTermsGateRequiresSameSenderThreadReplyAndReplaysOriginalInThread() {
+  void groupTermsGateAcceptsSameSenderUnthreadedYesAndReplaysOriginalInThread() {
     OpenAIClient openAIClient = Mockito.mock(OpenAIClient.class);
     var responseService = Mockito.mock(com.openai.services.blocking.ResponseService.class);
     when(openAIClient.responses()).thenReturn(responseService);
@@ -290,9 +290,6 @@ class BBMessageAgentTest {
             "can you summarize this?",
             "Alice",
             1_000L);
-    IncomingMessage unthreadedAgreement =
-        groupIncomingMessage(
-            "iMessage;+;chat-group", "msg-group-unthreaded-yes", null, "yes", "Alice", 1_001L);
     IncomingMessage otherSenderThreadedAgreement =
         groupIncomingReplyMessage(
             "iMessage;+;chat-group",
@@ -300,24 +297,18 @@ class BBMessageAgentTest {
             "msg-group-original",
             "I accept too.",
             "Bob",
-            1_002L);
-    IncomingMessage threadedAgreement =
-        groupIncomingReplyMessage(
-            "iMessage;+;chat-group",
-            "msg-group-threaded-yes",
-            "msg-group-original",
-            "Sure, I accept.",
-            "Alice",
-            1_003L);
+            1_001L);
+    IncomingMessage unthreadedAgreement =
+        groupIncomingMessage(
+            "iMessage;+;chat-group", "msg-group-unthreaded-yes", null, "YES", "Alice", 1_002L);
 
     agent.handleIncomingMessage(original);
-    agent.handleIncomingMessage(unthreadedAgreement);
     agent.handleIncomingMessage(otherSenderThreadedAgreement);
-    agent.handleIncomingMessage(threadedAgreement);
+    agent.handleIncomingMessage(unthreadedAgreement);
 
-    verify(responseService, times(1)).create(any(ResponseCreateParams.class));
+    verify(responseService, never()).create(any(ResponseCreateParams.class));
     verify(accountResolver, times(1)).acceptTerms(any(IncomingMessage.class));
-    verify(accountResolver).acceptTerms(threadedAgreement);
+    verify(accountResolver).acceptTerms(unthreadedAgreement);
     ArgumentCaptor<CadenceMessageWorkflowRequest> requestCaptor =
         ArgumentCaptor.forClass(CadenceMessageWorkflowRequest.class);
     verify(cadenceWorkflowLauncher).startWorkflow(requestCaptor.capture());
@@ -325,14 +316,11 @@ class BBMessageAgentTest {
     assertEquals("msg-group-original", replayed.messageGuid());
     assertEquals("msg-group-original", replayed.threadOriginatorGuid());
     assertEquals("can you summarize this?", replayed.text());
-    assertEquals(3, bbHttpClientWrapper.sentTextRequests.size());
+    assertEquals(2, bbHttpClientWrapper.sentTextRequests.size());
     assertEquals(
         "msg-group-original", bbHttpClientWrapper.sentTextRequests.get(0).getSelectedMessageGuid());
     assertEquals(
-        "msg-group-unthreaded-yes",
-        bbHttpClientWrapper.sentTextRequests.get(1).getSelectedMessageGuid());
-    assertEquals(
-        "msg-group-original", bbHttpClientWrapper.sentTextRequests.get(2).getSelectedMessageGuid());
+        "msg-group-original", bbHttpClientWrapper.sentTextRequests.get(1).getSelectedMessageGuid());
   }
 
   @Test
