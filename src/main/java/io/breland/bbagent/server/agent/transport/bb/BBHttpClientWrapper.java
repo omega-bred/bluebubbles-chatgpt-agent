@@ -734,81 +734,20 @@ public class BBHttpClientWrapper {
               .build());
     }
     request.where(where);
-    return executeMessageQuery(
-        request.build(), "search conversation history", Duration.of(120, ChronoUnit.SECONDS));
-  }
-
-  public List<Message> searchConversationHistory(
-      String chatGuid, String literalQuery, Instant after, Instant before, int limit, int offset) {
-    return searchConversationHistory(
-        chatGuid, literalQuery, after, before, limit, offset, Duration.of(120, ChronoUnit.SECONDS));
-  }
-
-  private List<Message> searchConversationHistory(
-      String chatGuid,
-      String literalQuery,
-      Instant after,
-      Instant before,
-      int limit,
-      int offset,
-      Duration timeout) {
-    validateHistorySearch(chatGuid, literalQuery, after, before, limit, offset);
-    String escaped =
-        literalQuery.trim().replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_");
-    WhereClause textClause =
-        WhereClause.builder()
-            .statement("message.text LIKE :text ESCAPE '\\'")
-            .args(Map.of("text", "%" + escaped + "%"))
-            .build();
-    ApiV1MessageQueryPostRequest request =
-        ApiV1MessageQueryPostRequest.builder()
-            .chatGuid(chatGuid)
-            .sort(ApiV1MessageQueryPostRequest.SortEnum.DESC)
-            .after(after.getEpochSecond())
-            .before(before.getEpochSecond())
-            .offset(offset)
-            .limit(limit)
-            .with(
-                Set.of(
-                    ApiV1MessageQueryPostRequest.WithEnum.HANDLE,
-                    ApiV1MessageQueryPostRequest.WithEnum.CHAT))
-            .where(List.of(textClause))
-            .build();
-
-    return executeMessageQuery(request, "search conversation history", timeout);
-  }
-
-  private static void validateHistorySearch(
-      String chatGuid, String literalQuery, Instant after, Instant before, int limit, int offset) {
-    if (StringUtils.isBlank(chatGuid)) {
-      throw new IllegalArgumentException("Cannot search conversation history without chatGuid");
-    }
-    if (StringUtils.isBlank(literalQuery)) {
-      throw new IllegalArgumentException(
-          "Cannot search conversation history without a literal query");
-    }
-    if (after == null || before == null || !after.isBefore(before)) {
-      throw new IllegalArgumentException(
-          "Conversation history search requires an ordered time range");
-    }
-    if (limit <= 0) {
-      throw new IllegalArgumentException("Conversation history search limit must be positive");
-    }
-    if (offset < 0) {
-      throw new IllegalArgumentException("Conversation history search offset cannot be negative");
-    }
+    return executeMessageQuery(request.build(), Duration.of(120, ChronoUnit.SECONDS));
   }
 
   private List<Message> executeMessageQuery(
-      ApiV1MessageQueryPostRequest request, String operation, Duration timeout) {
+      ApiV1MessageQueryPostRequest request, Duration timeout) {
     return measuredOperation(
         "search_conversation_history",
         () -> {
           ApiV1MessageQueryPost200Response response =
               this.messageApi.apiV1MessageQueryPost(password, request).block(timeout);
-          response = requirePresent(response, operation);
-          requireSuccessfulResponse(response.getStatus(), response.getMessage(), operation);
-          return requirePresent(response.getData(), operation);
+          response = requirePresent(response, "search conversation history");
+          requireSuccessfulResponse(
+              response.getStatus(), response.getMessage(), "search conversation history");
+          return requirePresent(response.getData(), "search conversation history");
         });
   }
 
