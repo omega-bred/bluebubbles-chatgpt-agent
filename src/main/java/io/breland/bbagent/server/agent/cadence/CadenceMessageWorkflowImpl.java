@@ -7,6 +7,7 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.uber.cadence.activity.ActivityOptions;
 import com.uber.cadence.workflow.Workflow;
 import io.breland.bbagent.server.agent.AgentResponseHelper;
+import io.breland.bbagent.server.agent.AgentWorkflowContext;
 import io.breland.bbagent.server.agent.BBMessageAgent;
 import io.breland.bbagent.server.agent.IncomingMessage;
 import io.breland.bbagent.server.agent.cadence.models.CadenceMessageWorkflowRequest;
@@ -21,6 +22,7 @@ import java.io.IOException;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
 import java.util.Optional;
 import lombok.extern.slf4j.Slf4j;
 
@@ -32,13 +34,21 @@ public class CadenceMessageWorkflowImpl implements CadenceMessageWorkflow {
   private static final int MAX_EMPTY_ASSISTANT_RESPONSE_RETRIES = 2;
   private static final ObjectMapper JSON = new ObjectMapper();
 
-  private final CadenceAgentActivities activities =
-      Workflow.newActivityStub(
-          CadenceAgentActivities.class,
-          new ActivityOptions.Builder()
-              .setScheduleToCloseTimeout(Duration.ofMinutes(5))
-              .setStartToCloseTimeout(Duration.ofMinutes(5))
-              .build());
+  private final CadenceAgentActivities activities;
+
+  public CadenceMessageWorkflowImpl() {
+    this(
+        Workflow.newActivityStub(
+            CadenceAgentActivities.class,
+            new ActivityOptions.Builder()
+                .setScheduleToCloseTimeout(Duration.ofMinutes(5))
+                .setStartToCloseTimeout(Duration.ofMinutes(5))
+                .build()));
+  }
+
+  CadenceMessageWorkflowImpl(CadenceAgentActivities activities) {
+    this.activities = Objects.requireNonNull(activities, "activities");
+  }
 
   @Override
   public void run(CadenceMessageWorkflowRequest request) {
@@ -60,150 +70,178 @@ public class CadenceMessageWorkflowImpl implements CadenceMessageWorkflow {
     }
     String inputItemsJson =
         activities.buildConversationInputJson(activities.getConversationHistory(message), message);
-    CadenceResponseBundle bundle =
-        activities.createResponseBundle(inputItemsJson, message, request.workflowContext());
-    if (bundle == null) {
-      activities.finalizeWorkflow(message, request.workflowContext(), false);
-      return;
-    }
-    boolean sentTextByTool = false;
-    boolean sentReactionByTool = false;
-    int toolLoops = 0;
-    int blockedLoops = 0;
-    int emptyResponseRetries = 0;
-    AgentToolLoopGuard toolLoopGuard = AgentToolLoopGuard.standard();
-    while (true) {
-      while (toolLoops < MAX_TOOL_LOOPS) {
-        if (bundle.toolCalls() == null || bundle.toolCalls().isEmpty()) {
-          break;
-        }
-        sentTextByTool =
-            sentTextByTool || hasToolCall(bundle.toolCalls(), SendTextAgentTool.TOOL_NAME);
-        sentReactionByTool =
-            sentReactionByTool || hasToolCall(bundle.toolCalls(), SendReactionAgentTool.TOOL_NAME);
-        List<CadenceToolCall> executableToolCalls = new ArrayList<>();
-        List<CadenceToolCall> blockedToolCalls = new ArrayList<>();
-        for (CadenceToolCall toolCall : bundle.toolCalls()) {
-          if (toolLoopGuard.shouldBlock(toolCall.name(), toolCall.arguments())) {
-            blockedToolCalls.add(toolCall);
-          } else {
-            executableToolCalls.add(toolCall);
-          }
-        }
-        String toolOutputsJson =
-            executableToolCalls.isEmpty()
-                ? "[]"
-                : activities.executeToolCallsJson(
-                    executableToolCalls, message, request.workflowContext());
-        String blockedOutputsJson =
-            blockedToolCalls.isEmpty() ? "[]" : activities.blockedToolCallsJson(blockedToolCalls);
-        inputItemsJson =
-            mergeJsonArrays(
-                inputItemsJson, bundle.toolContextItemsJson(), toolOutputsJson, blockedOutputsJson);
-        bundle =
-            activities.createResponseBundle(inputItemsJson, message, request.workflowContext());
-        toolLoops++;
-        if (bundle == null) {
-          activities.finalizeWorkflow(message, request.workflowContext(), false);
-          return;
-        }
-        boolean onlyBlockedToolCalls = !blockedToolCalls.isEmpty() && executableToolCalls.isEmpty();
-        blockedLoops = onlyBlockedToolCalls ? blockedLoops + 1 : 0;
-        if (blockedLoops >= MAX_CONSECUTIVE_BLOCKED_TOOL_LOOPS) {
-          log.warn(
-              "Stopping cadence tool loop after {} consecutive blocked iterations for {}",
-              blockedLoops,
-              request.workflowContext());
-          break;
-        }
-      }
-      if (toolLoops >= MAX_TOOL_LOOPS
-          && bundle.toolCalls() != null
-          && !bundle.toolCalls().isEmpty()) {
-        log.warn(
-            "Stopping cadence tool loop after {} total iterations for {}",
-            toolLoops,
-            request.workflowContext());
-      }
-
-      String assistantText = bundle.assistantText();
-      ImageSendResult imageResult =
-          activities.handleGeneratedImages(
-              bundle.responseJson(), assistantText, message, request.workflowContext());
-      if (imageResult.rateLimited()) {
-        activities.finalizeWorkflow(message, request.workflowContext(), true);
-        return;
-      }
-      boolean sentImageByMultipart = imageResult.sentImage();
-      if (imageResult.captionSent()) {
-        sentTextByTool = true;
-      }
-      Optional<String> parsedReaction = AgentResponseHelper.parseReactionText(assistantText);
-      if (parsedReaction.isPresent()) {
-        if (!sentReactionByTool) {
-          activities.sendReaction(message, parsedReaction.get(), request.workflowContext());
-        }
-        activities.finalizeWorkflow(message, request.workflowContext(), true);
-        return;
-      }
-      String trimmedText = assistantText == null ? "" : assistantText.trim();
-      if (!trimmedText.isBlank()
-          && !BBMessageAgent.NO_RESPONSE_TEXT.equalsIgnoreCase(trimmedText)) {
-        if (!sentTextByTool && !sentImageByMultipart) {
-          boolean sent =
-              activities.sendThreadAwareText(message, trimmedText, request.workflowContext());
-          if (!sent) {
-            log.warn(
-                "Assistant text send was not confirmed for cadence workflow {}",
-                request.workflowContext());
-          }
-        } else {
-          activities.recordAssistantTurn(message, trimmedText, request.workflowContext());
-        }
-        activities.finalizeWorkflow(message, request.workflowContext(), true);
-        return;
-      } else if (sentImageByMultipart) {
-        activities.recordAssistantTurn(message, "[image]", request.workflowContext());
-        activities.finalizeWorkflow(message, request.workflowContext(), true);
-        return;
-      } else if (sentTextByTool || sentReactionByTool) {
-        activities.finalizeWorkflow(message, request.workflowContext(), true);
-        return;
-      }
-
-      if (emptyResponseRetries >= MAX_EMPTY_ASSISTANT_RESPONSE_RETRIES) {
-        String pollUpdateFallback =
-            BlueBubblesPollSupport.fallbackUserVisiblePollNotification(message);
-        if (pollUpdateFallback != null && !pollUpdateFallback.isBlank()) {
-          log.info("Sending deterministic poll update fallback for {}", request.workflowContext());
-          boolean sent =
-              activities.sendThreadAwareText(
-                  message, pollUpdateFallback, request.workflowContext());
-          activities.finalizeWorkflow(message, request.workflowContext(), sent);
-          return;
-        }
-        log.warn(
-            "Model produced no user-visible assistant response for {}; leaving workflow unresponded",
-            request.workflowContext());
-        activities.finalizeWorkflow(message, request.workflowContext(), false);
-        return;
-      }
-      emptyResponseRetries++;
-      log.warn(
-          "Model produced no user-visible assistant response for {}; retrying ({}/{})",
-          request.workflowContext(),
-          emptyResponseRetries,
-          MAX_EMPTY_ASSISTANT_RESPONSE_RETRIES);
-      inputItemsJson =
-          mergeJsonArrays(
-              inputItemsJson,
-              bundle.toolContextItemsJson(),
-              emptyAssistantResponseRetryInstructionJson());
-      bundle = activities.createResponseBundle(inputItemsJson, message, request.workflowContext());
+    updateTyping(message, request.workflowContext(), true);
+    try {
+      CadenceResponseBundle bundle =
+          activities.createResponseBundle(inputItemsJson, message, request.workflowContext());
       if (bundle == null) {
         activities.finalizeWorkflow(message, request.workflowContext(), false);
         return;
       }
+      boolean sentTextByTool = false;
+      boolean sentReactionByTool = false;
+      int toolLoops = 0;
+      int blockedLoops = 0;
+      int emptyResponseRetries = 0;
+      AgentToolLoopGuard toolLoopGuard = AgentToolLoopGuard.standard();
+      while (true) {
+        while (toolLoops < MAX_TOOL_LOOPS) {
+          if (bundle.toolCalls() == null || bundle.toolCalls().isEmpty()) {
+            break;
+          }
+          sentTextByTool =
+              sentTextByTool || hasToolCall(bundle.toolCalls(), SendTextAgentTool.TOOL_NAME);
+          sentReactionByTool =
+              sentReactionByTool
+                  || hasToolCall(bundle.toolCalls(), SendReactionAgentTool.TOOL_NAME);
+          List<CadenceToolCall> executableToolCalls = new ArrayList<>();
+          List<CadenceToolCall> blockedToolCalls = new ArrayList<>();
+          for (CadenceToolCall toolCall : bundle.toolCalls()) {
+            if (toolLoopGuard.shouldBlock(toolCall.name(), toolCall.arguments())) {
+              blockedToolCalls.add(toolCall);
+            } else {
+              executableToolCalls.add(toolCall);
+            }
+          }
+          String toolOutputsJson =
+              executableToolCalls.isEmpty()
+                  ? "[]"
+                  : activities.executeToolCallsJson(
+                      executableToolCalls, message, request.workflowContext());
+          String blockedOutputsJson =
+              blockedToolCalls.isEmpty() ? "[]" : activities.blockedToolCallsJson(blockedToolCalls);
+          inputItemsJson =
+              mergeJsonArrays(
+                  inputItemsJson,
+                  bundle.toolContextItemsJson(),
+                  toolOutputsJson,
+                  blockedOutputsJson);
+          bundle =
+              activities.createResponseBundle(inputItemsJson, message, request.workflowContext());
+          toolLoops++;
+          if (bundle == null) {
+            activities.finalizeWorkflow(message, request.workflowContext(), false);
+            return;
+          }
+          boolean onlyBlockedToolCalls =
+              !blockedToolCalls.isEmpty() && executableToolCalls.isEmpty();
+          blockedLoops = onlyBlockedToolCalls ? blockedLoops + 1 : 0;
+          if (blockedLoops >= MAX_CONSECUTIVE_BLOCKED_TOOL_LOOPS) {
+            log.warn(
+                "Stopping cadence tool loop after {} consecutive blocked iterations for {}",
+                blockedLoops,
+                request.workflowContext());
+            break;
+          }
+        }
+        if (toolLoops >= MAX_TOOL_LOOPS
+            && bundle.toolCalls() != null
+            && !bundle.toolCalls().isEmpty()) {
+          log.warn(
+              "Stopping cadence tool loop after {} total iterations for {}",
+              toolLoops,
+              request.workflowContext());
+        }
+
+        String assistantText = bundle.assistantText();
+        ImageSendResult imageResult =
+            activities.handleGeneratedImages(
+                bundle.responseJson(), assistantText, message, request.workflowContext());
+        if (imageResult.rateLimited()) {
+          activities.finalizeWorkflow(message, request.workflowContext(), true);
+          return;
+        }
+        boolean sentImageByMultipart = imageResult.sentImage();
+        if (imageResult.captionSent()) {
+          sentTextByTool = true;
+        }
+        Optional<String> parsedReaction = AgentResponseHelper.parseReactionText(assistantText);
+        if (parsedReaction.isPresent()) {
+          if (!sentReactionByTool) {
+            activities.sendReaction(message, parsedReaction.get(), request.workflowContext());
+          }
+          activities.finalizeWorkflow(message, request.workflowContext(), true);
+          return;
+        }
+        String trimmedText = assistantText == null ? "" : assistantText.trim();
+        if (!trimmedText.isBlank()
+            && !BBMessageAgent.NO_RESPONSE_TEXT.equalsIgnoreCase(trimmedText)) {
+          if (!sentTextByTool && !sentImageByMultipart) {
+            boolean sent =
+                activities.sendThreadAwareText(message, trimmedText, request.workflowContext());
+            if (!sent) {
+              log.warn(
+                  "Assistant text send was not confirmed for cadence workflow {}",
+                  request.workflowContext());
+            }
+          } else {
+            activities.recordAssistantTurn(message, trimmedText, request.workflowContext());
+          }
+          activities.finalizeWorkflow(message, request.workflowContext(), true);
+          return;
+        } else if (sentImageByMultipart) {
+          activities.recordAssistantTurn(message, "[image]", request.workflowContext());
+          activities.finalizeWorkflow(message, request.workflowContext(), true);
+          return;
+        } else if (sentTextByTool || sentReactionByTool) {
+          activities.finalizeWorkflow(message, request.workflowContext(), true);
+          return;
+        }
+
+        if (emptyResponseRetries >= MAX_EMPTY_ASSISTANT_RESPONSE_RETRIES) {
+          String pollUpdateFallback =
+              BlueBubblesPollSupport.fallbackUserVisiblePollNotification(message);
+          if (pollUpdateFallback != null && !pollUpdateFallback.isBlank()) {
+            log.info(
+                "Sending deterministic poll update fallback for {}", request.workflowContext());
+            boolean sent =
+                activities.sendThreadAwareText(
+                    message, pollUpdateFallback, request.workflowContext());
+            activities.finalizeWorkflow(message, request.workflowContext(), sent);
+            return;
+          }
+          log.warn(
+              "Model produced no user-visible assistant response for {}; leaving workflow unresponded",
+              request.workflowContext());
+          activities.finalizeWorkflow(message, request.workflowContext(), false);
+          return;
+        }
+        emptyResponseRetries++;
+        log.warn(
+            "Model produced no user-visible assistant response for {}; retrying ({}/{})",
+            request.workflowContext(),
+            emptyResponseRetries,
+            MAX_EMPTY_ASSISTANT_RESPONSE_RETRIES);
+        inputItemsJson =
+            mergeJsonArrays(
+                inputItemsJson,
+                bundle.toolContextItemsJson(),
+                emptyAssistantResponseRetryInstructionJson());
+        bundle =
+            activities.createResponseBundle(inputItemsJson, message, request.workflowContext());
+        if (bundle == null) {
+          activities.finalizeWorkflow(message, request.workflowContext(), false);
+          return;
+        }
+      }
+    } finally {
+      updateTyping(message, request.workflowContext(), false);
+    }
+  }
+
+  private void updateTyping(
+      IncomingMessage message, AgentWorkflowContext workflowContext, boolean typing) {
+    try {
+      if (typing) {
+        activities.startTyping(message, workflowContext);
+      } else {
+        activities.stopTyping(message, workflowContext);
+      }
+    } catch (RuntimeException error) {
+      log.debug(
+          "Typing activity failed operation={} failureType={}",
+          typing ? "start" : "stop",
+          error.getClass().getSimpleName());
     }
   }
 

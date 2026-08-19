@@ -45,29 +45,6 @@ public final class CadenceIncomingMessageHandler {
       CadenceWorkflowLauncher cadenceWorkflowLauncher,
       @Nullable AgentMetricsService agentMetricsService,
       Supplier<String> termsUrl,
-      TermsAgreementValidator termsAgreementValidator) {
-    this(
-        messageAgent,
-        conversations,
-        profileService,
-        transportRegistry,
-        bbHttpClientWrapper,
-        cadenceWorkflowLauncher,
-        agentMetricsService,
-        termsUrl,
-        termsAgreementValidator,
-        null);
-  }
-
-  public CadenceIncomingMessageHandler(
-      BBMessageAgent messageAgent,
-      Map<String, ConversationState> conversations,
-      AgentProfileService profileService,
-      MessageTransportRegistry transportRegistry,
-      BBHttpClientWrapper bbHttpClientWrapper,
-      CadenceWorkflowLauncher cadenceWorkflowLauncher,
-      @Nullable AgentMetricsService agentMetricsService,
-      Supplier<String> termsUrl,
       TermsAgreementValidator termsAgreementValidator,
       @Nullable ConversationJournalService conversationJournalService) {
     this.conversations = conversations;
