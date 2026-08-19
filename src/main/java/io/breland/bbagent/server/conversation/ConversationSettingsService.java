@@ -59,21 +59,6 @@ public class ConversationSettingsService {
   private final @Nullable ConversationMemorySettingsService memorySettingsService;
   private final @Nullable ProactiveCatchupService proactiveCatchupService;
 
-  public ConversationSettingsService(
-      AgentProfileService profileService,
-      BBHttpClientWrapper bbHttpClientWrapper,
-      @Nullable UmamiAnalyticsService umamiAnalyticsService) {
-    this(profileService, bbHttpClientWrapper, umamiAnalyticsService, null, null);
-  }
-
-  public ConversationSettingsService(
-      AgentProfileService profileService,
-      BBHttpClientWrapper bbHttpClientWrapper,
-      @Nullable UmamiAnalyticsService umamiAnalyticsService,
-      @Nullable ConversationMemorySettingsService memorySettingsService) {
-    this(profileService, bbHttpClientWrapper, umamiAnalyticsService, memorySettingsService, null);
-  }
-
   @Autowired
   public ConversationSettingsService(
       AgentProfileService profileService,
@@ -86,10 +71,6 @@ public class ConversationSettingsService {
     this.umamiAnalyticsService = umamiAnalyticsService;
     this.memorySettingsService = memorySettingsService;
     this.proactiveCatchupService = proactiveCatchupService;
-  }
-
-  public ConversationSettingsResponse getSettings(String chatGuid) {
-    return getSettings(null, chatGuid);
   }
 
   public ConversationSettingsResponse getSettings(@Nullable String accountId, String chatGuid) {

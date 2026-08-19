@@ -25,10 +25,6 @@ public class MemoryGetAgentTool implements ToolProvider {
   public record MemoryGetRequest(
       @Schema(description = "Query text to search memories.") String query) {}
 
-  public MemoryGetAgentTool(Mem0Client mem0Client) {
-    this(mem0Client, null);
-  }
-
   public MemoryGetAgentTool(Mem0Client mem0Client, @Nullable MemoryScopeResolver scopeResolver) {
     this.mem0Client = mem0Client;
     this.scopeResolver = scopeResolver;
