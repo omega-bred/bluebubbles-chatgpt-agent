@@ -52,9 +52,9 @@ class ConversationSettingsServiceTest {
                 java.time.Instant.parse("2026-08-08T18:00:00Z")));
     ConversationSettingsService service =
         new ConversationSettingsService(
-            profileService, bbHttpClientWrapper, null, memorySettingsService);
+            profileService, bbHttpClientWrapper, null, memorySettingsService, null);
 
-    ConversationSettingsResponse response = service.getSettings("chat-guid");
+    ConversationSettingsResponse response = service.getSettings(null, "chat-guid");
 
     assertThat(response.getConversation().getDisplayName()).isEqualTo("Project Chat");
     assertThat(response.getConversation().getChatIdentifier()).isEqualTo("chat@example.com");
@@ -78,7 +78,7 @@ class ConversationSettingsServiceTest {
     when(profileService.getAssistantResponsiveness("chat-guid"))
         .thenReturn(AssistantResponsiveness.MORE_RESPONSIVE);
     ConversationSettingsService service =
-        new ConversationSettingsService(profileService, bbHttpClientWrapper, null);
+        new ConversationSettingsService(profileService, bbHttpClientWrapper, null, null, null);
 
     var response = service.updateResponsiveness("account-1", "chat-guid", "more_responsive");
 
@@ -111,7 +111,7 @@ class ConversationSettingsServiceTest {
                 true, true, "Memory", "Enabled prospectively.", java.time.Instant.now()));
     ConversationSettingsService service =
         new ConversationSettingsService(
-            profileService, bbHttpClientWrapper, null, memorySettingsService);
+            profileService, bbHttpClientWrapper, null, memorySettingsService, null);
 
     var response = service.updateGroupMemory("account-1", "chat-guid", true);
 

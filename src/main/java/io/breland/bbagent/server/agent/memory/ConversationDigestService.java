@@ -10,7 +10,9 @@ import io.breland.bbagent.server.agent.memory.ConversationMemoryModels.CatchupRe
 import io.breland.bbagent.server.agent.memory.ConversationMemoryModels.ConversationRecord;
 import io.breland.bbagent.server.agent.memory.ConversationMemoryModels.DigestBatch;
 import io.breland.bbagent.server.agent.memory.ConversationMemoryModels.DigestWorkClaim;
+import io.breland.bbagent.server.agent.memory.ConversationMemoryModels.GroupQuestionResult;
 import io.breland.bbagent.server.agent.memory.ConversationMemoryModels.JournalMessage;
+import io.breland.bbagent.server.agent.memory.ConversationMemoryModels.QuestionGroup;
 import io.breland.bbagent.server.agent.memory.ConversationMemoryModels.SummaryMaterial;
 import io.breland.bbagent.server.agent.transport.bb.BBHttpClientWrapper;
 import io.breland.bbagent.server.metrics.OperationalMetricsService;
@@ -21,6 +23,7 @@ import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.time.ZoneId;
 import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
@@ -157,19 +160,9 @@ public class ConversationDigestService {
 
   public CatchupResult catchUp(
       String accountId, @Nullable String groupHint, Instant requestedFrom, Instant requestedTo) {
-    return catchUp(accountId, groupHint, requestedFrom, requestedTo, null);
-  }
-
-  public CatchupResult catchUp(
-      String accountId,
-      @Nullable String groupHint,
-      Instant requestedFrom,
-      Instant requestedTo,
-      @Nullable String question) {
     Instant startedAt = clock.instant();
     try {
-      CatchupResult result =
-          catchUpInternal(accountId, groupHint, requestedFrom, requestedTo, question);
+      CatchupResult result = catchUpInternal(accountId, groupHint, requestedFrom, requestedTo);
       recordCatchup(true, null, startedAt);
       return result;
     } catch (RuntimeException e) {
@@ -179,11 +172,7 @@ public class ConversationDigestService {
   }
 
   private CatchupResult catchUpInternal(
-      String accountId,
-      @Nullable String groupHint,
-      Instant requestedFrom,
-      Instant requestedTo,
-      @Nullable String question) {
+      String accountId, @Nullable String groupHint, Instant requestedFrom, Instant requestedTo) {
     if (!globallyEnabled) {
       return new CatchupResult(List.of(), List.of());
     }
@@ -194,24 +183,20 @@ public class ConversationDigestService {
     if (requestedTo.isAfter(now) || !requestedFrom.isBefore(requestedTo)) {
       throw new IllegalArgumentException("catch-up range must be ordered and not in the future");
     }
-    boolean questionMode = StringUtils.isNotBlank(question);
     Instant from = requestedFrom;
-    if (!questionMode && Duration.between(from, requestedTo).compareTo(MAX_CATCHUP_RANGE) > 0) {
+    if (Duration.between(from, requestedTo).compareTo(MAX_CATCHUP_RANGE) > 0) {
       from = requestedTo.minus(MAX_CATCHUP_RANGE);
     }
 
     List<AuthorizedGroup> authorizedGroups =
         store.findAuthorizedGroups(accountId, from, requestedTo);
-    GroupSelection selection =
-        questionMode
-            ? selectQuestionGroup(authorizedGroups, groupHint)
-            : selectGroups(authorizedGroups, groupHint);
+    GroupSelection selection = selectGroups(authorizedGroups, groupHint);
     if (!selection.disambiguationOptions().isEmpty()) {
       return new CatchupResult(List.of(), selection.disambiguationOptions());
     }
     List<CatchupGroup> groups = new ArrayList<>();
     for (AuthorizedGroup group : selection.groups()) {
-      groups.add(buildCatchupGroup(accountId, group, from, requestedTo, question));
+      groups.add(buildCatchupGroup(accountId, group, from, requestedTo));
     }
     return new CatchupResult(List.copyOf(groups), List.of());
   }
@@ -221,13 +206,11 @@ public class ConversationDigestService {
       String transport,
       String chatGuid,
       Instant requestedFrom,
-      Instant requestedTo,
-      @Nullable String question) {
+      Instant requestedTo) {
     Instant startedAt = clock.instant();
     try {
       CatchupResult result =
-          catchUpForChatInternal(
-              accountId, transport, chatGuid, requestedFrom, requestedTo, question);
+          catchUpForChatInternal(accountId, transport, chatGuid, requestedFrom, requestedTo);
       recordCatchup(true, null, startedAt);
       return result;
     } catch (RuntimeException e) {
@@ -241,8 +224,7 @@ public class ConversationDigestService {
       String transport,
       String chatGuid,
       Instant requestedFrom,
-      Instant requestedTo,
-      @Nullable String question) {
+      Instant requestedTo) {
     if (!globallyEnabled) {
       return new CatchupResult(List.of(), List.of());
     }
@@ -256,13 +238,93 @@ public class ConversationDigestService {
       throw new IllegalArgumentException("catch-up range must be ordered and not in the future");
     }
     AuthorizedGroup group =
-        store.findCurrentlyAuthorizedGroup(accountId, transport, chatGuid, now).orElse(null);
+        store
+            .findCurrentlyAuthorizedGroup(accountId, transport, chatGuid, requestedTo)
+            .orElse(null);
     if (group == null) {
       return new CatchupResult(List.of(), List.of());
     }
     return new CatchupResult(
-        List.of(buildCatchupGroup(accountId, group, requestedFrom, requestedTo, question)),
+        List.of(buildCatchupGroup(accountId, group, requestedFrom, requestedTo)), List.of());
+  }
+
+  public GroupQuestionResult answerQuestion(
+      String accountId,
+      @Nullable String groupHint,
+      String question,
+      @Nullable Instant from,
+      Instant to,
+      @Nullable String timezone) {
+    if (!globallyEnabled) {
+      return new GroupQuestionResult(List.of(), List.of());
+    }
+    validateQuestionRequest(accountId, question, from, to, timezone);
+    GroupSelection selection =
+        selectQuestionGroup(store.findCurrentlyAuthorizedGroups(accountId, to), groupHint);
+    if (!selection.disambiguationOptions().isEmpty()) {
+      return new GroupQuestionResult(List.of(), selection.disambiguationOptions());
+    }
+    if (questionAnsweringService == null) {
+      throw new IllegalStateException("group question answering unavailable");
+    }
+    List<QuestionGroup> groups =
+        selection.groups().stream()
+            .map(
+                group ->
+                    new QuestionGroup(
+                        StringUtils.defaultIfBlank(group.displayName(), "Group conversation"),
+                        questionAnsweringService.answer(
+                            accountId, group, question, from, to, timezone)))
+            .toList();
+    return new GroupQuestionResult(groups, List.of());
+  }
+
+  public GroupQuestionResult answerQuestionForChat(
+      String accountId,
+      String transport,
+      String chatGuid,
+      String question,
+      @Nullable Instant from,
+      Instant to,
+      @Nullable String timezone) {
+    if (!globallyEnabled) {
+      return new GroupQuestionResult(List.of(), List.of());
+    }
+    if (StringUtils.isAnyBlank(transport, chatGuid)) {
+      throw new IllegalArgumentException("current chat is required");
+    }
+    validateQuestionRequest(accountId, question, from, to, timezone);
+    AuthorizedGroup group =
+        store.findCurrentlyAuthorizedGroup(accountId, transport, chatGuid, to).orElse(null);
+    if (group == null) {
+      return new GroupQuestionResult(List.of(), List.of());
+    }
+    if (questionAnsweringService == null) {
+      throw new IllegalStateException("group question answering unavailable");
+    }
+    return new GroupQuestionResult(
+        List.of(
+            new QuestionGroup(
+                StringUtils.defaultIfBlank(group.displayName(), "Group conversation"),
+                questionAnsweringService.answer(accountId, group, question, from, to, timezone))),
         List.of());
+  }
+
+  private void validateQuestionRequest(
+      String accountId,
+      String question,
+      @Nullable Instant from,
+      Instant to,
+      @Nullable String timezone) {
+    if (StringUtils.isAnyBlank(accountId, question)
+        || to == null
+        || to.isAfter(clock.instant())
+        || (from != null && !from.isBefore(to))) {
+      throw new IllegalArgumentException("question range must be ordered and not in the future");
+    }
+    if (StringUtils.isNotBlank(timezone)) {
+      ZoneId.of(timezone.trim());
+    }
   }
 
   public CatchupResult catchUpForConversation(
@@ -308,8 +370,7 @@ public class ConversationDigestService {
       return new CatchupResult(List.of(), List.of());
     }
     return new CatchupResult(
-        List.of(buildCatchupGroup(accountId, group.get(), authorizedFrom, requestedTo, null)),
-        List.of());
+        List.of(buildCatchupGroup(accountId, group.get(), authorizedFrom, requestedTo)), List.of());
   }
 
   public Instant currentTime() {
@@ -355,11 +416,7 @@ public class ConversationDigestService {
   }
 
   private CatchupGroup buildCatchupGroup(
-      String accountId,
-      AuthorizedGroup group,
-      Instant from,
-      Instant to,
-      @Nullable String question) {
+      String accountId, AuthorizedGroup group, Instant from, Instant to) {
     Instant todayStart =
         LocalDate.ofInstant(clock.instant(), ZoneOffset.UTC)
             .atStartOfDay()
@@ -408,13 +465,6 @@ public class ConversationDigestService {
                         .map(ConversationMemoryModels.ExtractionCheckpoint::lastProcessedAt))
             .map(value -> value.isAfter(to) ? to : value)
             .orElse(from);
-    ConversationQuestionAnsweringModels.GroupQuestionAnswer questionAnswer = null;
-    if (StringUtils.isNotBlank(question)) {
-      if (questionAnsweringService == null) {
-        throw new IllegalStateException("group question answering unavailable");
-      }
-      questionAnswer = questionAnsweringService.answer(accountId, group, question, from, to);
-    }
     return new CatchupGroup(
         StringUtils.defaultIfBlank(group.displayName(), "Group conversation"),
         String.join(" ", developments),
@@ -423,8 +473,7 @@ public class ConversationDigestService {
         openQuestions,
         from,
         to,
-        coverageThrough,
-        questionAnswer);
+        coverageThrough);
   }
 
   private GroupSelection selectQuestionGroup(

@@ -4,7 +4,8 @@ import io.breland.bbagent.server.agent.memory.ConversationQuestionAnsweringModel
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
-import org.springframework.lang.Nullable;
+import java.util.Objects;
+import org.apache.commons.lang3.StringUtils;
 
 public final class ConversationMemoryModels {
   private ConversationMemoryModels() {}
@@ -192,33 +193,32 @@ public final class ConversationMemoryModels {
       List<String> openQuestions,
       Instant from,
       Instant to,
-      Instant coverageThrough,
-      @Nullable GroupQuestionAnswer questionAnswer) {
+      Instant coverageThrough) {
     public CatchupGroup {
       keyDevelopments = List.copyOf(keyDevelopments);
       decisions = List.copyOf(decisions);
       openQuestions = List.copyOf(openQuestions);
     }
+  }
 
-    public CatchupGroup(
-        String group,
-        String summary,
-        List<String> keyDevelopments,
-        List<String> decisions,
-        List<String> openQuestions,
-        Instant from,
-        Instant to,
-        Instant coverageThrough) {
-      this(
-          group,
-          summary,
-          keyDevelopments,
-          decisions,
-          openQuestions,
-          from,
-          to,
-          coverageThrough,
-          null);
+  public record QuestionGroup(String group, GroupQuestionAnswer answer) {
+    public QuestionGroup {
+      if (StringUtils.isBlank(group)) {
+        throw new IllegalArgumentException("question group must not be blank");
+      }
+      Objects.requireNonNull(answer, "question answer");
+    }
+  }
+
+  public record GroupQuestionResult(
+      List<QuestionGroup> groups, List<String> disambiguationOptions) {
+    public GroupQuestionResult {
+      groups = List.copyOf(groups);
+      disambiguationOptions = List.copyOf(disambiguationOptions);
+    }
+
+    public boolean ambiguous() {
+      return !disambiguationOptions.isEmpty();
     }
   }
 

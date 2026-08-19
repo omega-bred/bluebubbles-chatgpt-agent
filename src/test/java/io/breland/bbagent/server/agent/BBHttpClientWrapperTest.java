@@ -25,11 +25,13 @@ import io.breland.bbagent.generated.bluebubblesclient.model.ApiV1MessageQueryPos
 import io.breland.bbagent.generated.bluebubblesclient.model.Contact;
 import io.breland.bbagent.generated.bluebubblesclient.model.FindMyFriendLocation;
 import io.breland.bbagent.server.agent.transport.bb.BBHttpClientWrapper;
+import io.breland.bbagent.server.agent.transport.bb.BlueBubblesContactIdentity;
 import io.breland.bbagent.server.metrics.OperationalMetricsService;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 import org.junit.jupiter.api.Test;
@@ -160,6 +162,40 @@ class BBHttpClientWrapperTest {
     assertEquals(
         List.of("+1 (555) 555-0123", "alice@example.com"),
         wrapper.getContactAddressesFor("tel:555-555-0123"));
+  }
+
+  @Test
+  void getContactIdentitiesForQuestionUsesSafeDisplayFallbacksAndAddresses() {
+    V1ContactApi contactApi = Mockito.mock(V1ContactApi.class);
+    BBHttpClientWrapper wrapper =
+        new BBHttpClientWrapper("pw", Mockito.mock(V1MessageApi.class), contactApi);
+    when(contactApi.apiV1ContactGet("pw"))
+        .thenReturn(
+            Mono.just(
+                ApiV1ContactGet200Response.builder()
+                    .status(200)
+                    .message("Successfully fetched contacts")
+                    .data(
+                        List.of(
+                            new Contact()
+                                .displayName("  Display Name  ")
+                                .nickname("Ignored")
+                                .phoneNumbers(List.of(new AddressEntry().address("+15555550199"))),
+                            new Contact()
+                                .nickname("Nickname")
+                                .emails(List.of(new AddressEntry().address("nick@example.com"))),
+                            new Contact()
+                                .firstName("First")
+                                .lastName("Last")
+                                .phoneNumbers(List.of(new AddressEntry().address("+15555550200"))),
+                            new Contact().displayName("No address")))
+                    .build()));
+
+    assertThat(wrapper.getContactIdentitiesForQuestion(Duration.ofSeconds(5)))
+        .containsExactly(
+            new BlueBubblesContactIdentity("Display Name", List.of("+15555550199")),
+            new BlueBubblesContactIdentity("Nickname", List.of("nick@example.com")),
+            new BlueBubblesContactIdentity("First Last", List.of("+15555550200")));
   }
 
   @Test
@@ -300,47 +336,6 @@ class BBHttpClientWrapperTest {
   }
 
   @Test
-  void searchConversationHistoryUsesExplicitChatTimeAndLiteralTerm() {
-    V1MessageApi messageApi = Mockito.mock(V1MessageApi.class);
-    BBHttpClientWrapper wrapper =
-        new BBHttpClientWrapper("pw", messageApi, Mockito.mock(V1ContactApi.class));
-    when(messageApi.apiV1MessageQueryPost(Mockito.eq("pw"), Mockito.any()))
-        .thenReturn(
-            Mono.just(
-                ApiV1MessageQueryPost200Response.builder()
-                    .status(200)
-                    .message("Successfully queried messages")
-                    .data(List.of())
-                    .build()));
-
-    wrapper.searchConversationHistory(
-        "group-guid",
-        "100%_Wordle\\",
-        Instant.parse("2025-01-01T00:00:00Z"),
-        Instant.parse("2026-01-01T00:00:00Z"),
-        500,
-        1000);
-
-    ArgumentCaptor<ApiV1MessageQueryPostRequest> requestCaptor =
-        ArgumentCaptor.forClass(ApiV1MessageQueryPostRequest.class);
-    verify(messageApi).apiV1MessageQueryPost(Mockito.eq("pw"), requestCaptor.capture());
-    ApiV1MessageQueryPostRequest request = requestCaptor.getValue();
-    assertThat(request.getChatGuid()).isEqualTo("group-guid");
-    assertThat(request.getAfter()).isEqualTo(1735689600L);
-    assertThat(request.getBefore()).isEqualTo(1767225600L);
-    assertThat(request.getLimit()).isEqualTo(500);
-    assertThat(request.getOffset()).isEqualTo(1000);
-    assertThat(request.getWith())
-        .containsExactlyInAnyOrder(
-            ApiV1MessageQueryPostRequest.WithEnum.HANDLE,
-            ApiV1MessageQueryPostRequest.WithEnum.CHAT);
-    assertThat(request.getWhere().getFirst().getStatement())
-        .isEqualTo("message.text LIKE :text ESCAPE '\\'");
-    assertThat(request.getWhere().getFirst().getArgs().get("text"))
-        .isEqualTo("%100\\%\\_Wordle\\\\%");
-  }
-
-  @Test
   void legacySearchConversationHistoryReturnsNullForBlankChatWithoutSourceAccess() {
     V1MessageApi messageApi = Mockito.mock(V1MessageApi.class);
     BBHttpClientWrapper wrapper =
@@ -375,39 +370,6 @@ class BBHttpClientWrapperTest {
     assertThat(request.getWhere()).isEmpty();
     assertThat(request.getLimit()).isEqualTo(20);
     assertThat(request.getOffset()).isZero();
-  }
-
-  @Test
-  void searchConversationHistoryRejectsInvalidArgumentsBeforeCallingBlueBubbles() {
-    V1MessageApi messageApi = Mockito.mock(V1MessageApi.class);
-    BBHttpClientWrapper wrapper =
-        new BBHttpClientWrapper("pw", messageApi, Mockito.mock(V1ContactApi.class));
-    Instant after = Instant.parse("2025-01-01T00:00:00Z");
-    Instant before = Instant.parse("2026-01-01T00:00:00Z");
-
-    assertThrows(
-        IllegalArgumentException.class,
-        () -> wrapper.searchConversationHistory(" ", "Wordle", after, before, 1, 0));
-    assertThrows(
-        IllegalArgumentException.class,
-        () -> wrapper.searchConversationHistory("group-guid", " ", after, before, 1, 0));
-    assertThrows(
-        IllegalArgumentException.class,
-        () -> wrapper.searchConversationHistory("group-guid", "Wordle", null, before, 1, 0));
-    assertThrows(
-        IllegalArgumentException.class,
-        () -> wrapper.searchConversationHistory("group-guid", "Wordle", after, null, 1, 0));
-    assertThrows(
-        IllegalArgumentException.class,
-        () -> wrapper.searchConversationHistory("group-guid", "Wordle", before, after, 1, 0));
-    assertThrows(
-        IllegalArgumentException.class,
-        () -> wrapper.searchConversationHistory("group-guid", "Wordle", after, before, 0, 0));
-    assertThrows(
-        IllegalArgumentException.class,
-        () -> wrapper.searchConversationHistory("group-guid", "Wordle", after, before, 1, -1));
-
-    verifyNoInteractions(messageApi);
   }
 
   private static BBHttpClientWrapper wrapper(V1ICloudApi icloudApi) {
