@@ -203,6 +203,25 @@ public class ConversationState {
         termsAcceptanceKey(normalize(sender), normalize(threadRootGuid)));
   }
 
+  public synchronized PendingTermsAcceptance getLatestPendingTermsAcceptance(String sender) {
+    String cleanSender = normalize(sender);
+    if (cleanSender == null) {
+      return null;
+    }
+    String senderKey = cleanSender.toLowerCase(Locale.ROOT);
+    PendingTermsAcceptance latest = null;
+    for (PendingTermsAcceptance pending : pendingTermsAcceptances.values()) {
+      String pendingSender = normalize(pending.sender());
+      if (pendingSender == null || !senderKey.equals(pendingSender.toLowerCase(Locale.ROOT))) {
+        continue;
+      }
+      if (latest == null || pending.createdAt().isAfter(latest.createdAt())) {
+        latest = pending;
+      }
+    }
+    return latest;
+  }
+
   public synchronized void clearPendingTermsAcceptance(PendingTermsAcceptance pending) {
     if (pending == null) {
       return;

@@ -252,23 +252,20 @@ public class OperationalMetricsService {
   }
 
   public void recordMemoryQuestionAnswer(
-      String retrievalMode,
-      String coverageStatus,
+      String action,
       @Nullable String model,
       long messageCount,
       long pageCount,
-      long modelBatchCount,
-      long planCount,
-      long verificationCount,
+      long windowCount,
+      long modelCallCount,
+      long reductionCount,
       boolean success,
       @Nullable String failureType,
       Duration duration) {
     Tags tags =
         Tags.of(
-            "retrieval_mode",
-            tagValue(retrievalMode, "unknown"),
-            "coverage_status",
-            tagValue(coverageStatus, "unknown"),
+            "action",
+            tagValue(action, "unknown"),
             "model",
             modelTagValue(model),
             "outcome",
@@ -283,7 +280,7 @@ public class OperationalMetricsService {
     incrementCounter("bbagent.memory.question.answer.count", "Group question answer count", tags);
     incrementCounter(
         "bbagent.memory.question.answer.message.count",
-        "Group question evidence messages",
+        "Group question messages",
         tags,
         Math.max(0L, messageCount));
     incrementCounter(
@@ -292,20 +289,20 @@ public class OperationalMetricsService {
         tags,
         Math.max(0L, pageCount));
     incrementCounter(
-        "bbagent.memory.question.answer.model.batch.count",
-        "Group question model batches",
+        "bbagent.memory.question.answer.window.count",
+        "Group question windows",
         tags,
-        Math.max(0L, modelBatchCount));
+        Math.max(0L, windowCount));
     incrementCounter(
-        "bbagent.memory.question.answer.plan.count",
-        "Group question logical planning calls",
+        "bbagent.memory.question.answer.model.call.count",
+        "Group question model calls",
         tags,
-        Math.max(0L, planCount));
+        Math.max(0L, modelCallCount));
     incrementCounter(
-        "bbagent.memory.question.answer.verification.count",
-        "Group question logical support verification calls",
+        "bbagent.memory.question.answer.reduction.count",
+        "Group question reductions",
         tags,
-        Math.max(0L, verificationCount));
+        Math.max(0L, reductionCount));
   }
 
   public void recordMemoryProactiveDelivery(
