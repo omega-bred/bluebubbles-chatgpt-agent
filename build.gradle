@@ -9,7 +9,7 @@ plugins {
 	id 'io.spring.dependency-management' version '1.1.7'
 	id 'org.openapi.generator' version '7.22.0'
 	id 'com.diffplug.spotless' version '8.4.0'
-    id "org.flywaydb.flyway" version "12.6.1"
+    id "org.flywaydb.flyway" version "13.2.0"
 }
 
 var grp = 'io.breland.bbagent'
@@ -218,14 +218,14 @@ dependencies {
     implementation 'dev.openfga:openfga-sdk:0.9.9'
 
 
-	implementation("org.apache.httpcomponents.client5:httpclient5:5.6")
+	implementation("org.apache.httpcomponents.client5:httpclient5:5.6.3")
 	implementation 'commons-codec:commons-codec'
 
 
     // lombok
 	compileOnly 'org.projectlombok:lombok:1.18.46'
 	annotationProcessor 'org.projectlombok:lombok:1.18.46'
-    implementation platform('org.apache.logging.log4j:log4j-bom:2.25.4')
+    implementation platform('org.apache.logging.log4j:log4j-bom:2.26.1')
     implementation platform("org.springframework.ai:spring-ai-bom:2.0.0")
     implementation("org.springframework.ai:spring-ai-tool-search-tool")
     implementation("org.apache.lucene:lucene-core:9.12.3")
@@ -238,7 +238,7 @@ dependencies {
 	implementation 'io.swagger.core.v3:swagger-annotations:2.2.50'
 	implementation 'io.swagger.core.v3:swagger-core:2.2.50'
 	implementation 'javax.xml.bind:jaxb-api:2.3.1'
-	runtimeOnly 'org.glassfish.jaxb:jaxb-runtime:4.0.8'
+	runtimeOnly 'org.glassfish.jaxb:jaxb-runtime:4.0.9'
 	implementation 'jakarta.validation:jakarta.validation-api:3.1.1'
 	implementation 'jakarta.annotation:jakarta.annotation-api:3.0.0'
 	implementation 'org.openapitools:jackson-databind-nullable:0.2.8'
@@ -279,7 +279,7 @@ dependencies {
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
 
     // generated java client
-    implementation 'joda-time:joda-time:2.14.0'
+    implementation 'joda-time:joda-time:2.14.3'
     implementation "com.fasterxml.jackson.datatype:jackson-datatype-jsr310"
 }
 
