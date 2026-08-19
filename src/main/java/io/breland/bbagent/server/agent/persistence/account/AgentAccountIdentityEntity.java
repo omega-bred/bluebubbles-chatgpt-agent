@@ -5,6 +5,7 @@ import jakarta.persistence.Entity;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import java.time.Instant;
+import lombok.AllArgsConstructor;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
@@ -13,6 +14,7 @@ import lombok.Setter;
 @Table(name = "agent_account_identities")
 @Getter
 @Setter
+@AllArgsConstructor
 @NoArgsConstructor
 public class AgentAccountIdentityEntity {
 
@@ -37,21 +39,4 @@ public class AgentAccountIdentityEntity {
 
   @Column(name = "updated_at", nullable = false)
   private Instant updatedAt;
-
-  public AgentAccountIdentityEntity(
-      String identityId,
-      String accountId,
-      String identityType,
-      String identifier,
-      String normalizedIdentifier,
-      Instant createdAt,
-      Instant updatedAt) {
-    this.identityId = identityId;
-    this.accountId = accountId;
-    this.identityType = identityType;
-    this.identifier = identifier;
-    this.normalizedIdentifier = normalizedIdentifier;
-    this.createdAt = createdAt;
-    this.updatedAt = updatedAt;
-  }
 }
