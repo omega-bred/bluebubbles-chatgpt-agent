@@ -19,6 +19,9 @@ import com.openai.models.responses.StructuredResponseCreateParams;
 import com.openai.models.responses.StructuredResponseOutputItem;
 import com.openai.models.responses.StructuredResponseOutputMessage;
 import com.openai.services.blocking.ResponseService;
+import io.breland.bbagent.server.agent.memory.ConversationQuestionAnsweringModelClient.RawWindowDecision;
+import io.breland.bbagent.server.agent.memory.ConversationQuestionAnsweringModels.Confidence;
+import io.breland.bbagent.server.agent.memory.ConversationQuestionAnsweringModels.WindowAction;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
@@ -110,6 +113,41 @@ class ConversationMemoryResponsesClientTest {
 
   @Test
   @SuppressWarnings({"unchecked", "rawtypes"})
+  void constrainsQuestionDecisionEnumsInTheStructuredOutputSchema() {
+    OpenAIClient openAIClient = mock(OpenAIClient.class);
+    ResponseService responseService = mock(ResponseService.class);
+    StructuredResponse<RawWindowDecision> response =
+        successfulResponse(
+            new RawWindowDecision(
+                WindowAction.NO_ANSWER,
+                "No matching message.",
+                null,
+                Confidence.LOW,
+                List.of(),
+                List.of(),
+                List.of()));
+    List<StructuredResponseCreateParams<?>> requests = new ArrayList<>();
+    when(openAIClient.responses()).thenReturn(responseService);
+    when(responseService.create(any(StructuredResponseCreateParams.class)))
+        .thenAnswer(
+            invocation -> {
+              StructuredResponseCreateParams<?> request = invocation.getArgument(0);
+              requests.add(request);
+              return response;
+            });
+    ConversationMemoryResponsesClient client =
+        new ConversationMemoryResponsesClient(() -> openAIClient, "primary", "fallback", 0.4, 1.6);
+
+    client.create("instructions", "input", 200, RawWindowDecision.class);
+
+    assertThat(requests).singleElement();
+    assertThat(requests.getFirst().toString())
+        .contains("ANSWERED", "NEED_OLDER_MESSAGES", "NEED_TIME_CLARIFICATION", "NO_ANSWER")
+        .contains("HIGH", "MEDIUM", "LOW");
+  }
+
+  @Test
+  @SuppressWarnings({"unchecked", "rawtypes"})
   void retriesOnceWithFallbackWithoutOpenRouterPriceBody() {
     OpenAIClient openAIClient = mock(OpenAIClient.class);
     ResponseService responseService = mock(ResponseService.class);
@@ -137,6 +175,94 @@ class ConversationMemoryResponsesClientTest {
     assertThat(result.fallbackUsed()).isTrue();
     assertThat(requests).hasSize(2);
     assertThat(requests.get(1).toString()).doesNotContain("max_price");
+  }
+
+  @Test
+  @SuppressWarnings({"unchecked", "rawtypes"})
+  void retriesWithFallbackWhenPrimaryStructuredOutputFailsSemanticValidation() {
+    OpenAIClient openAIClient = mock(OpenAIClient.class);
+    ResponseService responseService = mock(ResponseService.class);
+    StructuredResponse<TestOutput> primaryResponse = successfulResponse(new TestOutput("invalid"));
+    StructuredResponse<TestOutput> fallbackResponse = successfulResponse(new TestOutput("valid"));
+    when(openAIClient.responses()).thenReturn(responseService);
+    when(responseService.create(any(StructuredResponseCreateParams.class)))
+        .thenReturn(primaryResponse, fallbackResponse);
+    ConversationMemoryResponsesClient client =
+        new ConversationMemoryResponsesClient(
+            () -> openAIClient, "openrouter/z-ai/glm-5.2", "openai/gpt-4.1-mini", 0.4, 1.6);
+
+    ConversationMemoryResponsesClient.RoutedResponse<String> result =
+        client.createValidated(
+            "instructions",
+            "input",
+            200,
+            TestOutput.class,
+            output -> {
+              if (!"valid".equals(output.value())) {
+                throw new IllegalStateException("invalid semantic output");
+              }
+              return output.value().toUpperCase();
+            });
+
+    assertThat(result.value()).isEqualTo("VALID");
+    assertThat(result.model()).isEqualTo("openai/gpt-4.1-mini");
+    assertThat(result.fallbackUsed()).isTrue();
+    verify(responseService, times(2)).create(any(StructuredResponseCreateParams.class));
+  }
+
+  @Test
+  @SuppressWarnings({"unchecked", "rawtypes"})
+  void preservesPrimarySemanticFailureWhenFallbackSemanticValidationAlsoFails() {
+    OpenAIClient openAIClient = mock(OpenAIClient.class);
+    ResponseService responseService = mock(ResponseService.class);
+    StructuredResponse<TestOutput> primaryResponse = successfulResponse(new TestOutput("primary"));
+    StructuredResponse<TestOutput> fallbackResponse =
+        successfulResponse(new TestOutput("fallback"));
+    when(openAIClient.responses()).thenReturn(responseService);
+    when(responseService.create(any(StructuredResponseCreateParams.class)))
+        .thenReturn(primaryResponse, fallbackResponse);
+    ConversationMemoryResponsesClient client =
+        new ConversationMemoryResponsesClient(
+            () -> openAIClient, "openrouter/z-ai/glm-5.2", "openai/gpt-4.1-mini", 0.4, 1.6);
+
+    assertThatIllegalStateException()
+        .isThrownBy(
+            () ->
+                client.createValidated(
+                    "instructions",
+                    "input",
+                    200,
+                    TestOutput.class,
+                    output -> {
+                      throw new IllegalStateException(output.value() + " invalid");
+                    }))
+        .withMessage("fallback invalid")
+        .satisfies(
+            failure ->
+                assertThat(failure.getSuppressed())
+                    .singleElement()
+                    .extracting(Throwable::getMessage)
+                    .isEqualTo("primary invalid"));
+  }
+
+  @Test
+  void safeAttemptDiagnosticsNeverExposeProviderErrorText() {
+    String diagnostic =
+        ConversationMemoryResponsesClient.safeFailureDetail(
+            new IllegalStateException("SECRET provider response body"));
+
+    assertThat(diagnostic).isEqualTo("IllegalStateException").doesNotContain("SECRET");
+  }
+
+  @Test
+  void identifiesRejectedAnsweredShapeInSafeAttemptDiagnostics() {
+    String diagnostic =
+        ConversationMemoryResponsesClient.safeFailureDetail(
+            new IllegalStateException(
+                "invalid question window response",
+                new IllegalArgumentException("answered window decision has invalid shape")));
+
+    assertThat(diagnostic).isEqualTo("answered_shape");
   }
 
   @Test
@@ -209,13 +335,47 @@ class ConversationMemoryResponsesClientTest {
         .create(any(StructuredResponseCreateParams.class), any(RequestOptions.class));
   }
 
+  @Test
   @SuppressWarnings({"unchecked", "rawtypes"})
-  private static StructuredResponse<TestOutput> successfulResponse(TestOutput output) {
-    StructuredResponse<TestOutput> response = mock(StructuredResponse.class);
-    StructuredResponseOutputItem<TestOutput> outputItem = mock(StructuredResponseOutputItem.class);
-    StructuredResponseOutputMessage<TestOutput> outputMessage =
-        mock(StructuredResponseOutputMessage.class);
-    StructuredResponseOutputMessage.Content<TestOutput> outputContent =
+  void doesNotStartFallbackWhenPrimarySemanticValidationExhaustsTheDeadline() {
+    Instant now = Instant.parse("2026-08-09T12:00:00Z");
+    MutableClock clock = new MutableClock(now);
+    OpenAIClient openAIClient = mock(OpenAIClient.class);
+    ResponseService responseService = mock(ResponseService.class);
+    StructuredResponse<TestOutput> primaryResponse = successfulResponse(new TestOutput("invalid"));
+    when(openAIClient.responses()).thenReturn(responseService);
+    when(responseService.withOptions(any())).thenReturn(responseService);
+    when(responseService.create(
+            any(StructuredResponseCreateParams.class), any(RequestOptions.class)))
+        .thenReturn(primaryResponse);
+    ConversationMemoryResponsesClient client =
+        new ConversationMemoryResponsesClient(
+            () -> openAIClient, "openrouter/z-ai/glm-5.2", "openai/gpt-4.1-mini", 0.4, 1.6, clock);
+
+    assertThatIllegalStateException()
+        .isThrownBy(
+            () ->
+                client.createValidated(
+                    "instructions",
+                    "input",
+                    200,
+                    TestOutput.class,
+                    now.plusSeconds(90),
+                    output -> {
+                      clock.advance(Duration.ofSeconds(90));
+                      throw new IllegalStateException("primary invalid");
+                    }))
+        .withMessage("memory response deadline elapsed");
+    verify(responseService, times(1))
+        .create(any(StructuredResponseCreateParams.class), any(RequestOptions.class));
+  }
+
+  @SuppressWarnings({"unchecked", "rawtypes"})
+  private static <T> StructuredResponse<T> successfulResponse(T output) {
+    StructuredResponse<T> response = mock(StructuredResponse.class);
+    StructuredResponseOutputItem<T> outputItem = mock(StructuredResponseOutputItem.class);
+    StructuredResponseOutputMessage<T> outputMessage = mock(StructuredResponseOutputMessage.class);
+    StructuredResponseOutputMessage.Content<T> outputContent =
         mock(StructuredResponseOutputMessage.Content.class);
     when(response.output()).thenReturn(List.of(outputItem));
     when(outputItem.message()).thenReturn(Optional.of(outputMessage));

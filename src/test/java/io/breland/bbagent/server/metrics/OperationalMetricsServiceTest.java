@@ -192,19 +192,18 @@ class OperationalMetricsServiceTest {
   }
 
   @Test
-  void recordsQuestionAnswerMetricsWithoutSensitiveTags() {
+  void recordsProgressiveQuestionAnswerMetricsWithoutSensitiveTags() {
     SimpleMeterRegistry registry = new SimpleMeterRegistry();
     OperationalMetricsService service = new OperationalMetricsService(registry);
 
     service.recordMemoryQuestionAnswer(
-        "EXACT_SEARCH",
-        "COMPLETE",
+        "CLARIFICATION_REQUIRED",
         "openrouter/z-ai/glm-5.2",
-        3,
+        500,
         2,
         1,
         1,
-        2,
+        0,
         true,
         null,
         Duration.ofMillis(250));
@@ -213,8 +212,7 @@ class OperationalMetricsServiceTest {
         1.0,
         registry
             .get("bbagent.memory.question.answer.count")
-            .tag("retrieval_mode", "exact_search")
-            .tag("coverage_status", "complete")
+            .tag("action", "clarification_required")
             .tag("model", "openrouter/z-ai/glm-5.2")
             .tag("outcome", "success")
             .tag("failure_type", "none")
@@ -222,19 +220,26 @@ class OperationalMetricsServiceTest {
             .count());
     assertEquals(1L, registry.get("bbagent.memory.question.answer.duration").timer().count());
     assertEquals(
-        3.0, registry.get("bbagent.memory.question.answer.message.count").counter().count());
+        500.0, registry.get("bbagent.memory.question.answer.message.count").counter().count());
     assertEquals(2.0, registry.get("bbagent.memory.question.answer.page.count").counter().count());
     assertEquals(
-        1.0, registry.get("bbagent.memory.question.answer.model.batch.count").counter().count());
-    assertEquals(1.0, registry.get("bbagent.memory.question.answer.plan.count").counter().count());
+        1.0, registry.get("bbagent.memory.question.answer.window.count").counter().count());
     assertEquals(
-        2.0, registry.get("bbagent.memory.question.answer.verification.count").counter().count());
+        1.0, registry.get("bbagent.memory.question.answer.model.call.count").counter().count());
+    assertEquals(
+        0.0, registry.get("bbagent.memory.question.answer.reduction.count").counter().count());
+    org.assertj.core.api.Assertions.assertThat(
+            registry.find("bbagent.memory.question.answer.plan.count").counter())
+        .isNull();
+    org.assertj.core.api.Assertions.assertThat(
+            registry.find("bbagent.memory.question.answer.verification.count").counter())
+        .isNull();
     org.assertj.core.api.Assertions.assertThat(
             registry.getMeters().stream()
                 .filter(
                     meter -> meter.getId().getName().startsWith("bbagent.memory.question.answer"))
                 .flatMap(meter -> meter.getId().getTags().stream())
                 .map(Tag::getKey))
-        .containsOnly("retrieval_mode", "coverage_status", "model", "outcome", "failure_type");
+        .containsOnly("action", "model", "outcome", "failure_type");
   }
 }

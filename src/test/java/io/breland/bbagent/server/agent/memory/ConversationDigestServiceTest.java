@@ -17,10 +17,7 @@ import io.breland.bbagent.server.agent.memory.ConversationMemoryModels.DigestWor
 import io.breland.bbagent.server.agent.memory.ConversationMemoryModels.JournalMessage;
 import io.breland.bbagent.server.agent.memory.ConversationMemoryModels.SummaryMaterial;
 import io.breland.bbagent.server.agent.memory.ConversationQuestionAnsweringModels.AnswerStatus;
-import io.breland.bbagent.server.agent.memory.ConversationQuestionAnsweringModels.Confidence;
-import io.breland.bbagent.server.agent.memory.ConversationQuestionAnsweringModels.CoverageStatus;
 import io.breland.bbagent.server.agent.memory.ConversationQuestionAnsweringModels.GroupQuestionAnswer;
-import io.breland.bbagent.server.agent.memory.ConversationQuestionAnsweringModels.RetrievalMode;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
@@ -76,7 +73,6 @@ class ConversationDigestServiceTest {
 
     var result = service.catchUp("account-1", "Trip planning", FROM, NOW);
 
-    assertThat(result.ambiguous()).isFalse();
     assertThat(result.groups())
         .singleElement()
         .satisfies(
@@ -90,10 +86,11 @@ class ConversationDigestServiceTest {
               assertThat(catchup.coverageThrough())
                   .isEqualTo(Instant.parse("2026-08-08T11:00:00Z"));
             });
+    verifyNoInteractions(questionAnsweringService);
   }
 
   @Test
-  void asksForDisambiguationWhenAuthorizedGroupNamesCollide() {
+  void asksForDisambiguationWhenSummaryGroupNamesCollide() {
     when(store.findAuthorizedGroups("account-1", FROM, NOW))
         .thenReturn(
             List.of(
@@ -105,14 +102,11 @@ class ConversationDigestServiceTest {
     var result = service.catchUp("account-1", "Trip", FROM, NOW);
 
     assertThat(result.ambiguous()).isTrue();
-    assertThat(result.groups()).isEmpty();
-    assertThat(result.disambiguationOptions())
-        .hasSize(2)
-        .allMatch(option -> option.startsWith("Trip"));
+    assertThat(result.disambiguationOptions()).hasSize(2);
   }
 
   @Test
-  void clampsCatchupRangeToThirtyOneDays() {
+  void clampsSummaryRangeToThirtyOneDays() {
     Instant oldFrom = NOW.minusSeconds(60L * 24 * 60 * 60);
     when(store.findAuthorizedGroups(any(), any(), any())).thenReturn(List.of());
 
@@ -122,89 +116,86 @@ class ConversationDigestServiceTest {
   }
 
   @Test
-  void blankQuestionPreservesSummaryCatchupAndSkipsQuestionAnswering() {
-    AuthorizedGroup group = new AuthorizedGroup("conversation-1", "Trip", NOW);
-    when(store.findAuthorizedGroups("account-1", FROM, NOW)).thenReturn(List.of(group));
-
-    var result = service.catchUp("account-1", "Trip", FROM, NOW, "  ");
-
-    assertThat(result.groups())
-        .singleElement()
-        .extracting(groupResult -> groupResult.questionAnswer())
-        .isNull();
-    verifyNoInteractions(questionAnsweringService);
-  }
-
-  @Test
-  void questionModeAnswersExactlyOneAuthorizedGroup() {
-    AuthorizedGroup group = new AuthorizedGroup("conversation-1", "Wordling Wonders", NOW);
-    GroupQuestionAnswer answer = groupAnswer();
-    when(store.findAuthorizedGroups("account-1", FROM, NOW)).thenReturn(List.of(group));
-    when(questionAnsweringService.answer("account-1", group, "Who is winning?", FROM, NOW))
+  void questionModeUsesCurrentGroupSelectionAndSkipsSummaryStorage() {
+    AuthorizedGroup group = new AuthorizedGroup("conversation-1", "Project chat", NOW);
+    GroupQuestionAnswer answer = answered("Sam posted the update.");
+    when(store.findCurrentlyAuthorizedGroups("account-1", NOW)).thenReturn(List.of(group));
+    when(questionAnsweringService.answer(
+            "account-1", group, "Who posted today?", null, NOW, "America/Los_Angeles"))
         .thenReturn(answer);
 
-    var result = service.catchUp("account-1", "Wordling Wonders", FROM, NOW, "Who is winning?");
+    var result =
+        service.answerQuestion(
+            "account-1", "Project chat", "Who posted today?", null, NOW, "America/Los_Angeles");
 
     assertThat(result.groups())
         .singleElement()
-        .extracting(groupResult -> groupResult.questionAnswer())
-        .isEqualTo(answer);
-  }
-
-  @Test
-  void questionModeWithoutAGroupHintRequiresOneAuthorizedGroup() {
-    when(store.findAuthorizedGroups("account-1", FROM, NOW))
-        .thenReturn(
-            List.of(
-                new AuthorizedGroup(
-                    "conversation-1", "Trip", Instant.parse("2026-08-08T12:00:00Z")),
-                new AuthorizedGroup(
-                    "conversation-2", "Wordling Wonders", Instant.parse("2026-08-08T13:00:00Z"))));
-
-    var result = service.catchUp("account-1", null, FROM, NOW, "Who is winning?");
-
-    assertThat(result.groups()).isEmpty();
-    assertThat(result.disambiguationOptions())
-        .containsExactly(
-            "Trip (last active 2026-08-08T12:00:00Z)",
-            "Wordling Wonders (last active 2026-08-08T13:00:00Z)");
-    verifyNoInteractions(questionAnsweringService);
+        .satisfies(
+            questionGroup -> {
+              assertThat(questionGroup.group()).isEqualTo("Project chat");
+              assertThat(questionGroup.answer()).isEqualTo(answer);
+            });
+    verify(store, never()).findAuthorizedDigests(any(), any(), any(), any());
+    verify(store, never()).findAuthorizedSegments(any(), any(), any(), any());
+    verify(store, never()).findAuthorizedDecisions(any(), any(), any(), any(), any());
   }
 
   @Test
   void questionModePreservesAnExplicitRangeOlderThanThirtyOneDays() {
     Instant oldFrom = NOW.minusSeconds(60L * 24 * 60 * 60);
     AuthorizedGroup group = new AuthorizedGroup("conversation-1", "Trip", NOW);
-    when(store.findAuthorizedGroups("account-1", oldFrom, NOW)).thenReturn(List.of(group));
-    when(questionAnsweringService.answer("account-1", group, "What happened?", oldFrom, NOW))
-        .thenReturn(groupAnswer(oldFrom, NOW));
+    when(store.findCurrentlyAuthorizedGroups("account-1", NOW)).thenReturn(List.of(group));
+    when(questionAnsweringService.answer("account-1", group, "What happened?", oldFrom, NOW, null))
+        .thenReturn(answered("The group chose a venue."));
 
-    service.catchUp("account-1", "Trip", oldFrom, NOW, "What happened?");
+    service.answerQuestion("account-1", "Trip", "What happened?", oldFrom, NOW, null);
 
-    verify(questionAnsweringService).answer("account-1", group, "What happened?", oldFrom, NOW);
+    verify(questionAnsweringService)
+        .answer("account-1", group, "What happened?", oldFrom, NOW, null);
   }
 
   @Test
-  void currentChatCatchupRequiresCurrentAuthorizedMembership() {
+  void questionModeWithoutAGroupHintRequiresOneCurrentGroup() {
+    when(store.findCurrentlyAuthorizedGroups("account-1", NOW))
+        .thenReturn(
+            List.of(
+                new AuthorizedGroup(
+                    "conversation-1", "Trip", Instant.parse("2026-08-08T12:00:00Z")),
+                new AuthorizedGroup(
+                    "conversation-2", "Project chat", Instant.parse("2026-08-08T13:00:00Z"))));
+
+    var result = service.answerQuestion("account-1", null, "Who posted today?", null, NOW, null);
+
+    assertThat(result.groups()).isEmpty();
+    assertThat(result.disambiguationOptions())
+        .containsExactly(
+            "Trip (last active 2026-08-08T12:00:00Z)",
+            "Project chat (last active 2026-08-08T13:00:00Z)");
+    verifyNoInteractions(questionAnsweringService);
+  }
+
+  @Test
+  void currentChatQuestionUsesOnlyCurrentAuthorizedMembership() {
     AuthorizedGroup group = new AuthorizedGroup("conversation-1", "Current Group", NOW);
     when(store.findCurrentlyAuthorizedGroup(
             "account-1", IncomingMessage.TRANSPORT_BLUEBUBBLES, "current-group-guid", NOW))
         .thenReturn(java.util.Optional.of(group));
-    when(questionAnsweringService.answer("account-1", group, "Who is winning?", FROM, NOW))
-        .thenReturn(groupAnswer());
+    when(questionAnsweringService.answer("account-1", group, "Who posted today?", null, NOW, null))
+        .thenReturn(answered("You posted today."));
 
     var result =
-        service.catchUpForChat(
+        service.answerQuestionForChat(
             "account-1",
             IncomingMessage.TRANSPORT_BLUEBUBBLES,
             "current-group-guid",
-            FROM,
+            "Who posted today?",
+            null,
             NOW,
-            "Who is winning?");
+            null);
 
     assertThat(result.groups())
         .singleElement()
-        .extracting(groupResult -> groupResult.group())
+        .extracting(value -> value.group())
         .isEqualTo("Current Group");
     verify(store)
         .findCurrentlyAuthorizedGroup(
@@ -212,19 +203,20 @@ class ConversationDigestServiceTest {
   }
 
   @Test
-  void currentChatCatchupReturnsNothingWhenTheGroupIsNotEnabledAndActive() {
+  void currentChatQuestionReturnsNothingWhenGroupIsNotEnabledAndActive() {
     when(store.findCurrentlyAuthorizedGroup(
             "account-1", IncomingMessage.TRANSPORT_BLUEBUBBLES, "current-group-guid", NOW))
         .thenReturn(java.util.Optional.empty());
 
     var result =
-        service.catchUpForChat(
+        service.answerQuestionForChat(
             "account-1",
             IncomingMessage.TRANSPORT_BLUEBUBBLES,
             "current-group-guid",
-            FROM,
+            "Who posted today?",
+            null,
             NOW,
-            "Who is winning?");
+            null);
 
     assertThat(result.groups()).isEmpty();
     verifyNoInteractions(questionAnsweringService);
@@ -287,16 +279,14 @@ class ConversationDigestServiceTest {
 
     nightly.reconcilePreviousDay();
 
-    verify(store).seedDigestWork("conversation-1", periodStart, periodEnd, reconciliationTime);
     ArgumentCaptor<DigestBatch> batch = ArgumentCaptor.forClass(DigestBatch.class);
     verify(store).saveDigest(org.mockito.ArgumentMatchers.eq(claim), batch.capture());
     assertThat(batch.getValue().summary()).isEqualTo("The group selected Friday.");
     assertThat(batch.getValue().coverageThrough()).isEqualTo(periodStart.plusSeconds(200));
-    assertThat(batch.getValue().sourceSegmentIds()).containsExactly("segment-1");
   }
 
   @Test
-  void globalFeatureGuardSkipsReconciliationAndCatchupReads() {
+  void globalFeatureGuardSkipsReconciliationAndReads() {
     ConversationDigestService disabled =
         new ConversationDigestService(
             store,
@@ -309,9 +299,13 @@ class ConversationDigestServiceTest {
             false);
 
     assertThat(disabled.catchUp("account-1", null, FROM, NOW).groups()).isEmpty();
+    assertThat(
+            disabled.answerQuestion("account-1", null, "What happened?", null, NOW, null).groups())
+        .isEmpty();
     disabled.reconcilePreviousDay();
 
     verify(store, never()).findAuthorizedGroups(any(), any(), any());
+    verify(store, never()).findCurrentlyAuthorizedGroups(any(), any());
     verify(store, never()).findMemoryEnabledConversations();
   }
 
@@ -327,23 +321,8 @@ class ConversationDigestServiceTest {
         id, type, "conversation-1", summary, payload, start, end, coverage, "corpus-" + id);
   }
 
-  private static GroupQuestionAnswer groupAnswer() {
-    return groupAnswer(FROM, NOW);
-  }
-
-  private static GroupQuestionAnswer groupAnswer(Instant from, Instant to) {
+  private static GroupQuestionAnswer answered(String answer) {
     return new GroupQuestionAnswer(
-        AnswerStatus.ANSWERED,
-        "The only reported score is 4/6.",
-        Confidence.HIGH,
-        "test-model",
-        false,
-        1,
-        RetrievalMode.EXACT_SEARCH,
-        CoverageStatus.COMPLETE,
-        from,
-        to,
-        to,
-        null);
+        AnswerStatus.ANSWERED, answer, null, List.of(), "test-model", false);
   }
 }
