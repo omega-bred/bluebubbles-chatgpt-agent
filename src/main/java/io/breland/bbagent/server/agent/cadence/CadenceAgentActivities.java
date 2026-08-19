@@ -16,6 +16,10 @@ public interface CadenceAgentActivities {
   boolean notifyIfMessageResponseLimitExceeded(
       IncomingMessage message, AgentWorkflowContext workflowContext);
 
+  void startTyping(IncomingMessage message, AgentWorkflowContext workflowContext);
+
+  void stopTyping(IncomingMessage message, AgentWorkflowContext workflowContext);
+
   CadenceResponseBundle createResponseBundle(
       String inputItemsJson, IncomingMessage message, AgentWorkflowContext workflowContext);
 

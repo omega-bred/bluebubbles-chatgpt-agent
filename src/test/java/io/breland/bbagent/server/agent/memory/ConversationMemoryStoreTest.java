@@ -147,6 +147,88 @@ class ConversationMemoryStoreTest {
   }
 
   @Test
+  void pagesJournalMessagesNewestFirstWithAnExclusiveOlderCursor() {
+    String accountId = createAccount("journal-descending@example.com");
+    String conversationId =
+        store.upsertConversation(
+            "bluebubbles",
+            "iMessage;+;journal-descending",
+            true,
+            "Journal descending",
+            OBSERVED_AT);
+    store.recordMessage(
+        new JournalMessage(
+            "message-a", conversationId, accountId, "first", OBSERVED_AT, false, false, "hash-a"));
+    store.recordMessage(
+        new JournalMessage(
+            "message-b", conversationId, accountId, "second", OBSERVED_AT, false, false, "hash-b"));
+
+    List<JournalMessage> newest =
+        store.findMessagePageDescending(
+            conversationId,
+            OBSERVED_AT.minusSeconds(1),
+            OBSERVED_AT.plusSeconds(1),
+            null,
+            null,
+            1,
+            Duration.ofSeconds(5));
+    List<JournalMessage> older =
+        store.findMessagePageDescending(
+            conversationId,
+            OBSERVED_AT.minusSeconds(1),
+            OBSERVED_AT.plusSeconds(1),
+            newest.getFirst().sourceTimestamp(),
+            newest.getFirst().messageGuid(),
+            10,
+            Duration.ofSeconds(5));
+
+    assertThat(newest).extracting(JournalMessage::messageGuid).containsExactly("message-b");
+    assertThat(older).extracting(JournalMessage::messageGuid).containsExactly("message-a");
+  }
+
+  @Test
+  void rejectsInvalidDescendingJournalPageArguments() {
+    assertThatThrownBy(
+            () ->
+                store.findMessagePageDescending(
+                    "conversation", OBSERVED_AT, OBSERVED_AT, null, null, 1, Duration.ofSeconds(1)))
+        .hasRootCauseInstanceOf(IllegalArgumentException.class);
+    assertThatThrownBy(
+            () ->
+                store.findMessagePageDescending(
+                    "conversation",
+                    OBSERVED_AT.minusSeconds(1),
+                    OBSERVED_AT.plusSeconds(1),
+                    OBSERVED_AT,
+                    null,
+                    1,
+                    Duration.ofSeconds(1)))
+        .hasRootCauseInstanceOf(IllegalArgumentException.class);
+    assertThatThrownBy(
+            () ->
+                store.findMessagePageDescending(
+                    "conversation",
+                    OBSERVED_AT.minusSeconds(1),
+                    OBSERVED_AT.plusSeconds(1),
+                    null,
+                    null,
+                    501,
+                    Duration.ofSeconds(1)))
+        .hasRootCauseInstanceOf(IllegalArgumentException.class);
+    assertThatThrownBy(
+            () ->
+                store.findMessagePageDescending(
+                    "conversation",
+                    OBSERVED_AT.minusSeconds(1),
+                    OBSERVED_AT.plusSeconds(1),
+                    null,
+                    null,
+                    1,
+                    Duration.ZERO))
+        .hasRootCauseInstanceOf(IllegalArgumentException.class);
+  }
+
+  @Test
   void appliesSmallerPerRequestTimeoutAfterHigherSharedStatementSettings() {
     AtomicInteger statementTimeout = new AtomicInteger();
     JdbcTemplate inspectingTemplate =

@@ -6,7 +6,8 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 import io.breland.bbagent.server.agent.IncomingMessage;
 import io.breland.bbagent.server.agent.memory.ConversationDigestService;
 import io.breland.bbagent.server.agent.memory.ConversationMemoryModels.CatchupResult;
-import io.breland.bbagent.server.agent.memory.ConversationQuestionAnsweringModels.GroupQuestionAnswer;
+import io.breland.bbagent.server.agent.memory.ConversationMemoryModels.GroupQuestionResult;
+import io.breland.bbagent.server.agent.memory.ConversationQuestionAnsweringModels.AnswerStatus;
 import io.breland.bbagent.server.agent.memory.MemoryScopeResolver;
 import io.breland.bbagent.server.agent.tools.AgentTool;
 import io.breland.bbagent.server.agent.tools.ToolJson;
@@ -15,8 +16,10 @@ import io.swagger.v3.oas.annotations.media.Schema;
 import java.time.DateTimeException;
 import java.time.Duration;
 import java.time.Instant;
+import java.time.ZoneId;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import org.apache.commons.lang3.StringUtils;
 
 public class GetGroupCatchupAgentTool implements ToolProvider {
   public static final String TOOL_NAME = "get_group_catchup";
@@ -26,24 +29,26 @@ public class GetGroupCatchupAgentTool implements ToolProvider {
     this.scopeResolver = scopeResolver;
   }
 
-  @Schema(description = "Get a complete, time-bounded catch-up for authorized group chats.")
+  @Schema(description = "Ask about group messages or get a time-bounded group summary.")
   public record GetGroupCatchupRequest(
       String group,
       String from,
       String to,
-      @JsonProperty("lookback_hours") Integer lookbackHours,
-      String question) {}
+      @Schema(
+              description =
+                  "Summary-mode lookback in hours. Omit when question is present; relative time stays in the exact question.")
+          @JsonProperty("lookback_hours")
+          Integer lookbackHours,
+      String question,
+      String timezone) {}
 
   @Override
   public AgentTool getTool() {
     return new AgentTool(
         TOOL_NAME,
-        "Get a time-bounded catch-up for group conversations the current user was authorized to"
-            + " see. Use for what happened, what did I miss, summaries, decisions, and open"
-            + " questions over a requested time range. For a precise question requiring exact"
-            + " evidence from authorized group history, pass the user's exact question in question."
-            + " Unlike semantic memory search, this returns authoritative question coverage and a"
-            + " coverage watermark.",
+        "Answer a question from a group's recent messages, progressively checking older messages"
+            + " when needed. It can ask for an approximate time when more context is needed."
+            + " Without a question, return a time-bounded group summary.",
         jsonSchema(GetGroupCatchupRequest.class),
         false,
         (context, args) -> {
@@ -68,7 +73,31 @@ public class GetGroupCatchupAgentTool implements ToolProvider {
             GetGroupCatchupRequest request =
                 context.getMapper().convertValue(args, GetGroupCatchupRequest.class);
             Instant now = digestService.currentTime();
-            CatchupRange range = resolveRange(request, now);
+            if (StringUtils.isNotBlank(request.question())) {
+              QuestionRange range = resolveQuestionRange(request, now);
+              GroupQuestionResult result =
+                  message.isGroup()
+                      ? digestService.answerQuestionForChat(
+                          accountId,
+                          message.transportOrDefault(),
+                          currentChatGuid,
+                          request.question(),
+                          range.from(),
+                          range.to(),
+                          range.timezone())
+                      : digestService.answerQuestion(
+                          accountId,
+                          request.group(),
+                          request.question(),
+                          range.from(),
+                          range.to(),
+                          range.timezone());
+              return ToolJson.stringify(
+                  context.getMapper(),
+                  questionResponse(result),
+                  "group question serialization failed");
+            }
+            CatchupRange range = resolveCatchupRange(request, now);
             CatchupResult result =
                 message.isGroup()
                     ? digestService.catchUpForChat(
@@ -76,19 +105,23 @@ public class GetGroupCatchupAgentTool implements ToolProvider {
                         message.transportOrDefault(),
                         currentChatGuid,
                         range.from(),
-                        range.to(),
-                        request.question())
-                    : digestService.catchUp(
-                        accountId, request.group(), range.from(), range.to(), request.question());
+                        range.to())
+                    : digestService.catchUp(accountId, request.group(), range.from(), range.to());
             return ToolJson.stringify(
-                context.getMapper(), response(result), "group catch-up serialization failed");
+                context.getMapper(),
+                summaryResponse(result),
+                "group catch-up serialization failed");
           } catch (DateTimeException | ArithmeticException | IllegalArgumentException e) {
-            return "invalid catch-up range";
+            GetGroupCatchupRequest request =
+                context.getMapper().convertValue(args, GetGroupCatchupRequest.class);
+            return StringUtils.isNotBlank(request.question())
+                ? "invalid question range"
+                : "invalid catch-up range";
           }
         });
   }
 
-  private CatchupRange resolveRange(GetGroupCatchupRequest request, Instant now) {
+  private CatchupRange resolveCatchupRange(GetGroupCatchupRequest request, Instant now) {
     Instant to = request.to() == null ? now : Instant.parse(request.to());
     Instant from;
     if (request.from() != null) {
@@ -106,7 +139,20 @@ public class GetGroupCatchupAgentTool implements ToolProvider {
     return new CatchupRange(from, to);
   }
 
-  private Map<String, Object> response(CatchupResult result) {
+  private QuestionRange resolveQuestionRange(GetGroupCatchupRequest request, Instant now) {
+    Instant to = request.to() == null ? now : Instant.parse(request.to());
+    Instant from = request.from() == null ? null : Instant.parse(request.from());
+    if ((from != null && !from.isBefore(to)) || to.isAfter(now)) {
+      throw new IllegalArgumentException("question range must be ordered and not in the future");
+    }
+    String timezone = StringUtils.trimToNull(request.timezone());
+    if (timezone != null) {
+      ZoneId.of(timezone);
+    }
+    return new QuestionRange(from, to, timezone);
+  }
+
+  private Map<String, Object> summaryResponse(CatchupResult result) {
     Map<String, Object> response = new LinkedHashMap<>();
     if (result.ambiguous()) {
       response.put("disambiguation_required", true);
@@ -128,8 +174,44 @@ public class GetGroupCatchupAgentTool implements ToolProvider {
                   value.put("from", group.from().toString());
                   value.put("to", group.to().toString());
                   value.put("coverage_through", group.coverageThrough().toString());
-                  if (group.questionAnswer() != null) {
-                    value.put("question_answer", questionAnswerResponse(group.questionAnswer()));
+                  return value;
+                })
+            .toList());
+    return response;
+  }
+
+  private Map<String, Object> questionResponse(GroupQuestionResult result) {
+    Map<String, Object> response = new LinkedHashMap<>();
+    if (result.ambiguous()) {
+      response.put("disambiguation_required", true);
+      response.put("group_options", result.disambiguationOptions());
+      return response;
+    }
+    response.put("disambiguation_required", false);
+    response.put(
+        "groups",
+        result.groups().stream()
+            .map(
+                group -> {
+                  Map<String, Object> value = new LinkedHashMap<>();
+                  value.put("group", group.group());
+                  if (group.answer().status() == AnswerStatus.CLARIFICATION_REQUIRED) {
+                    value.put("clarification_question", group.answer().clarificationQuestion());
+                  } else {
+                    value.put("answer", group.answer().answer());
+                    if (group.answer().status() == AnswerStatus.ANSWERED) {
+                      value.put(
+                          "unresolved_participants",
+                          group.answer().unresolvedParticipants().stream()
+                              .map(
+                                  hint ->
+                                      Map.of(
+                                          "label",
+                                          hint.label(),
+                                          "identity",
+                                          hint.normalizedIdentity()))
+                              .toList());
+                    }
                   }
                   return value;
                 })
@@ -137,24 +219,10 @@ public class GetGroupCatchupAgentTool implements ToolProvider {
     return response;
   }
 
-  private Map<String, Object> questionAnswerResponse(GroupQuestionAnswer answer) {
-    Map<String, Object> value = new LinkedHashMap<>();
-    value.put("status", answer.status().wireValue());
-    value.put("answer", answer.answer());
-    value.put("confidence", answer.confidence().wireValue());
-    value.put("model", answer.model());
-    value.put("fallback_used", answer.fallbackUsed());
-    value.put("evidence_message_count", answer.evidenceMessageCount());
-    value.put("retrieval_mode", answer.retrievalMode().wireValue());
-    value.put("coverage_status", answer.coverageStatus().wireValue());
-    value.put("from", answer.from().toString());
-    value.put("to", answer.to().toString());
-    value.put("coverage_through", answer.coverageThrough().toString());
-    if (answer.partialReason() != null) {
-      value.put("partial_reason", answer.partialReason());
-    }
-    return value;
-  }
-
   private record CatchupRange(Instant from, Instant to) {}
+
+  private record QuestionRange(
+      @org.springframework.lang.Nullable Instant from,
+      Instant to,
+      @org.springframework.lang.Nullable String timezone) {}
 }

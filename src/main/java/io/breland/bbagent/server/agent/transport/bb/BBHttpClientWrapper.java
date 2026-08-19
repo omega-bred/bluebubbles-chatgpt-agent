@@ -22,7 +22,11 @@ import java.time.Duration;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicLong;
+import java.util.function.BooleanSupplier;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
@@ -39,6 +43,8 @@ import org.springframework.lang.Nullable;
 import org.springframework.stereotype.Component;
 import org.springframework.util.LinkedMultiValueMap;
 import org.springframework.util.MultiValueMap;
+import reactor.core.publisher.Mono;
+import reactor.util.retry.Retry;
 
 @Slf4j
 @Component
@@ -51,6 +57,8 @@ public class BBHttpClientWrapper {
   private static final int DIRECT_SEND_PING_ATTEMPTS = 2;
   private static final int DIRECT_SEND_CONFIRMATION_ATTEMPTS = 3;
   private static final Duration DIRECT_SEND_MATCH_WINDOW_SKEW = Duration.ofSeconds(10);
+  private static final Duration DEFAULT_STOP_TYPING_RETRY_DELAY = Duration.ofSeconds(1);
+  private static final int STOP_TYPING_MAX_ATTEMPTS = 3;
   private static final int BLUEBUBBLES_MAX_IN_MEMORY_BYTES = 2 * 1024 * 1024;
   private static final String ANY_DIRECT_CHAT_PREFIX = "any;-;";
 
@@ -64,7 +72,10 @@ public class BBHttpClientWrapper {
 
   private final String password;
   private final Duration apiTimeout;
+  private final Duration stopTypingRetryDelay;
   private final @Nullable OperationalMetricsService operationalMetricsService;
+  private final AtomicLong typingGenerationSequence = new AtomicLong();
+  private final ConcurrentMap<String, Long> typingGenerations = new ConcurrentHashMap<>();
 
   @Getter private final ObjectMapper objectMapper;
 
@@ -77,6 +88,7 @@ public class BBHttpClientWrapper {
       @Nullable OperationalMetricsService operationalMetricsService) {
     this.password = password;
     this.apiTimeout = normalizedTimeout(requestTimeoutSeconds);
+    this.stopTypingRetryDelay = DEFAULT_STOP_TYPING_RETRY_DELAY;
     this.apiClient = blueBubblesApiClient(basePath);
     this.messageApi = new V1MessageApi(apiClient);
     this.contactApi = new V1ContactApi(apiClient);
@@ -127,6 +139,7 @@ public class BBHttpClientWrapper {
       @Nullable OperationalMetricsService operationalMetricsService) {
     this.password = password;
     this.apiTimeout = DEFAULT_API_TIMEOUT;
+    this.stopTypingRetryDelay = DEFAULT_STOP_TYPING_RETRY_DELAY;
     this.apiClient = blueBubblesApiClient();
     this.messageApi = messageApi;
     this.contactApi = contactApi;
@@ -145,8 +158,28 @@ public class BBHttpClientWrapper {
       V1ChatApi chatApi,
       ObjectMapper objectMapper,
       Duration apiTimeout) {
+    this(
+        password,
+        messageApi,
+        contactApi,
+        chatApi,
+        objectMapper,
+        apiTimeout,
+        DEFAULT_STOP_TYPING_RETRY_DELAY);
+  }
+
+  BBHttpClientWrapper(
+      String password,
+      V1MessageApi messageApi,
+      V1ContactApi contactApi,
+      V1ChatApi chatApi,
+      ObjectMapper objectMapper,
+      Duration apiTimeout,
+      Duration stopTypingRetryDelay) {
     this.password = password;
     this.apiTimeout = Objects.requireNonNull(apiTimeout, "apiTimeout");
+    this.stopTypingRetryDelay =
+        Objects.requireNonNull(stopTypingRetryDelay, "stopTypingRetryDelay");
     this.apiClient = blueBubblesApiClient();
     this.messageApi = Objects.requireNonNull(messageApi, "messageApi");
     this.contactApi = Objects.requireNonNull(contactApi, "contactApi");
@@ -174,6 +207,67 @@ public class BBHttpClientWrapper {
   public record AttachmentData(String filename, byte[] bytes) {}
 
   public record PollSendOption(String text, String optionIdentifier) {}
+
+  public void startTyping(String chatGuid) {
+    typingGenerations.put(chatGuid, typingGenerationSequence.incrementAndGet());
+    fireAndForgetTyping(
+        "start_typing", () -> chatApi.apiV1ChatChatGuidTypingPost(chatGuid, password));
+  }
+
+  public void stopTyping(String chatGuid) {
+    Long observedGeneration = typingGenerations.get(chatGuid);
+    long expectedGeneration =
+        observedGeneration == null
+            ? typingGenerationSequence.incrementAndGet()
+            : observedGeneration;
+    BooleanSupplier stillCurrent =
+        () -> {
+          Long current = typingGenerations.get(chatGuid);
+          return current == null || current == expectedGeneration;
+        };
+    fireAndForgetTyping(
+        "stop_typing",
+        () ->
+            Mono.defer(
+                    () ->
+                        stillCurrent.getAsBoolean()
+                            ? Objects.requireNonNull(
+                                chatApi.apiV1ChatChatGuidTypingDelete(chatGuid, password),
+                                "BlueBubbles stop typing request")
+                            : Mono.empty())
+                .retryWhen(
+                    Retry.fixedDelay(STOP_TYPING_MAX_ATTEMPTS - 1, stopTypingRetryDelay)
+                        .filter(ignored -> stillCurrent.getAsBoolean()))
+                .doOnSuccess(ignored -> typingGenerations.remove(chatGuid, expectedGeneration)));
+  }
+
+  private void fireAndForgetTyping(String operation, java.util.function.Supplier<Mono<Void>> call) {
+    long startedNanos = System.nanoTime();
+    try {
+      Mono<Void> request = Objects.requireNonNull(call.get(), "BlueBubbles typing request");
+      request
+          .timeout(apiTimeout)
+          .doOnSuccess(ignored -> recordOperationMetric(operation, true, null, startedNanos))
+          .doOnError(
+              error -> {
+                String failureType = OperationalMetricsService.failureType(error);
+                recordOperationMetric(operation, false, failureType, startedNanos);
+                log.warn(
+                    "BlueBubbles typing operation failed operation={} failureType={}",
+                    operation,
+                    failureType);
+              })
+          .onErrorComplete()
+          .subscribe();
+    } catch (RuntimeException error) {
+      String failureType = OperationalMetricsService.failureType(error);
+      recordOperationMetric(operation, false, failureType, startedNanos);
+      log.warn(
+          "BlueBubbles typing operation failed operation={} failureType={}",
+          operation,
+          failureType);
+    }
+  }
 
   @JsonInclude(JsonInclude.Include.NON_NULL)
   private record MultipartMessageRequest(String chatGuid, List<MultipartMessagePart> parts) {}
@@ -404,6 +498,42 @@ public class BBHttpClientWrapper {
         });
   }
 
+  public List<BlueBubblesContactIdentity> getContactIdentitiesForQuestion(Duration remaining) {
+    Duration timeout = questionHistoryTimeout(remaining);
+    return measuredOperation(
+        "get_contacts",
+        () -> {
+          ApiV1ContactGet200Response response = contactApi.apiV1ContactGet(password).block(timeout);
+          response = requirePresent(response, "get contacts");
+          requireSuccessfulResponse(response.getStatus(), response.getMessage(), "get contacts");
+          if (response.getData() == null || response.getData().isEmpty()) {
+            return List.of();
+          }
+          return response.getData().stream()
+              .filter(Objects::nonNull)
+              .map(BBHttpClientWrapper::contactIdentity)
+              .filter(identity -> !identity.addresses().isEmpty())
+              .toList();
+        });
+  }
+
+  private static BlueBubblesContactIdentity contactIdentity(Contact contact) {
+    String displayName = StringUtils.trimToNull(contact.getDisplayName());
+    if (displayName == null) {
+      displayName = StringUtils.trimToNull(contact.getNickname());
+    }
+    if (displayName == null) {
+      displayName =
+          String.join(
+              " ",
+              java.util.stream.Stream.of(contact.getFirstName(), contact.getLastName())
+                  .map(StringUtils::trimToNull)
+                  .filter(Objects::nonNull)
+                  .toList());
+    }
+    return new BlueBubblesContactIdentity(displayName, contactAddresses(contact));
+  }
+
   private static List<String> contactAddresses(Contact contact) {
     if (contact == null) {
       return List.of();
@@ -604,93 +734,20 @@ public class BBHttpClientWrapper {
               .build());
     }
     request.where(where);
-    return executeMessageQuery(
-        request.build(), "search conversation history", Duration.of(120, ChronoUnit.SECONDS));
-  }
-
-  public List<Message> searchConversationHistory(
-      String chatGuid, String literalQuery, Instant after, Instant before, int limit, int offset) {
-    return searchConversationHistory(
-        chatGuid, literalQuery, after, before, limit, offset, Duration.of(120, ChronoUnit.SECONDS));
-  }
-
-  public List<Message> searchConversationHistoryForQuestion(
-      String chatGuid,
-      String literalQuery,
-      Instant after,
-      Instant before,
-      int limit,
-      int offset,
-      Duration remaining) {
-    return searchConversationHistory(
-        chatGuid, literalQuery, after, before, limit, offset, questionHistoryTimeout(remaining));
-  }
-
-  private List<Message> searchConversationHistory(
-      String chatGuid,
-      String literalQuery,
-      Instant after,
-      Instant before,
-      int limit,
-      int offset,
-      Duration timeout) {
-    validateHistorySearch(chatGuid, literalQuery, after, before, limit, offset);
-    String escaped =
-        literalQuery.trim().replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_");
-    WhereClause textClause =
-        WhereClause.builder()
-            .statement("message.text LIKE :text ESCAPE '\\'")
-            .args(Map.of("text", "%" + escaped + "%"))
-            .build();
-    ApiV1MessageQueryPostRequest request =
-        ApiV1MessageQueryPostRequest.builder()
-            .chatGuid(chatGuid)
-            .sort(ApiV1MessageQueryPostRequest.SortEnum.DESC)
-            .after(after.getEpochSecond())
-            .before(before.getEpochSecond())
-            .offset(offset)
-            .limit(limit)
-            .with(
-                Set.of(
-                    ApiV1MessageQueryPostRequest.WithEnum.HANDLE,
-                    ApiV1MessageQueryPostRequest.WithEnum.CHAT))
-            .where(List.of(textClause))
-            .build();
-
-    return executeMessageQuery(request, "search conversation history", timeout);
-  }
-
-  private static void validateHistorySearch(
-      String chatGuid, String literalQuery, Instant after, Instant before, int limit, int offset) {
-    if (StringUtils.isBlank(chatGuid)) {
-      throw new IllegalArgumentException("Cannot search conversation history without chatGuid");
-    }
-    if (StringUtils.isBlank(literalQuery)) {
-      throw new IllegalArgumentException(
-          "Cannot search conversation history without a literal query");
-    }
-    if (after == null || before == null || !after.isBefore(before)) {
-      throw new IllegalArgumentException(
-          "Conversation history search requires an ordered time range");
-    }
-    if (limit <= 0) {
-      throw new IllegalArgumentException("Conversation history search limit must be positive");
-    }
-    if (offset < 0) {
-      throw new IllegalArgumentException("Conversation history search offset cannot be negative");
-    }
+    return executeMessageQuery(request.build(), Duration.of(120, ChronoUnit.SECONDS));
   }
 
   private List<Message> executeMessageQuery(
-      ApiV1MessageQueryPostRequest request, String operation, Duration timeout) {
+      ApiV1MessageQueryPostRequest request, Duration timeout) {
     return measuredOperation(
         "search_conversation_history",
         () -> {
           ApiV1MessageQueryPost200Response response =
               this.messageApi.apiV1MessageQueryPost(password, request).block(timeout);
-          response = requirePresent(response, operation);
-          requireSuccessfulResponse(response.getStatus(), response.getMessage(), operation);
-          return requirePresent(response.getData(), operation);
+          response = requirePresent(response, "search conversation history");
+          requireSuccessfulResponse(
+              response.getStatus(), response.getMessage(), "search conversation history");
+          return requirePresent(response.getData(), "search conversation history");
         });
   }
 
@@ -1254,8 +1311,8 @@ public class BBHttpClientWrapper {
                       chatGuid,
                       password,
                       "handle,chats",
-                      after == null ? null : Long.toString(after.getEpochSecond()),
-                      before == null ? null : Long.toString(before.getEpochSecond()),
+                      after == null ? null : Long.toString(after.toEpochMilli()),
+                      before == null ? null : Long.toString(before.toEpochMilli()),
                       offset,
                       limit,
                       normalizedSort)

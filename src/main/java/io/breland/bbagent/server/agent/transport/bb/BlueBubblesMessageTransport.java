@@ -11,11 +11,14 @@ import io.breland.bbagent.server.agent.transport.MessageTransport;
 import io.breland.bbagent.server.agent.transport.OutgoingTextMessage;
 import java.time.Instant;
 import java.util.List;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
 import org.springframework.stereotype.Component;
 
 @Component
 public class BlueBubblesMessageTransport implements MessageTransport {
   private final BBHttpClientWrapper bbHttpClientWrapper;
+  private final ConcurrentMap<String, String> activeTypingTurns = new ConcurrentHashMap<>();
 
   public BlueBubblesMessageTransport(BBHttpClientWrapper bbHttpClientWrapper) {
     this.bbHttpClientWrapper = bbHttpClientWrapper;
@@ -29,6 +32,27 @@ public class BlueBubblesMessageTransport implements MessageTransport {
   @Override
   public String displayName() {
     return "BlueChat";
+  }
+
+  @Override
+  public void startTyping(IncomingMessage message, String turnToken) {
+    String chatGuid = IncomingMessage.chatGuidOrNull(message);
+    if (chatGuid == null || turnToken == null || turnToken.isBlank()) {
+      return;
+    }
+    activeTypingTurns.put(chatGuid, turnToken);
+    bbHttpClientWrapper.startTyping(chatGuid);
+  }
+
+  @Override
+  public void stopTyping(IncomingMessage message, String turnToken) {
+    String chatGuid = IncomingMessage.chatGuidOrNull(message);
+    if (chatGuid == null || turnToken == null || turnToken.isBlank()) {
+      return;
+    }
+    if (activeTypingTurns.remove(chatGuid, turnToken)) {
+      bbHttpClientWrapper.stopTyping(chatGuid);
+    }
   }
 
   @Override

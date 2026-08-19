@@ -5,6 +5,7 @@ import jakarta.persistence.Entity;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import java.time.Instant;
+import lombok.AllArgsConstructor;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
@@ -13,6 +14,7 @@ import lombok.Setter;
 @Table(name = "agent_message_metrics")
 @Getter
 @Setter
+@AllArgsConstructor
 @NoArgsConstructor
 public class AgentMessageMetricEntity {
 
@@ -52,31 +54,4 @@ public class AgentMessageMetricEntity {
 
   @Column(name = "created_at", nullable = false)
   private Instant createdAt;
-
-  public AgentMessageMetricEntity(
-      String id,
-      Instant occurredAt,
-      String transport,
-      String messageGuid,
-      String chatGuidHash,
-      String userKeyHash,
-      String modelKey,
-      String modelLabel,
-      String responsesModel,
-      boolean premium,
-      String workflowMode,
-      Instant createdAt) {
-    this.id = id;
-    this.occurredAt = occurredAt;
-    this.transport = transport;
-    this.messageGuid = messageGuid;
-    this.chatGuidHash = chatGuidHash;
-    this.userKeyHash = userKeyHash;
-    this.modelKey = modelKey;
-    this.modelLabel = modelLabel;
-    this.responsesModel = responsesModel;
-    this.premium = premium;
-    this.workflowMode = workflowMode;
-    this.createdAt = createdAt;
-  }
 }
