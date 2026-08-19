@@ -88,11 +88,6 @@ public class WebsiteAccountService {
     return getAccount(account);
   }
 
-  @Transactional
-  public WebsiteAccountResponse getAccount(String accountId) {
-    return getAccount(requireAccount(accountId));
-  }
-
   private WebsiteAccountResponse getAccount(AgentAccountEntity account) {
     return new WebsiteAccountResponse()
         .account(toProfile(account))
