@@ -17,6 +17,10 @@ public interface MessageTransport {
 
   boolean sendText(IncomingMessage message, OutgoingTextMessage outgoingMessage);
 
+  default void startTyping(IncomingMessage message, String turnToken) {}
+
+  default void stopTyping(IncomingMessage message, String turnToken) {}
+
   default boolean sendReaction(IncomingMessage message, String reaction) {
     return false;
   }
