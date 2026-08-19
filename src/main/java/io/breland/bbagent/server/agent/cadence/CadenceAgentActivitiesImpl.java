@@ -22,10 +22,12 @@ import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
 @Component
 @RequiredArgsConstructor
+@Slf4j
 public class CadenceAgentActivitiesImpl implements CadenceAgentActivities {
 
   private final BBMessageAgent messageAgent;
@@ -69,6 +71,39 @@ public class CadenceAgentActivitiesImpl implements CadenceAgentActivities {
   public boolean notifyIfMessageResponseLimitExceeded(
       IncomingMessage message, AgentWorkflowContext workflowContext) {
     return messageAgent.notifyIfMessageResponseLimitExceeded(message, workflowContext);
+  }
+
+  @Override
+  public void startTyping(IncomingMessage message, AgentWorkflowContext workflowContext) {
+    updateTyping(message, workflowContext, true);
+  }
+
+  @Override
+  public void stopTyping(IncomingMessage message, AgentWorkflowContext workflowContext) {
+    updateTyping(message, workflowContext, false);
+  }
+
+  private void updateTyping(
+      IncomingMessage message, AgentWorkflowContext workflowContext, boolean typing) {
+    if (message == null
+        || workflowContext == null
+        || workflowContext.messageGuid() == null
+        || workflowContext.messageGuid().isBlank()) {
+      return;
+    }
+    try {
+      MessageTransport transport = transportRegistry.resolve(message);
+      if (typing) {
+        transport.startTyping(message, workflowContext.messageGuid());
+      } else {
+        transport.stopTyping(message, workflowContext.messageGuid());
+      }
+    } catch (RuntimeException error) {
+      log.debug(
+          "Typing activity failed transport={} failureType={}",
+          message.transportOrDefault(),
+          error.getClass().getSimpleName());
+    }
   }
 
   @Override

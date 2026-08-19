@@ -10,20 +10,11 @@ import org.springframework.boot.test.context.SpringBootTest;
 @SpringBootTest
 class BBChatGptAgentApplicationTests {
 
-  @Value("${bbagent.memory.group.qa.max-search-terms}")
-  private int maxSearchTerms;
-
-  @Value("${bbagent.memory.group.qa.search-page-size}")
-  private int searchPageSize;
+  @Value("${bbagent.memory.group.qa.window-message-count}")
+  private int windowMessageCount;
 
   @Value("${bbagent.memory.group.qa.max-history-pages}")
   private int maxHistoryPages;
-
-  @Value("${bbagent.memory.group.qa.neighbor-message-count}")
-  private int neighborMessageCount;
-
-  @Value("${bbagent.memory.group.qa.max-batch-messages}")
-  private int maxBatchMessages;
 
   @Value("${bbagent.memory.group.qa.max-batch-characters}")
   private int maxBatchCharacters;
@@ -39,14 +30,11 @@ class BBChatGptAgentApplicationTests {
 
   @Test
   void contextLoadsWithGroupQuestionAnsweringLimits() {
-    assertThat(maxSearchTerms).isEqualTo(5);
-    assertThat(searchPageSize).isEqualTo(500);
+    assertThat(windowMessageCount).isEqualTo(500);
     assertThat(maxHistoryPages).isEqualTo(100);
-    assertThat(neighborMessageCount).isEqualTo(3);
-    assertThat(maxBatchMessages).isEqualTo(100);
-    assertThat(maxBatchCharacters).isEqualTo(60_000);
+    assertThat(maxBatchCharacters).isEqualTo(300_000);
     assertThat(maxModelBatches).isEqualTo(5);
-    assertThat(maxAggregateCharacters).isEqualTo(300_000);
+    assertThat(maxAggregateCharacters).isEqualTo(600_000);
     assertThat(requestTimeout).isEqualTo(Duration.ofSeconds(90));
   }
 }

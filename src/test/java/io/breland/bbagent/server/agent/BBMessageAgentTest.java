@@ -259,7 +259,7 @@ class BBMessageAgentTest {
   }
 
   @Test
-  void groupTermsGateRequiresSameSenderThreadReplyAndReplaysOriginalInThread() {
+  void groupTermsGateAcceptsSameSenderUnthreadedYesAndReplaysOriginalInThread() {
     OpenAIClient openAIClient = Mockito.mock(OpenAIClient.class);
     var responseService = Mockito.mock(com.openai.services.blocking.ResponseService.class);
     when(openAIClient.responses()).thenReturn(responseService);
@@ -290,9 +290,6 @@ class BBMessageAgentTest {
             "can you summarize this?",
             "Alice",
             1_000L);
-    IncomingMessage unthreadedAgreement =
-        groupIncomingMessage(
-            "iMessage;+;chat-group", "msg-group-unthreaded-yes", null, "yes", "Alice", 1_001L);
     IncomingMessage otherSenderThreadedAgreement =
         groupIncomingReplyMessage(
             "iMessage;+;chat-group",
@@ -300,24 +297,18 @@ class BBMessageAgentTest {
             "msg-group-original",
             "I accept too.",
             "Bob",
-            1_002L);
-    IncomingMessage threadedAgreement =
-        groupIncomingReplyMessage(
-            "iMessage;+;chat-group",
-            "msg-group-threaded-yes",
-            "msg-group-original",
-            "Sure, I accept.",
-            "Alice",
-            1_003L);
+            1_001L);
+    IncomingMessage unthreadedAgreement =
+        groupIncomingMessage(
+            "iMessage;+;chat-group", "msg-group-unthreaded-yes", null, "YES", "Alice", 1_002L);
 
     agent.handleIncomingMessage(original);
-    agent.handleIncomingMessage(unthreadedAgreement);
     agent.handleIncomingMessage(otherSenderThreadedAgreement);
-    agent.handleIncomingMessage(threadedAgreement);
+    agent.handleIncomingMessage(unthreadedAgreement);
 
-    verify(responseService, times(1)).create(any(ResponseCreateParams.class));
+    verify(responseService, never()).create(any(ResponseCreateParams.class));
     verify(accountResolver, times(1)).acceptTerms(any(IncomingMessage.class));
-    verify(accountResolver).acceptTerms(threadedAgreement);
+    verify(accountResolver).acceptTerms(unthreadedAgreement);
     ArgumentCaptor<CadenceMessageWorkflowRequest> requestCaptor =
         ArgumentCaptor.forClass(CadenceMessageWorkflowRequest.class);
     verify(cadenceWorkflowLauncher).startWorkflow(requestCaptor.capture());
@@ -325,14 +316,11 @@ class BBMessageAgentTest {
     assertEquals("msg-group-original", replayed.messageGuid());
     assertEquals("msg-group-original", replayed.threadOriginatorGuid());
     assertEquals("can you summarize this?", replayed.text());
-    assertEquals(3, bbHttpClientWrapper.sentTextRequests.size());
+    assertEquals(2, bbHttpClientWrapper.sentTextRequests.size());
     assertEquals(
         "msg-group-original", bbHttpClientWrapper.sentTextRequests.get(0).getSelectedMessageGuid());
     assertEquals(
-        "msg-group-unthreaded-yes",
-        bbHttpClientWrapper.sentTextRequests.get(1).getSelectedMessageGuid());
-    assertEquals(
-        "msg-group-original", bbHttpClientWrapper.sentTextRequests.get(2).getSelectedMessageGuid());
+        "msg-group-original", bbHttpClientWrapper.sentTextRequests.get(1).getSelectedMessageGuid());
   }
 
   @Test
@@ -501,14 +489,24 @@ class BBMessageAgentTest {
             prompt.indexOf("In a one-to-one chat, use get_group_catchup"),
             prompt.indexOf(
                 "When the user asks to enable, disable, or schedule proactive summaries"));
-    assertTrue(
-        catchupGuidance.contains(
-            "For a precise question requiring exact evidence from an authorized group"));
     assertTrue(prompt.contains("get_group_catchup with the user's exact question"));
+    assertTrue(prompt.contains("relative phrases such as today or recently unchanged"));
     assertTrue(
-        prompt.contains("question_answer coverage and insufficient_evidence as authoritative"));
-    assertTrue(
-        prompt.contains("do not substitute unrelated semantic memory as current group evidence"));
+        prompt.contains("If it returns clarification_question, ask that naturally and wait"));
+    assertTrue(prompt.contains("only to resolve unresolved_participants"));
+    assertThat(catchupGuidance)
+        .contains(
+            "omit lookback_hours when question is present",
+            "If unresolved_participants is nonempty",
+            "call memory_get once",
+            "do not change group-derived facts",
+            "keep the returned safe label");
+    assertThat(catchupGuidance.toLowerCase(Locale.ROOT))
+        .doesNotContain(
+            "authorized group",
+            "question_answer coverage",
+            "insufficient_evidence",
+            "exact evidence");
     assertThat(catchupGuidance.toLowerCase(Locale.ROOT))
         .doesNotContain(" count", " score", " game", " puzzle", " round", "wordle", "wordling");
   }
@@ -536,18 +534,28 @@ class BBMessageAgentTest {
             .toString();
 
     assertTrue(prompt.contains("get_group_catchup with the user's exact question"));
+    assertTrue(prompt.contains("relative phrases such as today or recently unchanged"));
     assertTrue(
-        prompt.contains("question_answer coverage and insufficient_evidence as authoritative"));
-    assertTrue(
-        prompt.contains("do not substitute unrelated semantic memory as current group evidence"));
+        prompt.contains("If it returns clarification_question, ask that naturally and wait"));
+    assertTrue(prompt.contains("only to resolve unresolved_participants"));
     String catchupGuidance =
         prompt.substring(
             prompt.indexOf("Use get_group_catchup for questions like"),
             prompt.indexOf(
                 "When the user asks to enable, disable, or schedule proactive summaries"));
-    assertTrue(
-        catchupGuidance.contains(
-            "For a precise question requiring exact evidence from an authorized group"));
+    assertThat(catchupGuidance)
+        .contains(
+            "omit lookback_hours when question is present",
+            "If unresolved_participants is nonempty",
+            "call memory_get once",
+            "do not change group-derived facts",
+            "keep the returned safe label");
+    assertThat(catchupGuidance.toLowerCase(Locale.ROOT))
+        .doesNotContain(
+            "authorized group",
+            "question_answer coverage",
+            "insufficient_evidence",
+            "exact evidence");
     assertThat(catchupGuidance.toLowerCase(Locale.ROOT))
         .doesNotContain(" count", " score", " game", " puzzle", " round", "wordle", "wordling");
   }
@@ -575,16 +583,28 @@ class BBMessageAgentTest {
 
     assertTrue(
         prompt.contains(
-            "use get_group_catchup for precise questions requiring exact evidence from the current group's own history"));
-    assertTrue(prompt.contains("server always scopes this tool to the current group"));
-    assertTrue(prompt.contains("do not use it to ask about another conversation"));
+            "use get_group_catchup with the user's exact question for the current group's earlier messages"));
+    assertTrue(prompt.contains("The tool stays within the current group"));
+    assertTrue(prompt.contains("relative phrases such as today or recently unchanged"));
+    assertTrue(
+        prompt.contains("If it returns clarification_question, ask that naturally and wait"));
     String catchupGuidance =
         prompt.substring(
             prompt.indexOf("In a group chat, use get_group_catchup"),
             prompt.indexOf("Use web_search for current info"));
     assertThat(catchupGuidance)
         .contains(
-            "precise questions requiring exact evidence from the current group's own history");
+            "only to resolve unresolved_participants",
+            "omit lookback_hours when question is present",
+            "If unresolved_participants is nonempty",
+            "call memory_get once",
+            "do not change group-derived facts",
+            "keep the returned safe label")
+        .doesNotContain(
+            "authorized group",
+            "question_answer coverage",
+            "insufficient_evidence",
+            "exact evidence");
     assertThat(catchupGuidance.toLowerCase(Locale.ROOT))
         .doesNotContain(" count", " score", " game", " puzzle", " round", "wordle", "wordling");
   }
