@@ -1,7 +1,6 @@
 package io.breland.bbagent.server.agent.tools;
 
 import com.openai.models.responses.FunctionTool;
-import io.breland.bbagent.server.agent.IncomingMessage;
 
 public record AgentTool(
     String name,
@@ -17,25 +16,5 @@ public record AgentTool(
         .parameters(parameters)
         .strict(strict)
         .build();
-  }
-
-  public static String resolveUserIdOrGroupChatId(IncomingMessage message) {
-    if (message == null) {
-      return null;
-    }
-    String sender = message.sender();
-    String chatGuid = message.chatGuid();
-    if (message.isGroup()) {
-      if (chatGuid != null && !chatGuid.isBlank()) {
-        return chatGuid;
-      }
-    }
-    if (sender != null && !sender.isBlank()) {
-      return sender;
-    }
-    if (chatGuid != null && !chatGuid.isBlank()) {
-      return "chat:" + chatGuid;
-    }
-    return null;
   }
 }

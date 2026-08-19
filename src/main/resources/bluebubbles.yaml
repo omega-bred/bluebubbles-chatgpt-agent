@@ -4231,7 +4231,6 @@ components:
           example: false
         groupId:
           type: string
-          format: uuid
           example: C9E25921-8D4F-44A9-BF2A-C55A776E656B
         properties:
           type: array

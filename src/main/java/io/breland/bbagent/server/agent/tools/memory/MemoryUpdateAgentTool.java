@@ -24,10 +24,6 @@ public class MemoryUpdateAgentTool implements ToolProvider {
       @Schema(description = "Updated memory text.", requiredMode = Schema.RequiredMode.REQUIRED)
           String memory) {}
 
-  public MemoryUpdateAgentTool(Mem0Client mem0Client) {
-    this(mem0Client, null);
-  }
-
   public MemoryUpdateAgentTool(Mem0Client mem0Client, @Nullable MemoryScopeResolver scopeResolver) {
     this.mem0Client = mem0Client;
     this.scopeResolver = scopeResolver;

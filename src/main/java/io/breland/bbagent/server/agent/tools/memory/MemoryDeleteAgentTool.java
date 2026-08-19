@@ -22,10 +22,6 @@ public class MemoryDeleteAgentTool implements ToolProvider {
           @JsonProperty("memory_id")
           String memoryId) {}
 
-  public MemoryDeleteAgentTool(Mem0Client mem0Client) {
-    this(mem0Client, null);
-  }
-
   public MemoryDeleteAgentTool(Mem0Client mem0Client, @Nullable MemoryScopeResolver scopeResolver) {
     this.mem0Client = mem0Client;
     this.scopeResolver = scopeResolver;

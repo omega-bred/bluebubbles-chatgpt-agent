@@ -79,7 +79,9 @@ public final class TermsGate {
     }
     String threadRootGuid = message.isGroup() ? agreementThreadRootGuid(message) : null;
     if (message.isGroup() && StringUtils.isBlank(threadRootGuid)) {
-      return null;
+      return mightBeAgreement(message.text())
+          ? state.getLatestPendingTermsAcceptance(message.sender())
+          : null;
     }
     return state.getPendingTermsAcceptance(message.sender(), threadRootGuid);
   }
@@ -103,8 +105,7 @@ public final class TermsGate {
     }
     String threadRootGuid = agreementThreadRootGuid(message);
     return pending != null
-        && StringUtils.isNotBlank(threadRootGuid)
-        && threadRootGuid.equals(pending.threadRootGuid());
+        && (StringUtils.isBlank(threadRootGuid) || threadRootGuid.equals(pending.threadRootGuid()));
   }
 
   private static boolean mightBeAgreement(String text) {

@@ -3,31 +3,36 @@ package io.breland.bbagent.server.agent.memory;
 import io.breland.bbagent.server.agent.memory.ConversationMemoryModels.AuthorizedGroup;
 import io.breland.bbagent.server.agent.memory.ConversationMemoryModels.ConversationRecord;
 import io.breland.bbagent.server.agent.memory.ConversationQuestionAnsweringModels.AnswerStatus;
-import io.breland.bbagent.server.agent.memory.ConversationQuestionAnsweringModels.Confidence;
-import io.breland.bbagent.server.agent.memory.ConversationQuestionAnsweringModels.CoverageStatus;
 import io.breland.bbagent.server.agent.memory.ConversationQuestionAnsweringModels.GroupQuestionAnswer;
+import io.breland.bbagent.server.agent.memory.ConversationQuestionAnsweringModels.HistoryWindow;
+import io.breland.bbagent.server.agent.memory.ConversationQuestionAnsweringModels.HistoryWindowCursor;
 import io.breland.bbagent.server.agent.memory.ConversationQuestionAnsweringModels.MembershipInterval;
-import io.breland.bbagent.server.agent.memory.ConversationQuestionAnsweringModels.ModelAnswer;
+import io.breland.bbagent.server.agent.memory.ConversationQuestionAnsweringModels.ModelWindowDecision;
+import io.breland.bbagent.server.agent.memory.ConversationQuestionAnsweringModels.ParticipantHint;
 import io.breland.bbagent.server.agent.memory.ConversationQuestionAnsweringModels.QuestionFinding;
 import io.breland.bbagent.server.agent.memory.ConversationQuestionAnsweringModels.QuestionMessage;
-import io.breland.bbagent.server.agent.memory.ConversationQuestionAnsweringModels.RetrievalMode;
 import io.breland.bbagent.server.agent.memory.ConversationQuestionAnsweringModels.RetrievalRequest;
-import io.breland.bbagent.server.agent.memory.ConversationQuestionAnsweringModels.RetrievalResult;
-import io.breland.bbagent.server.agent.memory.ConversationQuestionAnsweringModels.RoutedModelAnswer;
-import io.breland.bbagent.server.agent.memory.ConversationQuestionAnsweringModels.RoutedReductionAnswer;
-import io.breland.bbagent.server.agent.memory.ConversationQuestionAnsweringModels.RoutedSupportVerification;
-import io.breland.bbagent.server.agent.memory.ConversationQuestionAnsweringModels.SearchPlan;
+import io.breland.bbagent.server.agent.memory.ConversationQuestionAnsweringModels.RoutedFindingReduction;
+import io.breland.bbagent.server.agent.memory.ConversationQuestionAnsweringModels.RoutedWindowDecision;
+import io.breland.bbagent.server.agent.memory.ConversationQuestionAnsweringModels.WindowAction;
+import io.breland.bbagent.server.agent.memory.ConversationQuestionAnsweringModels.WindowFinding;
 import io.breland.bbagent.server.metrics.OperationalMetricsService;
 import java.time.Clock;
+import java.time.DateTimeException;
 import java.time.Duration;
 import java.time.Instant;
+import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.IdentityHashMap;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
+import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
@@ -35,31 +40,31 @@ import org.springframework.lang.Nullable;
 import org.springframework.stereotype.Service;
 
 @Service
+@Slf4j
 public class ConversationQuestionAnsweringService {
-  private static final int HARD_MAX_BATCH_MESSAGES = 100;
-  private static final int HARD_MAX_BATCH_CHARACTERS = 60_000;
+  private static final int HARD_MAX_WINDOW_MESSAGES = 500;
+  private static final int HARD_MAX_HISTORY_PAGES = 100;
+  private static final int HARD_MAX_BATCH_CHARACTERS = 300_000;
   private static final int HARD_MAX_MODEL_BATCHES = 5;
-  private static final int HARD_MAX_AGGREGATE_CHARACTERS = 300_000;
+  private static final int HARD_MAX_AGGREGATE_CHARACTERS = 1_500_000;
   private static final Duration HARD_MAX_REQUEST_TIMEOUT = Duration.ofSeconds(90);
 
-  private static final String INSUFFICIENT_ANSWER =
-      "There is insufficient evidence in the authorized group history to answer that question.";
+  private static final String EMPTY_HISTORY_ANSWER =
+      "I couldn't find any group messages in that time range.";
+  private static final String NO_ANSWER = "I couldn't find that in this group's messages.";
   private static final String UNAVAILABLE_ANSWER =
-      "Group history answering is temporarily unavailable.";
-  private static final String UNAUTHORIZED_RANGE = "unauthorized_range";
+      "I couldn't search the group history right now. Please try again.";
+  private static final String NARROW_TIME_QUESTION = "About when should I look?";
   private static final String SOURCE_UNAVAILABLE = "source_unavailable";
-  private static final String MODEL_UNAVAILABLE = "model_unavailable";
-  private static final String MODEL_INVALID = "model_invalid";
   private static final String TIME_LIMIT = "time_limit";
-  private static final String MODEL_BATCH_LIMIT = "model_batch_limit";
-  private static final String CHARACTER_LIMIT = "character_limit";
-  private static final String NEEDS_MORE_CONTEXT = "needs_more_context";
+  private static final String MODEL_LIMIT = "model_limit";
 
   private final ConversationMemoryStore store;
   private final ConversationQuestionHistoryRetriever retriever;
   private final ConversationQuestionAnsweringModelClient model;
   private final OperationalMetricsService metrics;
-  private final int maxBatchMessages;
+  private final int windowMessageCount;
+  private final int maxHistoryPages;
   private final int maxBatchCharacters;
   private final int maxModelBatches;
   private final int maxAggregateCharacters;
@@ -72,7 +77,8 @@ public class ConversationQuestionAnsweringService {
       ConversationQuestionHistoryRetriever retriever,
       ConversationQuestionAnsweringModelClient model,
       OperationalMetricsService metrics,
-      @Value("${bbagent.memory.group.qa.max-batch-messages}") int maxBatchMessages,
+      @Value("${bbagent.memory.group.qa.window-message-count}") int windowMessageCount,
+      @Value("${bbagent.memory.group.qa.max-history-pages}") int maxHistoryPages,
       @Value("${bbagent.memory.group.qa.max-batch-characters}") int maxBatchCharacters,
       @Value("${bbagent.memory.group.qa.max-model-batches}") int maxModelBatches,
       @Value("${bbagent.memory.group.qa.max-aggregate-characters}") int maxAggregateCharacters,
@@ -82,7 +88,8 @@ public class ConversationQuestionAnsweringService {
         retriever,
         model,
         metrics,
-        maxBatchMessages,
+        windowMessageCount,
+        maxHistoryPages,
         maxBatchCharacters,
         maxModelBatches,
         maxAggregateCharacters,
@@ -95,7 +102,8 @@ public class ConversationQuestionAnsweringService {
       ConversationQuestionHistoryRetriever retriever,
       ConversationQuestionAnsweringModelClient model,
       OperationalMetricsService metrics,
-      int maxBatchMessages,
+      int windowMessageCount,
+      int maxHistoryPages,
       int maxBatchCharacters,
       int maxModelBatches,
       int maxAggregateCharacters,
@@ -105,19 +113,22 @@ public class ConversationQuestionAnsweringService {
     this.retriever = Objects.requireNonNull(retriever, "retriever");
     this.model = Objects.requireNonNull(model, "model");
     this.metrics = Objects.requireNonNull(metrics, "metrics");
-    if (maxBatchMessages <= 0 || maxBatchMessages > HARD_MAX_BATCH_MESSAGES) {
-      throw new IllegalArgumentException("max batch messages must be between 1 and 100");
+    if (windowMessageCount < 1 || windowMessageCount > HARD_MAX_WINDOW_MESSAGES) {
+      throw new IllegalArgumentException("window message count must be between 1 and 500");
     }
-    if (maxBatchCharacters <= 0 || maxBatchCharacters > HARD_MAX_BATCH_CHARACTERS) {
-      throw new IllegalArgumentException("max batch characters must be between 1 and 60000");
+    if (maxHistoryPages < 1 || maxHistoryPages > HARD_MAX_HISTORY_PAGES) {
+      throw new IllegalArgumentException("max history pages must be between 1 and 100");
     }
-    if (maxModelBatches <= 0 || maxModelBatches > HARD_MAX_MODEL_BATCHES) {
+    if (maxBatchCharacters < 1 || maxBatchCharacters > HARD_MAX_BATCH_CHARACTERS) {
+      throw new IllegalArgumentException("max batch characters must be between 1 and 300000");
+    }
+    if (maxModelBatches < 1 || maxModelBatches > HARD_MAX_MODEL_BATCHES) {
       throw new IllegalArgumentException("max model batches must be between 1 and 5");
     }
     if (maxAggregateCharacters < maxBatchCharacters
         || maxAggregateCharacters > HARD_MAX_AGGREGATE_CHARACTERS) {
       throw new IllegalArgumentException(
-          "max aggregate characters must be between max batch characters and 300000");
+          "max aggregate characters must be between max batch characters and 1500000");
     }
     if (requestTimeout == null
         || requestTimeout.isZero()
@@ -125,7 +136,8 @@ public class ConversationQuestionAnsweringService {
         || requestTimeout.compareTo(HARD_MAX_REQUEST_TIMEOUT) > 0) {
       throw new IllegalArgumentException("request timeout must be between zero and 90 seconds");
     }
-    this.maxBatchMessages = maxBatchMessages;
+    this.windowMessageCount = windowMessageCount;
+    this.maxHistoryPages = maxHistoryPages;
     this.maxBatchCharacters = maxBatchCharacters;
     this.maxModelBatches = maxModelBatches;
     this.maxAggregateCharacters = maxAggregateCharacters;
@@ -135,840 +147,555 @@ public class ConversationQuestionAnsweringService {
 
   public GroupQuestionAnswer answer(
       String accountId, AuthorizedGroup group, String question, Instant from, Instant to) {
-    requireRequest(accountId, group, question, from, to);
+    return answer(accountId, group, question, from, to, null);
+  }
+
+  public GroupQuestionAnswer answer(
+      String accountId,
+      AuthorizedGroup group,
+      String question,
+      @Nullable Instant from,
+      Instant to,
+      @Nullable String timezone) {
+    requireRequest(accountId, group, question, from, to, timezone);
     Instant startedAt = clock.instant();
-    ModelBudget budget = new ModelBudget();
-    QuestionAnswerWork work = new QuestionAnswerWork();
-    GroupQuestionAnswer result =
-        answerWithinLimits(accountId, group, question, from, to, budget, work);
-    boolean success = result.status() == AnswerStatus.ANSWERED;
-    metrics.recordMemoryQuestionAnswer(
-        result.retrievalMode().name(),
-        result.coverageStatus().name(),
-        result.model(),
-        work.messageCount(),
-        work.pageCount,
-        budget.modelBatches,
-        budget.plannerCalls,
-        budget.verificationCalls,
-        success,
-        success ? null : firstReason(result.partialReason(), result.status().name()),
-        Duration.between(startedAt, clock.instant()));
+    Instant effectiveFrom = from == null ? Instant.EPOCH : from;
+    Instant deadline = startedAt.plus(requestTimeout);
+    RunState run = new RunState();
+    GroupQuestionAnswer result;
+    try {
+      result =
+          answerProgressively(
+              accountId, group, question, effectiveFrom, to, timezone, startedAt, deadline, run);
+    } catch (RuntimeException failure) {
+      log.warn(
+          "Group question answering failed failureType={} detail={} messages={} pages={} windows={} modelCalls={}",
+          OperationalMetricsService.failureType(failure),
+          ConversationMemoryResponsesClient.safeFailureDetail(failure),
+          run.messagesByGuid.size(),
+          run.pageCount,
+          run.windowCount,
+          run.modelCalls);
+      result = unavailable(effectiveFrom, to, run, SOURCE_UNAVAILABLE);
+    }
+    recordMetrics(result, run, startedAt);
     return result;
   }
 
-  private GroupQuestionAnswer answerWithinLimits(
+  private GroupQuestionAnswer answerProgressively(
       String accountId,
       AuthorizedGroup group,
       String question,
       Instant from,
       Instant to,
-      ModelBudget budget,
-      QuestionAnswerWork work) {
-    if (question.length() > ConversationQuestionAnsweringModelClient.MAX_QUESTION_LENGTH) {
-      return insufficient(from, to, RetrievalMode.CHRONOLOGICAL, CHARACTER_LIMIT, from);
+      @Nullable String timezone,
+      Instant referenceTime,
+      Instant deadline,
+      RunState run) {
+    Optional<ConversationRecord> conversationValue = store.findConversation(group.conversationId());
+    if (conversationValue.isEmpty() || !enabledGroup(conversationValue.get())) {
+      return unavailable(from, to, run, SOURCE_UNAVAILABLE);
     }
-    Instant deadline = clock.instant().plus(requestTimeout);
-    try {
-      Optional<ConversationRecord> conversationValue =
-          store.findConversation(group.conversationId());
-      if (conversationValue.isEmpty() || !enabledGroup(conversationValue.get())) {
-        return insufficient(from, to, RetrievalMode.CHRONOLOGICAL, UNAUTHORIZED_RANGE, from);
+    ConversationRecord conversation = conversationValue.get();
+    List<MembershipInterval> memberships =
+        store.findMembershipIntervals(group.conversationId(), accountId, from, to);
+    if (memberships.isEmpty()) {
+      return unavailable(from, to, run, SOURCE_UNAVAILABLE);
+    }
+    if (accountId.equals(conversation.memoryEnabledByAccountId())
+        && memberships.stream().anyMatch(interval -> interval.endedAt() == null)) {
+      memberships = List.of(new MembershipInterval(Instant.EPOCH, null));
+    }
+
+    RetrievalRequest request =
+        new RetrievalRequest(accountId, conversation, memberships, from, to, deadline);
+    HistoryWindowCursor cursor = null;
+    Set<HistoryWindowCursor> seenCursors = new LinkedHashSet<>();
+    while (true) {
+      if (deadlineReached(deadline)) {
+        return unavailable(from, to, run, TIME_LIMIT);
       }
-      ConversationRecord conversation = conversationValue.get();
-      List<MembershipInterval> memberships =
-          store.findMembershipIntervals(group.conversationId(), accountId, from, to);
-      if (memberships.isEmpty()) {
-        return insufficient(from, to, RetrievalMode.CHRONOLOGICAL, UNAUTHORIZED_RANGE, from);
+      if (run.pageCount >= maxHistoryPages) {
+        return clarification(from, to, run, NARROW_TIME_QUESTION, null, false);
       }
 
-      RetrievalRequest request =
-          new RetrievalRequest(accountId, conversation, memberships, from, to, deadline);
-      SearchPlan plan = safePlan(question, from, to, deadline, budget);
-      boolean exactSourceAttempted = !plan.terms().isEmpty();
-      RetrievalResult exact = null;
-      Synthesis exactSynthesis = null;
-      try {
-        if (deadlineReached(deadline)) {
-          return unavailable(from, to, RetrievalMode.EXACT_SEARCH, TIME_LIMIT, from);
+      HistoryWindow window = retriever.retrieveWindow(request, cursor, windowMessageCount);
+      run.observe(window);
+      if (run.pageCount > maxHistoryPages) {
+        return clarification(from, to, run, NARROW_TIME_QUESTION, null, false);
+      }
+      if (window.messages().isEmpty()) {
+        if (window.sourceExhausted()) {
+          if (run.findings.isEmpty()) {
+            return noAnswer(from, to, run, EMPTY_HISTORY_ANSWER, null, false);
+          }
+          return Objects.requireNonNull(
+              reduceFindings(question, referenceTime, timezone, false, deadline, from, to, run));
         }
-        exact = retriever.retrieveExact(request, plan);
-        work.observe(exact);
-        if (!exact.messages().isEmpty() && !deadlineReached(deadline)) {
-          exactSynthesis = synthesize(question, exact.messages(), from, deadline, budget, true);
-          if (exactSynthesis.supported() && !exactSynthesis.routed().answer().needsMoreContext()) {
-            return finalAnswer(
-                exactSynthesis,
-                exact,
-                RetrievalMode.EXACT_SEARCH,
-                from,
-                to,
-                null,
-                work.messageGuids());
+        cursor = advanceCursor(window, seenCursors);
+        continue;
+      }
+
+      List<List<QuestionMessage>> chunks =
+          chunkMessages(question, referenceTime, timezone, window.messages());
+      if (chunks == null) {
+        return clarification(from, to, run, NARROW_TIME_QUESTION, null, false);
+      }
+      if (chunks.size() > 1 && run.modelCalls + chunks.size() + 1 > maxModelBatches) {
+        return clarification(from, to, run, NARROW_TIME_QUESTION, null, false);
+      }
+
+      List<ModelWindowDecision> decisions = new ArrayList<>(chunks.size());
+      for (List<QuestionMessage> chunk : chunks) {
+        RoutedWindowDecision routed =
+            decide(question, referenceTime, timezone, chunk, deadline, run);
+        if (routed == null) {
+          return unavailable(from, to, run, deadlineReached(deadline) ? TIME_LIMIT : MODEL_LIMIT);
+        }
+        validateDecision(routed.decision(), chunk);
+        run.observe(routed);
+        decisions.add(routed.decision());
+      }
+
+      if (chunks.size() == 1 && run.findings.isEmpty()) {
+        ModelWindowDecision decision = decisions.getFirst();
+        switch (decision.action()) {
+          case ANSWERED -> {
+            return answered(from, to, run, decision, run.model, run.fallbackUsed);
+          }
+          case NEED_TIME_CLARIFICATION -> {
+            return clarification(
+                from, to, run, decision.clarificationQuestion(), run.model, run.fallbackUsed);
+          }
+          case NO_ANSWER -> {
+            if (window.nextCursor() == null) {
+              return noAnswer(from, to, run, decision.answer(), run.model, run.fallbackUsed);
+            }
+          }
+          case NEED_OLDER_MESSAGES -> addProvisionalFindings(decision, run);
+        }
+      } else {
+        boolean needsOlder = false;
+        String noAnswerText = null;
+        for (ModelWindowDecision decision : decisions) {
+          switch (decision.action()) {
+            case ANSWERED -> addAnsweredFinding(decision, run);
+            case NEED_OLDER_MESSAGES -> {
+              addProvisionalFindings(decision, run);
+              needsOlder = true;
+            }
+            case NEED_TIME_CLARIFICATION -> {
+              return clarification(
+                  from, to, run, decision.clarificationQuestion(), run.model, run.fallbackUsed);
+            }
+            case NO_ANSWER -> {
+              noAnswerText = decision.answer();
+            }
           }
         }
-      } catch (ConversationQuestionHistoryRetriever.PartialRetrievalException partialFailure) {
-        exact = partialFailure.partialResult();
-        work.observe(exact);
-        if (!exact.messages().isEmpty() && !deadlineReached(deadline)) {
-          exactSynthesis = synthesize(question, exact.messages(), from, deadline, budget, true);
-        } else {
-          exactSynthesis = Synthesis.unavailable(from, SOURCE_UNAVAILABLE);
-        }
-      } catch (RuntimeException ignored) {
-        exactSynthesis = Synthesis.unavailable(from, SOURCE_UNAVAILABLE);
-      }
-
-      RetrievalMode fallbackMode =
-          exactSourceAttempted ? RetrievalMode.HYBRID : RetrievalMode.CHRONOLOGICAL;
-      if (deadlineReached(deadline)) {
-        return supportedBackupOrUnavailable(
-            exactSynthesis, exact, fallbackMode, from, to, TIME_LIMIT, work.messageGuids());
-      }
-
-      RetrievalResult chronological;
-      try {
-        chronological = retriever.retrieveChronological(request);
-        work.observe(chronological);
-      } catch (ConversationQuestionHistoryRetriever.PartialRetrievalException partialFailure) {
-        chronological = partialFailure.partialResult();
-        work.observe(chronological);
-        Synthesis partialSynthesis =
-            synthesize(question, chronological.messages(), from, deadline, budget, false);
-        if (partialSynthesis.supported()) {
-          return finalAnswer(
-              partialSynthesis,
-              chronological,
-              fallbackMode,
+        boolean olderAvailable = window.nextCursor() != null;
+        if (!run.findings.isEmpty()) {
+          GroupQuestionAnswer reduced =
+              reduceFindings(
+                  question, referenceTime, timezone, olderAvailable, deadline, from, to, run);
+          if (reduced != null) {
+            return reduced;
+          }
+          needsOlder = true;
+        } else if (!needsOlder && !olderAvailable) {
+          return noAnswer(
               from,
               to,
-              SOURCE_UNAVAILABLE,
-              work.messageGuids());
+              run,
+              StringUtils.defaultIfBlank(noAnswerText, NO_ANSWER),
+              run.model,
+              run.fallbackUsed);
         }
-        if (exactSynthesis != null && exactSynthesis.supported()) {
-          return finalAnswer(
-              exactSynthesis,
-              exact,
-              fallbackMode,
-              from,
-              to,
-              dominantReason(
-                  SOURCE_UNAVAILABLE,
-                  chronological.partialReason(),
-                  partialSynthesis.partialReason()),
-              work.messageGuids());
-        }
-        return supportedBackupOrUnavailable(
-            exactSynthesis, exact, fallbackMode, from, to, SOURCE_UNAVAILABLE, work.messageGuids());
-      } catch (RuntimeException ignored) {
-        return supportedBackupOrUnavailable(
-            exactSynthesis, exact, fallbackMode, from, to, SOURCE_UNAVAILABLE, work.messageGuids());
-      }
-      if (deadlineReached(deadline) && chronological.messages().isEmpty()) {
-        return supportedBackupOrUnavailable(
-            exactSynthesis, exact, fallbackMode, from, to, TIME_LIMIT, work.messageGuids());
       }
 
-      Synthesis chronologicalSynthesis =
-          synthesize(question, chronological.messages(), from, deadline, budget, false);
-      if (chronologicalSynthesis.supported()) {
-        return finalAnswer(
-            chronologicalSynthesis,
-            chronological,
-            fallbackMode,
-            from,
-            to,
-            null,
-            work.messageGuids());
+      if (window.nextCursor() == null) {
+        if (run.findings.isEmpty()) {
+          return noAnswer(from, to, run, NO_ANSWER, run.model, run.fallbackUsed);
+        }
+        return Objects.requireNonNull(
+            reduceFindings(question, referenceTime, timezone, false, deadline, from, to, run));
       }
-      if (exactSynthesis != null && exactSynthesis.supported()) {
-        String reason =
-            firstReason(
-                chronologicalSynthesis.partialReason(),
-                chronological.partialReason(),
-                NEEDS_MORE_CONTEXT);
-        return finalAnswer(
-            exactSynthesis, exact, fallbackMode, from, to, reason, work.messageGuids());
-      }
-      return unsupportedAnswer(chronologicalSynthesis, chronological, fallbackMode, from, to);
-    } catch (RuntimeException ignored) {
-      return unavailable(from, to, RetrievalMode.CHRONOLOGICAL, SOURCE_UNAVAILABLE, from);
+      cursor = advanceCursor(window, seenCursors);
     }
   }
 
-  private SearchPlan safePlan(
-      String question, Instant from, Instant to, Instant deadline, ModelBudget budget) {
-    if (deadlineReached(deadline)) {
-      return emptyPlan();
-    }
-    try {
-      budget.plannerCalls++;
-      return Objects.requireNonNull(
-          model.plan(question, from, to, deadline), "model returned no search plan");
-    } catch (RuntimeException ignored) {
-      return emptyPlan();
-    }
-  }
-
-  private Synthesis synthesize(
+  private @Nullable RoutedWindowDecision decide(
       String question,
-      List<QuestionMessage> submittedMessages,
-      Instant from,
-      Instant deadline,
-      ModelBudget budget,
-      boolean stopOnNeedsMoreContext) {
-    List<QuestionMessage> messages = List.copyOf(submittedMessages);
-    Set<String> forbiddenMessageGuids = messageGuids(messages);
-    List<SupportedFinding> findings = new ArrayList<>();
-    RoutedModelAnswer lastUnsupported = null;
-    Instant processedThrough = from;
-    String partialReason = null;
-    boolean needsMoreContextObserved = false;
-    int nextIndex = 0;
-
-    while (nextIndex < messages.size()) {
-      if (deadlineReached(deadline)) {
-        partialReason = TIME_LIMIT;
-        break;
-      }
-      if (budget.modelBatches >= maxModelBatches) {
-        partialReason = MODEL_BATCH_LIMIT;
-        break;
-      }
-      int aggregateRemaining = maxAggregateCharacters - budget.characters;
-      if (aggregateRemaining <= 0) {
-        partialReason = CHARACTER_LIMIT;
-        break;
-      }
-
-      Batch batch = nextBatch(question, messages, nextIndex, aggregateRemaining);
-      if (batch.messages().isEmpty()) {
-        partialReason = CHARACTER_LIMIT;
-        break;
-      }
-      budget.modelBatches++;
-      budget.characters += batch.characters();
-      RoutedModelAnswer routed;
-      try {
-        routed = model.answer(question, batch.messages(), deadline);
-      } catch (RuntimeException ignored) {
-        partialReason = MODEL_UNAVAILABLE;
-        break;
-      }
-      ModelAnswer validated =
-          validateAnswer(routed, messageGuids(batch.messages()), forbiddenMessageGuids);
-      if (validated == null) {
-        partialReason = MODEL_INVALID;
-        break;
-      }
-
-      RoutedModelAnswer accepted = routed;
-      if (validated.status() == AnswerStatus.ANSWERED) {
-        VerificationOutcome verification =
-            verifyBatchAnswer(question, routed, batch.messages(), deadline, budget);
-        if (verification.failureReason() != null) {
-          partialReason = verification.failureReason();
-          break;
-        }
-        accepted = Objects.requireNonNull(verification.routed());
-        validated = accepted.answer();
-      }
-
-      processedThrough = maxTimestamp(batch.messages(), processedThrough);
-      nextIndex = batch.nextIndex();
-      boolean completedAtDeadline = deadlineReached(deadline);
-      if (validated.status() == AnswerStatus.ANSWERED) {
-        QuestionFinding finding =
-            new QuestionFinding(
-                validated.answer(),
-                validated.confidence(),
-                validated.evidenceMessageGuids(),
-                processedThrough);
-        findings.add(new SupportedFinding(finding, accepted));
-      } else {
-        lastUnsupported = accepted;
-      }
-      if (completedAtDeadline) {
-        partialReason = TIME_LIMIT;
-        break;
-      }
-      if (validated.needsMoreContext()) {
-        needsMoreContextObserved = true;
-        if (stopOnNeedsMoreContext) {
-          partialReason = NEEDS_MORE_CONTEXT;
-          break;
-        }
-      }
-      if (validated.status() == AnswerStatus.UNAVAILABLE) {
-        partialReason = MODEL_UNAVAILABLE;
-        break;
-      }
-    }
-
-    return finishSynthesis(
-        question,
-        findings,
-        lastUnsupported,
-        processedThrough,
-        partialReason,
-        needsMoreContextObserved,
-        deadline,
-        budget,
-        forbiddenMessageGuids);
-  }
-
-  private Synthesis finishSynthesis(
-      String question,
-      List<SupportedFinding> findings,
-      @Nullable RoutedModelAnswer lastUnsupported,
-      Instant processedThrough,
-      @Nullable String partialReason,
-      boolean needsMoreContextObserved,
-      Instant deadline,
-      ModelBudget budget,
-      Set<String> forbiddenMessageGuids) {
-    if (findings.isEmpty()) {
-      if (lastUnsupported == null) {
-        return new Synthesis(null, processedThrough, partialReason, false);
-      }
-      return new Synthesis(
-          lastUnsupported,
-          processedThrough,
-          firstReason(
-              partialReason,
-              lastUnsupported.answer().status() == AnswerStatus.UNAVAILABLE
-                  ? MODEL_UNAVAILABLE
-                  : null),
-          lastUnsupported.answer().status() == AnswerStatus.UNAVAILABLE);
-    }
-    if (findings.size() == 1) {
-      return bestFinding(
-          findings,
-          processedThrough,
-          firstReason(partialReason, needsMoreContextObserved ? NEEDS_MORE_CONTEXT : null),
-          forbiddenMessageGuids);
-    }
-    if (deadlineReached(deadline)) {
-      return bestFinding(
-          findings,
-          processedThrough,
-          firstReason(TIME_LIMIT, partialReason),
-          forbiddenMessageGuids);
-    }
-
-    List<QuestionFinding> questionFindings =
-        findings.stream().map(SupportedFinding::finding).toList();
-    Set<String> submittedEvidence = findingGuids(questionFindings);
-    int reductionCharacters;
-    try {
-      reductionCharacters = model.reduceInputCharacters(question, questionFindings);
-    } catch (RuntimeException ignored) {
-      return bestFinding(
-          findings,
-          processedThrough,
-          firstReason(MODEL_INVALID, partialReason),
-          forbiddenMessageGuids);
-    }
-    if (budget.modelBatches >= maxModelBatches
-        || reductionCharacters > maxBatchCharacters
-        || reductionCharacters > maxAggregateCharacters - budget.characters) {
-      return bestFinding(
-          findings,
-          processedThrough,
-          firstReason(
-              budget.modelBatches >= maxModelBatches ? MODEL_BATCH_LIMIT : CHARACTER_LIMIT,
-              partialReason),
-          forbiddenMessageGuids);
-    }
-    budget.modelBatches++;
-    budget.characters += reductionCharacters;
-    try {
-      RoutedReductionAnswer reduction =
-          model.reduceWithCitations(question, questionFindings, deadline);
-      RoutedModelAnswer reduced = reduction.routed();
-      ModelAnswer validated = validateAnswer(reduced, submittedEvidence, forbiddenMessageGuids);
-      if (validated == null) {
-        return bestFinding(
-            findings,
-            processedThrough,
-            firstReason(MODEL_INVALID, partialReason),
-            forbiddenMessageGuids);
-      }
-      RoutedModelAnswer accepted = reduced;
-      if (validated.status() == AnswerStatus.ANSWERED) {
-        VerificationOutcome verification =
-            verifyReducedAnswer(
-                question, reduced, questionFindings, reduction.citedFindings(), deadline, budget);
-        if (verification.failureReason() != null) {
-          return bestFinding(
-              findings,
-              processedThrough,
-              firstReason(verification.failureReason(), partialReason),
-              forbiddenMessageGuids);
-        }
-        accepted = Objects.requireNonNull(verification.routed());
-        validated = accepted.answer();
-        if (validated.status() != AnswerStatus.ANSWERED) {
-          return bestFinding(
-              findings,
-              processedThrough,
-              firstReason(NEEDS_MORE_CONTEXT, partialReason),
-              forbiddenMessageGuids);
-        }
-      }
-      String reason =
-          dominantReason(
-              partialReason,
-              validated.status() == AnswerStatus.UNAVAILABLE ? MODEL_UNAVAILABLE : null,
-              validated.needsMoreContext() ? NEEDS_MORE_CONTEXT : null,
-              deadlineReached(deadline) ? TIME_LIMIT : null);
-      return new Synthesis(
-          accepted, processedThrough, reason, validated.status() == AnswerStatus.UNAVAILABLE);
-    } catch (RuntimeException ignored) {
-      return bestFinding(
-          findings,
-          processedThrough,
-          firstReason(MODEL_UNAVAILABLE, partialReason),
-          forbiddenMessageGuids);
-    }
-  }
-
-  private Synthesis bestFinding(
-      List<SupportedFinding> findings,
-      Instant processedThrough,
-      String partialReason,
-      Set<String> forbiddenMessageGuids) {
-    SupportedFinding selected =
-        findings.stream()
-            .max(
-                Comparator.comparingInt(
-                        (SupportedFinding finding) ->
-                            confidenceRank(finding.finding().confidence()))
-                    .thenComparing(finding -> finding.finding().coverageThrough()))
-            .orElseThrow();
-    if (!ConversationQuestionAnswerOutputValidator.isSafe(
-        selected.routed().answer().answer(), forbiddenMessageGuids, Set.of())) {
-      return new Synthesis(
-          null, processedThrough, firstReason(MODEL_INVALID, partialReason), false);
-    }
-    return new Synthesis(selected.routed(), processedThrough, partialReason, false);
-  }
-
-  private Batch nextBatch(
-      String question,
+      Instant referenceTime,
+      @Nullable String timezone,
       List<QuestionMessage> messages,
-      int startIndex,
-      int aggregateCharactersRemaining) {
-    List<QuestionMessage> batch = new ArrayList<>();
-    int characters = 0;
-    int nextIndex = startIndex;
-    while (nextIndex < messages.size() && batch.size() < maxBatchMessages) {
-      QuestionMessage message = messages.get(nextIndex);
-      List<QuestionMessage> candidate = new ArrayList<>(batch);
-      candidate.add(message);
-      int candidateCharacters = model.answerInputCharacters(question, candidate);
-      if (candidateCharacters > maxBatchCharacters
-          || candidateCharacters > aggregateCharactersRemaining) {
-        break;
-      }
-      batch.add(message);
-      characters = candidateCharacters;
-      nextIndex++;
-    }
-    return new Batch(List.copyOf(batch), characters, nextIndex);
-  }
-
-  private ModelAnswer validateAnswer(
-      @Nullable RoutedModelAnswer routed,
-      Set<String> submittedEvidence,
-      Set<String> forbiddenMessageGuids) {
-    if (routed == null || routed.answer() == null) {
-      return null;
-    }
-    ModelAnswer answer = routed.answer();
-    if (answer.status() == AnswerStatus.ANSWERED
-        && (answer.evidenceMessageGuids().isEmpty()
-            || !submittedEvidence.containsAll(answer.evidenceMessageGuids()))) {
-      return null;
-    }
-    if (!submittedEvidence.containsAll(answer.evidenceMessageGuids())) {
-      return null;
-    }
-    if (!ConversationQuestionAnswerOutputValidator.isSafe(
-        answer.answer(), forbiddenMessageGuids, Set.of())) {
-      return null;
-    }
-    return answer;
-  }
-
-  private VerificationOutcome verifyBatchAnswer(
-      String question,
-      RoutedModelAnswer proposed,
-      List<QuestionMessage> submittedMessages,
       Instant deadline,
-      ModelBudget budget) {
-    Set<String> cited = Set.copyOf(proposed.answer().evidenceMessageGuids());
-    List<QuestionMessage> citedMessages =
-        submittedMessages.stream()
-            .filter(message -> cited.contains(message.messageGuid()))
-            .toList();
-    if (citedMessages.isEmpty() || deadlineReached(deadline)) {
-      return VerificationOutcome.failure(citedMessages.isEmpty() ? MODEL_INVALID : TIME_LIMIT);
+      RunState run) {
+    int characters = model.windowInputCharacters(question, referenceTime, timezone, messages);
+    if (!run.reserveModelCall(characters)) {
+      return null;
     }
-    try {
-      int verificationCharacters =
-          model.verificationInputCharacters(question, proposed.answer().answer(), citedMessages);
-      if (verificationCharacters > maxBatchCharacters
-          || verificationCharacters > maxAggregateCharacters - budget.characters) {
-        return VerificationOutcome.failure(CHARACTER_LIMIT);
-      }
-      budget.characters += verificationCharacters;
-      budget.verificationCalls++;
-      RoutedSupportVerification verification =
-          model.verifyAnswer(question, proposed.answer().answer(), citedMessages, deadline);
-      return VerificationOutcome.success(applyVerification(proposed, verification));
-    } catch (RuntimeException ignored) {
-      return VerificationOutcome.failure(MODEL_UNAVAILABLE);
-    }
+    RoutedWindowDecision routed =
+        model.decide(question, referenceTime, timezone, messages, deadline);
+    return deadlineReached(deadline) ? null : routed;
   }
 
-  private VerificationOutcome verifyReducedAnswer(
+  private @Nullable GroupQuestionAnswer reduceFindings(
       String question,
-      RoutedModelAnswer proposed,
-      List<QuestionFinding> submittedFindings,
-      List<QuestionFinding> citedFindings,
+      Instant referenceTime,
+      @Nullable String timezone,
+      boolean olderAvailable,
       Instant deadline,
-      ModelBudget budget) {
-    Set<String> cited = Set.copyOf(proposed.answer().evidenceMessageGuids());
-    Set<String> expandedFindingEvidence = findingGuids(citedFindings);
-    boolean invalidCitations =
-        citedFindings.isEmpty()
-            || !new LinkedHashSet<>(submittedFindings).containsAll(citedFindings)
-            || !expandedFindingEvidence.equals(cited);
-    if (invalidCitations || deadlineReached(deadline)) {
-      return VerificationOutcome.failure(invalidCitations ? MODEL_INVALID : TIME_LIMIT);
-    }
-    try {
-      int verificationCharacters =
-          model.reductionVerificationInputCharacters(
-              question, proposed.answer().answer(), citedFindings);
-      if (verificationCharacters > maxBatchCharacters
-          || verificationCharacters > maxAggregateCharacters - budget.characters) {
-        return VerificationOutcome.failure(CHARACTER_LIMIT);
-      }
-      budget.characters += verificationCharacters;
-      budget.verificationCalls++;
-      RoutedSupportVerification verification =
-          model.verifyReduction(question, proposed.answer().answer(), citedFindings, deadline);
-      return VerificationOutcome.success(applyVerification(proposed, verification));
-    } catch (RuntimeException ignored) {
-      return VerificationOutcome.failure(MODEL_UNAVAILABLE);
-    }
-  }
-
-  private static RoutedModelAnswer applyVerification(
-      RoutedModelAnswer proposed, RoutedSupportVerification verification) {
-    boolean fallbackUsed = proposed.fallbackUsed() || verification.fallbackUsed();
-    String routedModel = verification.fallbackUsed() ? verification.model() : proposed.model();
-    if (verification.supported()) {
-      return new RoutedModelAnswer(proposed.answer(), routedModel, fallbackUsed);
-    }
-    return new RoutedModelAnswer(
-        new ModelAnswer(
-            AnswerStatus.INSUFFICIENT_EVIDENCE,
-            INSUFFICIENT_ANSWER,
-            Confidence.LOW,
-            List.of(),
-            true),
-        routedModel,
-        fallbackUsed);
-  }
-
-  private GroupQuestionAnswer finalAnswer(
-      Synthesis synthesis,
-      @Nullable RetrievalResult retrieval,
-      RetrievalMode mode,
       Instant from,
       Instant to,
-      @Nullable String forcedPartialReason,
-      Set<String> forbiddenMessageGuids) {
-    ModelAnswer answer = synthesis.routed().answer();
-    String reason =
-        dominantReason(
-            forcedPartialReason,
-            synthesis.partialReason(),
-            retrieval == null ? null : retrieval.partialReason());
-    if (answer.status() == AnswerStatus.ANSWERED
-        && !ConversationQuestionAnswerOutputValidator.isSafe(
-            answer.answer(), forbiddenMessageGuids, Set.of())) {
-      return terminalAnswer(
-          AnswerStatus.INSUFFICIENT_EVIDENCE,
-          from,
-          to,
-          mode,
-          CoverageStatus.PARTIAL,
-          dominantReason(MODEL_INVALID, reason),
-          synthesis.coverageThrough(),
-          synthesis.routed().model(),
-          synthesis.routed().fallbackUsed());
+      RunState run) {
+    if (run.findings.isEmpty()) {
+      return noAnswer(from, to, run, NO_ANSWER, run.model, run.fallbackUsed);
     }
-    CoverageStatus coverage = reason == null ? CoverageStatus.COMPLETE : CoverageStatus.PARTIAL;
-    Instant coverageThrough =
-        coverage == CoverageStatus.COMPLETE
-            ? retrieval == null ? to : retrieval.coverageThrough()
-            : synthesis.coverageThrough();
-    return new GroupQuestionAnswer(
-        answer.status(),
-        answer.answer(),
-        answer.confidence(),
-        synthesis.routed().model(),
-        synthesis.routed().fallbackUsed(),
-        distinctEvidenceCount(answer.evidenceMessageGuids()),
-        mode,
-        coverage,
-        from,
-        to,
-        coverageThrough,
-        reason);
-  }
-
-  private GroupQuestionAnswer unsupportedAnswer(
-      Synthesis synthesis,
-      RetrievalResult retrieval,
-      RetrievalMode mode,
-      Instant from,
-      Instant to) {
-    String reason = dominantReason(synthesis.partialReason(), retrieval.partialReason());
-    AnswerStatus status =
-        synthesis.unavailable() || unavailableReason(reason)
-            ? AnswerStatus.UNAVAILABLE
-            : AnswerStatus.INSUFFICIENT_EVIDENCE;
-    CoverageStatus coverage = reason == null ? CoverageStatus.COMPLETE : CoverageStatus.PARTIAL;
-    Instant coverageThrough =
-        coverage == CoverageStatus.COMPLETE
-            ? retrieval.coverageThrough()
-            : synthesis.coverageThrough();
-    RoutedModelAnswer routed = synthesis.routed();
-    return terminalAnswer(
-        status,
-        from,
-        to,
-        mode,
-        coverage,
-        reason,
-        coverageThrough,
-        routed == null ? null : routed.model(),
-        routed != null && routed.fallbackUsed());
-  }
-
-  private GroupQuestionAnswer supportedBackupOrUnavailable(
-      @Nullable Synthesis backup,
-      @Nullable RetrievalResult retrieval,
-      RetrievalMode mode,
-      Instant from,
-      Instant to,
-      String reason,
-      Set<String> forbiddenMessageGuids) {
-    if (backup != null && backup.supported()) {
-      return finalAnswer(backup, retrieval, mode, from, to, reason, forbiddenMessageGuids);
+    run.findings.sort(Comparator.comparing(QuestionFinding::coverageThrough));
+    int characters =
+        model.findingReductionInputCharacters(
+            question, referenceTime, timezone, run.findings, olderAvailable);
+    if (!run.reserveModelCall(characters)) {
+      return unavailable(from, to, run, deadlineReached(deadline) ? TIME_LIMIT : MODEL_LIMIT);
     }
-    return unavailable(from, to, mode, reason, from);
-  }
-
-  private GroupQuestionAnswer insufficient(
-      Instant from,
-      Instant to,
-      RetrievalMode mode,
-      @Nullable String reason,
-      Instant coverageThrough) {
-    CoverageStatus coverage = reason == null ? CoverageStatus.COMPLETE : CoverageStatus.PARTIAL;
-    return terminalAnswer(
-        AnswerStatus.INSUFFICIENT_EVIDENCE,
-        from,
-        to,
-        mode,
-        coverage,
-        reason,
-        coverageThrough,
-        null,
-        false);
-  }
-
-  private GroupQuestionAnswer unavailable(
-      Instant from, Instant to, RetrievalMode mode, String reason, Instant coverageThrough) {
-    return terminalAnswer(
-        AnswerStatus.UNAVAILABLE,
-        from,
-        to,
-        mode,
-        CoverageStatus.PARTIAL,
-        reason,
-        coverageThrough,
-        null,
-        false);
-  }
-
-  private GroupQuestionAnswer terminalAnswer(
-      AnswerStatus status,
-      Instant from,
-      Instant to,
-      RetrievalMode mode,
-      CoverageStatus coverage,
-      @Nullable String reason,
-      Instant coverageThrough,
-      @Nullable String modelName,
-      boolean fallbackUsed) {
-    return new GroupQuestionAnswer(
-        status,
-        status == AnswerStatus.UNAVAILABLE ? UNAVAILABLE_ANSWER : INSUFFICIENT_ANSWER,
-        Confidence.LOW,
-        modelName,
-        fallbackUsed,
-        0,
-        mode,
-        coverage,
-        from,
-        to,
-        coverageThrough,
-        reason);
-  }
-
-  private static boolean enabledGroup(ConversationRecord conversation) {
-    return conversation.group() && conversation.memoryEnabledAt() != null;
-  }
-
-  private static SearchPlan emptyPlan() {
-    return new SearchPlan(List.of(), null, null, null);
-  }
-
-  private static Set<String> messageGuids(List<QuestionMessage> messages) {
-    LinkedHashSet<String> guids = new LinkedHashSet<>();
-    messages.forEach(message -> guids.add(message.messageGuid()));
-    return guids;
-  }
-
-  private static Set<String> findingGuids(List<QuestionFinding> findings) {
-    LinkedHashSet<String> guids = new LinkedHashSet<>();
-    findings.forEach(finding -> guids.addAll(finding.evidenceMessageGuids()));
-    return guids;
-  }
-
-  private static int distinctEvidenceCount(List<String> evidenceGuids) {
-    return new LinkedHashSet<>(evidenceGuids).size();
-  }
-
-  private static Instant maxTimestamp(List<QuestionMessage> messages, Instant fallback) {
-    return messages.stream()
-        .map(QuestionMessage::timestamp)
-        .max(Comparator.naturalOrder())
-        .orElse(fallback);
-  }
-
-  private static int confidenceRank(Confidence confidence) {
-    return switch (confidence) {
-      case HIGH -> 3;
-      case MEDIUM -> 2;
-      case LOW -> 1;
+    RoutedFindingReduction routed =
+        model.reduceFindings(
+            question, referenceTime, timezone, List.copyOf(run.findings), olderAvailable, deadline);
+    if (deadlineReached(deadline)) {
+      return unavailable(from, to, run, TIME_LIMIT);
+    }
+    validateReduction(routed, run.findings);
+    run.observe(routed);
+    ModelWindowDecision decision = routed.decision();
+    return switch (decision.action()) {
+      case ANSWERED -> answered(from, to, run, decision, run.model, run.fallbackUsed);
+      case NEED_TIME_CLARIFICATION ->
+          clarification(
+              from, to, run, decision.clarificationQuestion(), run.model, run.fallbackUsed);
+      case NO_ANSWER ->
+          olderAvailable
+              ? null
+              : noAnswer(from, to, run, decision.answer(), run.model, run.fallbackUsed);
+      case NEED_OLDER_MESSAGES ->
+          olderAvailable
+              ? null
+              : clarification(from, to, run, NARROW_TIME_QUESTION, run.model, run.fallbackUsed);
     };
   }
 
-  private static @Nullable String firstReason(@Nullable String... reasons) {
-    for (String reason : reasons) {
-      String normalized = StringUtils.trimToNull(reason);
-      if (normalized != null) {
-        return normalized;
+  private List<List<QuestionMessage>> chunkMessages(
+      String question,
+      Instant referenceTime,
+      @Nullable String timezone,
+      List<QuestionMessage> messages) {
+    List<List<QuestionMessage>> chunks = new ArrayList<>();
+    List<QuestionMessage> current = new ArrayList<>();
+    for (QuestionMessage message : messages) {
+      List<QuestionMessage> candidate = new ArrayList<>(current);
+      candidate.add(message);
+      if (model.windowInputCharacters(question, referenceTime, timezone, candidate)
+          <= maxBatchCharacters) {
+        current = candidate;
+        continue;
+      }
+      if (current.isEmpty()) {
+        return null;
+      }
+      chunks.add(List.copyOf(current));
+      current = new ArrayList<>(List.of(message));
+      if (model.windowInputCharacters(question, referenceTime, timezone, current)
+          > maxBatchCharacters) {
+        return null;
       }
     }
-    return null;
+    if (!current.isEmpty()) {
+      chunks.add(List.copyOf(current));
+    }
+    return List.copyOf(chunks);
   }
 
-  private static @Nullable String dominantReason(@Nullable String... reasons) {
-    for (String priority :
-        List.of(TIME_LIMIT, SOURCE_UNAVAILABLE, MODEL_UNAVAILABLE, MODEL_INVALID)) {
-      for (String reason : reasons) {
-        if (priority.equals(StringUtils.trimToNull(reason))) {
-          return priority;
-        }
+  private static void validateDecision(
+      ModelWindowDecision decision, List<QuestionMessage> submittedMessages) {
+    Map<String, QuestionMessage> submitted = new LinkedHashMap<>();
+    submittedMessages.forEach(message -> submitted.put(message.messageGuid(), message));
+    if (decision.action() == WindowAction.ANSWERED) {
+      validateEvidenceAndParticipants(
+          decision.evidenceMessageGuids(), decision.referencedParticipants(), submitted);
+    }
+    for (WindowFinding finding : decision.provisionalFindings()) {
+      validateEvidenceAndParticipants(
+          finding.evidenceMessageGuids(), finding.referencedParticipants(), submitted);
+    }
+  }
+
+  private static void validateReduction(
+      RoutedFindingReduction routed, List<QuestionFinding> submittedFindings) {
+    Set<QuestionFinding> submitted = java.util.Collections.newSetFromMap(new IdentityHashMap<>());
+    submitted.addAll(submittedFindings);
+    if (!submitted.containsAll(routed.citedFindings())) {
+      throw new IllegalStateException("finding reduction cited an unsubmitted finding");
+    }
+    LinkedHashSet<String> evidence = new LinkedHashSet<>();
+    LinkedHashSet<String> participants = new LinkedHashSet<>();
+    routed
+        .citedFindings()
+        .forEach(
+            finding -> {
+              evidence.addAll(finding.evidenceMessageGuids());
+              participants.addAll(finding.referencedParticipants());
+            });
+    ModelWindowDecision decision = routed.decision();
+    if (decision.action() == WindowAction.ANSWERED
+        && (!evidence.equals(new LinkedHashSet<>(decision.evidenceMessageGuids()))
+            || !participants.containsAll(decision.referencedParticipants()))) {
+      throw new IllegalStateException("finding reduction evidence is inconsistent");
+    }
+  }
+
+  private static void validateEvidenceAndParticipants(
+      List<String> evidenceGuids,
+      List<String> referencedParticipants,
+      Map<String, QuestionMessage> submitted) {
+    LinkedHashSet<String> participants = new LinkedHashSet<>();
+    for (String guid : evidenceGuids) {
+      QuestionMessage message = submitted.get(guid);
+      if (message == null) {
+        throw new IllegalStateException("question answer evidence is outside submitted messages");
+      }
+      participants.add(message.participant());
+    }
+    if (!participants.containsAll(referencedParticipants)) {
+      throw new IllegalStateException("question answer participant is outside cited messages");
+    }
+  }
+
+  private static void addAnsweredFinding(ModelWindowDecision decision, RunState run) {
+    run.addFinding(
+        new QuestionFinding(
+            decision.answer(),
+            decision.confidence(),
+            decision.evidenceMessageGuids(),
+            run.coverageThrough(decision.evidenceMessageGuids()),
+            decision.referencedParticipants()));
+  }
+
+  private static void addProvisionalFindings(ModelWindowDecision decision, RunState run) {
+    for (WindowFinding finding : decision.provisionalFindings()) {
+      run.addFinding(
+          new QuestionFinding(
+              finding.answer(),
+              finding.confidence(),
+              finding.evidenceMessageGuids(),
+              run.coverageThrough(finding.evidenceMessageGuids()),
+              finding.referencedParticipants()));
+    }
+  }
+
+  private GroupQuestionAnswer answered(
+      Instant from,
+      Instant to,
+      RunState run,
+      ModelWindowDecision decision,
+      String modelName,
+      boolean fallbackUsed) {
+    if (!ConversationQuestionAnswerOutputValidator.isSafe(
+        decision.answer(), run.messagesByGuid.keySet(), Set.of())) {
+      return unavailable(from, to, run, "invalid_model_output");
+    }
+    return new GroupQuestionAnswer(
+        AnswerStatus.ANSWERED,
+        decision.answer(),
+        null,
+        run.hints(decision.evidenceMessageGuids(), decision.referencedParticipants()),
+        modelName,
+        fallbackUsed);
+  }
+
+  private GroupQuestionAnswer noAnswer(
+      Instant from,
+      Instant to,
+      RunState run,
+      String answer,
+      @Nullable String modelName,
+      boolean fallbackUsed) {
+    if (!ConversationQuestionAnswerOutputValidator.isSafe(
+        answer, run.messagesByGuid.keySet(), Set.of())) {
+      return unavailable(from, to, run, "invalid_model_output");
+    }
+    return new GroupQuestionAnswer(
+        AnswerStatus.NO_ANSWER, answer, null, List.of(), modelName, fallbackUsed);
+  }
+
+  private GroupQuestionAnswer clarification(
+      Instant from,
+      Instant to,
+      RunState run,
+      String clarificationQuestion,
+      @Nullable String modelName,
+      boolean fallbackUsed) {
+    if (!ConversationQuestionAnswerOutputValidator.isSafe(
+        clarificationQuestion, run.messagesByGuid.keySet(), Set.of())) {
+      return unavailable(from, to, run, "invalid_model_output");
+    }
+    return new GroupQuestionAnswer(
+        AnswerStatus.CLARIFICATION_REQUIRED,
+        null,
+        clarificationQuestion,
+        List.of(),
+        modelName,
+        fallbackUsed);
+  }
+
+  private GroupQuestionAnswer unavailable(Instant from, Instant to, RunState run, String reason) {
+    run.partialReason = StringUtils.defaultIfBlank(run.partialReason, reason);
+    return new GroupQuestionAnswer(
+        AnswerStatus.UNAVAILABLE, UNAVAILABLE_ANSWER, null, List.of(), run.model, run.fallbackUsed);
+  }
+
+  private void recordMetrics(GroupQuestionAnswer result, RunState run, Instant startedAt) {
+    boolean success = result.status() != AnswerStatus.UNAVAILABLE;
+    metrics.recordMemoryQuestionAnswer(
+        result.status().wireValue(),
+        result.model(),
+        run.messagesByGuid.size(),
+        run.pageCount,
+        run.windowCount,
+        run.modelCalls,
+        run.reductionCount,
+        success,
+        success ? null : result.status().wireValue(),
+        Duration.between(startedAt, clock.instant()));
+  }
+
+  private static HistoryWindowCursor advanceCursor(
+      HistoryWindow window, Set<HistoryWindowCursor> seenCursors) {
+    HistoryWindowCursor next = Objects.requireNonNull(window.nextCursor(), "next history cursor");
+    if (!seenCursors.add(next)) {
+      throw new IllegalStateException("history cursor did not advance");
+    }
+    return next;
+  }
+
+  private static void requireRequest(
+      String accountId,
+      AuthorizedGroup group,
+      String question,
+      @Nullable Instant from,
+      Instant to,
+      @Nullable String timezone) {
+    if (StringUtils.isBlank(accountId)) {
+      throw new IllegalArgumentException("account id must not be blank");
+    }
+    Objects.requireNonNull(group, "group");
+    if (StringUtils.isBlank(question)
+        || question.length() > ConversationQuestionAnsweringModelClient.MAX_QUESTION_LENGTH) {
+      throw new IllegalArgumentException("question is invalid");
+    }
+    if (to == null || (from != null && !from.isBefore(to))) {
+      throw new IllegalArgumentException("question range must be ordered");
+    }
+    if (StringUtils.isNotBlank(timezone)) {
+      try {
+        ZoneId.of(timezone.trim());
+      } catch (DateTimeException e) {
+        throw new IllegalArgumentException("timezone is invalid", e);
       }
     }
-    return firstReason(reasons);
-  }
-
-  private static boolean unavailableReason(@Nullable String reason) {
-    return SOURCE_UNAVAILABLE.equals(reason)
-        || MODEL_UNAVAILABLE.equals(reason)
-        || TIME_LIMIT.equals(reason);
   }
 
   private boolean deadlineReached(Instant deadline) {
     return !clock.instant().isBefore(deadline);
   }
 
-  private static void requireRequest(
-      String accountId, AuthorizedGroup group, String question, Instant from, Instant to) {
-    if (StringUtils.isBlank(accountId)) {
-      throw new IllegalArgumentException("account id must not be blank");
-    }
-    Objects.requireNonNull(group, "group");
-    if (StringUtils.isBlank(question)) {
-      throw new IllegalArgumentException("question must not be blank");
-    }
-    if (from == null || to == null || !from.isBefore(to)) {
-      throw new IllegalArgumentException("question range must be ordered");
-    }
+  private static boolean enabledGroup(ConversationRecord conversation) {
+    return conversation.group() && conversation.memoryEnabledAt() != null;
   }
 
-  private final class ModelBudget {
-    private int modelBatches;
-    private int plannerCalls;
-    private int verificationCalls;
-    private int characters;
-  }
+  private final class RunState {
+    private final LinkedHashMap<String, QuestionMessage> messagesByGuid = new LinkedHashMap<>();
+    private final List<QuestionFinding> findings = new ArrayList<>();
+    private final Set<String> findingKeys = new LinkedHashSet<>();
+    private int pageCount;
+    private int windowCount;
+    private int modelCalls;
+    private int reductionCount;
+    private int aggregateCharacters;
+    private @Nullable String model;
+    private boolean fallbackUsed;
+    private @Nullable String partialReason;
 
-  private static final class QuestionAnswerWork {
-    private final Set<String> messageGuids = new LinkedHashSet<>();
-    private long pageCount;
-
-    private void observe(RetrievalResult retrieval) {
-      retrieval.messages().stream().map(QuestionMessage::messageGuid).forEach(messageGuids::add);
-      pageCount += retrieval.pageCount();
+    private void observe(HistoryWindow window) {
+      windowCount = Math.addExact(windowCount, 1);
+      pageCount = Math.addExact(pageCount, window.pageCount());
+      if (!window.windowComplete()) {
+        partialReason = StringUtils.defaultIfBlank(partialReason, window.partialReason());
+      }
+      for (QuestionMessage message : window.messages()) {
+        QuestionMessage previous = messagesByGuid.putIfAbsent(message.messageGuid(), message);
+        if (previous != null && !previous.equals(message)) {
+          throw new IllegalStateException("history returned conflicting messages");
+        }
+      }
     }
 
-    private long messageCount() {
-      return messageGuids.size();
+    private void observe(RoutedWindowDecision routed) {
+      model = routed.model();
+      fallbackUsed |= routed.fallbackUsed();
     }
 
-    private Set<String> messageGuids() {
-      return Set.copyOf(messageGuids);
-    }
-  }
-
-  private record Batch(List<QuestionMessage> messages, int characters, int nextIndex) {}
-
-  private record SupportedFinding(QuestionFinding finding, RoutedModelAnswer routed) {}
-
-  private record VerificationOutcome(
-      @Nullable RoutedModelAnswer routed, @Nullable String failureReason) {
-    private static VerificationOutcome success(RoutedModelAnswer routed) {
-      return new VerificationOutcome(routed, null);
+    private void observe(RoutedFindingReduction routed) {
+      reductionCount = Math.addExact(reductionCount, 1);
+      model = routed.model();
+      fallbackUsed |= routed.fallbackUsed();
     }
 
-    private static VerificationOutcome failure(String reason) {
-      return new VerificationOutcome(null, reason);
-    }
-  }
-
-  private record Synthesis(
-      @Nullable RoutedModelAnswer routed,
-      Instant coverageThrough,
-      @Nullable String partialReason,
-      boolean unavailable) {
-    private static Synthesis unavailable(Instant coverageThrough, String reason) {
-      return new Synthesis(null, coverageThrough, reason, true);
+    private boolean reserveModelCall(int characters) {
+      if (characters < 1
+          || characters > maxBatchCharacters
+          || modelCalls >= maxModelBatches
+          || aggregateCharacters > maxAggregateCharacters - characters) {
+        return false;
+      }
+      modelCalls++;
+      aggregateCharacters += characters;
+      return true;
     }
 
-    private boolean supported() {
-      return routed != null && routed.answer().status() == AnswerStatus.ANSWERED;
+    private void addFinding(QuestionFinding finding) {
+      String key =
+          finding.answer() + '\u0000' + String.join("\u0000", finding.evidenceMessageGuids());
+      if (findingKeys.add(key)) {
+        findings.add(finding);
+      }
+    }
+
+    private Instant coverageThrough(List<String> evidenceGuids) {
+      return java.util.stream.Stream.concat(
+              evidenceGuids.stream().map(messagesByGuid::get).filter(Objects::nonNull),
+              evidenceGuids.isEmpty()
+                  ? messagesByGuid.values().stream()
+                  : java.util.stream.Stream.empty())
+          .map(QuestionMessage::timestamp)
+          .max(Comparator.naturalOrder())
+          .orElseThrow(() -> new IllegalStateException("finding has no submitted messages"));
+    }
+
+    private List<ParticipantHint> hints(
+        List<String> evidenceGuids, List<String> referencedParticipants) {
+      Set<String> labels = new LinkedHashSet<>(referencedParticipants);
+      LinkedHashMap<String, ParticipantHint> hints = new LinkedHashMap<>();
+      for (String guid : evidenceGuids) {
+        QuestionMessage message = messagesByGuid.get(guid);
+        if (message == null || !labels.contains(message.participant())) {
+          continue;
+        }
+        ParticipantHint hint = message.participantHint();
+        if (hint != null && hint.label().equals(message.participant())) {
+          hints.putIfAbsent(hint.normalizedIdentity(), hint);
+        }
+      }
+      return List.copyOf(hints.values());
     }
   }
 }

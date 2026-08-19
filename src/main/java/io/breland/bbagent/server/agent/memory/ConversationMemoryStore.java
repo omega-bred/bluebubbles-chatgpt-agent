@@ -446,6 +446,74 @@ public class ConversationMemoryStore {
   }
 
   @Transactional(readOnly = true)
+  public List<JournalMessage> findMessagePageDescending(
+      String conversationId,
+      Instant fromInclusive,
+      Instant toExclusive,
+      @Nullable Instant beforeTimestamp,
+      @Nullable String beforeMessageGuid,
+      int limit,
+      Duration remaining) {
+    requireText(conversationId, "conversation id");
+    if (fromInclusive == null || toExclusive == null || !fromInclusive.isBefore(toExclusive)) {
+      throw new IllegalArgumentException("journal page range is invalid");
+    }
+    String normalizedBeforeGuid = StringUtils.trimToNull(beforeMessageGuid);
+    if ((beforeTimestamp == null) != (normalizedBeforeGuid == null)) {
+      throw new IllegalArgumentException("journal page cursor is incomplete");
+    }
+    if (beforeTimestamp != null
+        && (beforeTimestamp.isBefore(fromInclusive) || !beforeTimestamp.isBefore(toExclusive))) {
+      throw new IllegalArgumentException("journal page cursor is outside the requested range");
+    }
+    if (limit < 1 || limit > MAX_JOURNAL_PAGE_SIZE) {
+      throw new IllegalArgumentException("journal page limit must be between 1 and 500");
+    }
+    if (remaining == null || remaining.isZero() || remaining.isNegative()) {
+      throw new IllegalArgumentException("journal page remaining time must be positive");
+    }
+
+    if (beforeTimestamp == null) {
+      return jdbcTemplate.query(
+          """
+          select message_guid, conversation_id, sender_account_id, message_text, source_timestamp,
+                 from_agent, system_message, content_hash
+            from agent_conversation_messages
+           where conversation_id = ? and source_timestamp >= ? and source_timestamp < ?
+             and removed = false
+           order by source_timestamp desc, message_guid desc
+           limit ?
+          """,
+          remaining,
+          JOURNAL_MESSAGE_ROW_MAPPER,
+          conversationId,
+          fromInclusive,
+          toExclusive,
+          limit);
+    }
+    return jdbcTemplate.query(
+        """
+        select message_guid, conversation_id, sender_account_id, message_text, source_timestamp,
+               from_agent, system_message, content_hash
+          from agent_conversation_messages
+         where conversation_id = ? and source_timestamp >= ? and source_timestamp < ?
+           and (source_timestamp < ? or (source_timestamp = ? and message_guid < ?))
+           and removed = false
+         order by source_timestamp desc, message_guid desc
+         limit ?
+        """,
+        remaining,
+        JOURNAL_MESSAGE_ROW_MAPPER,
+        conversationId,
+        fromInclusive,
+        toExclusive,
+        beforeTimestamp,
+        beforeTimestamp,
+        normalizedBeforeGuid,
+        limit);
+  }
+
+  @Transactional(readOnly = true)
   public List<String> activeMembershipAccountIds(String conversationId, Instant at) {
     return jdbcTemplate.query(
         """

@@ -2,8 +2,10 @@ package io.breland.bbagent.server.agent.memory;
 
 import io.breland.bbagent.server.agent.memory.ConversationMemoryModels.ConversationRecord;
 import java.time.Instant;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.Objects;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.lang.Nullable;
 
@@ -12,7 +14,8 @@ public final class ConversationQuestionAnsweringModels {
 
   public enum AnswerStatus {
     ANSWERED,
-    INSUFFICIENT_EVIDENCE,
+    CLARIFICATION_REQUIRED,
+    NO_ANSWER,
     UNAVAILABLE;
 
     public String wireValue() {
@@ -30,38 +33,181 @@ public final class ConversationQuestionAnsweringModels {
     }
   }
 
-  public enum RetrievalMode {
-    EXACT_SEARCH,
-    CHRONOLOGICAL,
-    HYBRID;
+  public enum WindowAction {
+    ANSWERED,
+    NEED_OLDER_MESSAGES,
+    NEED_TIME_CLARIFICATION,
+    NO_ANSWER
+  }
 
-    public String wireValue() {
-      return name().toLowerCase(Locale.ROOT);
+  enum HistorySource {
+    BLUEBUBBLES,
+    JOURNAL
+  }
+
+  record HistoryWindowCursor(
+      HistorySource source,
+      int membershipIndex,
+      int rawOffset,
+      @Nullable Instant journalBeforeTimestamp,
+      @Nullable String journalBeforeGuid) {
+    HistoryWindowCursor {
+      Objects.requireNonNull(source, "history source");
+      if (membershipIndex < 0 || rawOffset < 0) {
+        throw new IllegalArgumentException("history cursor values must not be negative");
+      }
+      journalBeforeGuid = StringUtils.trimToNull(journalBeforeGuid);
+      if ((journalBeforeTimestamp == null) != (journalBeforeGuid == null)) {
+        throw new IllegalArgumentException("journal cursor must be complete");
+      }
+      if (source == HistorySource.JOURNAL && rawOffset != 0) {
+        throw new IllegalArgumentException("journal cursor must not contain a raw offset");
+      }
     }
   }
 
-  public enum CoverageStatus {
-    COMPLETE,
-    PARTIAL;
-
-    public String wireValue() {
-      return name().toLowerCase(Locale.ROOT);
+  record HistoryWindow(
+      List<QuestionMessage> messages,
+      @Nullable HistoryWindowCursor nextCursor,
+      boolean sourceExhausted,
+      boolean windowComplete,
+      @Nullable String partialReason,
+      int pageCount) {
+    HistoryWindow {
+      messages = List.copyOf(messages);
+      partialReason = StringUtils.trimToNull(partialReason);
+      if (pageCount < 0) {
+        throw new IllegalArgumentException("history window page count must not be negative");
+      }
+      if (windowComplete == (partialReason != null)) {
+        throw new IllegalArgumentException("history window completion state is inconsistent");
+      }
+      if ((sourceExhausted && nextCursor != null) || (!sourceExhausted && nextCursor == null)) {
+        throw new IllegalArgumentException("history window cursor state is inconsistent");
+      }
     }
   }
 
-  public record SearchPlan(
-      List<String> terms,
-      @Nullable String senderHint,
-      @Nullable Instant fromHint,
-      @Nullable Instant toHint) {
-    public SearchPlan {
-      terms = List.copyOf(terms);
-      senderHint = StringUtils.trimToNull(senderHint);
+  public record WindowFinding(
+      String answer,
+      Confidence confidence,
+      List<String> evidenceMessageGuids,
+      List<String> referencedParticipants) {
+    public WindowFinding {
+      requireNotBlank(answer, "finding answer");
+      Objects.requireNonNull(confidence, "finding confidence");
+      evidenceMessageGuids = List.copyOf(evidenceMessageGuids);
+      referencedParticipants = List.copyOf(referencedParticipants);
+      if (evidenceMessageGuids.isEmpty() && !referencedParticipants.isEmpty()) {
+        throw new IllegalArgumentException("uncited finding must not reference participants");
+      }
+    }
+  }
+
+  public record ModelWindowDecision(
+      WindowAction action,
+      @Nullable String answer,
+      @Nullable String clarificationQuestion,
+      Confidence confidence,
+      List<String> evidenceMessageGuids,
+      List<WindowFinding> provisionalFindings,
+      List<String> referencedParticipants) {
+    public ModelWindowDecision {
+      Objects.requireNonNull(action, "window action");
+      answer = StringUtils.trimToNull(answer);
+      clarificationQuestion = StringUtils.trimToNull(clarificationQuestion);
+      Objects.requireNonNull(confidence, "window confidence");
+      evidenceMessageGuids = List.copyOf(evidenceMessageGuids);
+      provisionalFindings = List.copyOf(provisionalFindings);
+      referencedParticipants = List.copyOf(referencedParticipants);
+      switch (action) {
+        case ANSWERED -> {
+          if (answer == null
+              || clarificationQuestion != null
+              || !provisionalFindings.isEmpty()
+              || (evidenceMessageGuids.isEmpty() && !referencedParticipants.isEmpty())) {
+            throw new IllegalArgumentException("answered window decision has invalid shape");
+          }
+        }
+        case NEED_OLDER_MESSAGES -> {
+          if (answer != null
+              || clarificationQuestion != null
+              || !evidenceMessageGuids.isEmpty()
+              || !referencedParticipants.isEmpty()) {
+            throw new IllegalArgumentException("older-window decision has invalid shape");
+          }
+        }
+        case NEED_TIME_CLARIFICATION -> {
+          if (answer != null
+              || clarificationQuestion == null
+              || !evidenceMessageGuids.isEmpty()
+              || !provisionalFindings.isEmpty()
+              || !referencedParticipants.isEmpty()) {
+            throw new IllegalArgumentException("clarification decision has invalid shape");
+          }
+        }
+        case NO_ANSWER -> {
+          if (answer == null
+              || clarificationQuestion != null
+              || !evidenceMessageGuids.isEmpty()
+              || !provisionalFindings.isEmpty()
+              || !referencedParticipants.isEmpty()) {
+            throw new IllegalArgumentException("no-answer decision has invalid shape");
+          }
+        }
+      }
+    }
+  }
+
+  public record RoutedWindowDecision(
+      ModelWindowDecision decision, String model, boolean fallbackUsed) {
+    public RoutedWindowDecision {
+      Objects.requireNonNull(decision, "window decision");
+      requireNotBlank(model, "window decision model");
+    }
+  }
+
+  public record RoutedFindingReduction(
+      ModelWindowDecision decision,
+      List<QuestionFinding> citedFindings,
+      String model,
+      boolean fallbackUsed) {
+    public RoutedFindingReduction {
+      Objects.requireNonNull(decision, "finding reduction decision");
+      citedFindings = List.copyOf(citedFindings);
+      requireNotBlank(model, "finding reduction model");
+    }
+  }
+
+  public record ParticipantHint(String label, String normalizedIdentity) {
+    public ParticipantHint {
+      requireNotBlank(label, "participant hint label");
+      requireNotBlank(normalizedIdentity, "participant hint identity");
+      if (normalizedIdentity.length() > 512) {
+        throw new IllegalArgumentException("participant hint identity is too long");
+      }
+    }
+  }
+
+  public record ParticipantDescriptor(String label, @Nullable ParticipantHint hint) {
+    public ParticipantDescriptor {
+      requireNotBlank(label, "participant label");
+      if (hint != null && !label.equals(hint.label())) {
+        throw new IllegalArgumentException("participant hint label does not match");
+      }
     }
   }
 
   public record QuestionMessage(
-      String messageGuid, String participant, Instant timestamp, String text) {
+      String messageGuid,
+      String participant,
+      Instant timestamp,
+      String text,
+      @Nullable ParticipantHint participantHint) {
+    public QuestionMessage(String messageGuid, String participant, Instant timestamp, String text) {
+      this(messageGuid, participant, timestamp, text, null);
+    }
+
     public QuestionMessage {
       requireNotBlank(messageGuid, "message guid");
       requireNotBlank(participant, "participant");
@@ -108,7 +254,7 @@ public final class ConversationQuestionAnsweringModels {
           from,
           to,
           deadline,
-          new ConversationHistoryMessageMapper.MappingSession());
+          new ConversationHistoryMessageMapper.MappingSession(deadline));
     }
 
     public RetrievalRequest {
@@ -129,104 +275,25 @@ public final class ConversationQuestionAnsweringModels {
     }
   }
 
-  public record RetrievalResult(
-      List<QuestionMessage> messages,
-      RetrievalMode mode,
-      CoverageStatus coverageStatus,
-      Instant coverageThrough,
-      @Nullable String partialReason,
-      int pageCount) {
-    public RetrievalResult {
-      messages = List.copyOf(messages);
-      if (mode == null) {
-        throw new IllegalArgumentException("retrieval mode must not be null");
-      }
-      if (coverageStatus == null) {
-        throw new IllegalArgumentException("coverage status must not be null");
-      }
-      if (coverageThrough == null) {
-        throw new IllegalArgumentException("coverage through must not be null");
-      }
-      partialReason = StringUtils.trimToNull(partialReason);
-      if (coverageStatus == CoverageStatus.COMPLETE && partialReason != null) {
-        throw new IllegalArgumentException("complete retrieval must not have a partial reason");
-      }
-      if (coverageStatus == CoverageStatus.PARTIAL && partialReason == null) {
-        throw new IllegalArgumentException("partial retrieval must have a reason");
-      }
-      if (pageCount < 0) {
-        throw new IllegalArgumentException("page count must not be negative");
-      }
-    }
-  }
-
-  public record ModelAnswer(
-      AnswerStatus status,
-      String answer,
-      Confidence confidence,
-      List<String> evidenceMessageGuids,
-      boolean needsMoreContext) {
-    public ModelAnswer {
-      if (status == null) {
-        throw new IllegalArgumentException("answer status must not be null");
-      }
-      requireNotBlank(answer, "answer");
-      if (confidence == null) {
-        throw new IllegalArgumentException("confidence must not be null");
-      }
-      evidenceMessageGuids = List.copyOf(evidenceMessageGuids);
-    }
-  }
-
-  public record RoutedModelAnswer(ModelAnswer answer, String model, boolean fallbackUsed) {
-    public RoutedModelAnswer {
-      if (answer == null) {
-        throw new IllegalArgumentException("answer must not be null");
-      }
-      requireNotBlank(model, "model");
-    }
-
-    public RoutedModelAnswer(ModelAnswer answer, String model) {
-      this(answer, model, false);
-    }
-  }
-
-  public record RoutedReductionAnswer(
-      RoutedModelAnswer routed, List<QuestionFinding> citedFindings) {
-    public RoutedReductionAnswer {
-      if (routed == null) {
-        throw new IllegalArgumentException("routed reduction answer must not be null");
-      }
-      citedFindings = List.copyOf(citedFindings);
-    }
-  }
-
-  public record RoutedSupportVerification(boolean supported, String model, boolean fallbackUsed) {
-    public RoutedSupportVerification {
-      requireNotBlank(model, "verification model");
-    }
-  }
-
   public record GroupQuestionAnswer(
       AnswerStatus status,
-      String answer,
-      Confidence confidence,
+      @Nullable String answer,
+      @Nullable String clarificationQuestion,
+      List<ParticipantHint> unresolvedParticipants,
       @Nullable String model,
-      boolean fallbackUsed,
-      int evidenceMessageCount,
-      RetrievalMode retrievalMode,
-      CoverageStatus coverageStatus,
-      Instant from,
-      Instant to,
-      Instant coverageThrough,
-      @Nullable String partialReason) {
+      boolean fallbackUsed) {
     public GroupQuestionAnswer {
       if (status == null) {
         throw new IllegalArgumentException("answer status must not be null");
       }
-      requireNotBlank(answer, "answer");
-      if (confidence == null) {
-        throw new IllegalArgumentException("confidence must not be null");
+      answer = StringUtils.trimToNull(answer);
+      clarificationQuestion = StringUtils.trimToNull(clarificationQuestion);
+      if (status == AnswerStatus.CLARIFICATION_REQUIRED) {
+        if (answer != null || clarificationQuestion == null) {
+          throw new IllegalArgumentException("clarification result has invalid shape");
+        }
+      } else if (answer == null || clarificationQuestion != null) {
+        throw new IllegalArgumentException("answer result has invalid shape");
       }
       model = StringUtils.trimToNull(model);
       if (status == AnswerStatus.ANSWERED && model == null) {
@@ -235,31 +302,11 @@ public final class ConversationQuestionAnsweringModels {
       if (fallbackUsed && model == null) {
         throw new IllegalArgumentException("fallback use requires a model");
       }
-      if (evidenceMessageCount < 0) {
-        throw new IllegalArgumentException("evidence message count must not be negative");
+      LinkedHashMap<String, ParticipantHint> hints = new LinkedHashMap<>();
+      for (ParticipantHint hint : unresolvedParticipants) {
+        hints.putIfAbsent(hint.normalizedIdentity(), hint);
       }
-      if (status == AnswerStatus.ANSWERED && evidenceMessageCount == 0) {
-        throw new IllegalArgumentException("answered result must have evidence");
-      }
-      if (retrievalMode == null) {
-        throw new IllegalArgumentException("retrieval mode must not be null");
-      }
-      if (coverageStatus == null) {
-        throw new IllegalArgumentException("coverage status must not be null");
-      }
-      if (from == null || to == null || !from.isBefore(to)) {
-        throw new IllegalArgumentException("answer range must be ordered");
-      }
-      if (coverageThrough == null) {
-        throw new IllegalArgumentException("coverage through must not be null");
-      }
-      partialReason = StringUtils.trimToNull(partialReason);
-      if (coverageStatus == CoverageStatus.COMPLETE && partialReason != null) {
-        throw new IllegalArgumentException("complete answer must not have a partial reason");
-      }
-      if (coverageStatus == CoverageStatus.PARTIAL && partialReason == null) {
-        throw new IllegalArgumentException("partial answer must have a reason");
-      }
+      unresolvedParticipants = List.copyOf(hints.values());
     }
   }
 
@@ -268,12 +315,22 @@ public final class ConversationQuestionAnsweringModels {
     private final Confidence confidence;
     private final List<String> evidenceMessageGuids;
     private final Instant coverageThrough;
+    private final List<String> referencedParticipants;
 
     public QuestionFinding(
         String answer,
         Confidence confidence,
         List<String> evidenceMessageGuids,
         Instant coverageThrough) {
+      this(answer, confidence, evidenceMessageGuids, coverageThrough, List.of());
+    }
+
+    public QuestionFinding(
+        String answer,
+        Confidence confidence,
+        List<String> evidenceMessageGuids,
+        Instant coverageThrough,
+        List<String> referencedParticipants) {
       requireNotBlank(answer, "answer");
       if (confidence == null) {
         throw new IllegalArgumentException("confidence must not be null");
@@ -285,6 +342,7 @@ public final class ConversationQuestionAnsweringModels {
       this.confidence = confidence;
       this.evidenceMessageGuids = List.copyOf(evidenceMessageGuids);
       this.coverageThrough = coverageThrough;
+      this.referencedParticipants = List.copyOf(referencedParticipants);
     }
 
     public String answer() {
@@ -301,6 +359,10 @@ public final class ConversationQuestionAnsweringModels {
 
     public Instant coverageThrough() {
       return coverageThrough;
+    }
+
+    public List<String> referencedParticipants() {
+      return referencedParticipants;
     }
   }
 
