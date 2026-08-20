@@ -33,12 +33,6 @@ public final class ConversationMemoryModels {
     DELETE
   }
 
-  public enum ProjectionState {
-    PENDING,
-    SUCCEEDED,
-    FAILED
-  }
-
   public record JournalMessage(
       String messageGuid,
       String conversationId,

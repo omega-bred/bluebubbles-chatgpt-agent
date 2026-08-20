@@ -26,11 +26,7 @@ public final class ConversationQuestionAnsweringModels {
   public enum Confidence {
     HIGH,
     MEDIUM,
-    LOW;
-
-    public String wireValue() {
-      return name().toLowerCase(Locale.ROOT);
-    }
+    LOW
   }
 
   public enum WindowAction {
