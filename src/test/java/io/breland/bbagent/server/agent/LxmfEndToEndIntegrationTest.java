@@ -293,6 +293,11 @@ class LxmfEndToEndIntegrationTest {
               null,
               null,
               null,
+              null,
+              null,
+              null,
+              null,
+              null,
               new ModelPicker());
     }
 
