@@ -810,6 +810,9 @@ class BBMessageAgentTest {
             null,
             operationalMetricsService,
             null,
+            null,
+            null,
+            null,
             new ModelPicker());
     IncomingMessage incoming =
         incomingMessage("iMessage;+;chat-llm-metric", "msg-llm-metric", "hello", 1_000L);
@@ -1029,6 +1032,11 @@ class BBMessageAgentTest {
             null,
             null,
             null,
+            null,
+            null,
+            null,
+            null,
+            null,
             new ModelPicker());
     String chatGuid = "iMessage;+;chat-cadence-coalesce";
 
@@ -1225,6 +1233,11 @@ class BBMessageAgentTest {
             null,
             null,
             null,
+            null,
+            null,
+            null,
+            null,
+            null,
             new ModelPicker());
 
     IncomingMessage incoming =
@@ -1298,6 +1311,11 @@ class BBMessageAgentTest {
             null,
             null,
             null,
+            null,
+            null,
+            null,
+            null,
+            null,
             new ModelPicker());
 
     IncomingMessage incoming =
@@ -1338,6 +1356,11 @@ class BBMessageAgentTest {
             null,
             null,
             null,
+            null,
+            null,
+            null,
+            null,
+            null,
             new ModelPicker());
 
     IncomingMessage incoming =
@@ -1374,6 +1397,11 @@ class BBMessageAgentTest {
             null,
             Mockito.mock(CadenceWorkflowLauncher.class),
             metricsService,
+            null,
+            null,
+            null,
+            null,
+            null,
             null,
             null,
             new ModelPicker());
@@ -1581,6 +1609,11 @@ class BBMessageAgentTest {
         null,
         null,
         null,
+        null,
+        null,
+        null,
+        null,
+        null,
         new ModelPicker());
   }
 
@@ -1615,6 +1648,11 @@ class BBMessageAgentTest {
         null,
         null,
         null,
+        null,
+        null,
+        null,
+        null,
+        null,
         new ModelPicker());
   }
 
@@ -1640,6 +1678,9 @@ class BBMessageAgentTest {
         messageResponseRateLimitService,
         null,
         null,
+        null,
+        null,
+        null,
         new ModelPicker());
   }
 
@@ -1657,6 +1698,11 @@ class BBMessageAgentTest {
         null,
         null,
         Mockito.mock(CadenceWorkflowLauncher.class),
+        null,
+        null,
+        null,
+        null,
+        null,
         null,
         null,
         null,
