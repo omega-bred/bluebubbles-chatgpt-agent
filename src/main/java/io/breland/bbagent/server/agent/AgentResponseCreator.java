@@ -18,14 +18,14 @@ import org.springframework.stereotype.Component;
 
 @Slf4j
 @Component
-final class AgentResponseCreator {
+public final class AgentResponseCreator {
   private final ModelPicker modelPicker;
   private final AgentToolRegistry toolRegistry;
   private final LlmProvider llmProvider;
   private final OperationalMetricsService operationalMetricsService;
   private final AgentProfileService profileService;
 
-  AgentResponseCreator(
+  public AgentResponseCreator(
       ModelPicker modelPicker,
       AgentToolRegistry toolRegistry,
       LlmProvider llmProvider,
@@ -39,7 +39,7 @@ final class AgentResponseCreator {
   }
 
   @Nullable
-  Response createResponse(
+  public Response createResponse(
       List<ResponseInputItem> inputItems,
       IncomingMessage message,
       AgentWorkflowContext workflowContext) {

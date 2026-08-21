@@ -9,8 +9,10 @@ import java.util.Base64;
 import java.util.List;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
+import org.springframework.stereotype.Component;
 
 @Slf4j
+@Component
 final class GeneratedImageExtractor {
 
   List<GeneratedImage> extract(Response response) {

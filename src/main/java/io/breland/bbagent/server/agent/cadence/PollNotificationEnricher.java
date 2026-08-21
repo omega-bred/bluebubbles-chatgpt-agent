@@ -4,15 +4,15 @@ import com.fasterxml.jackson.databind.JsonNode;
 import io.breland.bbagent.server.agent.IncomingMessage;
 import io.breland.bbagent.server.agent.transport.bb.BBHttpClientWrapper;
 import io.breland.bbagent.server.agent.transport.bb.BlueBubblesPollSupport;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.stereotype.Component;
 
 @Slf4j
-final class PollNotificationEnricher {
+@Component
+@RequiredArgsConstructor
+public final class PollNotificationEnricher {
   private final BBHttpClientWrapper bbHttpClientWrapper;
-
-  PollNotificationEnricher(BBHttpClientWrapper bbHttpClientWrapper) {
-    this.bbHttpClientWrapper = bbHttpClientWrapper;
-  }
 
   IncomingMessage enrich(IncomingMessage message) {
     if (message == null

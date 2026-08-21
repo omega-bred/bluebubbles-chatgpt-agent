@@ -5,9 +5,9 @@ import static org.mockito.Mockito.when;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.breland.bbagent.generated.model.WebsiteModelAccessSummary;
-import io.breland.bbagent.server.agent.BBMessageAgent;
 import io.breland.bbagent.server.agent.IncomingMessage;
 import io.breland.bbagent.server.agent.tools.ToolContext;
+import io.breland.bbagent.server.agent.tools.ToolContextFixture;
 import io.breland.bbagent.server.website.WebsiteAccountService;
 import java.time.Instant;
 import java.util.List;
@@ -22,9 +22,7 @@ class GetWebsiteAccountLinkStatusAgentToolTest {
     IncomingMessage message = message();
     when(service.getLinkStatus(message)).thenReturn(status("account-1"));
     GetWebsiteAccountLinkStatusAgentTool tool = new GetWebsiteAccountLinkStatusAgentTool(service);
-    BBMessageAgent agent = Mockito.mock(BBMessageAgent.class);
-    when(agent.getObjectMapper()).thenReturn(new ObjectMapper());
-    ToolContext context = new ToolContext(agent, message, null);
+    ToolContext context = ToolContextFixture.with(message).build();
 
     String output = tool.getTool().handler().apply(context, new ObjectMapper().createObjectNode());
 
@@ -43,9 +41,7 @@ class GetWebsiteAccountLinkStatusAgentToolTest {
     IncomingMessage message = lxmfMessage();
     when(service.getLinkStatus(message)).thenReturn(status("account-lxmf"));
     GetWebsiteAccountLinkStatusAgentTool tool = new GetWebsiteAccountLinkStatusAgentTool(service);
-    BBMessageAgent agent = Mockito.mock(BBMessageAgent.class);
-    when(agent.getObjectMapper()).thenReturn(new ObjectMapper());
-    ToolContext context = new ToolContext(agent, message, null);
+    ToolContext context = ToolContextFixture.with(message).build();
 
     String output = tool.getTool().handler().apply(context, new ObjectMapper().createObjectNode());
 
@@ -60,10 +56,8 @@ class GetWebsiteAccountLinkStatusAgentToolTest {
     when(service.getLinkStatus("lxmf", "ccdd", "lxmf:aabb"))
         .thenReturn(status("account-lxmf-ccdd"));
     GetWebsiteAccountLinkStatusAgentTool tool = new GetWebsiteAccountLinkStatusAgentTool(service);
-    BBMessageAgent agent = Mockito.mock(BBMessageAgent.class);
     ObjectMapper mapper = new ObjectMapper();
-    when(agent.getObjectMapper()).thenReturn(mapper);
-    ToolContext context = new ToolContext(agent, lxmfMessage(), null);
+    ToolContext context = ToolContextFixture.with(lxmfMessage()).objectMapper(mapper).build();
     var args = mapper.createObjectNode().put("sender", "ccdd");
 
     String output = tool.getTool().handler().apply(context, args);

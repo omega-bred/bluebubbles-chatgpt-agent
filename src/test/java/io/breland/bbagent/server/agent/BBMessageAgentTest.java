@@ -51,6 +51,7 @@ import io.breland.bbagent.server.agent.profile.AssistantResponsiveness;
 import io.breland.bbagent.server.agent.reactions.MessageReactionSupport;
 import io.breland.bbagent.server.agent.tools.AgentTool;
 import io.breland.bbagent.server.agent.tools.ToolContext;
+import io.breland.bbagent.server.agent.tools.ToolContextFixture;
 import io.breland.bbagent.server.agent.tools.assistant.AssistantNameAgentTool;
 import io.breland.bbagent.server.agent.tools.bb.RenameConversationAgentTool;
 import io.breland.bbagent.server.agent.tools.search.ToolSearchAgentTool;
@@ -1351,11 +1352,10 @@ class BBMessageAgentTest {
             List.of(),
             false);
 
-    BBMessageAgent bbMessageAgent = Mockito.mock(BBMessageAgent.class);
-    when(bbMessageAgent.getObjectMapper())
-        .thenReturn(new com.fasterxml.jackson.databind.ObjectMapper());
-    when(bbMessageAgent.canSendResponses(any())).thenReturn(true);
-    ToolContext context = new ToolContext(bbMessageAgent, groupMessage, null);
+    AgentOutboundService outboundService = Mockito.mock(AgentOutboundService.class);
+    when(outboundService.canSendResponses(any())).thenReturn(true);
+    ToolContext context =
+        ToolContextFixture.with(groupMessage).outboundService(outboundService).build();
     com.fasterxml.jackson.databind.node.ObjectNode args =
         new com.fasterxml.jackson.databind.ObjectMapper().createObjectNode();
     args.put("name", "New Group Name");
@@ -1388,7 +1388,7 @@ class BBMessageAgentTest {
             List.of(),
             false);
 
-    ToolContext context = new ToolContext(Mockito.mock(BBMessageAgent.class), directMessage, null);
+    ToolContext context = ToolContextFixture.with(directMessage).build();
     com.fasterxml.jackson.databind.node.ObjectNode args =
         new com.fasterxml.jackson.databind.ObjectMapper().createObjectNode();
     args.put("name", "Should Not Rename");

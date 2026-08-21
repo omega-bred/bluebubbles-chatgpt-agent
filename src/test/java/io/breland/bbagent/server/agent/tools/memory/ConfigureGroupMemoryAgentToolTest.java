@@ -12,6 +12,7 @@ import io.breland.bbagent.server.agent.memory.ConversationMemorySettingsService.
 import io.breland.bbagent.server.agent.memory.ConversationMemorySettingsService.GroupMemoryUpdateResult;
 import io.breland.bbagent.server.agent.profile.AgentProfile;
 import io.breland.bbagent.server.agent.tools.ToolContext;
+import io.breland.bbagent.server.agent.tools.ToolContextFixture;
 import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
@@ -33,11 +34,10 @@ class ConfigureGroupMemoryAgentToolTest {
                 "Group memory enabled.",
                 new GroupMemorySetting(
                     true, true, "Memory", "Prospective group memory", Instant.now())));
-    BBMessageAgent agent = Mockito.mock(BBMessageAgent.class);
-    when(agent.getObjectMapper()).thenReturn(mapper);
     AgentProfile profile = Mockito.mock(AgentProfile.class);
     when(profile.resolveOrCreateAccountId(message)).thenReturn(Optional.of("account-1"));
-    ToolContext context = new ToolContext(agent, profile, message, null);
+    ToolContext context =
+        ToolContextFixture.with(message).objectMapper(mapper).profile(profile).build();
     var tool = new ConfigureGroupMemoryAgentTool(settingsService).getTool();
 
     String output = tool.handler().apply(context, mapper.readTree("{\"enabled\":true}"));
@@ -67,14 +67,13 @@ class ConfigureGroupMemoryAgentToolTest {
             Instant.now(),
             List.of(),
             false);
-    BBMessageAgent agent = Mockito.mock(BBMessageAgent.class);
-    when(agent.getObjectMapper()).thenReturn(mapper);
-
     String output =
         new ConfigureGroupMemoryAgentTool(settingsService)
             .getTool()
             .handler()
-            .apply(new ToolContext(agent, direct, null), mapper.readTree("{\"enabled\":true}"));
+            .apply(
+                ToolContextFixture.with(direct).objectMapper(mapper).build(),
+                mapper.readTree("{\"enabled\":true}"));
 
     assertThat(output).containsIgnoringCase("group");
     Mockito.verifyNoInteractions(settingsService);

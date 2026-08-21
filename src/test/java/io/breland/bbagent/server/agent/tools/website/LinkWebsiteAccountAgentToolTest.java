@@ -4,9 +4,9 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.when;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import io.breland.bbagent.server.agent.BBMessageAgent;
 import io.breland.bbagent.server.agent.IncomingMessage;
 import io.breland.bbagent.server.agent.tools.ToolContext;
+import io.breland.bbagent.server.agent.tools.ToolContextFixture;
 import io.breland.bbagent.server.website.WebsiteAccountService;
 import java.time.Instant;
 import java.util.List;
@@ -27,9 +27,7 @@ class LinkWebsiteAccountAgentToolTest {
                 WebsiteAccountService.LINK_PURPOSE_ACCOUNT_LINK,
                 null));
     LinkWebsiteAccountAgentTool tool = new LinkWebsiteAccountAgentTool(service);
-    BBMessageAgent agent = Mockito.mock(BBMessageAgent.class);
-    when(agent.getObjectMapper()).thenReturn(new ObjectMapper());
-    ToolContext context = new ToolContext(agent, message(), null);
+    ToolContext context = ToolContextFixture.with(message()).build();
 
     String output = tool.getTool().handler().apply(context, new ObjectMapper().createObjectNode());
 

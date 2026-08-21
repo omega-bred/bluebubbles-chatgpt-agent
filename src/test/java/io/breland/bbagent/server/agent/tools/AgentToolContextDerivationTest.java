@@ -10,6 +10,7 @@ import static org.mockito.Mockito.when;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.breland.bbagent.server.agent.AgentOutboundService;
 import io.breland.bbagent.server.agent.AgentWorkflowContext;
 import io.breland.bbagent.server.agent.BBMessageAgent;
 import io.breland.bbagent.server.agent.IncomingMessage;
@@ -65,11 +66,10 @@ class AgentToolContextDerivationTest {
 
   @Test
   void sendReactionDefaultsToCurrentMessageAndChatContext() throws Exception {
-    BBMessageAgent agent = Mockito.mock(BBMessageAgent.class);
+    AgentOutboundService outboundService = Mockito.mock(AgentOutboundService.class);
     IncomingMessage message = message("iMessage;+;chat-1", "message-1");
-    when(agent.getObjectMapper()).thenReturn(mapper);
-    when(agent.canSendResponses(Mockito.<AgentWorkflowContext>isNull())).thenReturn(true);
-    when(agent.sendReactionFromTool(
+    when(outboundService.canSendResponses(Mockito.<AgentWorkflowContext>isNull())).thenReturn(true);
+    when(outboundService.sendReactionFromTool(
             eq(message),
             eq("iMessage;+;chat-1"),
             eq("message-1"),
@@ -77,13 +77,17 @@ class AgentToolContextDerivationTest {
             Mockito.<Integer>isNull(),
             Mockito.<AgentWorkflowContext>isNull()))
         .thenReturn(true);
-    ToolContext context = new ToolContext(agent, message, null);
+    ToolContext context =
+        ToolContextFixture.with(message)
+            .outboundService(outboundService)
+            .objectMapper(mapper)
+            .build();
     JsonNode args = mapper.readTree("{\"reaction\":\"love\"}");
 
     String output = new SendReactionAgentTool().getTool().handler().apply(context, args);
 
     assertEquals("sent", output);
-    verify(agent)
+    verify(outboundService)
         .sendReactionFromTool(
             eq(message),
             eq("iMessage;+;chat-1"),
@@ -97,11 +101,16 @@ class AgentToolContextDerivationTest {
   void canonicalAccountIdDoesNotFallBackToTheRawSender() {
     IncomingMessage message = message("iMessage;-;+15555550123", "message-1");
 
-    assertThat(new ToolContext(agentWithMapper(), message, null).canonicalAccountId()).isEmpty();
+    assertThat(context(message).canonicalAccountId()).isEmpty();
 
     AgentProfile profile = Mockito.mock(AgentProfile.class);
     when(profile.resolveCanonicalAccountId(message)).thenReturn(Optional.of("account-1"));
-    assertThat(new ToolContext(agentWithMapper(), profile, message, null).canonicalAccountId())
+    assertThat(
+            ToolContextFixture.with(message)
+                .objectMapper(mapper)
+                .profile(profile)
+                .build()
+                .canonicalAccountId())
         .contains("account-1");
   }
 
@@ -119,8 +128,7 @@ class AgentToolContextDerivationTest {
                     1L,
                     2L,
                     Map.of("chatGuid", "iMessage;+;chat-1", "task", "check status"))));
-    ToolContext context =
-        new ToolContext(agentWithMapper(), message("iMessage;+;chat-1", "message-1"), null);
+    ToolContext context = context(message("iMessage;+;chat-1", "message-1"));
 
     String output =
         new ScheduledEventListTool(launcher)
@@ -143,8 +151,7 @@ class AgentToolContextDerivationTest {
             eq("run-1"),
             eq("deleted via scheduled event tool")))
         .thenReturn(true);
-    ToolContext context =
-        new ToolContext(agentWithMapper(), message("iMessage;+;chat-1", "message-1"), null);
+    ToolContext context = context(message("iMessage;+;chat-1", "message-1"));
     JsonNode args = mapper.readTree("{\"scheduled_event_id\":\"event-1\",\"run_id\":\"run-1\"}");
 
     String output = new ScheduledEventDeleteTool(launcher).getTool().handler().apply(context, args);
@@ -166,10 +173,8 @@ class AgentToolContextDerivationTest {
     return String.valueOf(tool.parameters()._additionalProperties());
   }
 
-  private BBMessageAgent agentWithMapper() {
-    BBMessageAgent agent = Mockito.mock(BBMessageAgent.class);
-    when(agent.getObjectMapper()).thenReturn(mapper);
-    return agent;
+  private ToolContext context(IncomingMessage message) {
+    return ToolContextFixture.with(message).objectMapper(mapper).build();
   }
 
   private static IncomingMessage message(String chatGuid, String messageGuid) {
