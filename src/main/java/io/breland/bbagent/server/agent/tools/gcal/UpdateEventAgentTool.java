@@ -46,7 +46,7 @@ public class UpdateEventAgentTool extends GcalToolSupport implements ToolProvide
           return withCalendar(
               context,
               request.accountKey(),
-              (client, accountKey) -> {
+              client -> {
                 String calendarId = resolveCalendarId(request.calendarId());
                 String eventId = request.eventId();
                 if (isBlank(eventId)) {
