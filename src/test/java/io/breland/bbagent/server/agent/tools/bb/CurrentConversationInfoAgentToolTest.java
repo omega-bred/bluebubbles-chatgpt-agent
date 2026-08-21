@@ -2,15 +2,13 @@ package io.breland.bbagent.server.agent.tools.bb;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.mockito.Mockito.when;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.breland.bbagent.generated.bluebubblesclient.api.V1ContactApi;
 import io.breland.bbagent.generated.bluebubblesclient.api.V1MessageApi;
-import io.breland.bbagent.server.agent.BBMessageAgent;
 import io.breland.bbagent.server.agent.IncomingMessage;
-import io.breland.bbagent.server.agent.tools.ToolContext;
+import io.breland.bbagent.server.agent.tools.ToolContextFixture;
 import io.breland.bbagent.server.agent.transport.bb.BBHttpClientWrapper;
 import java.time.Instant;
 import java.util.List;
@@ -38,16 +36,14 @@ class CurrentConversationInfoAgentToolTest {
                 }
                 """));
     CurrentConversationInfoAgentTool toolProvider = new CurrentConversationInfoAgentTool(wrapper);
-    BBMessageAgent messageAgent = Mockito.mock(BBMessageAgent.class);
-    when(messageAgent.getObjectMapper()).thenReturn(mapper);
-
     String output =
         toolProvider
             .getTool()
             .handler()
             .apply(
-                new ToolContext(
-                    messageAgent, incomingMessage("any;+;chat193898160757775814"), null),
+                ToolContextFixture.with(incomingMessage("any;+;chat193898160757775814"))
+                    .objectMapper(mapper)
+                    .build(),
                 mapper.createObjectNode());
     JsonNode result = mapper.readTree(output);
 

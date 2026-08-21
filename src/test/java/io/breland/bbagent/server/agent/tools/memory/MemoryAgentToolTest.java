@@ -16,6 +16,7 @@ import io.breland.bbagent.server.agent.memory.AuthorizedMemoryRetrievalService;
 import io.breland.bbagent.server.agent.memory.ConversationMemoryModels.AuthorizedMemory;
 import io.breland.bbagent.server.agent.memory.MemoryScopeResolver;
 import io.breland.bbagent.server.agent.tools.ToolContext;
+import io.breland.bbagent.server.agent.tools.ToolContextFixture;
 import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
@@ -216,9 +217,7 @@ class MemoryAgentToolTest {
   }
 
   private ToolContext context(IncomingMessage message) {
-    BBMessageAgent agent = mock(BBMessageAgent.class);
-    when(agent.getObjectMapper()).thenReturn(mapper);
-    return new ToolContext(agent, message, null);
+    return ToolContextFixture.with(message).objectMapper(mapper).build();
   }
 
   private static IncomingMessage directMessage() {

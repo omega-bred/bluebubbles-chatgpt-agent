@@ -49,7 +49,7 @@ public class GetThreadContextAgentTool implements ToolProvider {
             log.warn("Could not resolve thread_root_guid");
             return "no thread";
           }
-          ConversationState state = context.getConversations().get(context.message().chatGuid());
+          ConversationState state = context.getConversationState(context.message().chatGuid());
           if (state == null) {
             log.warn("Could not resolve conversation state");
             return "no context";

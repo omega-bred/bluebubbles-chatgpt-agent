@@ -8,6 +8,7 @@ import io.breland.bbagent.server.agent.BBMessageAgent;
 import io.breland.bbagent.server.agent.IncomingMessage;
 import io.breland.bbagent.server.agent.profile.AgentProfile;
 import io.breland.bbagent.server.agent.tools.ToolContext;
+import io.breland.bbagent.server.agent.tools.ToolContextFixture;
 import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
@@ -65,7 +66,7 @@ class MemoryScopeResolverTest {
     AgentProfile profile = mock(AgentProfile.class);
     when(profile.resolveCanonicalAccountId(message))
         .thenReturn(Optional.ofNullable(canonicalAccountId));
-    return new ToolContext(mock(BBMessageAgent.class), profile, message, null);
+    return ToolContextFixture.with(message).profile(profile).build();
   }
 
   private static IncomingMessage direct(String sender) {

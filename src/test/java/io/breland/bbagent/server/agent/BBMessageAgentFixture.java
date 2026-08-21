@@ -7,7 +7,9 @@ import static org.mockito.Mockito.when;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.openai.client.OpenAIClient;
+import io.breland.bbagent.server.agent.cadence.CadenceIncomingMessageHandler;
 import io.breland.bbagent.server.agent.cadence.CadenceWorkflowLauncher;
+import io.breland.bbagent.server.agent.cadence.PollNotificationEnricher;
 import io.breland.bbagent.server.agent.llm.OpenAiClientProvider;
 import io.breland.bbagent.server.agent.llm.OpenAiResponsesLlmProvider;
 import io.breland.bbagent.server.agent.memory.ConversationJournalService;
@@ -18,7 +20,9 @@ import io.breland.bbagent.server.agent.model_picker.ModelPicker;
 import io.breland.bbagent.server.agent.model_picker.ModelPickerTestSupport;
 import io.breland.bbagent.server.agent.profile.AgentProfileService;
 import io.breland.bbagent.server.agent.terms.TermsAgreementValidator;
+import io.breland.bbagent.server.agent.terms.TermsGate;
 import io.breland.bbagent.server.agent.tools.AgentToolRegistry;
+import io.breland.bbagent.server.agent.tools.ToolContextFactory;
 import io.breland.bbagent.server.agent.tools.gcal.GcalClient;
 import io.breland.bbagent.server.agent.tools.giphy.GiphyClient;
 import io.breland.bbagent.server.agent.tools.memory.Mem0Client;
@@ -130,25 +134,49 @@ final class BBMessageAgentFixture {
     TermsAgreementValidator termsAgreementValidator =
         new TermsAgreementValidator(
             openAiClientProvider, objectMapper, TermsAgreementValidator.DEFAULT_RESPONSES_MODEL);
+    ConversationStateStore conversationStateStore = new ConversationStateStore();
+    WorkflowResponseGate workflowResponseGate = new WorkflowResponseGate(conversationStateStore);
+    MessageResponseLimitNoticeFactory messageResponseLimitNoticeFactory =
+        new MessageResponseLimitNoticeFactory(websiteAccountService);
+    AgentOutboundService outboundService =
+        new AgentOutboundService(
+            conversationStateStore,
+            transportRegistry,
+            profileService,
+            workflowResponseGate,
+            messageResponseRateLimitService,
+            messageResponseLimitNoticeFactory);
+    ToolContextFactory toolContextFactory =
+        new ToolContextFactory(
+            outboundService, conversationStateStore, objectMapper, profileService);
+    AgentToolActivityRunner toolActivityRunner =
+        new AgentToolActivityRunner(
+            objectMapper, toolContextFactory, toolRegistry, agentMetricsService);
+    TermsGate termsGate =
+        new TermsGate(
+            outboundService, profileService, termsAgreementValidator, "http://localhost:8080");
+    CadenceIncomingMessageHandler incomingMessageHandler =
+        new CadenceIncomingMessageHandler(
+            conversationStateStore,
+            profileService,
+            transportRegistry,
+            cadenceWorkflowLauncher,
+            agentMetricsService,
+            termsGate,
+            new PollNotificationEnricher(bbHttpClientWrapper),
+            mock(ConversationJournalService.class));
     NativeAppSessionService nativeAppSessionService = mock(NativeAppSessionService.class);
     when(nativeAppSessionService.claimStartToken(any()))
         .thenAnswer(invocation -> invocation.getArgument(0));
     return new BBMessageAgent(
-        bbHttpClientWrapper,
-        profileService,
-        new AgentAttachmentInputBuilder(bbHttpClientWrapper),
-        transportRegistry,
         objectMapper,
-        cadenceWorkflowLauncher,
-        agentMetricsService,
-        messageResponseRateLimitService,
-        nativeAppSessionService,
-        mock(ConversationJournalService.class),
-        toolRegistry,
+        conversationStateStore,
+        incomingMessageHandler,
+        toolActivityRunner,
+        outboundService,
         responseCreator,
-        termsAgreementValidator,
-        new MessageResponseLimitNoticeFactory(websiteAccountService),
-        "http://localhost:8080");
+        new ConversationThreadContextRecorder(new AgentAttachmentInputBuilder(bbHttpClientWrapper)),
+        nativeAppSessionService);
   }
 
   private static MessageResponseRateLimitService defaultRateLimitService() {

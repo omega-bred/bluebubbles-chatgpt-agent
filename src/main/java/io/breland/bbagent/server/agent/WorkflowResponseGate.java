@@ -2,16 +2,15 @@ package io.breland.bbagent.server.agent;
 
 import com.uber.cadence.workflow.Workflow;
 import io.breland.bbagent.server.agent.tools.scheduled.ScheduledEventTool;
-import java.util.Map;
+import lombok.RequiredArgsConstructor;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.lang.Nullable;
+import org.springframework.stereotype.Component;
 
+@Component
+@RequiredArgsConstructor
 final class WorkflowResponseGate {
-  private final Map<String, ConversationState> conversations;
-
-  WorkflowResponseGate(Map<String, ConversationState> conversations) {
-    this.conversations = conversations;
-  }
+  private final ConversationStateStore conversationStateStore;
 
   boolean canSendResponses(AgentWorkflowContext workflowContext) {
     if (workflowContext == null) {
@@ -40,7 +39,7 @@ final class WorkflowResponseGate {
     if (workflowContext.chatGuid() == null || workflowContext.chatGuid().isBlank()) {
       return true;
     }
-    ConversationState state = conversations.get(workflowContext.chatGuid());
+    ConversationState state = conversationStateStore.get(workflowContext.chatGuid());
     if (state == null) {
       return true;
     }
