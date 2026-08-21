@@ -5,13 +5,14 @@ import io.breland.bbagent.server.ratelimit.RateLimitStatus;
 import io.breland.bbagent.server.website.WebsiteAccountService;
 import java.util.Optional;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.lang.Nullable;
+import org.springframework.stereotype.Component;
 
 @Slf4j
+@Component
 final class MessageResponseLimitNoticeFactory {
-  private final @Nullable WebsiteAccountService websiteAccountService;
+  private final WebsiteAccountService websiteAccountService;
 
-  MessageResponseLimitNoticeFactory(@Nullable WebsiteAccountService websiteAccountService) {
+  MessageResponseLimitNoticeFactory(WebsiteAccountService websiteAccountService) {
     this.websiteAccountService = websiteAccountService;
   }
 
@@ -45,7 +46,7 @@ final class MessageResponseLimitNoticeFactory {
   }
 
   private Optional<String> createUpgradeLinkText(IncomingMessage message) {
-    if (websiteAccountService == null || message == null) {
+    if (message == null) {
       return Optional.empty();
     }
     try {

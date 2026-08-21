@@ -14,20 +14,22 @@ import java.time.Duration;
 import java.util.List;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.lang.Nullable;
+import org.springframework.stereotype.Component;
 
 @Slf4j
+@Component
 final class AgentResponseCreator {
   private final ModelPicker modelPicker;
   private final AgentToolRegistry toolRegistry;
   private final LlmProvider llmProvider;
-  private final @Nullable OperationalMetricsService operationalMetricsService;
+  private final OperationalMetricsService operationalMetricsService;
   private final AgentProfileService profileService;
 
   AgentResponseCreator(
       ModelPicker modelPicker,
       AgentToolRegistry toolRegistry,
       LlmProvider llmProvider,
-      @Nullable OperationalMetricsService operationalMetricsService,
+      OperationalMetricsService operationalMetricsService,
       AgentProfileService profileService) {
     this.modelPicker = modelPicker;
     this.toolRegistry = toolRegistry;
@@ -91,7 +93,7 @@ final class AgentResponseCreator {
       boolean success,
       @Nullable String failureType,
       long startedNanos) {
-    if (operationalMetricsService == null || startedNanos <= 0L) {
+    if (startedNanos <= 0L) {
       return;
     }
     if (isCanaryAccount(message)) {
@@ -112,7 +114,7 @@ final class AgentResponseCreator {
   }
 
   private boolean isCanaryAccount(IncomingMessage message) {
-    if (message == null || profileService == null) {
+    if (message == null) {
       return false;
     }
     return profileService.isCanaryAccount(message);

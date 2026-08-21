@@ -53,9 +53,6 @@ import io.breland.bbagent.server.agent.tools.AgentTool;
 import io.breland.bbagent.server.agent.tools.ToolContext;
 import io.breland.bbagent.server.agent.tools.assistant.AssistantNameAgentTool;
 import io.breland.bbagent.server.agent.tools.bb.RenameConversationAgentTool;
-import io.breland.bbagent.server.agent.tools.gcal.GcalClient;
-import io.breland.bbagent.server.agent.tools.giphy.GiphyClient;
-import io.breland.bbagent.server.agent.tools.memory.Mem0Client;
 import io.breland.bbagent.server.agent.tools.search.ToolSearchAgentTool;
 import io.breland.bbagent.server.agent.transport.bb.BBHttpClientWrapper;
 import io.breland.bbagent.server.metrics.AgentMetricsService;
@@ -793,27 +790,11 @@ class BBMessageAgentTest {
     when(responseService.create(any(ResponseCreateParams.class)))
         .thenReturn(responseWithNoToolCalls());
     BBMessageAgent agent =
-        new BBMessageAgent(
-            openAIClient,
-            bbHttpClientWrapper,
-            Mockito.mock(Mem0Client.class),
-            Mockito.mock(GcalClient.class),
-            null,
-            Mockito.mock(GiphyClient.class),
-            profileService(),
-            attachmentInputBuilder(bbHttpClientWrapper),
-            null,
-            null,
-            Mockito.mock(CadenceWorkflowLauncher.class),
-            null,
-            null,
-            null,
-            operationalMetricsService,
-            null,
-            null,
-            null,
-            null,
-            new ModelPicker());
+        BBMessageAgentFixture.with(bbHttpClientWrapper)
+            .openAiClient(openAIClient)
+            .profileService(profileService())
+            .operationalMetricsService(operationalMetricsService)
+            .build();
     IncomingMessage incoming =
         incomingMessage("iMessage;+;chat-llm-metric", "msg-llm-metric", "hello", 1_000L);
 
@@ -1017,27 +998,10 @@ class BBMessageAgentTest {
         .thenReturn(execution);
     StubBBHttpClientWrapper bbHttpClientWrapper = new StubBBHttpClientWrapper();
     BBMessageAgent agent =
-        new BBMessageAgent(
-            null,
-            bbHttpClientWrapper,
-            Mockito.mock(Mem0Client.class),
-            Mockito.mock(GcalClient.class),
-            null,
-            Mockito.mock(GiphyClient.class),
-            profileService(),
-            attachmentInputBuilder(bbHttpClientWrapper),
-            null,
-            null,
-            cadenceWorkflowLauncher,
-            null,
-            null,
-            null,
-            null,
-            null,
-            null,
-            null,
-            null,
-            new ModelPicker());
+        BBMessageAgentFixture.with(bbHttpClientWrapper)
+            .profileService(profileService())
+            .cadenceWorkflowLauncher(cadenceWorkflowLauncher)
+            .build();
     String chatGuid = "iMessage;+;chat-cadence-coalesce";
 
     agent.handleIncomingMessage(incomingMessage(chatGuid, "msg-cadence-1", "first", 1_000L));
@@ -1207,10 +1171,6 @@ class BBMessageAgentTest {
     var responseService = Mockito.mock(com.openai.services.blocking.ResponseService.class);
     V1MessageApi messageApi = Mockito.mock(V1MessageApi.class);
     V1ContactApi contactApi = Mockito.mock(V1ContactApi.class);
-    Mem0Client mem0Client = Mockito.mock(Mem0Client.class);
-    GcalClient gcalClient = Mockito.mock(GcalClient.class);
-    GiphyClient giphyClient = Mockito.mock(GiphyClient.class);
-
     when(openAIClient.responses()).thenReturn(responseService);
     when(responseService.create(any(ResponseCreateParams.class)))
         .thenReturn(responseWithNoToolCalls());
@@ -1218,27 +1178,10 @@ class BBMessageAgentTest {
 
     BBHttpClientWrapper bbHttpClientWrapper = new BBHttpClientWrapper("pw", messageApi, contactApi);
     BBMessageAgent agent =
-        new BBMessageAgent(
-            openAIClient,
-            bbHttpClientWrapper,
-            mem0Client,
-            gcalClient,
-            null,
-            giphyClient,
-            profileService(),
-            attachmentInputBuilder(bbHttpClientWrapper),
-            null,
-            null,
-            Mockito.mock(CadenceWorkflowLauncher.class),
-            null,
-            null,
-            null,
-            null,
-            null,
-            null,
-            null,
-            null,
-            new ModelPicker());
+        BBMessageAgentFixture.with(bbHttpClientWrapper)
+            .openAiClient(openAIClient)
+            .profileService(profileService())
+            .build();
 
     IncomingMessage incoming =
         new IncomingMessage(
@@ -1296,27 +1239,10 @@ class BBMessageAgentTest {
         .thenReturn(responseWithNoToolCalls());
 
     BBMessageAgent agent =
-        new BBMessageAgent(
-            openAIClient,
-            bbHttpClientWrapper,
-            Mockito.mock(Mem0Client.class),
-            Mockito.mock(GcalClient.class),
-            null,
-            Mockito.mock(GiphyClient.class),
-            profileService(),
-            attachmentInputBuilder(bbHttpClientWrapper),
-            null,
-            null,
-            Mockito.mock(CadenceWorkflowLauncher.class),
-            null,
-            null,
-            null,
-            null,
-            null,
-            null,
-            null,
-            null,
-            new ModelPicker());
+        BBMessageAgentFixture.with(bbHttpClientWrapper)
+            .openAiClient(openAIClient)
+            .profileService(profileService())
+            .build();
 
     IncomingMessage incoming =
         incomingMessage("iMessage;+;chat-tools", "msg-tools", "what tools are available?", 1_000L);
@@ -1341,27 +1267,10 @@ class BBMessageAgentTest {
     StubBBHttpClientWrapper bbHttpClientWrapper = new StubBBHttpClientWrapper();
 
     BBMessageAgent agent =
-        new BBMessageAgent(
-            openAIClient,
-            bbHttpClientWrapper,
-            Mockito.mock(Mem0Client.class),
-            Mockito.mock(GcalClient.class),
-            null,
-            Mockito.mock(GiphyClient.class),
-            profileService(),
-            attachmentInputBuilder(bbHttpClientWrapper),
-            null,
-            null,
-            Mockito.mock(CadenceWorkflowLauncher.class),
-            null,
-            null,
-            null,
-            null,
-            null,
-            null,
-            null,
-            null,
-            new ModelPicker());
+        BBMessageAgentFixture.with(bbHttpClientWrapper)
+            .openAiClient(openAIClient)
+            .profileService(profileService())
+            .build();
 
     IncomingMessage incoming =
         incomingMessage("iMessage;+;chat-tool", "msg-tool", "run a retired tool", 1_000L);
@@ -1384,27 +1293,10 @@ class BBMessageAgentTest {
     AgentMetricsService metricsService = Mockito.mock(AgentMetricsService.class);
     StubBBHttpClientWrapper bbHttpClientWrapper = new StubBBHttpClientWrapper();
     BBMessageAgent agent =
-        new BBMessageAgent(
-            null,
-            bbHttpClientWrapper,
-            Mockito.mock(Mem0Client.class),
-            Mockito.mock(GcalClient.class),
-            null,
-            Mockito.mock(GiphyClient.class),
-            profileService(),
-            attachmentInputBuilder(bbHttpClientWrapper),
-            null,
-            null,
-            Mockito.mock(CadenceWorkflowLauncher.class),
-            metricsService,
-            null,
-            null,
-            null,
-            null,
-            null,
-            null,
-            null,
-            new ModelPicker());
+        BBMessageAgentFixture.with(bbHttpClientWrapper)
+            .profileService(profileService())
+            .agentMetricsService(metricsService)
+            .build();
     IncomingMessage message =
         incomingMessage("iMessage;+;chat-tool-metrics", "msg-tool-metrics", "remember my name", 1L);
 
@@ -1557,7 +1449,10 @@ class BBMessageAgentTest {
 
   private static BBMessageAgent newAgent(
       OpenAIClient openAIClient, BBHttpClientWrapper bbHttpClientWrapper) {
-    return newAgent(openAIClient, bbHttpClientWrapper, new ModelPicker());
+    return BBMessageAgentFixture.with(bbHttpClientWrapper)
+        .openAiClient(openAIClient)
+        .profileService(profileService())
+        .build();
   }
 
   private static AgentPromptBuilder promptBuilder(BBHttpClientWrapper bbHttpClientWrapper) {
@@ -1594,27 +1489,11 @@ class BBMessageAgentTest {
       OpenAIClient openAIClient,
       BBHttpClientWrapper bbHttpClientWrapper,
       CadenceWorkflowLauncher cadenceWorkflowLauncher) {
-    return new BBMessageAgent(
-        openAIClient,
-        bbHttpClientWrapper,
-        Mockito.mock(Mem0Client.class),
-        Mockito.mock(GcalClient.class),
-        null,
-        Mockito.mock(GiphyClient.class),
-        profileService(),
-        attachmentInputBuilder(bbHttpClientWrapper),
-        null,
-        null,
-        cadenceWorkflowLauncher,
-        null,
-        null,
-        null,
-        null,
-        null,
-        null,
-        null,
-        null,
-        new ModelPicker());
+    return BBMessageAgentFixture.with(bbHttpClientWrapper)
+        .openAiClient(openAIClient)
+        .profileService(profileService())
+        .cadenceWorkflowLauncher(cadenceWorkflowLauncher)
+        .build();
   }
 
   private static BBMessageAgent newAgent(
@@ -1633,27 +1512,11 @@ class BBMessageAgentTest {
       BBHttpClientWrapper bbHttpClientWrapper,
       AgentAccountResolver accountResolver,
       CadenceWorkflowLauncher cadenceWorkflowLauncher) {
-    return new BBMessageAgent(
-        openAIClient,
-        bbHttpClientWrapper,
-        Mockito.mock(Mem0Client.class),
-        Mockito.mock(GcalClient.class),
-        null,
-        Mockito.mock(GiphyClient.class),
-        profileService(accountResolver),
-        attachmentInputBuilder(bbHttpClientWrapper),
-        null,
-        null,
-        cadenceWorkflowLauncher,
-        null,
-        null,
-        null,
-        null,
-        null,
-        null,
-        null,
-        null,
-        new ModelPicker());
+    return BBMessageAgentFixture.with(bbHttpClientWrapper)
+        .openAiClient(openAIClient)
+        .profileService(profileService(accountResolver))
+        .cadenceWorkflowLauncher(cadenceWorkflowLauncher)
+        .build();
   }
 
   private static BBMessageAgent newAgent(
@@ -1661,52 +1524,20 @@ class BBMessageAgentTest {
       BBHttpClientWrapper bbHttpClientWrapper,
       AgentProfileService profileService,
       MessageResponseRateLimitService messageResponseRateLimitService) {
-    return new BBMessageAgent(
-        openAIClient,
-        bbHttpClientWrapper,
-        Mockito.mock(Mem0Client.class),
-        Mockito.mock(GcalClient.class),
-        null,
-        Mockito.mock(GiphyClient.class),
-        profileService,
-        attachmentInputBuilder(bbHttpClientWrapper),
-        null,
-        null,
-        Mockito.mock(CadenceWorkflowLauncher.class),
-        null,
-        null,
-        messageResponseRateLimitService,
-        null,
-        null,
-        null,
-        null,
-        null,
-        new ModelPicker());
+    return BBMessageAgentFixture.with(bbHttpClientWrapper)
+        .openAiClient(openAIClient)
+        .profileService(profileService)
+        .messageResponseRateLimitService(messageResponseRateLimitService)
+        .build();
   }
 
   private static BBMessageAgent newAgent(
       OpenAIClient openAIClient, BBHttpClientWrapper bbHttpClientWrapper, ModelPicker modelPicker) {
-    return new BBMessageAgent(
-        openAIClient,
-        bbHttpClientWrapper,
-        Mockito.mock(Mem0Client.class),
-        Mockito.mock(GcalClient.class),
-        null,
-        Mockito.mock(GiphyClient.class),
-        profileService(),
-        attachmentInputBuilder(bbHttpClientWrapper),
-        null,
-        null,
-        Mockito.mock(CadenceWorkflowLauncher.class),
-        null,
-        null,
-        null,
-        null,
-        null,
-        null,
-        null,
-        null,
-        modelPicker);
+    return BBMessageAgentFixture.with(bbHttpClientWrapper)
+        .openAiClient(openAIClient)
+        .profileService(profileService())
+        .modelPicker(modelPicker)
+        .build();
   }
 
   private static class StubReverseLocationLookup implements ReverseLocationLookup {

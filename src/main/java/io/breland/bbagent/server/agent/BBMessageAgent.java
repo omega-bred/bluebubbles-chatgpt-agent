@@ -1,45 +1,31 @@
 package io.breland.bbagent.server.agent;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.openai.client.OpenAIClient;
-import com.openai.client.okhttp.OpenAIOkHttpClient;
 import com.openai.models.responses.Response;
 import com.openai.models.responses.ResponseFunctionToolCall;
 import com.openai.models.responses.ResponseInputItem;
 import io.breland.bbagent.server.agent.cadence.CadenceIncomingMessageHandler;
 import io.breland.bbagent.server.agent.cadence.CadenceWorkflowLauncher;
-import io.breland.bbagent.server.agent.llm.LlmProvider;
-import io.breland.bbagent.server.agent.llm.OpenAiResponsesLlmProvider;
 import io.breland.bbagent.server.agent.memory.ConversationJournalService;
-import io.breland.bbagent.server.agent.memory.ConversationMemorySettingsService;
-import io.breland.bbagent.server.agent.memory.MemoryScopeResolver;
-import io.breland.bbagent.server.agent.model_picker.ModelPicker;
 import io.breland.bbagent.server.agent.profile.AgentProfileService;
 import io.breland.bbagent.server.agent.terms.TermsAgreementValidator;
 import io.breland.bbagent.server.agent.tools.AgentToolRegistry;
-import io.breland.bbagent.server.agent.tools.gcal.*;
-import io.breland.bbagent.server.agent.tools.giphy.GiphyClient;
-import io.breland.bbagent.server.agent.tools.memory.*;
 import io.breland.bbagent.server.agent.transport.MessageTransport;
 import io.breland.bbagent.server.agent.transport.MessageTransportRegistry;
 import io.breland.bbagent.server.agent.transport.OutgoingTextMessage;
 import io.breland.bbagent.server.agent.transport.bb.BBHttpClientWrapper;
-import io.breland.bbagent.server.feedback.FeedbackService;
 import io.breland.bbagent.server.metrics.AgentMetricsService;
-import io.breland.bbagent.server.metrics.OperationalMetricsService;
 import io.breland.bbagent.server.nativeapp.NativeAppSessionService;
 import io.breland.bbagent.server.ratelimit.MessageResponseRateLimitService;
 import io.breland.bbagent.server.ratelimit.RateLimitDecision;
-import io.breland.bbagent.server.website.WebsiteAccountService;
-import java.time.Duration;
 import java.time.Instant;
-import java.util.*;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.function.Supplier;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.lang.Nullable;
 import org.springframework.stereotype.Service;
@@ -63,96 +49,50 @@ public class BBMessageAgent {
   private final AgentResponseCreator responseCreator;
   private final ConversationThreadContextRecorder threadContextRecorder;
 
-  private OpenAIClient openAIClient;
-  private final Supplier<OpenAIClient> openAiSupplier =
-      () -> {
-        if (openAIClient == null) {
-          openAIClient =
-              OpenAIOkHttpClient.fromEnv().withOptions(b -> b.timeout(Duration.ofSeconds(120)));
-        }
-        return openAIClient;
-      };
-
   private final MessageResponseRateLimitService messageResponseRateLimitService;
   private final MessageResponseLimitNoticeFactory messageResponseLimitNoticeFactory;
   private final NativeAppSessionService nativeAppSessionService;
+  private final String websiteBaseUrl;
 
-  @Value("${website.base-url:http://localhost:8080}")
-  private String websiteBaseUrl = "http://localhost:8080";
-
-  @Value(
-      "${bbagent.terms.acceptance.responses-model:"
-          + TermsAgreementValidator.DEFAULT_RESPONSES_MODEL
-          + "}")
-  private String termsAcceptanceResponsesModel = TermsAgreementValidator.DEFAULT_RESPONSES_MODEL;
-
-  @Autowired
   public BBMessageAgent(
-      @Nullable OpenAIClient openAiClient,
       BBHttpClientWrapper bbHttpClientWrapper,
-      Mem0Client mem0Client,
-      GcalClient gcalClient,
-      WebsiteAccountService websiteAccountService,
-      GiphyClient giphyClient,
       AgentProfileService profileService,
       AgentAttachmentInputBuilder attachmentInputBuilder,
       MessageTransportRegistry transportRegistry,
-      @Nullable ObjectMapper objectMapper,
+      ObjectMapper objectMapper,
       CadenceWorkflowLauncher cadenceWorkflowLauncher,
-      @Nullable AgentMetricsService agentMetricsService,
-      @Nullable FeedbackService feedbackService,
-      @Nullable MessageResponseRateLimitService messageResponseRateLimitService,
-      @Nullable OperationalMetricsService operationalMetricsService,
-      @Nullable NativeAppSessionService nativeAppSessionService,
-      @Nullable ConversationJournalService conversationJournalService,
-      @Nullable ConversationMemorySettingsService conversationMemorySettingsService,
-      @Nullable MemoryScopeResolver memoryScopeResolver,
-      ModelPicker modelPicker) {
-    if (openAiClient != null) {
-      this.openAIClient = openAiClient;
-    }
+      AgentMetricsService agentMetricsService,
+      MessageResponseRateLimitService messageResponseRateLimitService,
+      NativeAppSessionService nativeAppSessionService,
+      ConversationJournalService conversationJournalService,
+      AgentToolRegistry toolRegistry,
+      AgentResponseCreator responseCreator,
+      TermsAgreementValidator termsAgreementValidator,
+      MessageResponseLimitNoticeFactory messageResponseLimitNoticeFactory,
+      @Value("${website.base-url:http://localhost:8080}") String websiteBaseUrl) {
+    this.transportRegistry = Objects.requireNonNull(transportRegistry, "transportRegistry");
+    this.objectMapper = Objects.requireNonNull(objectMapper, "objectMapper");
+    this.profileService = Objects.requireNonNull(profileService, "profileService");
+    this.messageResponseRateLimitService =
+        Objects.requireNonNull(messageResponseRateLimitService, "messageResponseRateLimitService");
+    this.nativeAppSessionService =
+        Objects.requireNonNull(nativeAppSessionService, "nativeAppSessionService");
     this.messageResponseLimitNoticeFactory =
-        new MessageResponseLimitNoticeFactory(websiteAccountService);
-    this.transportRegistry =
-        transportRegistry != null
-            ? transportRegistry
-            : MessageTransportRegistry.blueBubblesOnly(bbHttpClientWrapper);
-    this.objectMapper = objectMapper == null ? new ObjectMapper() : objectMapper;
-    TermsAgreementValidator termsAgreementValidator =
-        new TermsAgreementValidator(
-            openAiSupplier, this.objectMapper, () -> termsAcceptanceResponsesModel);
-    this.profileService = profileService;
-    this.messageResponseRateLimitService = messageResponseRateLimitService;
-    this.nativeAppSessionService = nativeAppSessionService;
+        Objects.requireNonNull(
+            messageResponseLimitNoticeFactory, "messageResponseLimitNoticeFactory");
+    this.responseCreator = Objects.requireNonNull(responseCreator, "responseCreator");
+    this.websiteBaseUrl = Objects.requireNonNull(websiteBaseUrl, "websiteBaseUrl");
     this.workflowResponseGate = new WorkflowResponseGate(conversations);
     this.threadContextRecorder = new ConversationThreadContextRecorder(attachmentInputBuilder);
-    LlmProvider llmProvider = new OpenAiResponsesLlmProvider(openAiSupplier, modelPicker);
     CadenceWorkflowLauncher workflowLauncher =
         Objects.requireNonNull(cadenceWorkflowLauncher, "cadenceWorkflowLauncher");
-    AgentToolRegistry toolRegistry =
-        new AgentToolRegistry(
-            bbHttpClientWrapper,
-            mem0Client,
-            gcalClient,
-            websiteAccountService,
-            giphyClient,
-            this.transportRegistry,
-            this.objectMapper,
-            openAiSupplier,
-            feedbackService,
-            messageResponseRateLimitService,
-            workflowLauncher,
-            profileService::resolveOrCreateAccountId,
-            operationalMetricsService,
-            modelPicker.modelAccessService(),
-            conversationMemorySettingsService,
-            memoryScopeResolver);
-    this.responseCreator =
-        new AgentResponseCreator(
-            modelPicker, toolRegistry, llmProvider, operationalMetricsService, profileService);
     this.toolActivityRunner =
         new AgentToolActivityRunner(
-            this, this.objectMapper, profileService, toolRegistry, agentMetricsService);
+            this,
+            this.objectMapper,
+            profileService,
+            Objects.requireNonNull(toolRegistry, "toolRegistry"),
+            Objects.requireNonNull(agentMetricsService, "agentMetricsService"));
     this.incomingMessageHandler =
         new CadenceIncomingMessageHandler(
             this,
@@ -163,8 +103,8 @@ public class BBMessageAgent {
             workflowLauncher,
             agentMetricsService,
             this::termsUrl,
-            termsAgreementValidator,
-            conversationJournalService);
+            Objects.requireNonNull(termsAgreementValidator, "termsAgreementValidator"),
+            Objects.requireNonNull(conversationJournalService, "conversationJournalService"));
   }
 
   public ConversationState computeConversationState(String chatId, IncomingMessage message) {
@@ -177,9 +117,6 @@ public class BBMessageAgent {
   }
 
   private IncomingMessage claimNativeAppStartToken(IncomingMessage message) {
-    if (nativeAppSessionService == null) {
-      return message;
-    }
     try {
       return nativeAppSessionService.claimStartToken(message);
     } catch (Exception e) {
@@ -189,7 +126,7 @@ public class BBMessageAgent {
   }
 
   private String termsUrl() {
-    String baseUrl = websiteBaseUrl == null ? "" : websiteBaseUrl.trim();
+    String baseUrl = websiteBaseUrl.trim();
     if (baseUrl.isBlank()) {
       return "/terms";
     }
@@ -308,7 +245,7 @@ public class BBMessageAgent {
 
   public boolean notifyIfMessageResponseLimitExceeded(
       IncomingMessage message, AgentWorkflowContext workflowContext) {
-    if (messageResponseRateLimitService == null || message == null) {
+    if (message == null) {
       return false;
     }
     if (isCanaryAccount(message)) {
@@ -330,9 +267,6 @@ public class BBMessageAgent {
 
   public boolean consumeMessageResponseQuota(
       IncomingMessage message, AgentWorkflowContext workflowContext) {
-    if (messageResponseRateLimitService == null) {
-      return true;
-    }
     if (isCanaryAccount(message)) {
       return true;
     }
@@ -374,7 +308,7 @@ public class BBMessageAgent {
   }
 
   private boolean isCanaryAccount(IncomingMessage message) {
-    if (message == null || profileService == null) {
+    if (message == null) {
       return false;
     }
     return profileService.isCanaryAccount(message);

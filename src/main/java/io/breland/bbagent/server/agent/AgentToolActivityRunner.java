@@ -26,14 +26,14 @@ final class AgentToolActivityRunner {
   private final ObjectMapper objectMapper;
   private final AgentProfileService profileService;
   private final AgentToolRegistry toolRegistry;
-  private final @Nullable AgentMetricsService agentMetricsService;
+  private final AgentMetricsService agentMetricsService;
 
   AgentToolActivityRunner(
       BBMessageAgent messageAgent,
       ObjectMapper objectMapper,
       AgentProfileService profileService,
       AgentToolRegistry toolRegistry,
-      @Nullable AgentMetricsService agentMetricsService) {
+      AgentMetricsService agentMetricsService) {
     this.messageAgent = messageAgent;
     this.objectMapper = objectMapper;
     this.profileService = profileService;
@@ -107,9 +107,6 @@ final class AgentToolActivityRunner {
       @Nullable String failureType,
       long durationMillis,
       String toolCategory) {
-    if (agentMetricsService == null) {
-      return;
-    }
     try {
       agentMetricsService.recordToolCall(
           new AgentToolMetricEvent(
