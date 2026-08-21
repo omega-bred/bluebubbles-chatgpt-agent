@@ -37,7 +37,7 @@ public class ListCalendarsAgentTool extends GcalToolSupport implements ToolProvi
           return withCalendar(
               context,
               request.accountKey(),
-              (client, accountKey) -> {
+              client -> {
                 CalendarList list = client.calendarList().list().execute();
                 List<Map<String, Object>> calendars = new ArrayList<>();
                 if (list.getItems() != null) {
