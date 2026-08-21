@@ -12,7 +12,6 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.openai.client.OpenAIClient;
-import io.breland.bbagent.server.agent.BBMessageAgent;
 import io.breland.bbagent.server.agent.IncomingMessage;
 import io.breland.bbagent.server.agent.cadence.CadenceWorkflowLauncher;
 import io.breland.bbagent.server.agent.memory.MemoryScopeResolver;
@@ -91,13 +90,13 @@ class AgentToolRegistryTest {
         toolSearch(
             allowedRegistry,
             mapper,
-            new ToolContext(mock(BBMessageAgent.class), directMessage("someone-else"), null),
+            ToolContextFixture.with(directMessage("someone-else")).objectMapper(mapper).build(),
             args);
     List<String> deniedNames =
         toolSearch(
             deniedRegistry,
             mapper,
-            new ToolContext(mock(BBMessageAgent.class), directMessage("someone-else"), null),
+            ToolContextFixture.with(directMessage("someone-else")).objectMapper(mapper).build(),
             args);
 
     assertTrue(allowedNames.contains(KubernetesPodLogsAgentTool.TOOL_NAME));
@@ -109,7 +108,7 @@ class AgentToolRegistryTest {
     ObjectMapper mapper = new ObjectMapper();
     AgentToolRegistry registry = registryForAccount("different-account");
     ToolContext context =
-        new ToolContext(mock(BBMessageAgent.class), directMessage("someone-else"), null);
+        ToolContextFixture.with(directMessage("someone-else")).objectMapper(mapper).build();
     Map<String, String> expectedToolByQuery =
         Map.of(
             "send a plain text message", "send_text",

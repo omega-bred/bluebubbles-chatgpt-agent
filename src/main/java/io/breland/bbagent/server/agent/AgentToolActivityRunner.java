@@ -4,44 +4,34 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.openai.models.responses.ResponseFunctionToolCall;
 import com.openai.models.responses.ResponseInputItem;
-import io.breland.bbagent.server.agent.profile.AgentProfileService;
 import io.breland.bbagent.server.agent.tools.AgentTool;
 import io.breland.bbagent.server.agent.tools.AgentToolRegistry;
 import io.breland.bbagent.server.agent.tools.ToolContext;
+import io.breland.bbagent.server.agent.tools.ToolContextFactory;
 import io.breland.bbagent.server.metrics.AgentMetricsService;
 import io.breland.bbagent.server.metrics.AgentToolMetricEvent;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Locale;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.lang.Nullable;
+import org.springframework.stereotype.Component;
 
 @Slf4j
-final class AgentToolActivityRunner {
+@Component
+@RequiredArgsConstructor
+public final class AgentToolActivityRunner {
   private static final int MAX_TOOL_OUTPUT_CHARS = 24_000;
   private static final int TOOL_OUTPUT_EDGE_CHARS = 12_000;
 
-  private final BBMessageAgent messageAgent;
   private final ObjectMapper objectMapper;
-  private final AgentProfileService profileService;
+  private final ToolContextFactory toolContextFactory;
   private final AgentToolRegistry toolRegistry;
   private final AgentMetricsService agentMetricsService;
 
-  AgentToolActivityRunner(
-      BBMessageAgent messageAgent,
-      ObjectMapper objectMapper,
-      AgentProfileService profileService,
-      AgentToolRegistry toolRegistry,
-      AgentMetricsService agentMetricsService) {
-    this.messageAgent = messageAgent;
-    this.objectMapper = objectMapper;
-    this.profileService = profileService;
-    this.toolRegistry = toolRegistry;
-    this.agentMetricsService = agentMetricsService;
-  }
-
-  ResponseInputItem run(
+  public ResponseInputItem run(
       ResponseFunctionToolCall toolCall,
       IncomingMessage message,
       AgentWorkflowContext workflowContext) {
@@ -57,8 +47,7 @@ final class AgentToolActivityRunner {
     try {
       JsonNode args = objectMapper.readTree(toolCall.arguments());
       args = ThreadReplySupport.applySendTextReplyDefault(toolCall.name(), args, message);
-      ToolContext toolContext =
-          new ToolContext(messageAgent, profileService, message, workflowContext);
+      ToolContext toolContext = toolContextFactory.create(message, workflowContext);
       if (tool == null) {
         output = "Unknown tool: " + toolCall.name();
         failureType = "unknown_tool";

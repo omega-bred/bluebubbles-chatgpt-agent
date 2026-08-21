@@ -2,15 +2,15 @@ package io.breland.bbagent.server.agent;
 
 import java.time.Instant;
 import java.util.List;
+import lombok.RequiredArgsConstructor;
+import org.springframework.stereotype.Component;
 
-final class ConversationThreadContextRecorder {
+@Component
+@RequiredArgsConstructor
+public final class ConversationThreadContextRecorder {
   private final AgentAttachmentInputBuilder attachmentInputBuilder;
 
-  ConversationThreadContextRecorder(AgentAttachmentInputBuilder attachmentInputBuilder) {
-    this.attachmentInputBuilder = attachmentInputBuilder;
-  }
-
-  void updateThreadContext(ConversationState state, IncomingMessage message) {
+  public void updateThreadContext(ConversationState state, IncomingMessage message) {
     if (state == null || message == null) {
       return;
     }

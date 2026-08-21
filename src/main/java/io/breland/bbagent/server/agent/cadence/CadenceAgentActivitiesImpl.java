@@ -30,11 +30,17 @@ import org.springframework.stereotype.Component;
 @Slf4j
 public class CadenceAgentActivitiesImpl implements CadenceAgentActivities {
 
-  private final BBMessageAgent messageAgent;
+  private final ConversationStateStore conversationStateStore;
+  private final CadenceIncomingMessageHandler incomingMessageHandler;
+  private final AgentOutboundService outboundService;
+  private final AgentResponseCreator responseCreator;
+  private final AgentToolActivityRunner toolActivityRunner;
+  private final ConversationThreadContextRecorder threadContextRecorder;
+  private final com.fasterxml.jackson.databind.ObjectMapper objectMapper;
   private final AgentPromptBuilder promptBuilder;
   private final MessageTransportRegistry transportRegistry;
   private final BlobStore blobStore;
-  private final GeneratedImageExtractor generatedImageExtractor = new GeneratedImageExtractor();
+  private final GeneratedImageExtractor generatedImageExtractor;
 
   @Override
   public String buildConversationInputJson(
@@ -54,13 +60,11 @@ public class CadenceAgentActivitiesImpl implements CadenceAgentActivities {
     if (chatGuid == null) {
       return List.of();
     }
-    ConversationState state = messageAgent.getConversations().get(chatGuid);
+    ConversationState state = conversationStateStore.get(chatGuid);
     if (state == null) {
       state =
-          messageAgent
-              .getConversations()
-              .computeIfAbsent(
-                  chatGuid, key -> messageAgent.computeConversationState(key, message));
+          conversationStateStore.computeIfAbsent(
+              chatGuid, key -> incomingMessageHandler.computeConversationState(key, message));
     }
     synchronized (state) {
       return state.history();
@@ -70,7 +74,7 @@ public class CadenceAgentActivitiesImpl implements CadenceAgentActivities {
   @Override
   public boolean notifyIfMessageResponseLimitExceeded(
       IncomingMessage message, AgentWorkflowContext workflowContext) {
-    return messageAgent.notifyIfMessageResponseLimitExceeded(message, workflowContext);
+    return outboundService.notifyIfMessageResponseLimitExceeded(message, workflowContext);
   }
 
   @Override
@@ -109,14 +113,14 @@ public class CadenceAgentActivitiesImpl implements CadenceAgentActivities {
   @Override
   public CadenceResponseBundle createResponseBundle(
       String inputItemsJson, IncomingMessage message, AgentWorkflowContext workflowContext) {
-    if (!messageAgent.canSendResponses(workflowContext)) {
+    if (!outboundService.canSendResponses(workflowContext)) {
       return null;
     }
     try {
-      JsonNode inputNode = messageAgent.getObjectMapper().readTree(inputItemsJson);
+      JsonNode inputNode = objectMapper.readTree(inputItemsJson);
       List<ResponseInputItem> inputItems =
           JsonValue.fromJsonNode(inputNode).convert(new TypeReference<>() {});
-      var response = messageAgent.createResponse(inputItems, message, workflowContext);
+      var response = responseCreator.createResponse(inputItems, message, workflowContext);
       if (response == null) {
         return null;
       }
@@ -145,7 +149,7 @@ public class CadenceAgentActivitiesImpl implements CadenceAgentActivities {
       String responseJson = toJsonWithoutImageResults(response, imageCallIds);
       String assistantText =
           AgentResponseHelper.normalizeAssistantText(
-              messageAgent.getObjectMapper(), AgentResponseHelper.extractResponseText(response));
+              objectMapper, AgentResponseHelper.extractResponseText(response));
       List<ResponseFunctionToolCall> functionCalls =
           AgentResponseHelper.extractFunctionCalls(response);
       List<CadenceToolCall> toolCalls =
@@ -175,7 +179,7 @@ public class CadenceAgentActivitiesImpl implements CadenceAgentActivities {
                 .name(toolCall.name())
                 .arguments(toolCall.arguments())
                 .build();
-        outputs.add(messageAgent.runToolActivity(call, message, workflowContext));
+        outputs.add(toolActivityRunner.run(call, message, workflowContext));
       }
       return toJson(outputs);
     } catch (Exception e) {
@@ -207,10 +211,7 @@ public class CadenceAgentActivitiesImpl implements CadenceAgentActivities {
     com.openai.models.responses.Response response;
     try {
       String hydratedJson = hydrateResponseJson(responseJson, message.chatGuid());
-      response =
-          messageAgent
-              .getObjectMapper()
-              .readValue(hydratedJson, com.openai.models.responses.Response.class);
+      response = objectMapper.readValue(hydratedJson, com.openai.models.responses.Response.class);
     } catch (Exception e) {
       throw new RuntimeException("Failed to parse response json", e);
     }
@@ -235,10 +236,10 @@ public class CadenceAgentActivitiesImpl implements CadenceAgentActivities {
     for (GeneratedImage image : generatedImages) {
       attachments.add(new BBHttpClientWrapper.AttachmentData(image.filename(), image.bytes()));
     }
-    if (!messageAgent.canSendResponses(workflowContext)) {
+    if (!outboundService.canSendResponses(workflowContext)) {
       return new ImageSendResult(false, false);
     }
-    if (!messageAgent.consumeMessageResponseQuota(message, workflowContext)) {
+    if (!outboundService.consumeMessageResponseQuota(message, workflowContext)) {
       return new ImageSendResult(false, false, true);
     }
     boolean sent = transport.sendMultipartMessage(message.chatGuid(), caption, attachments);
@@ -249,14 +250,14 @@ public class CadenceAgentActivitiesImpl implements CadenceAgentActivities {
   @Override
   public boolean sendReaction(
       IncomingMessage message, String reaction, AgentWorkflowContext workflowContext) {
-    if (!messageAgent.canSendResponses(workflowContext)) {
+    if (!outboundService.canSendResponses(workflowContext)) {
       return false;
     }
     MessageTransport transport = transportRegistry.resolve(message);
     if (!transport.supportsReactions()) {
       return false;
     }
-    if (!messageAgent.consumeMessageResponseQuota(message, workflowContext)) {
+    if (!outboundService.consumeMessageResponseQuota(message, workflowContext)) {
       return false;
     }
     boolean sent = transport.sendReaction(message, reaction);
@@ -269,10 +270,10 @@ public class CadenceAgentActivitiesImpl implements CadenceAgentActivities {
   @Override
   public boolean sendThreadAwareText(
       IncomingMessage message, String text, AgentWorkflowContext workflowContext) {
-    if (!messageAgent.canSendResponses(workflowContext)) {
+    if (!outboundService.canSendResponses(workflowContext)) {
       return false;
     }
-    boolean sent = messageAgent.sendThreadAwareText(message, text, workflowContext);
+    boolean sent = outboundService.sendThreadAwareText(message, text, workflowContext);
     if (sent) {
       recordAssistantTurn(message, text, workflowContext);
     }
@@ -282,22 +283,22 @@ public class CadenceAgentActivitiesImpl implements CadenceAgentActivities {
   @Override
   public void recordAssistantTurn(
       IncomingMessage message, String text, AgentWorkflowContext workflowContext) {
-    messageAgent.recordAssistantTurnForCurrentMessage(message, text, workflowContext);
+    outboundService.recordAssistantTurn(message, text, workflowContext);
   }
 
   @Override
   public void finalizeWorkflow(
       IncomingMessage message, AgentWorkflowContext workflowContext, boolean responded) {
-    ConversationState state = messageAgent.getConversations().get(message.chatGuid());
+    ConversationState state = conversationStateStore.get(message.chatGuid());
     if (state == null) {
       return;
     }
     synchronized (state) {
       if (responded) {
-        messageAgent.recordIncomingTurnsForResponse(state, message);
+        outboundService.recordIncomingTurnsForResponse(state, message);
       }
       state.markIncomingMessageSeen(message);
-      messageAgent.updateThreadContext(state, message);
+      threadContextRecorder.updateThreadContext(state, message);
     }
   }
 
@@ -307,7 +308,7 @@ public class CadenceAgentActivitiesImpl implements CadenceAgentActivities {
     if (chatGuid == null) {
       return List.of();
     }
-    ConversationState state = messageAgent.getConversations().get(chatGuid);
+    ConversationState state = conversationStateStore.get(chatGuid);
     if (state == null) {
       return List.of();
     }
@@ -318,14 +319,14 @@ public class CadenceAgentActivitiesImpl implements CadenceAgentActivities {
 
   private String toJson(Object value) throws Exception {
     JsonNode node = JsonValue.from(value).convert(JsonNode.class);
-    return messageAgent.getObjectMapper().writeValueAsString(node);
+    return objectMapper.writeValueAsString(node);
   }
 
   private String toJsonWithoutImageResults(
       com.openai.models.responses.Response response, Set<String> imageCallIds) throws Exception {
     JsonNode node = JsonValue.from(response).convert(JsonNode.class);
     if (imageCallIds == null || imageCallIds.isEmpty()) {
-      return messageAgent.getObjectMapper().writeValueAsString(node);
+      return objectMapper.writeValueAsString(node);
     }
     if (node instanceof ObjectNode objectNode) {
       JsonNode outputNode = objectNode.get("output");
@@ -342,14 +343,14 @@ public class CadenceAgentActivitiesImpl implements CadenceAgentActivities {
         }
       }
     }
-    return messageAgent.getObjectMapper().writeValueAsString(node);
+    return objectMapper.writeValueAsString(node);
   }
 
   private String hydrateResponseJson(String responseJson, String conversationId) throws Exception {
     if (responseJson == null || responseJson.isBlank()) {
       return responseJson;
     }
-    JsonNode node = messageAgent.getObjectMapper().readTree(responseJson);
+    JsonNode node = objectMapper.readTree(responseJson);
     if (!(node instanceof ObjectNode objectNode)) {
       return responseJson;
     }
@@ -377,7 +378,7 @@ public class CadenceAgentActivitiesImpl implements CadenceAgentActivities {
         itemObject.put("result", blob);
       }
     }
-    return messageAgent.getObjectMapper().writeValueAsString(node);
+    return objectMapper.writeValueAsString(node);
   }
 
   private static String textValue(JsonNode node) {

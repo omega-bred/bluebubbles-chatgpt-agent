@@ -4,9 +4,9 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.when;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import io.breland.bbagent.server.agent.BBMessageAgent;
 import io.breland.bbagent.server.agent.IncomingMessage;
 import io.breland.bbagent.server.agent.tools.ToolContext;
+import io.breland.bbagent.server.agent.tools.ToolContextFixture;
 import io.breland.bbagent.server.ratelimit.MessageResponseRateLimitService;
 import io.breland.bbagent.server.ratelimit.RateLimitStatus;
 import java.time.Instant;
@@ -37,9 +37,7 @@ class GetUsageLimitsAgentToolTest {
                     Instant.parse("2026-04-01T00:00:00Z"),
                     Instant.parse("2026-05-01T00:00:00Z"))));
     GetUsageLimitsAgentTool tool = new GetUsageLimitsAgentTool(rateLimits);
-    BBMessageAgent agent = Mockito.mock(BBMessageAgent.class);
-    when(agent.getObjectMapper()).thenReturn(new ObjectMapper());
-    ToolContext context = new ToolContext(agent, message, null);
+    ToolContext context = ToolContextFixture.with(message).build();
 
     String output = tool.getTool().handler().apply(context, new ObjectMapper().createObjectNode());
 

@@ -11,10 +11,12 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import io.breland.bbagent.generated.bluebubblesclient.api.V1ContactApi;
 import io.breland.bbagent.generated.bluebubblesclient.api.V1MessageApi;
 import io.breland.bbagent.generated.bluebubblesclient.model.ApiV1ChatChatGuidMessageGet200ResponseDataInner;
+import io.breland.bbagent.server.agent.AgentOutboundService;
 import io.breland.bbagent.server.agent.AgentWorkflowContext;
 import io.breland.bbagent.server.agent.BBMessageAgent;
 import io.breland.bbagent.server.agent.IncomingMessage;
 import io.breland.bbagent.server.agent.tools.ToolContext;
+import io.breland.bbagent.server.agent.tools.ToolContextFixture;
 import io.breland.bbagent.server.agent.transport.bb.BBHttpClientWrapper;
 import java.time.Instant;
 import java.util.HashSet;
@@ -261,10 +263,13 @@ class PollAgentToolTest {
   }
 
   private ToolContext toolContext(IncomingMessage message, AgentWorkflowContext workflowContext) {
-    BBMessageAgent agent = Mockito.mock(BBMessageAgent.class);
-    when(agent.getObjectMapper()).thenReturn(mapper);
-    when(agent.consumeMessageResponseQuota(eq(message), isNull())).thenReturn(true);
-    return new ToolContext(agent, message, workflowContext);
+    AgentOutboundService outboundService = Mockito.mock(AgentOutboundService.class);
+    when(outboundService.consumeMessageResponseQuota(eq(message), isNull())).thenReturn(true);
+    return ToolContextFixture.with(message)
+        .outboundService(outboundService)
+        .objectMapper(mapper)
+        .workflowContext(workflowContext)
+        .build();
   }
 
   private static IncomingMessage incomingMessage(

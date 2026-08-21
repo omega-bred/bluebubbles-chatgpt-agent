@@ -4,30 +4,31 @@ import com.uber.cadence.WorkflowExecution;
 import io.breland.bbagent.server.agent.AgentWorkflowContext;
 import io.breland.bbagent.server.agent.BBMessageAgent;
 import io.breland.bbagent.server.agent.ConversationState;
+import io.breland.bbagent.server.agent.ConversationStateStore;
 import io.breland.bbagent.server.agent.IncomingMessage;
 import io.breland.bbagent.server.agent.cadence.models.CadenceMessageWorkflowRequest;
 import io.breland.bbagent.server.agent.memory.ConversationJournalService;
 import io.breland.bbagent.server.agent.profile.AgentProfileService;
 import io.breland.bbagent.server.agent.profile.AssistantResponsiveness;
 import io.breland.bbagent.server.agent.reactions.MessageReactionSupport;
-import io.breland.bbagent.server.agent.terms.TermsAgreementValidator;
 import io.breland.bbagent.server.agent.terms.TermsGate;
 import io.breland.bbagent.server.agent.transport.MessageTransport;
 import io.breland.bbagent.server.agent.transport.MessageTransportRegistry;
-import io.breland.bbagent.server.agent.transport.bb.BBHttpClientWrapper;
 import io.breland.bbagent.server.agent.transport.bb.BlueBubblesPollSupport;
 import io.breland.bbagent.server.metrics.AgentMetricsService;
 import java.time.Instant;
-import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
-import java.util.function.Supplier;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.lang.Nullable;
+import org.springframework.stereotype.Component;
 
 @Slf4j
+@Component
+@RequiredArgsConstructor
 public final class CadenceIncomingMessageHandler {
-  private final Map<String, ConversationState> conversations;
+  private final ConversationStateStore conversationStateStore;
   private final AgentProfileService profileService;
   private final MessageTransportRegistry transportRegistry;
   private final CadenceWorkflowLauncher cadenceWorkflowLauncher;
@@ -35,33 +36,6 @@ public final class CadenceIncomingMessageHandler {
   private final TermsGate termsGate;
   private final PollNotificationEnricher pollNotificationEnricher;
   private final ConversationJournalService conversationJournalService;
-
-  public CadenceIncomingMessageHandler(
-      BBMessageAgent messageAgent,
-      Map<String, ConversationState> conversations,
-      AgentProfileService profileService,
-      MessageTransportRegistry transportRegistry,
-      BBHttpClientWrapper bbHttpClientWrapper,
-      CadenceWorkflowLauncher cadenceWorkflowLauncher,
-      AgentMetricsService agentMetricsService,
-      Supplier<String> termsUrl,
-      TermsAgreementValidator termsAgreementValidator,
-      ConversationJournalService conversationJournalService) {
-    this.conversations = conversations;
-    this.profileService = profileService;
-    this.transportRegistry = transportRegistry;
-    this.pollNotificationEnricher = new PollNotificationEnricher(bbHttpClientWrapper);
-    this.cadenceWorkflowLauncher = cadenceWorkflowLauncher;
-    this.agentMetricsService = agentMetricsService;
-    this.conversationJournalService = conversationJournalService;
-    this.termsGate =
-        new TermsGate(
-            messageAgent,
-            profileService,
-            termsAgreementValidator,
-            termsUrl,
-            this::processAcceptedMessage);
-  }
 
   public void handleIncomingMessage(IncomingMessage rawMessage) {
     PreparedIncomingMessage prepared = prepare(rawMessage);
@@ -105,7 +79,7 @@ public final class CadenceIncomingMessageHandler {
     }
     IncomingMessage message = pollNotificationEnricher.enrich(rawMessage);
     ConversationState state =
-        conversations.computeIfAbsent(
+        conversationStateStore.computeIfAbsent(
             message.chatGuid(), key -> this.computeConversationState(key, message));
 
     synchronized (state) {
@@ -132,7 +106,7 @@ public final class CadenceIncomingMessageHandler {
       }
       state.markIncomingMessageSeen(message);
     }
-    if (termsGate.handle(state, message)) {
+    if (termsGate.handle(state, message, this::processAcceptedMessage)) {
       return null;
     }
     synchronized (state) {

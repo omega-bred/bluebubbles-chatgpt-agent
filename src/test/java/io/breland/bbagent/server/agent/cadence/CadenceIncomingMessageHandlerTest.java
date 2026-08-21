@@ -7,20 +7,22 @@ import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.breland.bbagent.server.agent.AgentOutboundService;
 import io.breland.bbagent.server.agent.BBMessageAgent;
 import io.breland.bbagent.server.agent.ConversationState;
+import io.breland.bbagent.server.agent.ConversationStateStore;
 import io.breland.bbagent.server.agent.IncomingMessage;
 import io.breland.bbagent.server.agent.llm.OpenAiClientProvider;
 import io.breland.bbagent.server.agent.memory.ConversationJournalService;
 import io.breland.bbagent.server.agent.profile.AgentProfileService;
 import io.breland.bbagent.server.agent.profile.AssistantResponsiveness;
 import io.breland.bbagent.server.agent.terms.TermsAgreementValidator;
+import io.breland.bbagent.server.agent.terms.TermsGate;
 import io.breland.bbagent.server.agent.transport.MessageTransport;
 import io.breland.bbagent.server.agent.transport.MessageTransportRegistry;
 import io.breland.bbagent.server.agent.transport.bb.BBHttpClientWrapper;
 import java.time.Instant;
 import java.util.List;
-import java.util.concurrent.ConcurrentHashMap;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
 
@@ -84,7 +86,6 @@ class CadenceIncomingMessageHandlerTest {
   }
 
   private Fixture fixture() {
-    BBMessageAgent messageAgent = Mockito.mock(BBMessageAgent.class);
     AgentProfileService profileService = Mockito.mock(AgentProfileService.class);
     MessageTransportRegistry transportRegistry = Mockito.mock(MessageTransportRegistry.class);
     BBHttpClientWrapper bbHttpClientWrapper = Mockito.mock(BBHttpClientWrapper.class);
@@ -96,17 +97,21 @@ class CadenceIncomingMessageHandlerTest {
             openAiClientProvider,
             new ObjectMapper(),
             TermsAgreementValidator.DEFAULT_RESPONSES_MODEL);
+    TermsGate termsGate =
+        new TermsGate(
+            Mockito.mock(AgentOutboundService.class),
+            profileService,
+            termsAgreementValidator,
+            "https://example.com");
     CadenceIncomingMessageHandler handler =
         new CadenceIncomingMessageHandler(
-            messageAgent,
-            new ConcurrentHashMap<>(),
+            new ConversationStateStore(),
             profileService,
             transportRegistry,
-            bbHttpClientWrapper,
             workflowLauncher,
             Mockito.mock(io.breland.bbagent.server.metrics.AgentMetricsService.class),
-            () -> "https://example.com/terms",
-            termsAgreementValidator,
+            termsGate,
+            new PollNotificationEnricher(bbHttpClientWrapper),
             journalService);
     return new Fixture(
         handler, profileService, transportRegistry, workflowLauncher, journalService);

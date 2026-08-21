@@ -11,7 +11,7 @@ import io.breland.bbagent.server.agent.memory.ConversationMemoryModels.CatchupPr
 import io.breland.bbagent.server.agent.memory.MemoryScopeResolver;
 import io.breland.bbagent.server.agent.memory.ProactiveCatchupService;
 import io.breland.bbagent.server.agent.profile.AgentProfile;
-import io.breland.bbagent.server.agent.tools.ToolContext;
+import io.breland.bbagent.server.agent.tools.ToolContextFixture;
 import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
@@ -42,15 +42,12 @@ class ConfigureGroupCatchupAgentToolTest {
     AgentProfile profile = Mockito.mock(AgentProfile.class);
     IncomingMessage message = message(false);
     when(profile.resolveCanonicalAccountId(message)).thenReturn(Optional.of("account-1"));
-    BBMessageAgent agent = Mockito.mock(BBMessageAgent.class);
-    when(agent.getObjectMapper()).thenReturn(mapper);
-
     String output =
         new ConfigureGroupCatchupAgentTool(resolver)
             .getTool()
             .handler()
             .apply(
-                new ToolContext(agent, profile, message, null),
+                ToolContextFixture.with(message).objectMapper(mapper).profile(profile).build(),
                 mapper.readTree(
                     """
                     {"group":"Project","enabled":true,"timezone":"America/Los_Angeles",
@@ -77,15 +74,12 @@ class ConfigureGroupCatchupAgentToolTest {
     AgentProfile profile = Mockito.mock(AgentProfile.class);
     IncomingMessage message = message(false);
     when(profile.resolveCanonicalAccountId(message)).thenReturn(Optional.of("account-1"));
-    BBMessageAgent agent = Mockito.mock(BBMessageAgent.class);
-    when(agent.getObjectMapper()).thenReturn(mapper);
-
     String output =
         new ConfigureGroupCatchupAgentTool(resolver)
             .getTool()
             .handler()
             .apply(
-                new ToolContext(agent, profile, message, null),
+                ToolContextFixture.with(message).objectMapper(mapper).profile(profile).build(),
                 mapper.readTree("{\"group\":\"Project\",\"enabled\":true}"));
 
     assertThat(output).contains("disambiguation_required", "group_options");
@@ -98,7 +92,7 @@ class ConfigureGroupCatchupAgentToolTest {
             .getTool()
             .handler()
             .apply(
-                new ToolContext(Mockito.mock(BBMessageAgent.class), message(true), null),
+                ToolContextFixture.with(message(true)).objectMapper(mapper).build(),
                 mapper.createObjectNode());
 
     assertThat(output).contains("one-to-one");
