@@ -24,7 +24,6 @@ import org.apache.hc.core5.http.ContentType;
 import org.apache.hc.core5.http.Header;
 import org.apache.hc.core5.http.HttpEntityContainer;
 import org.apache.hc.core5.http.io.entity.InputStreamEntity;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Profile;
 import org.springframework.core.Ordered;
 import org.springframework.core.annotation.Order;
@@ -61,6 +60,11 @@ public class DevServerForwardFilter extends OncePerRequestFilter {
           "transfer-encoding",
           "upgrade");
   private final CloseableHttpClient httpClient = HttpClients.createDefault();
+  private final HandlerMappingIntrospector handlerMappingIntrospector;
+
+  public DevServerForwardFilter(HandlerMappingIntrospector handlerMappingIntrospector) {
+    this.handlerMappingIntrospector = handlerMappingIntrospector;
+  }
 
   @PreDestroy
   public void cleanup() {
@@ -69,8 +73,6 @@ public class DevServerForwardFilter extends OncePerRequestFilter {
     } catch (Exception ignored) {
     }
   }
-
-  @Autowired private HandlerMappingIntrospector handlerMappingIntrospector;
 
   @Override
   protected void doFilterInternal(

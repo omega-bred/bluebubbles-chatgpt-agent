@@ -2,20 +2,22 @@ package io.breland.bbagent.server.agent.terms;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.openai.client.OpenAIClient;
 import com.openai.models.responses.EasyInputMessage;
 import com.openai.models.responses.Response;
 import com.openai.models.responses.ResponseCreateParams;
 import com.openai.models.responses.ResponseInputItem;
 import io.breland.bbagent.server.agent.AgentResponseHelper;
+import io.breland.bbagent.server.agent.llm.OpenAiClientProvider;
 import java.util.List;
 import java.util.Locale;
 import java.util.Set;
-import java.util.function.Supplier;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.stereotype.Component;
 
 @Slf4j
+@Component
 public final class TermsAgreementValidator {
   public static final String DEFAULT_RESPONSES_MODEL = "openai/gpt-4.1-mini";
   private static final double MIN_CONFIDENCE = 0.85;
@@ -42,15 +44,19 @@ public final class TermsAgreementValidator {
           "i consent",
           "sounds good");
 
-  private final Supplier<OpenAIClient> openAiSupplier;
+  private final OpenAiClientProvider openAiClientProvider;
   private final ObjectMapper objectMapper;
-  private final Supplier<String> responsesModel;
+  private final String responsesModel;
 
   public TermsAgreementValidator(
-      Supplier<OpenAIClient> openAiSupplier,
+      OpenAiClientProvider openAiClientProvider,
       ObjectMapper objectMapper,
-      Supplier<String> responsesModel) {
-    this.openAiSupplier = openAiSupplier;
+      @Value(
+              "${bbagent.terms.acceptance.responses-model:"
+                  + TermsAgreementValidator.DEFAULT_RESPONSES_MODEL
+                  + "}")
+          String responsesModel) {
+    this.openAiClientProvider = openAiClientProvider;
     this.objectMapper = objectMapper;
     this.responsesModel = responsesModel;
   }
@@ -63,7 +69,7 @@ public final class TermsAgreementValidator {
       log.info("Terms agreement validator accepted deterministic affirmative reply");
       return true;
     }
-    String cleanModel = StringUtils.defaultIfBlank(responsesModel.get(), DEFAULT_RESPONSES_MODEL);
+    String cleanModel = StringUtils.defaultIfBlank(responsesModel, DEFAULT_RESPONSES_MODEL);
     ResponseCreateParams params =
         ResponseCreateParams.builder()
             .model(cleanModel)
@@ -83,7 +89,7 @@ public final class TermsAgreementValidator {
                             .build())))
             .build();
     try {
-      Response response = openAiSupplier.get().responses().create(params);
+      Response response = openAiClientProvider.get().responses().create(params);
       TermsAgreementDecision decision =
           parseDecision(AgentResponseHelper.extractResponseText(response));
       boolean accepted = decision.agreement() && decision.confidence() >= MIN_CONFIDENCE;

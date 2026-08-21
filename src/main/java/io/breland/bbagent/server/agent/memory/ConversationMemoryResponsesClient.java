@@ -1,7 +1,6 @@
 package io.breland.bbagent.server.agent.memory;
 
 import com.openai.client.OpenAIClient;
-import com.openai.client.okhttp.OpenAIOkHttpClient;
 import com.openai.core.JsonValue;
 import com.openai.core.RequestOptions;
 import com.openai.errors.OpenAIServiceException;
@@ -9,6 +8,7 @@ import com.openai.models.responses.EasyInputMessage;
 import com.openai.models.responses.ResponseCreateParams;
 import com.openai.models.responses.ResponseInputItem;
 import com.openai.models.responses.StructuredResponseCreateParams;
+import io.breland.bbagent.server.agent.llm.OpenAiClientProvider;
 import io.breland.bbagent.server.metrics.OperationalMetricsService;
 import java.time.Clock;
 import java.time.Duration;
@@ -42,7 +42,7 @@ public class ConversationMemoryResponsesClient {
 
   @Autowired
   public ConversationMemoryResponsesClient(
-      @Nullable OpenAIClient openAIClient,
+      OpenAiClientProvider openAiClientProvider,
       @Value("${bbagent.memory.group.responses-model:" + DEFAULT_PRIMARY_MODEL + "}")
           String primaryModel,
       @Value("${bbagent.memory.group.fallback-responses-model:" + DEFAULT_FALLBACK_MODEL + "}")
@@ -58,11 +58,7 @@ public class ConversationMemoryResponsesClient {
                   + "}")
           double maxCompletionPrice) {
     this(
-        () ->
-            openAIClient != null
-                ? openAIClient
-                : OpenAIOkHttpClient.fromEnv()
-                    .withOptions(builder -> builder.timeout(Duration.ofSeconds(120))),
+        openAiClientProvider,
         primaryModel,
         fallbackModel,
         maxPromptPrice,

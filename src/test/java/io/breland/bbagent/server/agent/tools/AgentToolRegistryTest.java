@@ -4,7 +4,9 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -14,6 +16,7 @@ import io.breland.bbagent.server.agent.BBMessageAgent;
 import io.breland.bbagent.server.agent.IncomingMessage;
 import io.breland.bbagent.server.agent.cadence.CadenceWorkflowLauncher;
 import io.breland.bbagent.server.agent.memory.MemoryScopeResolver;
+import io.breland.bbagent.server.agent.profile.AgentProfileService;
 import io.breland.bbagent.server.agent.tools.gcal.GcalClient;
 import io.breland.bbagent.server.agent.tools.giphy.GiphyClient;
 import io.breland.bbagent.server.agent.tools.kubernetes.KubernetesPodLogsAgentTool;
@@ -156,6 +159,8 @@ class AgentToolRegistryTest {
   private static AgentToolRegistry registryForAccount(
       String accountId, MemoryScopeResolver memoryScopeResolver) {
     BBHttpClientWrapper bbHttpClientWrapper = mock(BBHttpClientWrapper.class);
+    AgentProfileService profileService = mock(AgentProfileService.class);
+    when(profileService.resolveOrCreateAccountId(any())).thenReturn(Optional.ofNullable(accountId));
     return new AgentToolRegistry(
         bbHttpClientWrapper,
         mock(Mem0Client.class),
@@ -168,7 +173,7 @@ class AgentToolRegistryTest {
         null,
         null,
         mock(CadenceWorkflowLauncher.class),
-        message -> Optional.ofNullable(accountId),
+        profileService,
         null,
         null,
         null,

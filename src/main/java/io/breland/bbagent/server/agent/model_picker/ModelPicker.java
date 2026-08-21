@@ -7,8 +7,6 @@ import com.openai.models.responses.Tool;
 import com.openai.models.responses.WebSearchTool;
 import io.breland.bbagent.server.agent.IncomingMessage;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.lang.Nullable;
 import org.springframework.stereotype.Component;
 
 @Component
@@ -16,17 +14,8 @@ import org.springframework.stereotype.Component;
 public class ModelPicker {
   private final ModelAccessService modelAccessService;
 
-  public ModelPicker() {
-    this(null);
-  }
-
-  @Autowired
-  public ModelPicker(@Nullable ModelAccessService modelAccessService) {
+  public ModelPicker(ModelAccessService modelAccessService) {
     this.modelAccessService = modelAccessService;
-  }
-
-  public @Nullable ModelAccessService modelAccessService() {
-    return modelAccessService;
   }
 
   public ResponseCreateParams.Builder applyResponsesModelParams(
@@ -76,16 +65,6 @@ public class ModelPicker {
   }
 
   public ModelAccessService.ModelAccess resolveModelAccess(IncomingMessage incomingMessage) {
-    if (modelAccessService == null) {
-      return new ModelAccessService.ModelAccess(
-          null,
-          false,
-          ModelAccessService.STANDARD_MODEL_KEY,
-          ModelAccessService.STANDARD_MODEL_LABEL,
-          ModelAccessService.STANDARD_RESPONSES_MODEL,
-          false,
-          java.util.List.of());
-    }
     return modelAccessService.resolve(incomingMessage);
   }
 }

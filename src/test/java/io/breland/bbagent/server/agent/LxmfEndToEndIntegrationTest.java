@@ -21,9 +21,7 @@ import com.openai.models.responses.Tool;
 import com.openai.models.responses.ToolChoiceOptions;
 import io.breland.bbagent.generated.bluebubblesclient.api.V1ContactApi;
 import io.breland.bbagent.generated.bluebubblesclient.api.V1MessageApi;
-import io.breland.bbagent.server.agent.cadence.CadenceWorkflowLauncher;
 import io.breland.bbagent.server.agent.location.ReverseLocationLookup;
-import io.breland.bbagent.server.agent.model_picker.ModelPicker;
 import io.breland.bbagent.server.agent.profile.AgentProfileService;
 import io.breland.bbagent.server.agent.profile.AgentSettingsStore;
 import io.breland.bbagent.server.agent.profile.AssistantResponsiveness;
@@ -35,10 +33,7 @@ import io.breland.bbagent.server.agent.tools.bb.SearchConvoHistoryAgentTool;
 import io.breland.bbagent.server.agent.tools.bb.SendPollAgentTool;
 import io.breland.bbagent.server.agent.tools.bb.SendReactionAgentTool;
 import io.breland.bbagent.server.agent.tools.bb.SendTextAgentTool;
-import io.breland.bbagent.server.agent.tools.gcal.GcalClient;
-import io.breland.bbagent.server.agent.tools.giphy.GiphyClient;
 import io.breland.bbagent.server.agent.tools.giphy.SendGiphyAgentTool;
-import io.breland.bbagent.server.agent.tools.memory.Mem0Client;
 import io.breland.bbagent.server.agent.tools.search.ToolSearchAgentTool;
 import io.breland.bbagent.server.agent.transport.MessageTransportRegistry;
 import io.breland.bbagent.server.agent.transport.bb.BBHttpClientWrapper;
@@ -278,27 +273,11 @@ class LxmfEndToEndIntegrationTest {
               null,
               null);
       this.agent =
-          new BBMessageAgent(
-              openAIClient,
-              bbHttpClientWrapper,
-              Mockito.mock(Mem0Client.class),
-              Mockito.mock(GcalClient.class),
-              null,
-              Mockito.mock(GiphyClient.class),
-              profileService,
-              attachmentInputBuilder,
-              transportRegistry,
-              OBJECT_MAPPER,
-              Mockito.mock(CadenceWorkflowLauncher.class),
-              null,
-              null,
-              null,
-              null,
-              null,
-              null,
-              null,
-              null,
-              new ModelPicker());
+          BBMessageAgentFixture.with(bbHttpClientWrapper)
+              .openAiClient(openAIClient)
+              .profileService(profileService)
+              .transportRegistry(transportRegistry)
+              .build();
     }
 
     private void enqueueModelResponse(Response response) {
