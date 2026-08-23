@@ -1,5 +1,7 @@
 package io.breland.bbagent.server.agent.memory;
 
+import static io.breland.bbagent.server.agent.memory.ConversationMemoryModels.corpusHash;
+
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
@@ -16,9 +18,6 @@ import io.breland.bbagent.server.agent.memory.ConversationMemoryModels.QuestionG
 import io.breland.bbagent.server.agent.memory.ConversationMemoryModels.SummaryMaterial;
 import io.breland.bbagent.server.agent.transport.bb.BBHttpClientWrapper;
 import io.breland.bbagent.server.metrics.OperationalMetricsService;
-import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
@@ -28,7 +27,6 @@ import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Comparator;
-import java.util.HexFormat;
 import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
@@ -683,21 +681,6 @@ public class ConversationDigestService {
       }
     }
     return combined.toString();
-  }
-
-  private String corpusHash(List<JournalMessage> messages) {
-    try {
-      MessageDigest digest = MessageDigest.getInstance("SHA-256");
-      for (JournalMessage message : messages) {
-        digest.update(message.messageGuid().getBytes(StandardCharsets.UTF_8));
-        digest.update((byte) 0);
-        digest.update(message.contentHash().getBytes(StandardCharsets.UTF_8));
-        digest.update((byte) '\n');
-      }
-      return HexFormat.of().formatHex(digest.digest());
-    } catch (NoSuchAlgorithmException e) {
-      throw new IllegalStateException("SHA-256 unavailable", e);
-    }
   }
 
   private record GroupSelection(List<AuthorizedGroup> groups, List<String> disambiguationOptions) {}

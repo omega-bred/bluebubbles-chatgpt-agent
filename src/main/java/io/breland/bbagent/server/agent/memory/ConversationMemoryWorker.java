@@ -1,5 +1,7 @@
 package io.breland.bbagent.server.agent.memory;
 
+import static io.breland.bbagent.server.agent.memory.ConversationMemoryModels.corpusHash;
+
 import io.breland.bbagent.server.agent.memory.ConversationMemoryModels.ConversationRecord;
 import io.breland.bbagent.server.agent.memory.ConversationMemoryModels.ExtractionBatch;
 import io.breland.bbagent.server.agent.memory.ConversationMemoryModels.ExtractionCheckpoint;
@@ -7,15 +9,11 @@ import io.breland.bbagent.server.agent.memory.ConversationMemoryModels.JournalMe
 import io.breland.bbagent.server.agent.memory.ConversationMemoryModels.ModelExtraction;
 import io.breland.bbagent.server.agent.memory.ConversationMemoryModels.WorkClaim;
 import io.breland.bbagent.server.metrics.OperationalMetricsService;
-import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Comparator;
-import java.util.HexFormat;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -264,21 +262,6 @@ public class ConversationMemoryWorker {
 
   private static int textLength(JournalMessage message) {
     return StringUtils.length(message.text());
-  }
-
-  static String corpusHash(List<JournalMessage> messages) {
-    try {
-      MessageDigest digest = MessageDigest.getInstance("SHA-256");
-      for (JournalMessage message : messages) {
-        digest.update(message.messageGuid().getBytes(StandardCharsets.UTF_8));
-        digest.update((byte) 0);
-        digest.update(message.contentHash().getBytes(StandardCharsets.UTF_8));
-        digest.update((byte) '\n');
-      }
-      return HexFormat.of().formatHex(digest.digest());
-    } catch (NoSuchAlgorithmException e) {
-      throw new IllegalStateException("SHA-256 unavailable", e);
-    }
   }
 
   private record SelectedBatch(List<JournalMessage> messages, boolean hasMoreNewMessages) {}
