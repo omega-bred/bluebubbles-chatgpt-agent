@@ -6,16 +6,14 @@ import static org.mockito.Mockito.when;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.breland.bbagent.generated.bluebubblesclient.model.Message;
-import io.breland.bbagent.server.agent.BBMessageAgent;
 import io.breland.bbagent.server.agent.ConversationState;
 import io.breland.bbagent.server.agent.IncomingMessage;
-import io.breland.bbagent.server.agent.tools.ToolContext;
+import io.breland.bbagent.server.agent.tools.ToolContextFixture;
 import io.breland.bbagent.server.agent.transport.bb.BBHttpClientWrapper;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
-import java.util.concurrent.ConcurrentHashMap;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
 
@@ -34,18 +32,15 @@ class GetThreadContextAgentToolTest {
             "+15555550123",
             "2026-06-03T12:00:00Z",
             List.of("attachment_guid:image-1")));
-    Map<String, ConversationState> conversations = new ConcurrentHashMap<>();
-    conversations.put("iMessage;+;chat-1", state);
-    BBMessageAgent messageAgent = Mockito.mock(BBMessageAgent.class);
-    when(messageAgent.getObjectMapper()).thenReturn(mapper);
-    when(messageAgent.getConversations()).thenReturn(conversations);
-
     String output =
         new GetThreadContextAgentTool(Mockito.mock(BBHttpClientWrapper.class))
             .getTool()
             .handler()
             .apply(
-                new ToolContext(messageAgent, incomingMessage("iMessage;+;chat-1"), null),
+                ToolContextFixture.with(incomingMessage("iMessage;+;chat-1"))
+                    .objectMapper(mapper)
+                    .conversationState("iMessage;+;chat-1", state)
+                    .build(),
                 mapper.createObjectNode());
     JsonNode result = mapper.readTree(output);
 
@@ -61,11 +56,6 @@ class GetThreadContextAgentToolTest {
   void serializesUncachedThreadSenderAsTheHandleAddress() throws Exception {
     ObjectMapper mapper = new ObjectMapper().findAndRegisterModules();
     ConversationState state = new ConversationState();
-    Map<String, ConversationState> conversations = new ConcurrentHashMap<>();
-    conversations.put("iMessage;+;chat-1", state);
-    BBMessageAgent messageAgent = Mockito.mock(BBMessageAgent.class);
-    when(messageAgent.getObjectMapper()).thenReturn(mapper);
-    when(messageAgent.getConversations()).thenReturn(conversations);
     BBHttpClientWrapper client = Mockito.mock(BBHttpClientWrapper.class);
     when(client.getMessage("root-guid"))
         .thenReturn(
@@ -81,7 +71,10 @@ class GetThreadContextAgentToolTest {
             .getTool()
             .handler()
             .apply(
-                new ToolContext(messageAgent, incomingMessage("iMessage;+;chat-1"), null),
+                ToolContextFixture.with(incomingMessage("iMessage;+;chat-1"))
+                    .objectMapper(mapper)
+                    .conversationState("iMessage;+;chat-1", state)
+                    .build(),
                 mapper.createObjectNode());
     JsonNode result = mapper.readTree(output);
 

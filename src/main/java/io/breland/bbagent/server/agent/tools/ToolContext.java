@@ -1,8 +1,10 @@
 package io.breland.bbagent.server.agent.tools;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+import io.breland.bbagent.server.agent.AgentOutboundService;
 import io.breland.bbagent.server.agent.AgentWorkflowContext;
-import io.breland.bbagent.server.agent.BBMessageAgent;
 import io.breland.bbagent.server.agent.ConversationState;
+import io.breland.bbagent.server.agent.ConversationStateStore;
 import io.breland.bbagent.server.agent.IncomingMessage;
 import io.breland.bbagent.server.agent.profile.AgentProfile;
 import io.breland.bbagent.server.agent.profile.AssistantResponsiveness;
@@ -11,24 +13,23 @@ import java.util.Optional;
 import org.springframework.lang.Nullable;
 
 public class ToolContext {
-  private final BBMessageAgent bbMessageAgent;
+  private final AgentOutboundService outboundService;
+  private final ConversationStateStore conversationStateStore;
+  private final ObjectMapper objectMapper;
   private final @Nullable AgentProfile profile;
   private final IncomingMessage message;
-  private final AgentWorkflowContext workflowContext;
+  private final @Nullable AgentWorkflowContext workflowContext;
 
   public ToolContext(
-      BBMessageAgent bbMessageAgent,
-      IncomingMessage message,
-      AgentWorkflowContext workflowContext) {
-    this(bbMessageAgent, null, message, workflowContext);
-  }
-
-  public ToolContext(
-      BBMessageAgent bbMessageAgent,
+      AgentOutboundService outboundService,
+      ConversationStateStore conversationStateStore,
+      ObjectMapper objectMapper,
       @Nullable AgentProfile profile,
       IncomingMessage message,
-      AgentWorkflowContext workflowContext) {
-    this.bbMessageAgent = bbMessageAgent;
+      @Nullable AgentWorkflowContext workflowContext) {
+    this.outboundService = outboundService;
+    this.conversationStateStore = conversationStateStore;
+    this.objectMapper = objectMapper;
     this.profile = profile;
     this.message = message;
     this.workflowContext = workflowContext;
@@ -38,12 +39,12 @@ public class ToolContext {
     return message;
   }
 
-  public java.util.Map<String, ConversationState> getConversations() {
-    return bbMessageAgent.getConversations();
+  public ConversationState getConversationState(String chatGuid) {
+    return conversationStateStore.get(chatGuid);
   }
 
-  public com.fasterxml.jackson.databind.ObjectMapper getMapper() {
-    return bbMessageAgent.getObjectMapper();
+  public ObjectMapper getMapper() {
+    return objectMapper;
   }
 
   public String accountId() {
@@ -84,28 +85,28 @@ public class ToolContext {
   }
 
   public void recordAssistantTurn(String content) {
-    bbMessageAgent.recordAssistantTurnForCurrentMessage(message, content, workflowContext);
+    outboundService.recordAssistantTurn(message, content, workflowContext);
   }
 
   public boolean sendText(OutgoingTextMessage outgoingMessage) {
-    return bbMessageAgent.sendTextFromTool(message, outgoingMessage, workflowContext);
+    return outboundService.sendTextFromTool(message, outgoingMessage, workflowContext);
   }
 
   public boolean sendReaction(
       String conversationId, String selectedMessageGuid, String reaction, Integer partIndex) {
-    return bbMessageAgent.sendReactionFromTool(
+    return outboundService.sendReactionFromTool(
         message, conversationId, selectedMessageGuid, reaction, partIndex, workflowContext);
   }
 
   public boolean canSendResponses() {
-    return bbMessageAgent.canSendResponses(workflowContext);
+    return outboundService.canSendResponses(workflowContext);
   }
 
   public boolean consumeMessageResponseQuota() {
-    return bbMessageAgent.consumeMessageResponseQuota(message, workflowContext);
+    return outboundService.consumeMessageResponseQuota(message, workflowContext);
   }
 
-  public AgentWorkflowContext workflowContext() {
+  public @Nullable AgentWorkflowContext workflowContext() {
     return workflowContext;
   }
 }

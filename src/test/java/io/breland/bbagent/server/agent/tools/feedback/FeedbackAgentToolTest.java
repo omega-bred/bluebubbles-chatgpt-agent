@@ -7,10 +7,10 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import io.breland.bbagent.server.agent.BBMessageAgent;
 import io.breland.bbagent.server.agent.IncomingMessage;
 import io.breland.bbagent.server.agent.profile.AgentProfile;
 import io.breland.bbagent.server.agent.tools.ToolContext;
+import io.breland.bbagent.server.agent.tools.ToolContextFixture;
 import io.breland.bbagent.server.feedback.FeedbackService;
 import java.time.Instant;
 import java.util.List;
@@ -30,11 +30,10 @@ class FeedbackAgentToolTest {
                 "feedback-1", Instant.parse("2026-05-01T00:00:00Z")));
     FeedbackAgentTool tool = new FeedbackAgentTool(feedbackService);
     ObjectMapper mapper = new ObjectMapper();
-    BBMessageAgent agent = Mockito.mock(BBMessageAgent.class);
     AgentProfile profile = Mockito.mock(AgentProfile.class);
-    when(agent.getObjectMapper()).thenReturn(mapper);
     when(profile.resolveOrCreateAccountId(any())).thenReturn(Optional.of("account-1"));
-    ToolContext context = new ToolContext(agent, profile, message(), null);
+    ToolContext context =
+        ToolContextFixture.with(message()).objectMapper(mapper).profile(profile).build();
     var args = mapper.createObjectNode();
     args.put("feedback", "Can you support voice notes?");
     args.put("category", "capability");

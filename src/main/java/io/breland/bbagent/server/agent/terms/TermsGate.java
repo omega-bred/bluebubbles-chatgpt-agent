@@ -1,6 +1,6 @@
 package io.breland.bbagent.server.agent.terms;
 
-import io.breland.bbagent.server.agent.BBMessageAgent;
+import io.breland.bbagent.server.agent.AgentOutboundService;
 import io.breland.bbagent.server.agent.ConversationState;
 import io.breland.bbagent.server.agent.IncomingMessage;
 import io.breland.bbagent.server.agent.account.AgentAccountResolver;
@@ -8,26 +8,39 @@ import io.breland.bbagent.server.agent.profile.AgentProfileService;
 import io.breland.bbagent.server.agent.transport.OutgoingTextMessage;
 import java.util.Locale;
 import java.util.Optional;
-import java.util.function.Supplier;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.lang.Nullable;
+import org.springframework.stereotype.Component;
 
 @Slf4j
-@RequiredArgsConstructor
+@Component
 public final class TermsGate {
   private static final String ACCEPTANCE_REPLY =
       "Before I can help, you need to agree to the Terms of Use: %s\n\n"
           + "Reply YES to confirm that you are at least 18, agree not to use this service for spam, abuse, illegal activity, or harmful content, understand that AI output may be inaccurate, and accept that the service is provided as-is with no refunds, no SLA, and no liability guarantees.";
 
-  private final BBMessageAgent messageAgent;
+  private final AgentOutboundService outboundService;
   private final AgentProfileService profileService;
   private final TermsAgreementValidator agreementValidator;
-  private final Supplier<String> termsUrl;
-  private final AcceptedMessageProcessor acceptedMessageProcessor;
+  private final String websiteBaseUrl;
 
-  public boolean handle(ConversationState state, IncomingMessage message) {
+  public TermsGate(
+      AgentOutboundService outboundService,
+      AgentProfileService profileService,
+      TermsAgreementValidator agreementValidator,
+      @Value("${website.base-url:http://localhost:8080}") String websiteBaseUrl) {
+    this.outboundService = outboundService;
+    this.profileService = profileService;
+    this.agreementValidator = agreementValidator;
+    this.websiteBaseUrl = websiteBaseUrl;
+  }
+
+  public boolean handle(
+      ConversationState state,
+      IncomingMessage message,
+      AcceptedMessageProcessor acceptedMessageProcessor) {
     if (message == null) {
       return false;
     }
@@ -66,9 +79,7 @@ public final class TermsGate {
     ConversationState.PendingTermsAcceptance promptPending =
         pending != null ? pending : recordPendingAcceptance(state, message);
     sendReply(
-        message,
-        ACCEPTANCE_REPLY.formatted(termsUrl.get()),
-        promptReplyTarget(message, promptPending));
+        message, ACCEPTANCE_REPLY.formatted(termsUrl()), promptReplyTarget(message, promptPending));
     return true;
   }
 
@@ -152,11 +163,19 @@ public final class TermsGate {
   private void sendReply(
       IncomingMessage message, String reply, @Nullable String selectedMessageGuid) {
     if (StringUtils.isBlank(selectedMessageGuid)) {
-      messageAgent.sendThreadAwareTextUnmetered(message, reply);
+      outboundService.sendThreadAwareTextUnmetered(message, reply);
       return;
     }
-    messageAgent.sendTextUnmetered(
+    outboundService.sendTextUnmetered(
         message, new OutgoingTextMessage(reply, selectedMessageGuid, null, null));
+  }
+
+  private String termsUrl() {
+    String baseUrl = websiteBaseUrl.trim();
+    if (baseUrl.isBlank()) {
+      return "/terms";
+    }
+    return StringUtils.removeEnd(baseUrl, "/") + "/terms";
   }
 
   private String promptReplyTarget(
