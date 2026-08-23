@@ -176,7 +176,7 @@ public class ConversationQuestionAnsweringService {
           run.pageCount,
           run.windowCount,
           run.modelCalls);
-      result = unavailable(effectiveFrom, to, run, SOURCE_UNAVAILABLE);
+      result = unavailable(run, SOURCE_UNAVAILABLE);
     }
     recordMetrics(result, run, startedAt);
     return result;
@@ -194,13 +194,13 @@ public class ConversationQuestionAnsweringService {
       RunState run) {
     Optional<ConversationRecord> conversationValue = store.findConversation(group.conversationId());
     if (conversationValue.isEmpty() || !enabledGroup(conversationValue.get())) {
-      return unavailable(from, to, run, SOURCE_UNAVAILABLE);
+      return unavailable(run, SOURCE_UNAVAILABLE);
     }
     ConversationRecord conversation = conversationValue.get();
     List<MembershipInterval> memberships =
         store.findMembershipIntervals(group.conversationId(), accountId, from, to);
     if (memberships.isEmpty()) {
-      return unavailable(from, to, run, SOURCE_UNAVAILABLE);
+      return unavailable(run, SOURCE_UNAVAILABLE);
     }
     if (accountId.equals(conversation.memoryEnabledByAccountId())
         && memberships.stream().anyMatch(interval -> interval.endedAt() == null)) {
@@ -213,24 +213,24 @@ public class ConversationQuestionAnsweringService {
     Set<HistoryWindowCursor> seenCursors = new LinkedHashSet<>();
     while (true) {
       if (deadlineReached(deadline)) {
-        return unavailable(from, to, run, TIME_LIMIT);
+        return unavailable(run, TIME_LIMIT);
       }
       if (run.pageCount >= maxHistoryPages) {
-        return clarification(from, to, run, NARROW_TIME_QUESTION, null, false);
+        return clarification(run, NARROW_TIME_QUESTION, null, false);
       }
 
       HistoryWindow window = retriever.retrieveWindow(request, cursor, windowMessageCount);
       run.observe(window);
       if (run.pageCount > maxHistoryPages) {
-        return clarification(from, to, run, NARROW_TIME_QUESTION, null, false);
+        return clarification(run, NARROW_TIME_QUESTION, null, false);
       }
       if (window.messages().isEmpty()) {
         if (window.sourceExhausted()) {
           if (run.findings.isEmpty()) {
-            return noAnswer(from, to, run, EMPTY_HISTORY_ANSWER, null, false);
+            return noAnswer(run, EMPTY_HISTORY_ANSWER, null, false);
           }
           return Objects.requireNonNull(
-              reduceFindings(question, referenceTime, timezone, false, deadline, from, to, run));
+              reduceFindings(question, referenceTime, timezone, false, deadline, run));
         }
         cursor = advanceCursor(window, seenCursors);
         continue;
@@ -239,10 +239,10 @@ public class ConversationQuestionAnsweringService {
       List<List<QuestionMessage>> chunks =
           chunkMessages(question, referenceTime, timezone, window.messages());
       if (chunks == null) {
-        return clarification(from, to, run, NARROW_TIME_QUESTION, null, false);
+        return clarification(run, NARROW_TIME_QUESTION, null, false);
       }
       if (chunks.size() > 1 && run.modelCalls + chunks.size() + 1 > maxModelBatches) {
-        return clarification(from, to, run, NARROW_TIME_QUESTION, null, false);
+        return clarification(run, NARROW_TIME_QUESTION, null, false);
       }
 
       List<ModelWindowDecision> decisions = new ArrayList<>(chunks.size());
@@ -250,7 +250,7 @@ public class ConversationQuestionAnsweringService {
         RoutedWindowDecision routed =
             decide(question, referenceTime, timezone, chunk, deadline, run);
         if (routed == null) {
-          return unavailable(from, to, run, deadlineReached(deadline) ? TIME_LIMIT : MODEL_LIMIT);
+          return unavailable(run, deadlineReached(deadline) ? TIME_LIMIT : MODEL_LIMIT);
         }
         validateDecision(routed.decision(), chunk);
         run.observe(routed);
@@ -261,15 +261,15 @@ public class ConversationQuestionAnsweringService {
         ModelWindowDecision decision = decisions.getFirst();
         switch (decision.action()) {
           case ANSWERED -> {
-            return answered(from, to, run, decision, run.model, run.fallbackUsed);
+            return answered(run, decision, run.model, run.fallbackUsed);
           }
           case NEED_TIME_CLARIFICATION -> {
             return clarification(
-                from, to, run, decision.clarificationQuestion(), run.model, run.fallbackUsed);
+                run, decision.clarificationQuestion(), run.model, run.fallbackUsed);
           }
           case NO_ANSWER -> {
             if (window.nextCursor() == null) {
-              return noAnswer(from, to, run, decision.answer(), run.model, run.fallbackUsed);
+              return noAnswer(run, decision.answer(), run.model, run.fallbackUsed);
             }
           }
           case NEED_OLDER_MESSAGES -> addProvisionalFindings(decision, run);
@@ -286,7 +286,7 @@ public class ConversationQuestionAnsweringService {
             }
             case NEED_TIME_CLARIFICATION -> {
               return clarification(
-                  from, to, run, decision.clarificationQuestion(), run.model, run.fallbackUsed);
+                  run, decision.clarificationQuestion(), run.model, run.fallbackUsed);
             }
             case NO_ANSWER -> {
               noAnswerText = decision.answer();
@@ -296,16 +296,12 @@ public class ConversationQuestionAnsweringService {
         boolean olderAvailable = window.nextCursor() != null;
         if (!run.findings.isEmpty()) {
           GroupQuestionAnswer reduced =
-              reduceFindings(
-                  question, referenceTime, timezone, olderAvailable, deadline, from, to, run);
+              reduceFindings(question, referenceTime, timezone, olderAvailable, deadline, run);
           if (reduced != null) {
             return reduced;
           }
-          needsOlder = true;
         } else if (!needsOlder && !olderAvailable) {
           return noAnswer(
-              from,
-              to,
               run,
               StringUtils.defaultIfBlank(noAnswerText, NO_ANSWER),
               run.model,
@@ -315,10 +311,10 @@ public class ConversationQuestionAnsweringService {
 
       if (window.nextCursor() == null) {
         if (run.findings.isEmpty()) {
-          return noAnswer(from, to, run, NO_ANSWER, run.model, run.fallbackUsed);
+          return noAnswer(run, NO_ANSWER, run.model, run.fallbackUsed);
         }
         return Objects.requireNonNull(
-            reduceFindings(question, referenceTime, timezone, false, deadline, from, to, run));
+            reduceFindings(question, referenceTime, timezone, false, deadline, run));
       }
       cursor = advanceCursor(window, seenCursors);
     }
@@ -346,41 +342,36 @@ public class ConversationQuestionAnsweringService {
       @Nullable String timezone,
       boolean olderAvailable,
       Instant deadline,
-      Instant from,
-      Instant to,
       RunState run) {
     if (run.findings.isEmpty()) {
-      return noAnswer(from, to, run, NO_ANSWER, run.model, run.fallbackUsed);
+      return noAnswer(run, NO_ANSWER, run.model, run.fallbackUsed);
     }
     run.findings.sort(Comparator.comparing(QuestionFinding::coverageThrough));
     int characters =
         model.findingReductionInputCharacters(
             question, referenceTime, timezone, run.findings, olderAvailable);
     if (!run.reserveModelCall(characters)) {
-      return unavailable(from, to, run, deadlineReached(deadline) ? TIME_LIMIT : MODEL_LIMIT);
+      return unavailable(run, deadlineReached(deadline) ? TIME_LIMIT : MODEL_LIMIT);
     }
     RoutedFindingReduction routed =
         model.reduceFindings(
             question, referenceTime, timezone, List.copyOf(run.findings), olderAvailable, deadline);
     if (deadlineReached(deadline)) {
-      return unavailable(from, to, run, TIME_LIMIT);
+      return unavailable(run, TIME_LIMIT);
     }
     validateReduction(routed, run.findings);
     run.observe(routed);
     ModelWindowDecision decision = routed.decision();
     return switch (decision.action()) {
-      case ANSWERED -> answered(from, to, run, decision, run.model, run.fallbackUsed);
+      case ANSWERED -> answered(run, decision, run.model, run.fallbackUsed);
       case NEED_TIME_CLARIFICATION ->
-          clarification(
-              from, to, run, decision.clarificationQuestion(), run.model, run.fallbackUsed);
+          clarification(run, decision.clarificationQuestion(), run.model, run.fallbackUsed);
       case NO_ANSWER ->
-          olderAvailable
-              ? null
-              : noAnswer(from, to, run, decision.answer(), run.model, run.fallbackUsed);
+          olderAvailable ? null : noAnswer(run, decision.answer(), run.model, run.fallbackUsed);
       case NEED_OLDER_MESSAGES ->
           olderAvailable
               ? null
-              : clarification(from, to, run, NARROW_TIME_QUESTION, run.model, run.fallbackUsed);
+              : clarification(run, NARROW_TIME_QUESTION, run.model, run.fallbackUsed);
     };
   }
 
@@ -493,15 +484,10 @@ public class ConversationQuestionAnsweringService {
   }
 
   private GroupQuestionAnswer answered(
-      Instant from,
-      Instant to,
-      RunState run,
-      ModelWindowDecision decision,
-      String modelName,
-      boolean fallbackUsed) {
+      RunState run, ModelWindowDecision decision, String modelName, boolean fallbackUsed) {
     if (!ConversationQuestionAnswerOutputValidator.isSafe(
         decision.answer(), run.messagesByGuid.keySet(), Set.of())) {
-      return unavailable(from, to, run, "invalid_model_output");
+      return unavailable(run, "invalid_model_output");
     }
     return new GroupQuestionAnswer(
         AnswerStatus.ANSWERED,
@@ -513,30 +499,23 @@ public class ConversationQuestionAnsweringService {
   }
 
   private GroupQuestionAnswer noAnswer(
-      Instant from,
-      Instant to,
-      RunState run,
-      String answer,
-      @Nullable String modelName,
-      boolean fallbackUsed) {
+      RunState run, String answer, @Nullable String modelName, boolean fallbackUsed) {
     if (!ConversationQuestionAnswerOutputValidator.isSafe(
         answer, run.messagesByGuid.keySet(), Set.of())) {
-      return unavailable(from, to, run, "invalid_model_output");
+      return unavailable(run, "invalid_model_output");
     }
     return new GroupQuestionAnswer(
         AnswerStatus.NO_ANSWER, answer, null, List.of(), modelName, fallbackUsed);
   }
 
   private GroupQuestionAnswer clarification(
-      Instant from,
-      Instant to,
       RunState run,
       String clarificationQuestion,
       @Nullable String modelName,
       boolean fallbackUsed) {
     if (!ConversationQuestionAnswerOutputValidator.isSafe(
         clarificationQuestion, run.messagesByGuid.keySet(), Set.of())) {
-      return unavailable(from, to, run, "invalid_model_output");
+      return unavailable(run, "invalid_model_output");
     }
     return new GroupQuestionAnswer(
         AnswerStatus.CLARIFICATION_REQUIRED,
@@ -547,7 +526,7 @@ public class ConversationQuestionAnsweringService {
         fallbackUsed);
   }
 
-  private GroupQuestionAnswer unavailable(Instant from, Instant to, RunState run, String reason) {
+  private GroupQuestionAnswer unavailable(RunState run, String reason) {
     run.partialReason = StringUtils.defaultIfBlank(run.partialReason, reason);
     return new GroupQuestionAnswer(
         AnswerStatus.UNAVAILABLE, UNAVAILABLE_ANSWER, null, List.of(), run.model, run.fallbackUsed);
