@@ -8,6 +8,7 @@ import io.breland.bbagent.server.agent.cadence.CadenceWorkflowLauncher;
 import io.breland.bbagent.server.agent.memory.ConversationMemorySettingsService;
 import io.breland.bbagent.server.agent.memory.MemoryScopeResolver;
 import io.breland.bbagent.server.agent.model_picker.ModelAccessService;
+import io.breland.bbagent.server.agent.profile.AgentProfileService;
 import io.breland.bbagent.server.agent.tools.assistant.AssistantNameAgentTool;
 import io.breland.bbagent.server.agent.tools.assistant.AssistantResponsivenessAgentTool;
 import io.breland.bbagent.server.agent.tools.bb.CurrentConversationInfoAgentTool;
@@ -73,7 +74,9 @@ import java.util.function.Function;
 import java.util.function.Supplier;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.lang.Nullable;
+import org.springframework.stereotype.Component;
 
+@Component
 public final class AgentToolRegistry {
   private static final Set<String> GROUP_ONLY_TOOLS =
       Set.of(
@@ -157,13 +160,13 @@ public final class AgentToolRegistry {
       @Nullable FeedbackService feedbackService,
       @Nullable MessageResponseRateLimitService messageResponseRateLimitService,
       CadenceWorkflowLauncher cadenceWorkflowLauncher,
-      Function<IncomingMessage, Optional<String>> accountIdResolver,
+      AgentProfileService profileService,
       @Nullable OperationalMetricsService operationalMetricsService,
       @Nullable ModelAccessService modelAccessService,
       @Nullable ConversationMemorySettingsService conversationMemorySettingsService,
       @Nullable MemoryScopeResolver memoryScopeResolver) {
     this.transportRegistry = transportRegistry;
-    this.accountIdResolver = accountIdResolver;
+    this.accountIdResolver = profileService::resolveOrCreateAccountId;
     this.objectMapper = objectMapper;
     registerBuiltInTools(
         bbHttpClientWrapper,

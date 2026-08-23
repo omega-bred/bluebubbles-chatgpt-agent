@@ -4,6 +4,8 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 import com.openai.client.OpenAIClient;
 import com.openai.client.okhttp.OpenAIOkHttpClient;
@@ -14,7 +16,7 @@ import com.openai.models.responses.ResponseInputItem;
 import io.breland.bbagent.server.agent.AgentResponseHelper;
 import io.breland.bbagent.server.agent.IncomingMessage;
 import io.breland.bbagent.server.agent.model_picker.ModelAccessService;
-import io.breland.bbagent.server.agent.model_picker.ModelPicker;
+import io.breland.bbagent.server.agent.model_picker.ModelPickerTestSupport;
 import io.breland.bbagent.server.agent.tools.AgentTool;
 import io.breland.bbagent.server.agent.tools.JsonSchemaUtilities;
 import java.time.Duration;
@@ -88,7 +90,8 @@ class LiteLlmResponsesProviderIntegTest {
     OpenAIClient client =
         OpenAIOkHttpClient.fromEnv().withOptions(b -> b.timeout(Duration.ofSeconds(90)));
     OpenAiResponsesLlmProvider provider =
-        new OpenAiResponsesLlmProvider(() -> client, new ModelPicker());
+        new OpenAiResponsesLlmProvider(
+            openAiClientProvider(client), ModelPickerTestSupport.standard());
     ModelAccessService.ModelAccess access =
         new ModelAccessService.ModelAccess(
             "account-litellm-test",
@@ -136,7 +139,8 @@ class LiteLlmResponsesProviderIntegTest {
     OpenAIClient client =
         OpenAIOkHttpClient.fromEnv().withOptions(b -> b.timeout(Duration.ofSeconds(90)));
     OpenAiResponsesLlmProvider provider =
-        new OpenAiResponsesLlmProvider(() -> client, new ModelPicker());
+        new OpenAiResponsesLlmProvider(
+            openAiClientProvider(client), ModelPickerTestSupport.standard());
 
     Response response =
         provider.createResponse(
@@ -224,6 +228,12 @@ class LiteLlmResponsesProviderIntegTest {
     assertFalse(
         baseUrl.contains("api.openai.com"),
         "OPENAI_BASE_URL must point at LiteLLM for the Anthropic smoke test");
+  }
+
+  private static OpenAiClientProvider openAiClientProvider(OpenAIClient client) {
+    OpenAiClientProvider provider = mock(OpenAiClientProvider.class);
+    when(provider.get()).thenReturn(client);
+    return provider;
   }
 
   private static String setting(String name) {

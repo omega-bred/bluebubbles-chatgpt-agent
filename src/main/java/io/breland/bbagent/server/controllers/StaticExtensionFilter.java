@@ -7,7 +7,6 @@ import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
 import java.util.List;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.core.io.Resource;
 import org.springframework.core.io.ResourceLoader;
 import org.springframework.stereotype.Component;
@@ -19,7 +18,11 @@ public class StaticExtensionFilter extends OncePerRequestFilter {
 
   private static final List<String> EXTENSIONS = List.of(".js", ".css", ".html");
 
-  @Autowired private ResourceLoader resourceLoader;
+  private final ResourceLoader resourceLoader;
+
+  public StaticExtensionFilter(ResourceLoader resourceLoader) {
+    this.resourceLoader = resourceLoader;
+  }
 
   @Override
   protected void doFilterInternal(

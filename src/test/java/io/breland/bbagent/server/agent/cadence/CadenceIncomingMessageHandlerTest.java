@@ -10,6 +10,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import io.breland.bbagent.server.agent.BBMessageAgent;
 import io.breland.bbagent.server.agent.ConversationState;
 import io.breland.bbagent.server.agent.IncomingMessage;
+import io.breland.bbagent.server.agent.llm.OpenAiClientProvider;
 import io.breland.bbagent.server.agent.memory.ConversationJournalService;
 import io.breland.bbagent.server.agent.profile.AgentProfileService;
 import io.breland.bbagent.server.agent.profile.AssistantResponsiveness;
@@ -89,9 +90,12 @@ class CadenceIncomingMessageHandlerTest {
     BBHttpClientWrapper bbHttpClientWrapper = Mockito.mock(BBHttpClientWrapper.class);
     CadenceWorkflowLauncher workflowLauncher = Mockito.mock(CadenceWorkflowLauncher.class);
     ConversationJournalService journalService = Mockito.mock(ConversationJournalService.class);
+    OpenAiClientProvider openAiClientProvider = Mockito.mock(OpenAiClientProvider.class);
     TermsAgreementValidator termsAgreementValidator =
         new TermsAgreementValidator(
-            () -> null, new ObjectMapper(), () -> TermsAgreementValidator.DEFAULT_RESPONSES_MODEL);
+            openAiClientProvider,
+            new ObjectMapper(),
+            TermsAgreementValidator.DEFAULT_RESPONSES_MODEL);
     CadenceIncomingMessageHandler handler =
         new CadenceIncomingMessageHandler(
             messageAgent,
@@ -100,7 +104,7 @@ class CadenceIncomingMessageHandlerTest {
             transportRegistry,
             bbHttpClientWrapper,
             workflowLauncher,
-            null,
+            Mockito.mock(io.breland.bbagent.server.metrics.AgentMetricsService.class),
             () -> "https://example.com/terms",
             termsAgreementValidator,
             journalService);

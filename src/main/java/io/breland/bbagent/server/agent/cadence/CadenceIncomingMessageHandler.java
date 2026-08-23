@@ -31,10 +31,10 @@ public final class CadenceIncomingMessageHandler {
   private final AgentProfileService profileService;
   private final MessageTransportRegistry transportRegistry;
   private final CadenceWorkflowLauncher cadenceWorkflowLauncher;
-  private final @Nullable AgentMetricsService agentMetricsService;
+  private final AgentMetricsService agentMetricsService;
   private final TermsGate termsGate;
   private final PollNotificationEnricher pollNotificationEnricher;
-  private final @Nullable ConversationJournalService conversationJournalService;
+  private final ConversationJournalService conversationJournalService;
 
   public CadenceIncomingMessageHandler(
       BBMessageAgent messageAgent,
@@ -43,10 +43,10 @@ public final class CadenceIncomingMessageHandler {
       MessageTransportRegistry transportRegistry,
       BBHttpClientWrapper bbHttpClientWrapper,
       CadenceWorkflowLauncher cadenceWorkflowLauncher,
-      @Nullable AgentMetricsService agentMetricsService,
+      AgentMetricsService agentMetricsService,
       Supplier<String> termsUrl,
       TermsAgreementValidator termsAgreementValidator,
-      @Nullable ConversationJournalService conversationJournalService) {
+      ConversationJournalService conversationJournalService) {
     this.conversations = conversations;
     this.profileService = profileService;
     this.transportRegistry = transportRegistry;
@@ -162,9 +162,6 @@ public final class CadenceIncomingMessageHandler {
   }
 
   private void recordAcceptedMessageMetric(IncomingMessage message) {
-    if (agentMetricsService == null) {
-      return;
-    }
     try {
       agentMetricsService.recordAcceptedMessage(message);
     } catch (RuntimeException e) {
@@ -214,9 +211,6 @@ public final class CadenceIncomingMessageHandler {
   }
 
   private void recordEligibleMessage(IncomingMessage message) {
-    if (conversationJournalService == null) {
-      return;
-    }
     try {
       conversationJournalService.recordEligibleMessage(message);
     } catch (RuntimeException e) {
