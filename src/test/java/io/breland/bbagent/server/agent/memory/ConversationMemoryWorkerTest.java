@@ -110,7 +110,7 @@ class ConversationMemoryWorkerTest {
   @Test
   void unchangedCorpusCompletesWorkWithoutRerunningExtraction() {
     List<JournalMessage> messages = messages();
-    String corpusHash = ConversationMemoryWorker.corpusHash(messages);
+    String corpusHash = ConversationMemoryModels.corpusHash(messages);
     when(store.claimDueExtractionWork("worker-1", NOW, 10)).thenReturn(List.of(claim));
     when(store.findCheckpoint(CONVERSATION_ID))
         .thenReturn(
