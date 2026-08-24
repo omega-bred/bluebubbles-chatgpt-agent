@@ -31,6 +31,6 @@
     "source-map-js": "^1.2.1",
     "tailwindcss": "4.3.3",
     "typescript": "7.0.2",
-    "vite": "^8.2.1"
+    "vite": "^8.2.2"
   }
 }
