@@ -24,6 +24,8 @@ runs:
     - name: Install Nix
       uses: cachix/install-nix-action@630ae543ea3a38a9a4166f03376c02c50f408342
       with:
+        # Avoid daemon worker crashes during large uncached dependency refreshes on Linux runners.
+        install_options: ${{ runner.os == 'Linux' && '--no-daemon' || '' }}
         extra_nix_config: |
           experimental-features = nix-command flakes
           accept-flake-config = true
