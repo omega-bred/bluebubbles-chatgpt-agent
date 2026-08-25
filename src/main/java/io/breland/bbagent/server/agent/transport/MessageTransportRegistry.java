@@ -1,8 +1,6 @@
 package io.breland.bbagent.server.agent.transport;
 
 import io.breland.bbagent.server.agent.IncomingMessage;
-import io.breland.bbagent.server.agent.transport.bb.BBHttpClientWrapper;
-import io.breland.bbagent.server.agent.transport.bb.BlueBubblesMessageTransport;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -31,16 +29,6 @@ public class MessageTransportRegistry {
         blueBubblesTransport != null
             ? blueBubblesTransport
             : this.transports.values().stream().findFirst().orElse(null);
-  }
-
-  private MessageTransportRegistry(MessageTransport transport) {
-    this.transports = new LinkedHashMap<>();
-    this.transports.put(transport.id(), transport);
-    this.fallbackTransport = transport;
-  }
-
-  public static MessageTransportRegistry blueBubblesOnly(BBHttpClientWrapper bbHttpClientWrapper) {
-    return new MessageTransportRegistry(new BlueBubblesMessageTransport(bbHttpClientWrapper));
   }
 
   public MessageTransport resolve(IncomingMessage message) {
