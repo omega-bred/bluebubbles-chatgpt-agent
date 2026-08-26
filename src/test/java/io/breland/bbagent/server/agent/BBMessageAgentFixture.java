@@ -28,6 +28,7 @@ import io.breland.bbagent.server.agent.tools.giphy.GiphyClient;
 import io.breland.bbagent.server.agent.tools.memory.Mem0Client;
 import io.breland.bbagent.server.agent.transport.MessageTransportRegistry;
 import io.breland.bbagent.server.agent.transport.bb.BBHttpClientWrapper;
+import io.breland.bbagent.server.agent.transport.bb.BlueBubblesMessageTransport;
 import io.breland.bbagent.server.feedback.FeedbackService;
 import io.breland.bbagent.server.metrics.AgentMetricsService;
 import io.breland.bbagent.server.metrics.OperationalMetricsService;
@@ -35,6 +36,7 @@ import io.breland.bbagent.server.nativeapp.NativeAppSessionService;
 import io.breland.bbagent.server.ratelimit.MessageResponseRateLimitService;
 import io.breland.bbagent.server.ratelimit.RateLimitDecision;
 import io.breland.bbagent.server.website.WebsiteAccountService;
+import java.util.List;
 
 final class BBMessageAgentFixture {
   private final BBHttpClientWrapper bbHttpClientWrapper;
@@ -51,7 +53,8 @@ final class BBMessageAgentFixture {
 
   private BBMessageAgentFixture(BBHttpClientWrapper bbHttpClientWrapper) {
     this.bbHttpClientWrapper = bbHttpClientWrapper;
-    this.transportRegistry = MessageTransportRegistry.blueBubblesOnly(bbHttpClientWrapper);
+    this.transportRegistry =
+        new MessageTransportRegistry(List.of(new BlueBubblesMessageTransport(bbHttpClientWrapper)));
   }
 
   static BBMessageAgentFixture with(BBHttpClientWrapper bbHttpClientWrapper) {

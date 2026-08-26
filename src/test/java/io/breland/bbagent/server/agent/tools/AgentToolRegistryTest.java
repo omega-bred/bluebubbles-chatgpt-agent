@@ -26,6 +26,7 @@ import io.breland.bbagent.server.agent.tools.memory.Mem0Client;
 import io.breland.bbagent.server.agent.tools.search.ToolSearchAgentTool;
 import io.breland.bbagent.server.agent.transport.MessageTransportRegistry;
 import io.breland.bbagent.server.agent.transport.bb.BBHttpClientWrapper;
+import io.breland.bbagent.server.agent.transport.bb.BlueBubblesMessageTransport;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
@@ -166,7 +167,7 @@ class AgentToolRegistryTest {
         mock(GcalClient.class),
         null,
         mock(GiphyClient.class),
-        MessageTransportRegistry.blueBubblesOnly(bbHttpClientWrapper),
+        new MessageTransportRegistry(List.of(new BlueBubblesMessageTransport(bbHttpClientWrapper))),
         new ObjectMapper(),
         () -> mock(OpenAIClient.class),
         null,
