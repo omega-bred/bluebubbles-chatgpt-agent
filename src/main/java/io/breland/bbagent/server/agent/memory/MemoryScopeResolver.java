@@ -39,13 +39,6 @@ public class MemoryScopeResolver {
     this(store, legacyScopeReadEnabled, null, null, null);
   }
 
-  public MemoryScopeResolver(
-      ConversationMemoryStore store,
-      boolean legacyScopeReadEnabled,
-      @Nullable AuthorizedMemoryRetrievalService authorizedMemoryRetrievalService) {
-    this(store, legacyScopeReadEnabled, authorizedMemoryRetrievalService, null, null);
-  }
-
   public Optional<String> primaryScope(ToolContext context) {
     if (context == null || context.message() == null) {
       return Optional.empty();
