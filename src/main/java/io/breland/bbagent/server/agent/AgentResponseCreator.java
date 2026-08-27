@@ -12,31 +12,20 @@ import io.breland.bbagent.server.agent.tools.AgentToolRegistry;
 import io.breland.bbagent.server.metrics.OperationalMetricsService;
 import java.time.Duration;
 import java.util.List;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.lang.Nullable;
 import org.springframework.stereotype.Component;
 
 @Slf4j
 @Component
+@RequiredArgsConstructor
 public final class AgentResponseCreator {
   private final ModelPicker modelPicker;
   private final AgentToolRegistry toolRegistry;
   private final LlmProvider llmProvider;
   private final OperationalMetricsService operationalMetricsService;
   private final AgentProfileService profileService;
-
-  public AgentResponseCreator(
-      ModelPicker modelPicker,
-      AgentToolRegistry toolRegistry,
-      LlmProvider llmProvider,
-      OperationalMetricsService operationalMetricsService,
-      AgentProfileService profileService) {
-    this.modelPicker = modelPicker;
-    this.toolRegistry = toolRegistry;
-    this.llmProvider = llmProvider;
-    this.operationalMetricsService = operationalMetricsService;
-    this.profileService = profileService;
-  }
 
   @Nullable
   public Response createResponse(
