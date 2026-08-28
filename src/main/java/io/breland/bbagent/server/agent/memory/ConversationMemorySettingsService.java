@@ -40,13 +40,6 @@ public class ConversationMemorySettingsService {
     this.globallyEnabled = globallyEnabled;
   }
 
-  public ConversationMemorySettingsService(
-      ConversationMemoryStore store,
-      BBHttpClientWrapper bbHttpClientWrapper,
-      @Nullable Clock clock) {
-    this(store, bbHttpClientWrapper, clock, true);
-  }
-
   public GroupMemorySetting getGroupMemory(String chatGuid) {
     Optional<ConversationRecord> conversation = findOrRegisterConversation(chatGuid);
     if (conversation.isEmpty() || !conversation.get().group()) {
