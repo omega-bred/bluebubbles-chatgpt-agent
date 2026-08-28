@@ -10,8 +10,10 @@ import io.breland.bbagent.server.agent.profile.AgentProfile;
 import io.breland.bbagent.server.agent.profile.AssistantResponsiveness;
 import io.breland.bbagent.server.agent.transport.OutgoingTextMessage;
 import java.util.Optional;
+import lombok.RequiredArgsConstructor;
 import org.springframework.lang.Nullable;
 
+@RequiredArgsConstructor
 public class ToolContext {
   private final AgentOutboundService outboundService;
   private final ConversationStateStore conversationStateStore;
@@ -19,21 +21,6 @@ public class ToolContext {
   private final @Nullable AgentProfile profile;
   private final IncomingMessage message;
   private final @Nullable AgentWorkflowContext workflowContext;
-
-  public ToolContext(
-      AgentOutboundService outboundService,
-      ConversationStateStore conversationStateStore,
-      ObjectMapper objectMapper,
-      @Nullable AgentProfile profile,
-      IncomingMessage message,
-      @Nullable AgentWorkflowContext workflowContext) {
-    this.outboundService = outboundService;
-    this.conversationStateStore = conversationStateStore;
-    this.objectMapper = objectMapper;
-    this.profile = profile;
-    this.message = message;
-    this.workflowContext = workflowContext;
-  }
 
   public IncomingMessage message() {
     return message;
