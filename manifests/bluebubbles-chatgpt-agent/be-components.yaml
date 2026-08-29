@@ -264,6 +264,10 @@ spec:
                   name: lxmf-bridge-webhook-secret
             - name: LXMF_BRIDGE_BASE_URL
               value: "http://lxmf-bridge.bluebubbles-chatgpt-agent.svc.cluster.local:8091"
+            - name: WALLART_MCP_BASE_URL
+              value: "http://big-wallart-server.big-wallart-server.svc.cluster.local"
+            - name: WALLART_MCP_ALLOWED_PARTICIPANT
+              value: "+18033861737"
             - name: BBAGENT_CANARY_MARKER
               value: "BBAGENT_LXMF_CANARY_V1"
             - name: BBAGENT_CANARY_LABEL

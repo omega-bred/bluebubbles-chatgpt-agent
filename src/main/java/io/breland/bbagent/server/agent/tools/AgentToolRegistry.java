@@ -52,6 +52,7 @@ import io.breland.bbagent.server.agent.tools.scheduled.ScheduledEventDeleteTool;
 import io.breland.bbagent.server.agent.tools.scheduled.ScheduledEventListTool;
 import io.breland.bbagent.server.agent.tools.scheduled.ScheduledEventTool;
 import io.breland.bbagent.server.agent.tools.search.ToolSearchAgentTool;
+import io.breland.bbagent.server.agent.tools.wallart.WallartMcpAgentTool;
 import io.breland.bbagent.server.agent.tools.website.GetWebsiteAccountLinkStatusAgentTool;
 import io.breland.bbagent.server.agent.tools.website.LinkConversationSettingsAgentTool;
 import io.breland.bbagent.server.agent.tools.website.LinkWebsiteAccountAgentTool;
@@ -140,6 +141,7 @@ public final class AgentToolRegistry {
           ScheduledEventDeleteTool.TOOL_NAME);
   private static final Set<String> KUBERNETES_TOOL_NAMES =
       Set.of(KubernetesReadOnlyAgentTool.TOOL_NAME, KubernetesPodLogsAgentTool.TOOL_NAME);
+  private static final Set<String> WALLART_TOOL_NAMES = Set.of(WallartMcpAgentTool.TOOL_NAME);
   private static final String KUBERNETES_TOOL_ALLOWED_ACCOUNT_ID =
       "9f80c2a0-de6f-4c56-8027-29b1673bb0d5";
 
@@ -147,6 +149,7 @@ public final class AgentToolRegistry {
   private final MessageTransportRegistry transportRegistry;
   private final Function<IncomingMessage, Optional<String>> accountIdResolver;
   private final ObjectMapper objectMapper;
+  private final @Nullable WallartMcpAgentTool wallartMcpAgentTool;
 
   public AgentToolRegistry(
       BBHttpClientWrapper bbHttpClientWrapper,
@@ -164,10 +167,12 @@ public final class AgentToolRegistry {
       @Nullable OperationalMetricsService operationalMetricsService,
       @Nullable ModelAccessService modelAccessService,
       @Nullable ConversationMemorySettingsService conversationMemorySettingsService,
-      @Nullable MemoryScopeResolver memoryScopeResolver) {
+      @Nullable MemoryScopeResolver memoryScopeResolver,
+      @Nullable WallartMcpAgentTool wallartMcpAgentTool) {
     this.transportRegistry = transportRegistry;
     this.accountIdResolver = profileService::resolveOrCreateAccountId;
     this.objectMapper = objectMapper;
+    this.wallartMcpAgentTool = wallartMcpAgentTool;
     registerBuiltInTools(
         bbHttpClientWrapper,
         mem0Client,
@@ -182,7 +187,8 @@ public final class AgentToolRegistry {
         operationalMetricsService,
         modelAccessService,
         conversationMemorySettingsService,
-        memoryScopeResolver);
+        memoryScopeResolver,
+        wallartMcpAgentTool);
   }
 
   public List<AgentTool> availableTools(IncomingMessage message) {
@@ -246,6 +252,9 @@ public final class AgentToolRegistry {
     if (KUBERNETES_TOOL_NAMES.contains(toolName)) {
       return "kubernetes";
     }
+    if (WALLART_TOOL_NAMES.contains(toolName)) {
+      return "wallart";
+    }
     if (toolName.startsWith("memory_")) {
       return "memory";
     }
@@ -281,6 +290,9 @@ public final class AgentToolRegistry {
     }
     if (KUBERNETES_TOOL_NAMES.contains(tool.name())) {
       return isKubernetesToolAllowed(message, accountId);
+    }
+    if (WALLART_TOOL_NAMES.contains(tool.name())) {
+      return wallartMcpAgentTool != null && wallartMcpAgentTool.isAllowed(message);
     }
     return true;
   }
@@ -398,7 +410,8 @@ public final class AgentToolRegistry {
       @Nullable OperationalMetricsService operationalMetricsService,
       @Nullable ModelAccessService modelAccessService,
       @Nullable ConversationMemorySettingsService conversationMemorySettingsService,
-      @Nullable MemoryScopeResolver memoryScopeResolver) {
+      @Nullable MemoryScopeResolver memoryScopeResolver,
+      @Nullable WallartMcpAgentTool wallartMcpAgentTool) {
     registerTool(new SendTextAgentTool().getTool());
     registerTool(new SendReactionAgentTool().getTool());
     registerTool(new SendPollAgentTool(bbHttpClientWrapper).getTool());
@@ -456,6 +469,9 @@ public final class AgentToolRegistry {
     registerTool(new ScheduledEventTool(cadenceWorkflowLauncher).getTool());
     registerTool(new ScheduledEventListTool(cadenceWorkflowLauncher).getTool());
     registerTool(new ScheduledEventDeleteTool(cadenceWorkflowLauncher).getTool());
+    if (wallartMcpAgentTool != null) {
+      registerTool(wallartMcpAgentTool.getTool());
+    }
     registerTool(new ToolSearchAgentTool(objectMapper, this::toolIndexEntries).getTool());
   }
 

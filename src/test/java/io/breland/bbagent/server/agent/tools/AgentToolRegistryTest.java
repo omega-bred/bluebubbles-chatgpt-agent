@@ -1,5 +1,6 @@
 package io.breland.bbagent.server.agent.tools;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
@@ -24,6 +25,9 @@ import io.breland.bbagent.server.agent.tools.memory.ConfigureGroupCatchupAgentTo
 import io.breland.bbagent.server.agent.tools.memory.GetGroupCatchupAgentTool;
 import io.breland.bbagent.server.agent.tools.memory.Mem0Client;
 import io.breland.bbagent.server.agent.tools.search.ToolSearchAgentTool;
+import io.breland.bbagent.server.agent.tools.wallart.WallartConversationAccess;
+import io.breland.bbagent.server.agent.tools.wallart.WallartMcpAgentTool;
+import io.breland.bbagent.server.agent.tools.wallart.WallartMcpClient;
 import io.breland.bbagent.server.agent.transport.MessageTransportRegistry;
 import io.breland.bbagent.server.agent.transport.bb.BBHttpClientWrapper;
 import io.breland.bbagent.server.agent.transport.bb.BlueBubblesMessageTransport;
@@ -76,6 +80,29 @@ class AgentToolRegistryTest {
 
     assertFalse(tools.contains(KubernetesReadOnlyAgentTool.TOOL_NAME));
     assertFalse(tools.contains(KubernetesPodLogsAgentTool.TOOL_NAME));
+  }
+
+  @Test
+  void exposesWallartToolOnlyWhenConversationAccessAllowsIt() {
+    WallartConversationAccess access = mock(WallartConversationAccess.class);
+    IncomingMessage allowedDirect = directMessage(LEGACY_ALLOWED_SENDER);
+    IncomingMessage allowedGroup = groupMessage();
+    IncomingMessage deniedDirect = directMessage("someone-else");
+    when(access.isAllowed(allowedDirect)).thenReturn(true);
+    when(access.isAllowed(allowedGroup)).thenReturn(true);
+    when(access.isAllowed(deniedDirect)).thenReturn(false);
+    WallartMcpAgentTool wallartTool = new WallartMcpAgentTool(mock(WallartMcpClient.class), access);
+    AgentToolRegistry registry = registryForAccount("account-1", null, wallartTool);
+
+    assertTrue(
+        toolNames(registry.availableTools(allowedDirect)).contains(WallartMcpAgentTool.TOOL_NAME));
+    assertTrue(
+        toolNames(registry.availableTools(allowedGroup)).contains(WallartMcpAgentTool.TOOL_NAME));
+    assertFalse(
+        toolNames(registry.availableTools(deniedDirect)).contains(WallartMcpAgentTool.TOOL_NAME));
+    assertNotNull(registry.resolveTool(WallartMcpAgentTool.TOOL_NAME, allowedGroup).tool());
+    assertNull(registry.resolveTool(WallartMcpAgentTool.TOOL_NAME, deniedDirect).tool());
+    assertEquals("wallart", registry.toolCategory(WallartMcpAgentTool.TOOL_NAME));
   }
 
   @Test
@@ -158,6 +185,13 @@ class AgentToolRegistryTest {
 
   private static AgentToolRegistry registryForAccount(
       String accountId, MemoryScopeResolver memoryScopeResolver) {
+    return registryForAccount(accountId, memoryScopeResolver, null);
+  }
+
+  private static AgentToolRegistry registryForAccount(
+      String accountId,
+      MemoryScopeResolver memoryScopeResolver,
+      WallartMcpAgentTool wallartMcpAgentTool) {
     BBHttpClientWrapper bbHttpClientWrapper = mock(BBHttpClientWrapper.class);
     AgentProfileService profileService = mock(AgentProfileService.class);
     when(profileService.resolveOrCreateAccountId(any())).thenReturn(Optional.ofNullable(accountId));
@@ -177,7 +211,8 @@ class AgentToolRegistryTest {
         null,
         null,
         null,
-        memoryScopeResolver);
+        memoryScopeResolver,
+        wallartMcpAgentTool);
   }
 
   private static Set<String> toolNames(List<AgentTool> tools) {
