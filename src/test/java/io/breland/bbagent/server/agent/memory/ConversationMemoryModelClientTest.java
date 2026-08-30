@@ -59,6 +59,8 @@ class ConversationMemoryModelClientTest {
               assertThat(candidate.status().name()).isEqualTo("CONFIRMED");
               assertThat(candidate.sensitivity().name()).isEqualTo("NORMAL");
               assertThat(candidate.confidence()).isEqualTo(0.96);
+              assertThat(candidate.contentHash())
+                  .isEqualTo("65dd5ec69a6c558c9ff3f32a8b27c9ab1d20b045477e1a293158b4d63c9fb972");
               assertThat(candidate.evidenceMessageGuids())
                   .containsExactly("message-1", "message-2");
             });

@@ -14,9 +14,6 @@ import io.breland.bbagent.server.agent.memory.ConversationMemoryModels.Extractio
 import io.breland.bbagent.server.agent.memory.ConversationMemoryModels.JournalMessage;
 import io.breland.bbagent.server.agent.memory.ConversationMemoryModels.ModelExtraction;
 import io.breland.bbagent.server.metrics.OperationalMetricsService;
-import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -25,6 +22,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.function.Supplier;
+import org.apache.commons.codec.digest.DigestUtils;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.lang.Nullable;
@@ -234,7 +232,7 @@ public class ConversationMemoryModelClient {
         return null;
       }
       String contentHash =
-          sha256(
+          DigestUtils.sha256Hex(
               kind.name()
                   + "\n"
                   + text
@@ -306,16 +304,6 @@ public class ConversationMemoryModelClient {
       return null;
     }
     return node.isTextual() ? StringUtils.trimToNull(node.textValue()) : null;
-  }
-
-  private static String sha256(String value) {
-    try {
-      byte[] digest =
-          MessageDigest.getInstance("SHA-256").digest(value.getBytes(StandardCharsets.UTF_8));
-      return java.util.HexFormat.of().formatHex(digest);
-    } catch (NoSuchAlgorithmException e) {
-      throw new IllegalStateException("SHA-256 unavailable", e);
-    }
   }
 
   private record ParsedCandidate(ExtractionCandidate candidate, ObjectNode payload) {}
