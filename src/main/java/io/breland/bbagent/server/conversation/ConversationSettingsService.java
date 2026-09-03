@@ -23,9 +23,9 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.lang.Nullable;
 import org.springframework.stereotype.Service;
@@ -33,6 +33,7 @@ import org.springframework.web.server.ResponseStatusException;
 
 @Slf4j
 @Service
+@RequiredArgsConstructor
 public class ConversationSettingsService {
   private static final List<ResponsivenessOption> OPTIONS =
       List.of(
@@ -58,20 +59,6 @@ public class ConversationSettingsService {
   private final @Nullable UmamiAnalyticsService umamiAnalyticsService;
   private final @Nullable ConversationMemorySettingsService memorySettingsService;
   private final @Nullable ProactiveCatchupService proactiveCatchupService;
-
-  @Autowired
-  public ConversationSettingsService(
-      AgentProfileService profileService,
-      BBHttpClientWrapper bbHttpClientWrapper,
-      @Nullable UmamiAnalyticsService umamiAnalyticsService,
-      @Nullable ConversationMemorySettingsService memorySettingsService,
-      @Nullable ProactiveCatchupService proactiveCatchupService) {
-    this.profileService = profileService;
-    this.bbHttpClientWrapper = bbHttpClientWrapper;
-    this.umamiAnalyticsService = umamiAnalyticsService;
-    this.memorySettingsService = memorySettingsService;
-    this.proactiveCatchupService = proactiveCatchupService;
-  }
 
   public ConversationSettingsResponse getSettings(@Nullable String accountId, String chatGuid) {
     String cleanChatGuid = requireChatGuid(chatGuid);
