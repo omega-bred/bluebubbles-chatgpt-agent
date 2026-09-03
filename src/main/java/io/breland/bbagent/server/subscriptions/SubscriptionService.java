@@ -40,6 +40,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
+import lombok.RequiredArgsConstructor;
 import org.apache.commons.codec.digest.DigestUtils;
 import org.apache.commons.lang3.ObjectUtils;
 import org.apache.commons.lang3.StringUtils;
@@ -58,6 +59,7 @@ import org.springframework.web.client.RestClientResponseException;
 import org.springframework.web.server.ResponseStatusException;
 
 @Service
+@RequiredArgsConstructor
 public class SubscriptionService {
   private static final Logger log = LoggerFactory.getLogger(SubscriptionService.class);
   private static final String SOURCE_NONE = "none";
@@ -71,29 +73,8 @@ public class SubscriptionService {
   private final PaymentCheckoutSessionRepository checkoutRepository;
   private final PaymentSubscriptionRepository subscriptionRepository;
   private final PaymentProviderEventRepository eventRepository;
-  private final UmamiAnalyticsService umamiAnalyticsService;
-  private final NativeAppSessionRepository nativeAppSessionRepository;
-
-  public SubscriptionService(
-      SubscriptionProperties properties,
-      SubscriptionProviderRegistry providerRegistry,
-      AgentAccountResolver accountResolver,
-      AgentAccountRepository accountRepository,
-      PaymentCheckoutSessionRepository checkoutRepository,
-      PaymentSubscriptionRepository subscriptionRepository,
-      PaymentProviderEventRepository eventRepository,
-      @Nullable UmamiAnalyticsService umamiAnalyticsService,
-      @Nullable NativeAppSessionRepository nativeAppSessionRepository) {
-    this.properties = properties;
-    this.providerRegistry = providerRegistry;
-    this.accountResolver = accountResolver;
-    this.accountRepository = accountRepository;
-    this.checkoutRepository = checkoutRepository;
-    this.subscriptionRepository = subscriptionRepository;
-    this.eventRepository = eventRepository;
-    this.umamiAnalyticsService = umamiAnalyticsService;
-    this.nativeAppSessionRepository = nativeAppSessionRepository;
-  }
+  private final @Nullable UmamiAnalyticsService umamiAnalyticsService;
+  private final @Nullable NativeAppSessionRepository nativeAppSessionRepository;
 
   public SubscriptionPlansResponse listPlans() {
     return new SubscriptionPlansResponse()
