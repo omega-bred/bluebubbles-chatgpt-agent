@@ -1,7 +1,10 @@
 package io.breland.bbagent.server.agent.memory;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import io.breland.bbagent.server.agent.BBMessageAgent;
@@ -60,6 +63,22 @@ class MemoryScopeResolverTest {
         .contains("iMessage;+;group-1");
     assertThat(new MemoryScopeResolver(store, false).legacyReadScope(context(direct("+1"), "a")))
         .isEmpty();
+  }
+
+  @Test
+  void ownershipUsesSha256ContentHash() {
+    MemoryScopeResolver resolver = new MemoryScopeResolver(store, true);
+
+    resolver.recordOwnership("account:1", "memory-1", "hello");
+    resolver.updateOwnership("account:1", "memory-1", "hello");
+
+    String expectedHash = "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824";
+    verify(store)
+        .recordCanonicalMemory(
+            eq("account:1"), eq("memory-1"), eq(expectedHash), any(Instant.class));
+    verify(store)
+        .updateCanonicalMemory(
+            eq("account:1"), eq("memory-1"), eq(expectedHash), any(Instant.class));
   }
 
   private static ToolContext context(IncomingMessage message, String canonicalAccountId) {

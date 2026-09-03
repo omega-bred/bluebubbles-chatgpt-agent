@@ -2,11 +2,9 @@ package io.breland.bbagent.server.agent.memory;
 
 import io.breland.bbagent.server.agent.IncomingMessage;
 import io.breland.bbagent.server.agent.tools.ToolContext;
-import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
 import java.time.Instant;
-import java.util.HexFormat;
 import java.util.Optional;
+import org.apache.commons.codec.digest.DigestUtils;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
@@ -68,7 +66,8 @@ public class MemoryScopeResolver {
   }
 
   public void recordOwnership(String canonicalScope, String memoryId, String text) {
-    store.recordCanonicalMemory(canonicalScope, memoryId, hash(text), Instant.now());
+    store.recordCanonicalMemory(
+        canonicalScope, memoryId, DigestUtils.sha256Hex(text), Instant.now());
   }
 
   public boolean ownsMemory(String canonicalScope, String memoryId) {
@@ -92,19 +91,11 @@ public class MemoryScopeResolver {
   }
 
   public void updateOwnership(String canonicalScope, String memoryId, String text) {
-    store.updateCanonicalMemory(canonicalScope, memoryId, hash(text), Instant.now());
+    store.updateCanonicalMemory(
+        canonicalScope, memoryId, DigestUtils.sha256Hex(text), Instant.now());
   }
 
   public void removeOwnership(String canonicalScope, String memoryId) {
     store.deleteCanonicalMemory(canonicalScope, memoryId);
-  }
-
-  private String hash(String value) {
-    try {
-      MessageDigest digest = MessageDigest.getInstance("SHA-256");
-      return HexFormat.of().formatHex(digest.digest(value.getBytes(StandardCharsets.UTF_8)));
-    } catch (Exception e) {
-      throw new IllegalStateException("SHA-256 is unavailable", e);
-    }
   }
 }
