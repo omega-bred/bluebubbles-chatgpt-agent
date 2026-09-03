@@ -35,6 +35,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.TreeMap;
 import java.util.UUID;
+import lombok.RequiredArgsConstructor;
 import org.apache.commons.codec.digest.DigestUtils;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.lang.Nullable;
@@ -42,6 +43,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 @Service
+@RequiredArgsConstructor
 public class AdminStatsService implements AgentMetricsService {
   private static final String WORKFLOW_MODE = "CADENCE";
   private static final int TOP_SENDER_LIMIT = 10;
@@ -49,25 +51,10 @@ public class AdminStatsService implements AgentMetricsService {
 
   private final AgentMetricsStore metricsStore;
   private final ModelAccessService modelAccessService;
-  private final AgentAccountResolver accountResolver;
-  private final UmamiAnalyticsService umamiAnalyticsService;
-  private final OperationalMetricsService operationalMetricsService;
-  private final AgentCanaryService canaryService;
-
-  public AdminStatsService(
-      AgentMetricsStore metricsStore,
-      ModelAccessService modelAccessService,
-      @Nullable AgentAccountResolver accountResolver,
-      @Nullable UmamiAnalyticsService umamiAnalyticsService,
-      @Nullable OperationalMetricsService operationalMetricsService,
-      @Nullable AgentCanaryService canaryService) {
-    this.metricsStore = metricsStore;
-    this.modelAccessService = modelAccessService;
-    this.accountResolver = accountResolver;
-    this.umamiAnalyticsService = umamiAnalyticsService;
-    this.operationalMetricsService = operationalMetricsService;
-    this.canaryService = canaryService;
-  }
+  private final @Nullable AgentAccountResolver accountResolver;
+  private final @Nullable UmamiAnalyticsService umamiAnalyticsService;
+  private final @Nullable OperationalMetricsService operationalMetricsService;
+  private final @Nullable AgentCanaryService canaryService;
 
   @Transactional
   @Override
