@@ -1,9 +1,11 @@
 package io.breland.bbagent.server.agent.persistence.account;
 
+import jakarta.persistence.LockModeType;
 import java.util.List;
 import java.util.Optional;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -11,6 +13,10 @@ public interface AgentAccountRepository extends JpaRepository<AgentAccountEntity
   Optional<AgentAccountEntity> findByWebsiteSubject(String websiteSubject);
 
   Optional<AgentAccountEntity> findByWebsiteEmailIgnoreCase(String websiteEmail);
+
+  @Lock(LockModeType.PESSIMISTIC_WRITE)
+  @Query("select account from AgentAccountEntity account where account.accountId = :accountId")
+  Optional<AgentAccountEntity> findByIdForUpdate(@Param("accountId") String accountId);
 
   List<AgentAccountEntity> findAllByProcessingBlockedTrueOrderByProcessingBlockedAtDesc(
       Pageable pageable);
