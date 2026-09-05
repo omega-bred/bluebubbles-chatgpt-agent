@@ -15,8 +15,6 @@ import io.breland.bbagent.server.agent.memory.ConversationMemoryModels.Proactive
 import io.breland.bbagent.server.agent.transport.bb.BBHttpClientWrapper;
 import io.breland.bbagent.server.metrics.OperationalMetricsService;
 import io.breland.bbagent.server.ratelimit.MessageResponseRateLimitService;
-import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
@@ -28,11 +26,11 @@ import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
 import java.time.format.ResolverStyle;
 import java.util.ArrayList;
-import java.util.HexFormat;
 import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
 import java.util.UUID;
+import org.apache.commons.codec.digest.DigestUtils;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
@@ -189,7 +187,7 @@ public class ProactiveCatchupService {
         return;
       }
       String message = deliveryText(group);
-      String digestHash = sha256(message);
+      String digestHash = DigestUtils.sha256Hex(message);
       ZoneId zone = ZoneId.of(claim.timezone());
       ZonedDateTime zonedNow = now.atZone(zone);
       Instant dayStart = zonedNow.toLocalDate().atStartOfDay(zone).toInstant();
@@ -405,15 +403,6 @@ public class ProactiveCatchupService {
       return LocalTime.parse(value, TIME_FORMATTER);
     } catch (DateTimeParseException e) {
       throw new IllegalArgumentException("Quiet hours must use HH:mm", e);
-    }
-  }
-
-  private String sha256(String value) {
-    try {
-      MessageDigest digest = MessageDigest.getInstance("SHA-256");
-      return HexFormat.of().formatHex(digest.digest(value.getBytes(StandardCharsets.UTF_8)));
-    } catch (Exception e) {
-      throw new IllegalStateException("SHA-256 is unavailable", e);
     }
   }
 }

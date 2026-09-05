@@ -5,12 +5,10 @@ import io.breland.bbagent.server.agent.IncomingMessage;
 import io.breland.bbagent.server.agent.account.AgentAccountResolver;
 import io.breland.bbagent.server.agent.memory.ConversationMemoryModels.JournalMessage;
 import io.breland.bbagent.server.agent.reactions.MessageReactionSupport;
-import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
 import java.time.Duration;
 import java.time.Instant;
-import java.util.HexFormat;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.codec.digest.DigestUtils;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
@@ -76,7 +74,7 @@ public class ConversationJournalService {
             observedAt,
             false,
             false,
-            sha256(text)));
+            DigestUtils.sha256Hex(text)));
     store.scheduleExtraction(conversationId, observedAt.plus(debounce));
     return true;
   }
@@ -95,14 +93,5 @@ public class ConversationJournalService {
           || BBMessageAgent.IMESSAGE_SERVICE.equalsIgnoreCase(message.service());
     }
     return message.isLxmfTransport();
-  }
-
-  private String sha256(String text) {
-    try {
-      MessageDigest digest = MessageDigest.getInstance("SHA-256");
-      return HexFormat.of().formatHex(digest.digest(text.getBytes(StandardCharsets.UTF_8)));
-    } catch (java.security.NoSuchAlgorithmException e) {
-      throw new IllegalStateException("SHA-256 is unavailable", e);
-    }
   }
 }

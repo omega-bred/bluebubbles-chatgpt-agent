@@ -82,7 +82,13 @@ class ProactiveCatchupServiceTest {
     when(responseQuota.tryConsumeForAccountId("account-1"))
         .thenReturn(new RateLimitDecision(null, true, 1));
     when(store.createCatchupDelivery(
-            eq(claim), eq("direct-1"), any(), eq(NOW.minusSeconds(60)), any(), any(), eq(NOW)))
+            eq(claim),
+            eq("direct-1"),
+            eq("b9c9deff0f39972d2c5e2108e6caf8a4a18d3dd9cfe6721607e65ac58ce0d447"),
+            eq(NOW.minusSeconds(60)),
+            any(),
+            any(),
+            eq(NOW)))
         .thenReturn(
             Optional.of(
                 new ProactiveDelivery(
