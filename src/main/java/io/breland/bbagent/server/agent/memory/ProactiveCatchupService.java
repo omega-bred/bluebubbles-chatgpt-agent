@@ -1,6 +1,5 @@
 package io.breland.bbagent.server.agent.memory;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import io.breland.bbagent.generated.bluebubblesclient.model.ApiV1MessageTextPostRequest;
 import io.breland.bbagent.server.agent.IncomingMessage;
 import io.breland.bbagent.server.agent.memory.ConversationMemoryModels.AuthorizedGroup;
@@ -66,7 +65,6 @@ public class ProactiveCatchupService {
       ConversationDigestService digestService,
       BBHttpClientWrapper blueBubbles,
       MessageResponseRateLimitService responseQuota,
-      ObjectMapper objectMapper,
       @Nullable OperationalMetricsService operationalMetricsService,
       @Nullable Clock clock,
       @Value("${bbagent.memory.group.enabled:false}") boolean groupMemoryEnabled,
@@ -76,7 +74,6 @@ public class ProactiveCatchupService {
         digestService,
         blueBubbles,
         responseQuota,
-        objectMapper,
         operationalMetricsService,
         clock == null ? Clock.systemUTC() : clock,
         UUID.randomUUID().toString(),
@@ -88,7 +85,6 @@ public class ProactiveCatchupService {
       ConversationDigestService digestService,
       BBHttpClientWrapper blueBubbles,
       MessageResponseRateLimitService responseQuota,
-      ObjectMapper objectMapper,
       @Nullable OperationalMetricsService operationalMetricsService,
       Clock clock,
       String workerId,
@@ -166,7 +162,7 @@ public class ProactiveCatchupService {
   private void processClaim(CatchupPreferenceClaim claim, Instant now) {
     Instant quietEnd = quietEndIfActive(claim, now);
     if (quietEnd != null) {
-      store.completeCatchupPreferenceClaim(claim, quietEnd, now, "quiet_hours");
+      store.completeCatchupPreferenceClaim(claim, quietEnd, now);
       return;
     }
     try {
@@ -179,13 +175,13 @@ public class ProactiveCatchupService {
               claim.accountId(), claim.conversationId(), from, now);
       CatchupGroup group = result.groups().stream().findFirst().orElse(null);
       if (group == null || (group.decisions().isEmpty() && group.openQuestions().isEmpty())) {
-        completeClaim(claim, now, POLL_INTERVAL, "no_changes");
+        completeClaim(claim, now, POLL_INTERVAL);
         return;
       }
       Optional<DirectConversationRoute> directRoute =
           store.findPreferredDirectConversation(claim.accountId(), now);
       if (directRoute.isEmpty()) {
-        completeClaim(claim, now, Duration.ofHours(1), "no_direct_route");
+        completeClaim(claim, now, Duration.ofHours(1));
         return;
       }
       String message = deliveryText(group);
@@ -204,14 +200,12 @@ public class ProactiveCatchupService {
               dayEnd,
               now);
       if (delivery.isEmpty()) {
-        store.completeCatchupPreferenceClaim(
-            claim, dayEnd.plus(POLL_INTERVAL), now, "deduplicated");
+        store.completeCatchupPreferenceClaim(claim, dayEnd.plus(POLL_INTERVAL), now);
         return;
       }
       if (!responseQuota.tryConsumeForAccountId(claim.accountId()).allowed()) {
         store.completeCatchupDelivery(delivery.get().deliveryId(), "SKIPPED", now);
-        store.completeCatchupPreferenceClaim(
-            claim, dayEnd.plus(POLL_INTERVAL), now, "quota_exhausted");
+        store.completeCatchupPreferenceClaim(claim, dayEnd.plus(POLL_INTERVAL), now);
         return;
       }
 
@@ -241,9 +235,9 @@ public class ProactiveCatchupService {
         throw e;
       }
       store.completeCatchupDelivery(delivery.get().deliveryId(), sent ? "SENT" : "UNKNOWN", now);
-      completeClaim(claim, now, POLL_INTERVAL, sent ? null : "unknown_send");
+      completeClaim(claim, now, POLL_INTERVAL);
     } catch (RuntimeException e) {
-      completeClaim(claim, now, POLL_INTERVAL, OperationalMetricsService.failureType(e));
+      completeClaim(claim, now, POLL_INTERVAL);
     }
   }
 
@@ -382,9 +376,8 @@ public class ProactiveCatchupService {
     return StringUtils.truncate(String.join("\n", lines), 1_400);
   }
 
-  private void completeClaim(
-      CatchupPreferenceClaim claim, Instant now, Duration delay, @Nullable String outcome) {
-    store.completeCatchupPreferenceClaim(claim, now.plus(delay), now, outcome);
+  private void completeClaim(CatchupPreferenceClaim claim, Instant now, Duration delay) {
+    store.completeCatchupPreferenceClaim(claim, now.plus(delay), now);
   }
 
   private String validateTimezone(String timezone) {

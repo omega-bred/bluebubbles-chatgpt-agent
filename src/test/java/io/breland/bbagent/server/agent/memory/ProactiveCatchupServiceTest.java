@@ -6,7 +6,6 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import io.breland.bbagent.generated.bluebubblesclient.model.ApiV1MessageTextPostRequest;
 import io.breland.bbagent.server.agent.memory.ConversationMemoryModels.CatchupGroup;
 import io.breland.bbagent.server.agent.memory.ConversationMemoryModels.CatchupPreferenceClaim;
@@ -52,9 +51,7 @@ class ProactiveCatchupServiceTest {
 
     service(true).processDueCatchups();
 
-    verify(store)
-        .completeCatchupPreferenceClaim(
-            claim, Instant.parse("2026-08-09T08:00:00Z"), NOW, "quiet_hours");
+    verify(store).completeCatchupPreferenceClaim(claim, Instant.parse("2026-08-09T08:00:00Z"), NOW);
     verify(digestService, never()).catchUpForConversation(any(), any(), any(), any());
   }
 
@@ -105,8 +102,7 @@ class ProactiveCatchupServiceTest {
         .contains("Developments since your last catch-up", "Ship on Monday", "Open question");
     verify(store).completeCatchupDelivery("delivery-1", "SENT", NOW);
     verify(store)
-        .completeCatchupPreferenceClaim(
-            claim, NOW.plus(java.time.Duration.ofMinutes(15)), NOW, null);
+        .completeCatchupPreferenceClaim(claim, NOW.plus(java.time.Duration.ofMinutes(15)), NOW);
     verify(metrics).recordMemoryProactiveDelivery("scheduled", true, null, Duration.ZERO);
   }
 
@@ -159,7 +155,6 @@ class ProactiveCatchupServiceTest {
         digestService,
         blueBubbles,
         responseQuota,
-        new ObjectMapper(),
         metrics,
         Clock.fixed(NOW, ZoneOffset.UTC),
         "proactive-worker",
