@@ -32,9 +32,16 @@ class ConversationJournalServiceTest {
     journalService.recordEligibleMessage(groupMessage("message-1", "first", NOW));
     journalService.recordEligibleMessage(groupMessage("message-2", "second", NOW.plusSeconds(30)));
 
-    assertThat(store.findMessages(conversationId, NOW.minusSeconds(1), NOW.plusSeconds(31)))
+    List<ConversationMemoryModels.JournalMessage> messages =
+        store.findMessages(conversationId, NOW.minusSeconds(1), NOW.plusSeconds(31));
+    assertThat(messages)
         .extracting(ConversationMemoryModels.JournalMessage::messageGuid)
         .containsExactly("message-1", "message-2");
+    assertThat(messages)
+        .extracting(ConversationMemoryModels.JournalMessage::contentHash)
+        .containsExactly(
+            "a7937b64b8caa58f03721bb6bacf5c78cb235febe0e70b1b84cd99541461a08e",
+            "16367aacb67a4a017c8da8ab95682ccb390863780f7114dda0a0e0c55644c7c4");
     assertThat(store.extractionAvailableAt(conversationId)).contains(NOW.plusSeconds(90));
   }
 
