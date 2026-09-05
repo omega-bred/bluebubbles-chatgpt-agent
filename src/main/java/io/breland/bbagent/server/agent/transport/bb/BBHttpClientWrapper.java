@@ -921,8 +921,7 @@ public class BBHttpClientWrapper {
     applyTextFormatting(request);
     if (StringUtils.isBlank(request.getChatGuid()) || StringUtils.isBlank(request.getMessage())) {
       log.warn(
-          "Cannot send direct text message without chatGuid and message chatGuid={} tempGuid={}",
-          request.getChatGuid(),
+          "Cannot send direct text message without required fields tempGuid={}",
           request.getTempGuid());
       return false;
     }
@@ -939,14 +938,11 @@ public class BBHttpClientWrapper {
         }
 
         log.info(
-            "Attempting to send direct text message chatGuid={} confirmationChatGuid={} tempGuid={} attempt={}/{} timeout={} request={}",
-            request.getChatGuid(),
-            confirmationChatGuid,
+            "Attempting to send direct text message tempGuid={} attempt={}/{} timeout={}",
             request.getTempGuid(),
             attempt,
             DIRECT_SEND_MAX_ATTEMPTS,
-            apiTimeout,
-            request);
+            apiTimeout);
         submitDirectTextMessage(request, attempt, overallStartedNanos);
         DirectSendConfirmation confirmation =
             confirmDirectTextSend(
@@ -958,8 +954,7 @@ public class BBHttpClientWrapper {
         if (confirmation == DirectSendConfirmation.UNAVAILABLE) {
           failureType = "confirmation_unavailable";
           log.warn(
-              "BlueBubbles direct text send confirmation remained unavailable; not resubmitting to avoid a duplicate chatGuid={} tempGuid={} attempt={} elapsedMs={}",
-              request.getChatGuid(),
+              "BlueBubbles direct text send confirmation remained unavailable; not resubmitting to avoid a duplicate tempGuid={} attempt={} elapsedMs={}",
               request.getTempGuid(),
               attempt,
               elapsedMillis(overallStartedNanos));
@@ -967,9 +962,8 @@ public class BBHttpClientWrapper {
         }
       }
       log.warn(
-          "Failed to confirm BlueBubbles direct text send after {} attempts chatGuid={} tempGuid={} elapsedMs={}",
+          "Failed to confirm BlueBubbles direct text send after {} attempts tempGuid={} elapsedMs={}",
           DIRECT_SEND_MAX_ATTEMPTS,
-          request.getChatGuid(),
           request.getTempGuid(),
           elapsedMillis(overallStartedNanos));
       return false;
@@ -992,8 +986,7 @@ public class BBHttpClientWrapper {
         recordOperationMetric("direct_send_ping_warmup", true, null, startedNanos);
         if (pingAttempt > 1) {
           log.info(
-              "BlueBubbles ping warmup recovered chatGuid={} tempGuid={} attempt={} pingAttempt={}",
-              request.getChatGuid(),
+              "BlueBubbles ping warmup recovered tempGuid={} attempt={} pingAttempt={}",
               request.getTempGuid(),
               attempt,
               pingAttempt);
@@ -1006,8 +999,7 @@ public class BBHttpClientWrapper {
             OperationalMetricsService.failureType(e),
             startedNanos);
         log.warn(
-            "BlueBubbles ping warmup failed chatGuid={} tempGuid={} attempt={} pingAttempt={}/{} timeout={} message={}",
-            request.getChatGuid(),
+            "BlueBubbles ping warmup failed tempGuid={} attempt={} pingAttempt={}/{} timeout={} message={}",
             request.getTempGuid(),
             attempt,
             pingAttempt,
@@ -1018,8 +1010,7 @@ public class BBHttpClientWrapper {
       }
     }
     log.warn(
-        "BlueBubbles ping warmup failed twice; not attempting direct text send chatGuid={} tempGuid={} attempt={}",
-        request.getChatGuid(),
+        "BlueBubbles ping warmup failed twice; not attempting direct text send tempGuid={} attempt={}",
         request.getTempGuid(),
         attempt);
     return false;
@@ -1034,8 +1025,7 @@ public class BBHttpClientWrapper {
       messageApi.apiV1MessageTextPost(password, request).block(apiTimeout);
       success = true;
       log.info(
-          "BlueBubbles direct text send request completed chatGuid={} tempGuid={} attempt={} attemptElapsedMs={} totalElapsedMs={}",
-          request.getChatGuid(),
+          "BlueBubbles direct text send request completed tempGuid={} attempt={} attemptElapsedMs={} totalElapsedMs={}",
           request.getTempGuid(),
           attempt,
           elapsedMillis(attemptStartedNanos),
@@ -1044,8 +1034,7 @@ public class BBHttpClientWrapper {
       if (isTimeout(e)) {
         failureType = "timeout";
         log.warn(
-            "Timed out waiting for BlueBubbles direct text send response chatGuid={} tempGuid={} attempt={} timeout={} attemptElapsedMs={} totalElapsedMs={}. Checking chat history before retrying.",
-            request.getChatGuid(),
+            "Timed out waiting for BlueBubbles direct text send response tempGuid={} attempt={} timeout={} attemptElapsedMs={} totalElapsedMs={}. Checking chat history before retrying.",
             request.getTempGuid(),
             attempt,
             apiTimeout,
@@ -1056,8 +1045,7 @@ public class BBHttpClientWrapper {
       }
       failureType = OperationalMetricsService.failureType(e);
       log.warn(
-          "Failed to send direct message chatGuid={} tempGuid={} attempt={} attemptElapsedMs={} totalElapsedMs={}. Checking chat history before retrying.",
-          request.getChatGuid(),
+          "Failed to send direct message tempGuid={} attempt={} attemptElapsedMs={} totalElapsedMs={}. Checking chat history before retrying.",
           request.getTempGuid(),
           attempt,
           elapsedMillis(attemptStartedNanos),
@@ -1102,9 +1090,7 @@ public class BBHttpClientWrapper {
           if (confirmed) {
             success = true;
             log.info(
-                "Confirmed BlueBubbles direct text send in chat history chatGuid={} historyChatGuid={} tempGuid={} attempt={} confirmationAttempt={} elapsedMs={}",
-                request.getChatGuid(),
-                historyChatGuid,
+                "Confirmed BlueBubbles direct text send in chat history tempGuid={} attempt={} confirmationAttempt={} elapsedMs={}",
                 request.getTempGuid(),
                 attempt,
                 confirmationAttempt,
@@ -1113,9 +1099,7 @@ public class BBHttpClientWrapper {
           }
           failureType = "not_found";
           log.warn(
-              "BlueBubbles direct text send not found in chat history chatGuid={} historyChatGuid={} tempGuid={} attempt={} confirmationAttempt={} elapsedMs={}",
-              request.getChatGuid(),
-              historyChatGuid,
+              "BlueBubbles direct text send not found in chat history tempGuid={} attempt={} confirmationAttempt={} elapsedMs={}",
               request.getTempGuid(),
               attempt,
               confirmationAttempt,
@@ -1124,9 +1108,7 @@ public class BBHttpClientWrapper {
         } catch (Exception e) {
           failureType = OperationalMetricsService.failureType(e);
           log.warn(
-              "Failed to confirm BlueBubbles direct text send from chat history chatGuid={} confirmationChatGuid={} tempGuid={} attempt={} confirmationAttempt={}/{} elapsedMs={}",
-              request.getChatGuid(),
-              confirmationChatGuid,
+              "Failed to confirm BlueBubbles direct text send from chat history tempGuid={} attempt={} confirmationAttempt={}/{} elapsedMs={}",
               request.getTempGuid(),
               attempt,
               confirmationAttempt,
@@ -1157,8 +1139,7 @@ public class BBHttpClientWrapper {
     } catch (InterruptedException e) {
       Thread.currentThread().interrupt();
       log.warn(
-          "Interrupted while waiting to confirm BlueBubbles direct text send chatGuid={} tempGuid={} attempt={}",
-          request.getChatGuid(),
+          "Interrupted while waiting to confirm BlueBubbles direct text send tempGuid={} attempt={}",
           request.getTempGuid(),
           attempt);
       return false;
