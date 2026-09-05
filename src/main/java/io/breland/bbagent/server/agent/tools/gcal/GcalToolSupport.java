@@ -13,6 +13,8 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import org.apache.commons.lang3.function.FailableFunction;
+import org.apache.commons.lang3.function.FailableSupplier;
 
 public class GcalToolSupport {
   protected final GcalClient gcalClient;
@@ -27,36 +29,28 @@ public class GcalToolSupport {
   }
 
   protected String withCalendar(
-      ToolContext context, String requestedAccountKey, CalendarOperation operation) {
+      ToolContext context,
+      String requestedAccountKey,
+      FailableFunction<Calendar, String, Exception> operation) {
     return withConfigured(
         () -> {
           String accountKey = resolveAccountKey(context, requestedAccountKey);
           if (isBlank(accountKey)) {
             return "no account";
           }
-          return operation.apply(gcalClient.getCalendarService(accountKey), accountKey);
+          return operation.apply(gcalClient.getCalendarService(accountKey));
         });
   }
 
-  protected String withConfigured(GcalOperation operation) {
+  protected String withConfigured(FailableSupplier<String, Exception> operation) {
     if (!gcalClient.isConfigured()) {
       return "not configured";
     }
     try {
-      return operation.apply();
+      return operation.get();
     } catch (Exception e) {
       return "error: " + e.getMessage();
     }
-  }
-
-  @FunctionalInterface
-  protected interface CalendarOperation {
-    String apply(Calendar client, String accountKey) throws Exception;
-  }
-
-  @FunctionalInterface
-  protected interface GcalOperation {
-    String apply() throws Exception;
   }
 
   protected String resolveAccountId(ToolContext context) {
