@@ -8,7 +8,7 @@ export function AuthGate({ title }: { title: string }) {
       <SiteNav auth={{ ready: true, authenticated: false }} />
       <main className="account-main narrow">
         <section className="account-heading">
-          <p className="eyebrow">Keycloak login</p>
+          <p className="eyebrow">Your BlueChat account</p>
           <h1>{title}</h1>
           <p>Log in or create an account to manage linked BlueChat senders.</p>
           <div className="hero-actions">

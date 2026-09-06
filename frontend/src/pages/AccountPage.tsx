@@ -117,7 +117,7 @@ export function AccountPage({ auth }: { auth: AuthState }) {
           <h1>
             {data?.account?.display_name || data?.account?.email || "Your account"}
           </h1>
-          <p>{data?.account?.email || "Signed in with Keycloak."}</p>
+          {data?.account?.email ? <p>{data.account.email}</p> : null}
         </section>
 
         {error ? <p className="error-banner">{error}</p> : null}
