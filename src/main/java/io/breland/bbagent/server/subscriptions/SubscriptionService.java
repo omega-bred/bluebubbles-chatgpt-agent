@@ -730,6 +730,9 @@ public class SubscriptionService {
       SubscriptionProperties.ProviderPlan providerPlan,
       PaymentCheckoutSessionEntity checkout,
       SubscriptionProvider.ProviderSubscription providerSubscription) {
+    accountRepository
+        .findByIdForUpdate(accountId)
+        .orElseThrow(() -> new IllegalStateException("Subscription account not found"));
     PaymentSubscriptionEntity subscription =
         findExistingSubscription(
                 providerKey,

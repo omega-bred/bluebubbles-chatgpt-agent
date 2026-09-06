@@ -17,18 +17,8 @@ public interface PaymentSubscriptionRepository
 
   Optional<PaymentSubscriptionEntity> findFirstByAccountIdOrderByUpdatedAtDesc(String accountId);
 
-  @Query(
-      value =
-          """
-          SELECT * FROM payment_subscriptions
-          WHERE provider = :provider AND provider_subscription_id = :providerSubscriptionId
-          ORDER BY updated_at DESC, subscription_id DESC
-          LIMIT 1
-          """,
-      nativeQuery = true)
   Optional<PaymentSubscriptionEntity> findByProviderAndProviderSubscriptionId(
-      @Param("provider") String provider,
-      @Param("providerSubscriptionId") String providerSubscriptionId);
+      String provider, String providerSubscriptionId);
 
   @Query(
       value =
