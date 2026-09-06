@@ -153,6 +153,13 @@ spec:
     spec:
       enableServiceLinks: false
       serviceAccountName: bluebubbles-chatgpt-agent
+      # Use the existing do-wl1 tailnet ingress for server-side OIDC/JWKS requests.
+      # Public routing can stall key retrieval and time out account requests.
+      # This VIP belongs to envoy-public-on-tailscale in bdawg-do-wl1.
+      hostAliases:
+        - ip: "100.95.98.43"
+          hostnames:
+            - keycloak.bre.land
       containers:
         - name: bluebubbles-chatgpt-agent
           env:
