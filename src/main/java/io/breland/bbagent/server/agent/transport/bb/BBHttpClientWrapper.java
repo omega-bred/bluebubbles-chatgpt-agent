@@ -27,6 +27,7 @@ import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.BooleanSupplier;
+import java.util.function.Supplier;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
@@ -336,7 +337,7 @@ public class BBHttpClientWrapper {
     return value;
   }
 
-  private <T> T measuredOperation(String operation, OperationSupplier<T> supplier) {
+  private <T> T measuredOperation(String operation, Supplier<T> supplier) {
     long startedNanos = System.nanoTime();
     try {
       T result = supplier.get();
@@ -349,7 +350,7 @@ public class BBHttpClientWrapper {
     }
   }
 
-  private boolean measuredRenameConversation(OperationBooleanSupplier supplier) {
+  private boolean measuredRenameConversation(BooleanSupplier supplier) {
     long startedNanos = System.nanoTime();
     boolean success = false;
     String failureType = null;
@@ -372,16 +373,6 @@ public class BBHttpClientWrapper {
     }
     operationalMetricsService.recordBlueBubblesOperation(
         operation, success, failureType, Duration.ofNanos(System.nanoTime() - startedNanos));
-  }
-
-  @FunctionalInterface
-  private interface OperationSupplier<T> {
-    T get();
-  }
-
-  @FunctionalInterface
-  private interface OperationBooleanSupplier {
-    boolean getAsBoolean();
   }
 
   public FindMyFriendLocation getFindMyLocation(String userId) {
