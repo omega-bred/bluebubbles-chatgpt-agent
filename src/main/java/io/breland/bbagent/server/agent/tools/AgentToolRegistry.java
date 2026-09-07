@@ -141,7 +141,7 @@ public final class AgentToolRegistry {
           ScheduledEventDeleteTool.TOOL_NAME);
   private static final Set<String> KUBERNETES_TOOL_NAMES =
       Set.of(KubernetesReadOnlyAgentTool.TOOL_NAME, KubernetesPodLogsAgentTool.TOOL_NAME);
-  private static final Set<String> WALLART_TOOL_NAMES = Set.of(WallartMcpAgentTool.TOOL_NAME);
+  private static final Set<String> WALLART_TOOL_NAMES = WallartMcpAgentTool.TOOL_NAMES;
   private static final String KUBERNETES_TOOL_ALLOWED_ACCOUNT_ID =
       "9f80c2a0-de6f-4c56-8027-29b1673bb0d5";
 
@@ -470,7 +470,7 @@ public final class AgentToolRegistry {
     registerTool(new ScheduledEventListTool(cadenceWorkflowLauncher).getTool());
     registerTool(new ScheduledEventDeleteTool(cadenceWorkflowLauncher).getTool());
     if (wallartMcpAgentTool != null) {
-      registerTool(wallartMcpAgentTool.getTool());
+      wallartMcpAgentTool.getTools().forEach(this::registerTool);
     }
     registerTool(new ToolSearchAgentTool(objectMapper, this::toolIndexEntries).getTool());
   }

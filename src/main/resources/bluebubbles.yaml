@@ -3287,36 +3287,25 @@ paths:
       tags:
         - v1 > Contact
       summary: Query Contacts
-      description: |-
-        Query your contacts from your macOS device.
-
-        #### Request Body
-
-        ```json
-        {
-            // (Optional) A list of one or more addresses to return data for
-            "addresses": []
-        }
-        ```
+      description: Query macOS/server contacts by address, optionally including avatar bytes as base64.
       requestBody:
         content:
           application/json:
             schema:
-              type: object
-              example:
-                addresses: []
+              $ref: '#/components/schemas/ContactQueryRequest'
       parameters:
         - name: password
           in: query
           schema:
             type: string
           description: Your BlueBubbles Server password
-          example: '{{password}}'
       responses:
         '200':
           description: Successful response
           content:
-            application/json: {}
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ContactQueryResponse'
   /api/v1/backup/theme:
     get:
       tags:
@@ -4297,6 +4286,29 @@ components:
         statement: "message.text = :text"
         args:
           text: "Hello World!"
+    ContactQueryRequest:
+      type: object
+      properties:
+        addresses:
+          type: array
+          items:
+            type: string
+        extraProperties:
+          type: array
+          items:
+            type: string
+          example: [avatar]
+    ContactQueryResponse:
+      type: object
+      properties:
+        status:
+          type: integer
+        message:
+          type: string
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/contact'
     ContactUpsertRequest:
       type: object
       properties:

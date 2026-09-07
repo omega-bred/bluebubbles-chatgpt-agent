@@ -15,12 +15,47 @@ Google Calendar + other tools. Built with Spring Boot + OpenAPI.
 - Rich texting support (thread replies, reactions, message effects)
 - Group management (set group title, set group photo from prompt)
 - Understands and responds to images sent in texts
+- Dining room wallart MCP tools for current-art photos, uploaded-image display, and image composition
 - "Responsiveness" tool - in which you can change the system prompt to drive how the model reacts / interacts (eg "Chat go in to silent mode")
 - Global "contact book"
 
 ![screenshot1](./images/screen1.png)
 ![screenshot2](./images/screen2.png)
 ![screenshot3](./images/screen3.jpg)
+
+## Wallart from iMessage
+
+In conversations allowed by `WALLART_MCP_ALLOWED_PARTICIPANT`, you can ask:
+
+- “Show me the current wall art” to receive the stored display image as an iMessage photo.
+- Send a photo with “Put this on the wall” to display it without AI generation.
+- Send photos with “Combine these into a watercolor scene for the wall” to compose and display art.
+- “Add this person to the current wall art” with an attached photo to use the current artwork as the base.
+- “Use everyone’s contact photos from this chat to make a group portrait for the wall.”
+- “Show some new random art” to run the server's prompt tournament.
+
+Contact-photo compositions use the BlueBubbles server’s saved contacts, then shared iMessage profile
+photos when the Private API and profile sharing are available. The bridge verifies current chat
+participants, combines phone/email aliases for one contact, and reports missing or unsupported photos
+so the assistant can request attachments. It never silently leaves someone out of an “everyone”
+request. Photos can be avatars or Memoji; they are not guaranteed to be real faces. Supported native
+contact image formats such as TIFF are converted to PNG. Contact photos can be mixed with attached
+photos and current art, within the server’s 16-image limit.
+
+Photos can accompany the prompt, be selected by replying to their message, or be selected from
+message history in the same conversation. The model selects references and their order; the bridge
+fetches and transfers image bytes directly. Arbitrary attachment URLs and photos from other chats
+are not accepted. BlueBubbles' converted attachment download supports iPhone photos when it returns
+PNG/JPEG; the bridge detects the actual format instead of relying on the original HEIC MIME label.
+
+The server must advertise `showNewArt`, `getCurrentArt`, `showImage`, `composeArt`, and `getArtStatus`
+at the configured `WALLART_MCP_BASE_URL` / `WALLART_MCP_ENDPOINT`. Composition accepts 1–16 PNG/JPEG
+references with descriptions: at most 10 MiB and 20 million pixels each, 20 MiB total (also subject
+to the server's PNG conversion limit). Direct display uses one image; the server converts it to
+JPEG without resizing, with black behind transparency.
+
+Submissions return a workflow ID. `getArtStatus` distinguishes pending work from completed server
+deployment or failure; neither it nor the stored image confirms the physical screen's state.
 
 ## Requirements
 - Java 25 (project uses Gradle toolchains; use `nix develop` for the pinned toolchain)

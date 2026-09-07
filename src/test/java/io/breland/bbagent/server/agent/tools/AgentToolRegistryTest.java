@@ -91,18 +91,61 @@ class AgentToolRegistryTest {
     when(access.isAllowed(allowedDirect)).thenReturn(true);
     when(access.isAllowed(allowedGroup)).thenReturn(true);
     when(access.isAllowed(deniedDirect)).thenReturn(false);
-    WallartMcpAgentTool wallartTool = new WallartMcpAgentTool(mock(WallartMcpClient.class), access);
+    WallartMcpAgentTool wallartTool =
+        new WallartMcpAgentTool(
+            mock(WallartMcpClient.class),
+            access,
+            mock(io.breland.bbagent.server.agent.tools.wallart.WallartImageInputs.class),
+            mock(BBHttpClientWrapper.class));
     AgentToolRegistry registry = registryForAccount("account-1", null, wallartTool);
 
-    assertTrue(
-        toolNames(registry.availableTools(allowedDirect)).contains(WallartMcpAgentTool.TOOL_NAME));
-    assertTrue(
-        toolNames(registry.availableTools(allowedGroup)).contains(WallartMcpAgentTool.TOOL_NAME));
-    assertFalse(
-        toolNames(registry.availableTools(deniedDirect)).contains(WallartMcpAgentTool.TOOL_NAME));
-    assertNotNull(registry.resolveTool(WallartMcpAgentTool.TOOL_NAME, allowedGroup).tool());
-    assertNull(registry.resolveTool(WallartMcpAgentTool.TOOL_NAME, deniedDirect).tool());
-    assertEquals("wallart", registry.toolCategory(WallartMcpAgentTool.TOOL_NAME));
+    for (String name : WallartMcpAgentTool.TOOL_NAMES) {
+      assertTrue(toolNames(registry.availableTools(allowedDirect)).contains(name));
+      assertTrue(toolNames(registry.availableTools(allowedGroup)).contains(name));
+      assertFalse(toolNames(registry.availableTools(deniedDirect)).contains(name));
+      assertNotNull(registry.resolveTool(name, allowedGroup).tool());
+      assertNull(registry.resolveTool(name, deniedDirect).tool());
+      assertEquals("wallart", registry.toolCategory(name));
+    }
+  }
+
+  @Test
+  void discoversWallartImageToolsThroughNaturalLanguageSearch() throws Exception {
+    var mapper = new ObjectMapper();
+    var access = mock(WallartConversationAccess.class);
+    var allowed = directMessage(LEGACY_ALLOWED_SENDER);
+    var denied = directMessage("someone-else");
+    when(access.isAllowed(allowed)).thenReturn(true);
+    var wallart =
+        new WallartMcpAgentTool(
+            mock(WallartMcpClient.class),
+            access,
+            mock(io.breland.bbagent.server.agent.tools.wallart.WallartImageInputs.class),
+            mock(BBHttpClientWrapper.class));
+    var registry = registryForAccount("account-1", null, wallart);
+    for (var entry :
+        Map.of(
+                "send current wall art photo",
+                "getCurrentArt",
+                "display an uploaded photo without AI generation",
+                "showImage",
+                "combine reference images with a prompt",
+                "composeArt",
+                "check art workflow status",
+                "getArtStatus")
+            .entrySet()) {
+      var args =
+          mapper
+              .createObjectNode()
+              .put("query", entry.getKey())
+              .put("categoryFilter", "wallart")
+              .put("maxResults", 5);
+      assertTrue(
+          toolSearch(registry, mapper, ToolContextFixture.with(allowed).build(), args)
+              .contains(entry.getValue()));
+      assertTrue(
+          toolSearch(registry, mapper, ToolContextFixture.with(denied).build(), args).isEmpty());
+    }
   }
 
   @Test
