@@ -131,7 +131,7 @@ public class WallartMcpAgentTool implements ToolProvider {
             }),
         guarded(
             COMPOSE_ART,
-            "Edit or combine photos/reference images with a prompt, then display generated art on the dining room LED wall. Use attachment references from this chat or source=current_art to edit the current artwork. For people's contact/profile photos first use listWallartContactPhotos, then source=all_contact_photos for everyone or source=contact_photo with a returned participant for selected people. Never silently omit a missing person. Order is preserved: base scene first, people/details next; label each description and explain placement in prompt. 1-16 PNG/JPEG images, 10 MiB/20 million pixels each, 20 MiB total including server PNG conversion. Never supply base64 or image URLs."
+            "Edit or combine photos/reference images with a prompt, then display generated art on the dining room LED wall. Use attachment references from this chat, source=current_art to edit the current artwork, or source=group_icon for this group's current chat photo. For people's contact/profile photos first use listWallartContactPhotos, then source=all_contact_photos for everyone or source=contact_photo with a returned participant for selected people. Never silently omit a missing person. Order is preserved: base scene first, people/details next; label each description and explain placement in prompt. 1-16 PNG/JPEG images, 10 MiB/20 million pixels each, 20 MiB total including server PNG conversion. Never supply base64 or image URLs."
                 + SUBMISSION_GUIDANCE,
             functionParameters(
                 objectSchema(
@@ -207,9 +207,14 @@ public class WallartMcpAgentTool implements ToolProvider {
                     "type",
                     "string",
                     "enum",
-                    List.of("attachment", "current_art", "contact_photo", "all_contact_photos"),
+                    List.of(
+                        "attachment",
+                        "current_art",
+                        "group_icon",
+                        "contact_photo",
+                        "all_contact_photos"),
                     "description",
-                    "attachment selects a chat photo; current_art fetches wall art; contact_photo selects a participant; all_contact_photos expands to one photo per person in this chat."),
+                    "attachment selects a chat photo; current_art fetches wall art; group_icon fetches this group's chat photo; contact_photo selects a participant; all_contact_photos expands to one photo per person in this chat."),
             "participant",
                 Map.of(
                     "type",
@@ -223,13 +228,13 @@ public class WallartMcpAgentTool implements ToolProvider {
                     "minimum",
                     1,
                     "description",
-                    "One-based index among image attachments in the selected message; defaults to 1. Omit for current_art."),
+                    "One-based index among image attachments in the selected message; defaults to 1. Omit for current_art or group_icon."),
             "messageGuid",
                 Map.of(
                     "type",
                     "string",
                     "description",
-                    "Optional message GUID from this chat's history. Defaults to the incoming message, or the replied-to message if no attachments. Omit for current_art. Never guess GUIDs."),
+                    "Optional message GUID from this chat's history. Defaults to the incoming message, or the replied-to message if no attachments. Omit for current_art or group_icon. Never guess GUIDs."),
             "description",
                 Map.of(
                     "type",

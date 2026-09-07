@@ -272,6 +272,93 @@ class WallartImageInputsTest {
     assertFalse(Files.exists(corrupt));
   }
 
+  @Test
+  void resolvesCurrentGroupIconOnceAndPreservesReferenceOrder() throws Exception {
+    var incoming = groupMessage();
+    when(bb.getConversationIcon("any;+;group"))
+        .thenReturn(java.util.Optional.of(Base64.getDecoder().decode(png())));
+    var result =
+        inputs.resolve(
+            incoming,
+            List.of(
+                new ImageReference("group_icon", null, null, "base scene", null),
+                new ImageReference("group_icon", null, null, "detail", null)));
+    assertEquals("base scene", result.get(0).get("description"));
+    assertEquals("detail", result.get(1).get("description"));
+    assertEquals(png(), result.getFirst().get("data"));
+    assertEquals("image/png", result.getFirst().get("mime_type"));
+    verify(bb).getConversationIcon("any;+;group");
+    verifyNoMoreInteractions(bb);
+    verifyNoInteractions(client);
+  }
+
+  @Test
+  void rejectsGroupPhotoSelectorsAndDirectChatsBeforeFetching() {
+    for (var reference :
+        List.of(
+            new ImageReference("group_icon", 1, null, null, null),
+            new ImageReference("group_icon", null, "foreign", null, null),
+            new ImageReference("group_icon", null, null, null, "someone"))) {
+      assertThrows(
+          IllegalArgumentException.class, () -> inputs.resolve(groupMessage(), List.of(reference)));
+    }
+    assertThrows(
+        IllegalArgumentException.class,
+        () ->
+            inputs.resolve(
+                message(List.of()),
+                List.of(new ImageReference("group_icon", null, null, null, null))));
+    var lxmf =
+        new IncomingMessage(
+            "lxmf",
+            "group",
+            "incoming",
+            null,
+            "compose",
+            false,
+            "lxmf",
+            "sender",
+            true,
+            Instant.EPOCH,
+            List.of(),
+            false);
+    assertThrows(
+        IllegalArgumentException.class,
+        () ->
+            inputs.resolve(
+                lxmf, List.of(new ImageReference("group_icon", null, null, null, null))));
+    verifyNoInteractions(bb, client);
+  }
+
+  @Test
+  void missingGroupPhotoRequiresAttachmentInsteadOfInventedImage() {
+    when(bb.getConversationIcon("any;+;group")).thenReturn(java.util.Optional.empty());
+    var error =
+        assertThrows(
+            IllegalArgumentException.class,
+            () ->
+                inputs.resolve(
+                    groupMessage(),
+                    List.of(new ImageReference("group_icon", null, null, null, null))));
+    assertTrue(error.getMessage().contains("photo is unavailable"));
+    verifyNoInteractions(client);
+  }
+
+  private static IncomingMessage groupMessage() {
+    return new IncomingMessage(
+        "any;+;group",
+        "incoming",
+        null,
+        "compose",
+        false,
+        "iMessage",
+        "alice@example.com",
+        true,
+        Instant.EPOCH,
+        List.of(),
+        false);
+  }
+
   static String png() throws Exception {
     var image = new BufferedImage(2, 2, BufferedImage.TYPE_INT_RGB);
     var bytes = new ByteArrayOutputStream();

@@ -414,7 +414,7 @@ public final class AgentPromptBuilder {
                 + BBMessageAgent.NO_RESPONSE_TEXT
                 + ". "
                 + feedbackInstruction()
-                + "For group chats, you can rename the conversation or set a group icon when requested. "
+                + "For group chats, you can rename the conversation or set a group icon when requested. Use get_group_icon when asked to retrieve or show this group's current photo; it sends a copy to this chat. For wall-art compositions, use source=group_icon directly without sending it first. "
                 + "When a participant explicitly asks to enable or disable collective group memory for the current group, call "
                 + ConfigureGroupMemoryAgentTool.TOOL_NAME
                 + ". Enabling is prospective: collection starts only after the visible group notice succeeds, and older messages are not collected. Collective group context may later help participants catch up in their one-on-one chats, but it remains read-only there and must not reveal content to anyone who is not a verified current participant. "

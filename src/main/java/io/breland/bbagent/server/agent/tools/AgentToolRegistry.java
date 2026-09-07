@@ -12,6 +12,7 @@ import io.breland.bbagent.server.agent.profile.AgentProfileService;
 import io.breland.bbagent.server.agent.tools.assistant.AssistantNameAgentTool;
 import io.breland.bbagent.server.agent.tools.assistant.AssistantResponsivenessAgentTool;
 import io.breland.bbagent.server.agent.tools.bb.CurrentConversationInfoAgentTool;
+import io.breland.bbagent.server.agent.tools.bb.GetGroupIconAgentTool;
 import io.breland.bbagent.server.agent.tools.bb.GetThreadContextAgentTool;
 import io.breland.bbagent.server.agent.tools.bb.ReadPollAgentTool;
 import io.breland.bbagent.server.agent.tools.bb.RenameConversationAgentTool;
@@ -83,6 +84,7 @@ public final class AgentToolRegistry {
       Set.of(
           RenameConversationAgentTool.TOOL_NAME,
           SetGroupIconAgentTool.TOOL_NAME,
+          GetGroupIconAgentTool.TOOL_NAME,
           ConfigureGroupMemoryAgentTool.TOOL_NAME);
   private static final Set<String> DIRECT_ONLY_TOOLS =
       Set.of(ConfigureGroupCatchupAgentTool.TOOL_NAME);
@@ -92,6 +94,7 @@ public final class AgentToolRegistry {
           CurrentConversationInfoAgentTool.TOOL_NAME,
           RenameConversationAgentTool.TOOL_NAME,
           SetGroupIconAgentTool.TOOL_NAME,
+          GetGroupIconAgentTool.TOOL_NAME,
           ConfigureGroupMemoryAgentTool.TOOL_NAME,
           SendGiphyAgentTool.TOOL_NAME,
           GetThreadContextAgentTool.TOOL_NAME,
@@ -105,6 +108,7 @@ public final class AgentToolRegistry {
           CurrentConversationInfoAgentTool.TOOL_NAME,
           RenameConversationAgentTool.TOOL_NAME,
           SetGroupIconAgentTool.TOOL_NAME,
+          GetGroupIconAgentTool.TOOL_NAME,
           ConfigureGroupMemoryAgentTool.TOOL_NAME,
           SendGiphyAgentTool.TOOL_NAME,
           GetThreadContextAgentTool.TOOL_NAME,
@@ -420,6 +424,7 @@ public final class AgentToolRegistry {
     registerTool(new CurrentConversationInfoAgentTool(bbHttpClientWrapper).getTool());
     registerTool(new RenameConversationAgentTool(bbHttpClientWrapper).getTool());
     registerTool(new SetGroupIconAgentTool(bbHttpClientWrapper, openAiSupplier).getTool());
+    registerTool(new GetGroupIconAgentTool(bbHttpClientWrapper).getTool());
     registerTool(
         new SendGiphyAgentTool(
                 bbHttpClientWrapper, giphyClient, openAiSupplier, operationalMetricsService)

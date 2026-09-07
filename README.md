@@ -13,7 +13,7 @@ Google Calendar + other tools. Built with Spring Boot + OpenAPI.
 - Website account dashboard, support contact form, terms/privacy pages, and admin abuse controls
 - Subscription billing through Stripe and BTCPay
 - Rich texting support (thread replies, reactions, message effects)
-- Group management (set group title, set group photo from prompt)
+- Group management (set group title, set group photo from prompt, retrieve current group photo)
 - Understands and responds to images sent in texts
 - Dining room wallart MCP tools for current-art photos, uploaded-image display, and image composition
 - "Responsiveness" tool - in which you can change the system prompt to drive how the model reacts / interacts (eg "Chat go in to silent mode")
@@ -22,6 +22,15 @@ Google Calendar + other tools. Built with Spring Boot + OpenAPI.
 ![screenshot1](./images/screen1.png)
 ![screenshot2](./images/screen2.png)
 ![screenshot3](./images/screen3.jpg)
+
+## Current group photo
+
+Ask “Show me this group’s current photo” to use `get_group_icon`. It fetches the current
+BlueChat group’s icon from BlueBubbles and sends a copy as an image in the same chat, without
+changing the icon. The tool takes no chat identifier and is unavailable in direct or LXMF chats.
+If the photo is not stored on the BlueBubbles server Mac, it reports that the photo is unavailable.
+Downloads are limited to 10 MiB and 20 million pixels; supported macOS formats such as TIFF are
+converted to PNG. Photo delivery uses the existing response quota and workflow checks.
 
 ## Wallart from iMessage
 
@@ -32,6 +41,7 @@ In conversations allowed by `WALLART_MCP_ALLOWED_PARTICIPANT`, you can ask:
 - Send photos with “Combine these into a watercolor scene for the wall” to compose and display art.
 - “Add this person to the current wall art” with an attached photo to use the current artwork as the base.
 - “Use everyone’s contact photos from this chat to make a group portrait for the wall.”
+- “Use this group’s photo as the base scene, and add these attached people to the wall art.”
 - “Show some new random art” to run the server's prompt tournament.
 
 Contact-photo compositions use the BlueBubbles server’s saved contacts, then shared iMessage profile
@@ -41,6 +51,10 @@ so the assistant can request attachments. It never silently leaves someone out o
 request. Photos can be avatars or Memoji; they are not guaranteed to be real faces. Supported native
 contact image formats such as TIFF are converted to PNG. Contact photos can be mixed with attached
 photos and current art, within the server’s 16-image limit.
+
+Use `source=group_icon` in `showImage` or `composeArt` to transfer the current group photo directly;
+calling `get_group_icon` first is unnecessary. It can be combined with attachments, current art, or
+participant photos in a composition.
 
 Photos can accompany the prompt, be selected by replying to their message, or be selected from
 message history in the same conversation. The model selects references and their order; the bridge
