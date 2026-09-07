@@ -31,7 +31,16 @@ In conversations allowed by `WALLART_MCP_ALLOWED_PARTICIPANT`, you can ask:
 - Send a photo with “Put this on the wall” to display it without AI generation.
 - Send photos with “Combine these into a watercolor scene for the wall” to compose and display art.
 - “Add this person to the current wall art” with an attached photo to use the current artwork as the base.
+- “Use everyone’s contact photos from this chat to make a group portrait for the wall.”
 - “Show some new random art” to run the server's prompt tournament.
+
+Contact-photo compositions use the BlueBubbles server’s saved contacts, then shared iMessage profile
+photos when the Private API and profile sharing are available. The bridge verifies current chat
+participants, combines phone/email aliases for one contact, and reports missing or unsupported photos
+so the assistant can request attachments. It never silently leaves someone out of an “everyone”
+request. Photos can be avatars or Memoji; they are not guaranteed to be real faces. Supported native
+contact image formats such as TIFF are converted to PNG. Contact photos can be mixed with attached
+photos and current art, within the server’s 16-image limit.
 
 Photos can accompany the prompt, be selected by replying to their message, or be selected from
 message history in the same conversation. The model selects references and their order; the bridge

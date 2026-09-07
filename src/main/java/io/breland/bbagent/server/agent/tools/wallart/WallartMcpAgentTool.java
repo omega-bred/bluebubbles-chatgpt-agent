@@ -27,8 +27,10 @@ public class WallartMcpAgentTool implements ToolProvider {
   public static final String SHOW_IMAGE = "showImage";
   public static final String COMPOSE_ART = "composeArt";
   public static final String GET_ART_STATUS = "getArtStatus";
+  public static final String LIST_CONTACT_PHOTOS = "listWallartContactPhotos";
   public static final Set<String> TOOL_NAMES =
-      Set.of(TOOL_NAME, GET_CURRENT_ART, SHOW_IMAGE, COMPOSE_ART, GET_ART_STATUS);
+      Set.of(
+          TOOL_NAME, GET_CURRENT_ART, SHOW_IMAGE, COMPOSE_ART, GET_ART_STATUS, LIST_CONTACT_PHOTOS);
   private static final String SUBMISSION_GUIDANCE =
       " Returns an asynchronous submission, not completion. Use getArtStatus with the returned workflowId; only COMPLETED confirms server deployment, not physical screen state.";
 
@@ -76,6 +78,19 @@ public class WallartMcpAgentTool implements ToolProvider {
     return List.of(
         getTool(),
         guarded(
+            LIST_CONTACT_PHOTOS,
+            "List names, participant references and photo availability for the current chat's contacts. Use before composing a group portrait, composite of everyone's faces, or art from contact/profile photos. Uses server contacts then shared iMessage profiles when available. Returns metadata only. Missing, unsupported or unavailable photos require attachments or explicit permission to omit those people; never silently leave someone out. Photos may be avatars or Memoji rather than faces.",
+            functionParameters(objectSchema(Map.of(), List.of())),
+            (context, args) ->
+                io.breland.bbagent.server.agent.tools.ToolJson.stringify(
+                    context.getMapper(),
+                    Map.of(
+                        "participants",
+                        imageInputs.contactPhotoSummaries(context.message()),
+                        "max_images",
+                        16),
+                    "failed: Unable to list contact photos")),
+        guarded(
             GET_CURRENT_ART,
             "Get current dining room LED wall art and send the image as a photo in this chat. This is the stored display image, not a camera screenshot. For editing current art use source=current_art in composeArt; no need to send it first.",
             functionParameters(objectSchema(Map.of(), List.of())),
@@ -108,12 +123,15 @@ public class WallartMcpAgentTool implements ToolProvider {
               if (request == null || request.image() == null)
                 throw new IllegalArgumentException("image is required.");
               var images = imageInputs.resolve(context.message(), List.of(request.image()));
+              if (images.size() != 1)
+                throw new IllegalArgumentException(
+                    "showImage requires one photo; use composeArt to combine people.");
               if (!context.canSendResponses()) return "skipped: outdated workflow";
               return wallartMcpClient.showImage(images.getFirst());
             }),
         guarded(
             COMPOSE_ART,
-            "Edit or combine photos/reference images with a prompt, then display generated art on the dining room LED wall. Use attachment references from this chat or source=current_art to edit the current artwork. Order is preserved: base scene first, people/details next; label each description and explain placement in prompt. 1-16 PNG/JPEG images, 10 MiB/20 million pixels each, 20 MiB total including server PNG conversion. Never supply base64 or image URLs."
+            "Edit or combine photos/reference images with a prompt, then display generated art on the dining room LED wall. Use attachment references from this chat or source=current_art to edit the current artwork. For people's contact/profile photos first use listWallartContactPhotos, then source=all_contact_photos for everyone or source=contact_photo with a returned participant for selected people. Never silently omit a missing person. Order is preserved: base scene first, people/details next; label each description and explain placement in prompt. 1-16 PNG/JPEG images, 10 MiB/20 million pixels each, 20 MiB total including server PNG conversion. Never supply base64 or image URLs."
                 + SUBMISSION_GUIDANCE,
             functionParameters(
                 objectSchema(
@@ -189,9 +207,15 @@ public class WallartMcpAgentTool implements ToolProvider {
                     "type",
                     "string",
                     "enum",
-                    List.of("attachment", "current_art"),
+                    List.of("attachment", "current_art", "contact_photo", "all_contact_photos"),
                     "description",
-                    "attachment selects a photo from this conversation; current_art fetches the current wall artwork internally."),
+                    "attachment selects a chat photo; current_art fetches wall art; contact_photo selects a participant; all_contact_photos expands to one photo per person in this chat."),
+            "participant",
+                Map.of(
+                    "type",
+                    "string",
+                    "description",
+                    "For contact_photo only: participant address returned by listWallartContactPhotos. Never guess or use a person outside this chat."),
             "index",
                 Map.of(
                     "type",

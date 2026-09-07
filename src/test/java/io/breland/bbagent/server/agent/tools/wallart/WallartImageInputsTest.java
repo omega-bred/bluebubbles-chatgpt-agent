@@ -28,7 +28,8 @@ class WallartImageInputsTest {
   @TempDir Path directory;
   private final BBHttpClientWrapper bb = mock(BBHttpClientWrapper.class);
   private final WallartMcpClient client = mock(WallartMcpClient.class);
-  private final WallartImageInputs inputs = new WallartImageInputs(bb, client, new ObjectMapper());
+  private final WallartImageInputs inputs =
+      new WallartImageInputs(bb, client, new ObjectMapper(), new WallartContactPhotos(bb));
 
   @Test
   void forwardsConvertedHeicBytesAndCleansDownloadedFile() throws Exception {
@@ -60,8 +61,8 @@ class WallartImageInputsTest {
         inputs.resolve(
             message,
             List.of(
-                new ImageReference("attachment", 2, null, "second"),
-                new ImageReference("attachment", 1, null, "first")));
+                new ImageReference("attachment", 2, null, "second", null),
+                new ImageReference("attachment", 1, null, "first", null)));
     assertEquals("second", result.get(0).get("description"));
     assertEquals("first", result.get(1).get("description"));
     assertEquals(data, result.get(1).get("data"));
@@ -97,7 +98,8 @@ class WallartImageInputsTest {
           IllegalArgumentException.class,
           () ->
               inputs.resolve(
-                  message(List.of()), List.of(new ImageReference("attachment", 1, guid, null))));
+                  message(List.of()),
+                  List.of(new ImageReference("attachment", 1, guid, null, null))));
     }
     verify(bb, never()).getAttachment(anyString());
   }
@@ -109,7 +111,7 @@ class WallartImageInputsTest {
             new Message()
                 .chats(List.of(new Chat().guid("chat")))
                 .attachments(List.of(Map.of("base64", png(), "mimeType", "image/png"))));
-    var ref = new ImageReference("attachment", 1, "older", null);
+    var ref = new ImageReference("attachment", 1, "older", null, null);
     assertEquals(2, inputs.resolve(message(List.of()), List.of(ref, ref)).size());
     verify(bb).getMessage("older");
   }
@@ -207,7 +209,7 @@ class WallartImageInputsTest {
   }
 
   private static ImageReference ref(int index) {
-    return new ImageReference("attachment", index, null, null);
+    return new ImageReference("attachment", index, null, null, null);
   }
 
   private static IncomingMessage message(List<IncomingAttachment> attachments) {

@@ -24,7 +24,11 @@ class WallartMcpAgentToolTest {
   private final BBHttpClientWrapper bb = mock(BBHttpClientWrapper.class);
   private final AgentOutboundService outbound = mock(AgentOutboundService.class);
   private final WallartMcpAgentTool provider =
-      new WallartMcpAgentTool(client, access, new WallartImageInputs(bb, client, mapper), bb);
+      new WallartMcpAgentTool(
+          client,
+          access,
+          new WallartImageInputs(bb, client, mapper, new WallartContactPhotos(bb)),
+          bb);
 
   @Test
   void submitsTrimmedPromptAndAllowsTournamentWithoutPrompt() throws Exception {
@@ -144,6 +148,43 @@ class WallartMcpAgentToolTest {
     assertTrue(
         call("showImage", context, "{\"image\":{\"source\":\"attachment\"}}").startsWith("error:"));
     verifyNoInteractions(client, bb);
+  }
+
+  @Test
+  void listsContactMetadataAndRejectsMultiPersonDirectDisplay() throws Exception {
+    var context = context(List.of());
+    when(bb.getConversationInfoJson(context.message().chatGuid()))
+        .thenReturn(
+            mapper.readTree(
+                """
+      {"participants":[{"address":"alice@example.com"},{"address":"bob@example.com"}]}
+      """));
+    String data = WallartImageInputsTest.png();
+    for (String address : List.of("alice@example.com", "bob@example.com")) {
+      var contact =
+          mapper.convertValue(
+              java.util.Map.of(
+                  "displayName",
+                  address,
+                  "avatar",
+                  data,
+                  "emails",
+                  List.of(java.util.Map.of("address", address))),
+              io.breland.bbagent.generated.bluebubblesclient.model.Contact.class);
+      when(bb.getContactPhotosForAddress(eq(address), any())).thenReturn(List.of(contact));
+    }
+    String result = call("listWallartContactPhotos", context, "{}");
+    assertEquals(2, mapper.readTree(result).path("participants").size());
+    assertFalse(result.contains(data));
+    assertTrue(
+        call(
+                "showImage",
+                context,
+                """
+        {"image":{"source":"all_contact_photos"}}
+        """)
+            .contains("requires one photo"));
+    verifyNoInteractions(client);
   }
 
   private ToolContext context(List<IncomingAttachment> attachments) {

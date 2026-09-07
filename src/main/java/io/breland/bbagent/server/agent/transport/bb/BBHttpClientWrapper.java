@@ -517,6 +517,74 @@ public class BBHttpClientWrapper {
         });
   }
 
+  /** Query one verified chat participant; never issue an empty-address address-book query. */
+  public List<Contact> getContactPhotosForAddress(String address, Duration remaining) {
+    if (StringUtils.isBlank(address))
+      throw new IllegalArgumentException("Contact address is required");
+    return measuredOperation(
+        "get_contacts",
+        () -> {
+          var request =
+              new ContactQueryRequest()
+                  .addresses(List.of(address))
+                  .extraProperties(List.of("avatar"));
+          // Avatar bytes can exceed the normal 2 MiB JSON codec limit. Bound this one response
+          // separately, without increasing the limits on all BlueBubbles APIs.
+          var response =
+              readContactPhotoResponse(
+                  contactApi.apiV1ContactQueryPostWithResponseSpec(password, request),
+                  ContactQueryResponse.class,
+                  remaining);
+          response = requirePresent(response, "get contact photo");
+          requireSuccessfulResponse(
+              response.getStatus(), response.getMessage(), "get contact photo");
+          return response.getData() == null ? List.of() : response.getData();
+        });
+  }
+
+  public JsonNode getSharedContactPhoto(String address, Duration remaining) {
+    if (StringUtils.isBlank(address))
+      throw new IllegalArgumentException("Contact address is required");
+    return measuredOperation(
+        "get_contacts",
+        () -> {
+          JsonNode response =
+              readContactPhotoResponse(
+                  icloudApi.apiV1IcloudContactGetWithResponseSpec(password, address),
+                  JsonNode.class,
+                  remaining);
+          response = requirePresent(response, "get shared contact photo");
+          requireSuccessfulResponse(
+              response.path("status").isInt() ? response.path("status").asInt() : null,
+              response.path("message").asText(null),
+              "get shared contact photo");
+          return requirePresent(response.get("data"), "get shared contact photo");
+        });
+  }
+
+  private <T> T readContactPhotoResponse(
+      org.springframework.web.reactive.function.client.WebClient.ResponseSpec response,
+      Class<T> type,
+      Duration remaining) {
+    Duration timeout = apiTimeout.compareTo(remaining) < 0 ? apiTimeout : remaining;
+    if (timeout.isNegative() || timeout.isZero())
+      throw new IllegalStateException("Contact photo lookup timed out");
+    return DataBufferUtils.join(response.bodyToFlux(DataBuffer.class), 15 * 1024 * 1024)
+        .map(
+            buffer -> {
+              try {
+                byte[] bytes = new byte[buffer.readableByteCount()];
+                buffer.read(bytes);
+                return objectMapper.readValue(bytes, type);
+              } catch (IOException e) {
+                throw new IllegalStateException("Unable to decode contact photo response");
+              } finally {
+                DataBufferUtils.release(buffer);
+              }
+            })
+        .block(timeout);
+  }
+
   private static BlueBubblesContactIdentity contactIdentity(Contact contact) {
     String displayName = StringUtils.trimToNull(contact.getDisplayName());
     if (displayName == null) {
