@@ -23,6 +23,15 @@ Google Calendar + other tools. Built with Spring Boot + OpenAPI.
 ![screenshot2](./images/screen2.png)
 ![screenshot3](./images/screen3.jpg)
 
+## Images in chat
+
+With the ChatGPT model selected, ask BlueChat to draw or edit an image and it sends the generated
+photo directly to the conversation. Attached photos can serve as editing references. Ordinary
+image requests use the built-in image-generation tool; wall-art tools are used when you explicitly
+ask to display artwork on the wall. ChatGPT uses GPT-5.6 Sol by default, with the existing GPT Image
+1.5 generator. Images produced alongside other tool calls are retained for delivery, including
+multiple completed images from the same turn.
+
 ## Current group photo
 
 Ask “Show me this group’s current photo” to use `get_group_icon`. It fetches the current

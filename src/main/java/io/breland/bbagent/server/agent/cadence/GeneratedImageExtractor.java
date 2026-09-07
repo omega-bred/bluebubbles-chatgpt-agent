@@ -5,6 +5,7 @@ import com.openai.models.responses.ResponseOutputItem;
 import io.breland.bbagent.server.agent.cadence.models.GeneratedImage;
 import java.io.InputStream;
 import java.net.URI;
+import java.util.ArrayList;
 import java.util.Base64;
 import java.util.List;
 import lombok.extern.slf4j.Slf4j;
@@ -22,6 +23,7 @@ final class GeneratedImageExtractor {
     log.debug(
         "Extracting images from response - total of {} items in response",
         response.output().size());
+    List<GeneratedImage> images = new ArrayList<>();
     for (ResponseOutputItem item : response.output()) {
       if (item.imageGenerationCall().isEmpty()) {
         log.debug("Skipping item - not image generation call");
@@ -29,7 +31,7 @@ final class GeneratedImageExtractor {
       }
       ResponseOutputItem.ImageGenerationCall call = item.imageGenerationCall().get();
       log.info("Got an image generation item {}", call.id());
-      if (call.status() != ResponseOutputItem.ImageGenerationCall.Status.COMPLETED) {
+      if (!ResponseOutputItem.ImageGenerationCall.Status.COMPLETED.equals(call.status())) {
         log.warn("Image generation failed(bad status), status was : {}", call.status());
         continue;
       }
@@ -46,9 +48,9 @@ final class GeneratedImageExtractor {
       String id = call.id();
       String filename = "generated-" + id + ".png";
       log.info("Generated image for {}: {}", call.id(), filename);
-      return List.of(new GeneratedImage(bytes, filename));
+      images.add(new GeneratedImage(bytes, filename));
     }
-    return List.of();
+    return List.copyOf(images);
   }
 
   private byte[] decodeImageResult(String result) {
