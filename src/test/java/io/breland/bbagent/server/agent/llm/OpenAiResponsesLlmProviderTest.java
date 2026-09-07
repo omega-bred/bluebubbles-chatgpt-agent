@@ -95,6 +95,24 @@ class OpenAiResponsesLlmProviderTest {
       provider.createResponse(new LlmRequest(free, List.of(), List.of(search), message, null));
       assertEquals(0, countTools(received.get(), "image_generation"));
       assertEquals(1, countTools(received.get(), "function"));
+      var lxmf =
+          new IncomingMessage(
+              IncomingMessage.TRANSPORT_LXMF,
+              "lxmf:test-chat",
+              "lxmf-message",
+              null,
+              "draw an image",
+              false,
+              "LXMF",
+              "test-sender",
+              false,
+              message.timestamp(),
+              List.of(),
+              false);
+      provider.createResponse(new LlmRequest(chatgpt, List.of(), List.of(search), lxmf, null));
+      assertEquals("openai/gpt-5.6-sol", received.get().path("model").asText());
+      assertEquals(0, countTools(received.get(), "image_generation"));
+      assertEquals(1, countTools(received.get(), "function"));
     } finally {
       client.close();
       server.stop(0);

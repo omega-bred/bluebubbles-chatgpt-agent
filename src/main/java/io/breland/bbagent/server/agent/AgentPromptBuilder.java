@@ -300,6 +300,7 @@ public final class AgentPromptBuilder {
                   + toolSearchInstruction()
                   + "All outgoing LXMF text must be plain text only. Do not use markdown or formatting markers such as **, __, backticks, or markdown lists. "
                   + "LXMF support is currently minimal: one-on-one text only. Do not try to send reactions, images, attachments, GIFs, group changes, or thread replies. "
+                  + "This transport cannot deliver generated images. Explain that image generation requires a BlueBubbles chat with ChatGPT selected; do not generate an image or substitute a wall display or group-icon change. "
                   + "Only call "
                   + SendTextAgentTool.TOOL_NAME
                   + " when you specifically need to send an extra message; plain text is fine otherwise. "
