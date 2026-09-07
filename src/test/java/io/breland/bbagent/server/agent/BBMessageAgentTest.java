@@ -510,6 +510,39 @@ class BBMessageAgentTest {
   }
 
   @Test
+  void imageGenerationGuidanceMatchesTransportDeliverySupport() {
+    var builder = promptBuilder(new StubBBHttpClientWrapper());
+    var bluebubbles =
+        incomingMessage("iMessage;+;image-chat", "image-message", "draw an image", 1_000L);
+    String imagePrompt =
+        builder.buildConversationInput(List.of(), List.of(), bluebubbles).toString();
+    assertThat(imagePrompt)
+        .contains("call the built-in image_generation tool directly")
+        .contains(
+            "Only call wallart display or composition tools when the user explicitly requests");
+
+    var lxmf =
+        new IncomingMessage(
+            IncomingMessage.TRANSPORT_LXMF,
+            "lxmf:image-chat",
+            "image-message",
+            null,
+            "draw an image",
+            false,
+            "LXMF",
+            "test-sender",
+            false,
+            bluebubbles.timestamp(),
+            List.of(),
+            false);
+    String textOnlyPrompt = builder.buildConversationInput(List.of(), List.of(), lxmf).toString();
+    assertThat(textOnlyPrompt)
+        .contains("This transport cannot deliver generated images")
+        .doesNotContain("call the built-in image_generation tool directly")
+        .doesNotContain("The generated image is sent back to this chat automatically");
+  }
+
+  @Test
   void directLxmfPromptForwardsPreciseGroupQuestionsWithoutMemorySubstitution() {
     IncomingMessage incoming =
         new IncomingMessage(

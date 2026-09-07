@@ -134,6 +134,49 @@ class CadenceMessageWorkflowImplTest {
     verify(activities).finalizeWorkflow(message, context, true);
   }
 
+  @Test
+  void deliversImageGeneratedBeforeAFollowupFunctionCall() throws Exception {
+    var lookup = new CadenceToolCall("call-1", "lookup", "{}");
+    var first =
+        new CadenceResponseBundle(
+            "{\"id\":\"response-1\",\"output\":[{\"id\":\"ig-first\",\"type\":\"image_generation_call\",\"status\":\"completed\"}]}",
+            "",
+            "[]",
+            List.of(lookup));
+    var last =
+        new CadenceResponseBundle(
+            "{\"id\":\"response-2\",\"output\":[]}", "Here is the image", "[]", List.of());
+    when(activities.createResponseBundle("[]", message, context)).thenReturn(first, last);
+    when(activities.executeToolCallsJson(List.of(lookup), message, context)).thenReturn("[]");
+    when(activities.handleGeneratedImages(
+            org.mockito.ArgumentMatchers.anyString(),
+            org.mockito.ArgumentMatchers.eq("Here is the image"),
+            org.mockito.ArgumentMatchers.eq(message),
+            org.mockito.ArgumentMatchers.eq(context)))
+        .thenReturn(new ImageSendResult(true, true));
+
+    new CadenceMessageWorkflowImpl(activities).run(request);
+
+    var json = org.mockito.ArgumentCaptor.forClass(String.class);
+    verify(activities)
+        .handleGeneratedImages(
+            json.capture(),
+            org.mockito.ArgumentMatchers.eq("Here is the image"),
+            org.mockito.ArgumentMatchers.eq(message),
+            org.mockito.ArgumentMatchers.eq(context));
+    var output =
+        new com.fasterxml.jackson.databind.ObjectMapper().readTree(json.getValue()).path("output");
+    org.junit.jupiter.api.Assertions.assertEquals(1, output.size());
+    org.junit.jupiter.api.Assertions.assertEquals("ig-first", output.get(0).path("id").asText());
+    org.junit.jupiter.api.Assertions.assertFalse(output.get(0).has("result"));
+    verify(activities).finalizeWorkflow(message, context, true);
+    verify(activities, org.mockito.Mockito.never())
+        .sendThreadAwareText(
+            org.mockito.ArgumentMatchers.any(),
+            org.mockito.ArgumentMatchers.anyString(),
+            org.mockito.ArgumentMatchers.any());
+  }
+
   private static CadenceResponseBundle finalBundle(String text) {
     return new CadenceResponseBundle("{}", text, "[]", List.of());
   }

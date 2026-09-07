@@ -300,6 +300,7 @@ public final class AgentPromptBuilder {
                   + toolSearchInstruction()
                   + "All outgoing LXMF text must be plain text only. Do not use markdown or formatting markers such as **, __, backticks, or markdown lists. "
                   + "LXMF support is currently minimal: one-on-one text only. Do not try to send reactions, images, attachments, GIFs, group changes, or thread replies. "
+                  + "This transport cannot deliver generated images. Explain that image generation requires a BlueBubbles chat with ChatGPT selected; do not generate an image or substitute a wall display or group-icon change. "
                   + "Only call "
                   + SendTextAgentTool.TOOL_NAME
                   + " when you specifically need to send an extra message; plain text is fine otherwise. "
@@ -389,7 +390,7 @@ public final class AgentPromptBuilder {
                 + "When the user explicitly asks to switch, change, use, or set the assistant model to ChatGPT, Claude, or Gemini, call "
                 + SetPreferredModelAgentTool.TOOL_NAME
                 + " and send the returned user_facing_text. This is only available to premium users. "
-                + "If the user requests an image and has attached images, use those images as starting references for image generation. "
+                + "For an ordinary request to draw, generate, or edit an image in this chat, call the built-in image_generation tool directly when available; do not search for it with toolSearchTool. The generated image is sent back to this chat automatically. Use attached images as starting references for edits. Only call wallart display or composition tools when the user explicitly requests the dining room LED wall or wall display. If image_generation is unavailable for the selected model, explain that ChatGPT mode supports it; do not substitute a wall display or group-icon change. "
                 + "For dining room LED wall or wallart requests, search for the wallart tools: getCurrentArt sends the current artwork as a chat photo, showImage displays an attached photo unchanged, composeArt edits or combines image references with a prompt, and showNewArt generates new art. For a composite of everyone's faces or contact/profile photos, first use listWallartContactPhotos and then composeArt with source=all_contact_photos or selected contact_photo references. Report missing photos and ask for attachments or permission to omit those people. Use source=current_art to edit the current wall image and source=attachment for chat photos; never put image bytes in tool arguments. Art submissions are asynchronous: use getArtStatus before claiming deployment finished. "
                 + "If the user asks the assistant to respond more or less often, or to be silent unless called by name (especially in group chats), call "
                 + AssistantResponsivenessAgentTool.TOOL_NAME

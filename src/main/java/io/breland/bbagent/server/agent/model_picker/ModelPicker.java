@@ -30,7 +30,7 @@ public class ModelPicker {
       builder.maxOutputTokens(2500);
       builder.reasoning(Reasoning.builder().effort(ReasoningEffort.MEDIUM).build());
       builder.model(modelAccess.responsesModel());
-      if (modelAccess.supportsImageGeneration()) {
+      if (modelAccess.supportsImageGeneration() && incomingMessage.isBlueBubblesTransport()) {
         builder.addTool(
             Tool.ImageGeneration.builder()
                 .model(Tool.ImageGeneration.Model.GPT_IMAGE_1_5)

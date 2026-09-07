@@ -84,8 +84,10 @@ public class CadenceMessageWorkflowImpl implements CadenceMessageWorkflow {
       int blockedLoops = 0;
       int emptyResponseRetries = 0;
       AgentToolLoopGuard toolLoopGuard = AgentToolLoopGuard.standard();
+      GeneratedImageResponses imageResponses = new GeneratedImageResponses();
       while (true) {
         while (toolLoops < MAX_TOOL_LOOPS) {
+          imageResponses.capture(bundle.responseJson());
           if (bundle.toolCalls() == null || bundle.toolCalls().isEmpty()) {
             break;
           }
@@ -143,10 +145,14 @@ public class CadenceMessageWorkflowImpl implements CadenceMessageWorkflow {
               request.workflowContext());
         }
 
+        imageResponses.capture(bundle.responseJson());
         String assistantText = bundle.assistantText();
         ImageSendResult imageResult =
             activities.handleGeneratedImages(
-                bundle.responseJson(), assistantText, message, request.workflowContext());
+                imageResponses.takeForDelivery(bundle.responseJson()),
+                assistantText,
+                message,
+                request.workflowContext());
         if (imageResult.rateLimited()) {
           activities.finalizeWorkflow(message, request.workflowContext(), true);
           return;
