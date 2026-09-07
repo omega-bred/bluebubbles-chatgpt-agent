@@ -82,6 +82,7 @@ public class WallartImageInputs {
               + ". Ask for their photo attachments or explicit instructions to omit them; do not claim everyone is included.");
     Map<String, List<IncomingAttachment>> messages = new HashMap<>();
     ImageData currentArt = null;
+    ImageData groupIcon = null;
     List<Map<String, Object>> images = new ArrayList<>();
     long total = 0;
     for (ImageReference reference : references) {
@@ -102,6 +103,31 @@ public class WallartImageInputs {
         description =
             StringUtils.isBlank(description) ? photo.name() : photo.name() + ": " + description;
         description = StringUtils.left(description, 500);
+      } else if ("group_icon".equals(reference.source())) {
+        if (reference.index() != null
+            || StringUtils.isNotBlank(reference.messageGuid())
+            || StringUtils.isNotBlank(reference.participant())) {
+          throw new IllegalArgumentException(
+              "group_icon does not accept an index, messageGuid or participant.");
+        }
+        if (message == null
+            || !message.isGroup()
+            || !message.isBlueBubblesTransport()
+            || StringUtils.isBlank(IncomingMessage.chatGuidOrNull(message))) {
+          throw new IllegalArgumentException(
+              "group_icon is only available in the current BlueChat group.");
+        }
+        if (groupIcon == null) {
+          byte[] bytes =
+              blueBubbles
+                  .getConversationIcon(message.chatGuid())
+                  .orElseThrow(
+                      () ->
+                          new IllegalArgumentException(
+                              "This group's photo is unavailable on the BlueBubbles server. Ask for a photo attachment."));
+          groupIcon = normalizePhoto(bytes);
+        }
+        image = groupIcon;
       } else if ("current_art".equals(reference.source())) {
         if (reference.index() != null
             || StringUtils.isNotBlank(reference.messageGuid())
@@ -136,7 +162,7 @@ public class WallartImageInputs {
         image = load(attachments.get(index - 1));
       } else {
         throw new IllegalArgumentException(
-            "Image source must be attachment, current_art, contact_photo or all_contact_photos.");
+            "Image source must be attachment, current_art, group_icon, contact_photo or all_contact_photos.");
       }
       total += image.bytes().length;
       if (total > MAX_TOTAL_BYTES) {
@@ -257,6 +283,11 @@ public class WallartImageInputs {
     return inspect(decodeBytes(base64), true);
   }
 
+  /** Validate photo bytes and convert supported macOS photo formats to PNG when needed. */
+  public static ImageData normalizePhoto(byte[] bytes) {
+    return inspect(bytes, true);
+  }
+
   private static byte[] decodeBytes(String base64) {
     if (base64 == null || base64.length() > 4 * ((MAX_IMAGE_BYTES + 2) / 3)) {
       throw new IllegalArgumentException("Each image must be at most 10 MiB.");
@@ -316,5 +347,5 @@ public class WallartImageInputs {
     return null;
   }
 
-  record ImageData(byte[] bytes, String mimeType) {}
+  public record ImageData(byte[] bytes, String mimeType) {}
 }

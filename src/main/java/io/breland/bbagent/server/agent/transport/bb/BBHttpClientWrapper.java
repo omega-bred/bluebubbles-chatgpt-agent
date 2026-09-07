@@ -517,6 +517,34 @@ public class BBHttpClientWrapper {
         });
   }
 
+  /** Fetch bounded image bytes; a missing server-side group photo is not a transport failure. */
+  public Optional<byte[]> getConversationIcon(String chatGuid) {
+    if (StringUtils.isBlank(chatGuid)) throw new IllegalArgumentException("Chat GUID is required");
+    return measuredOperation(
+        "get_conversation_icon",
+        () ->
+            DataBufferUtils.join(
+                    new V1ChatGroupSpecificApi(apiClient)
+                        .getGroupIconWithResponseSpec(chatGuid, password)
+                        .bodyToFlux(DataBuffer.class),
+                    10 * 1024 * 1024)
+                .map(
+                    buffer -> {
+                      try {
+                        byte[] bytes = new byte[buffer.readableByteCount()];
+                        buffer.read(bytes);
+                        return bytes;
+                      } finally {
+                        DataBufferUtils.release(buffer);
+                      }
+                    })
+                .onErrorResume(
+                    org.springframework.web.reactive.function.client.WebClientResponseException
+                        .NotFound.class,
+                    error -> Mono.empty())
+                .blockOptional(apiTimeout));
+  }
+
   /** Query one verified chat participant; never issue an empty-address address-book query. */
   public List<Contact> getContactPhotosForAddress(String address, Duration remaining) {
     if (StringUtils.isBlank(address))

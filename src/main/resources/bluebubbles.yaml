@@ -785,6 +785,33 @@ paths:
           content:
             application/json: {}
   /api/v1/chat/{chatGuid}/icon:
+    get:
+      tags:
+        - v1 > Chat > Group-Specific
+      operationId: getGroupIcon
+      summary: Get Group Icon
+      description: Fetch the current group photo bytes when the photo is available on the BlueBubbles server Mac.
+      parameters:
+        - name: chatGuid
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: password
+          in: query
+          description: Your BlueBubbles Server password
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Group photo bytes
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+        '404':
+          description: The group or its photo is unavailable on the server
     post:
       tags:
         - v1 > Chat > Group-Specific
@@ -851,11 +878,8 @@ paths:
     get:
       tags:
         - v1 > Chat
-      summary: Get Chat Icon by GUID
-      description: >-
-        Fetches a group chat's Icon. This will only return an icon if the group
-        has one set, and if they have set it at somepoint *after* the inception
-        of the macOS host.
+      summary: Get Chat by GUID
+      description: Fetch chat metadata and optional related participants or last message.
       parameters:
         - name: chatGuid
           in: path

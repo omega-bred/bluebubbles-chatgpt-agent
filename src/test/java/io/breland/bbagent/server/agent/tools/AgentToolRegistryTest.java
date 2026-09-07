@@ -31,6 +31,8 @@ import io.breland.bbagent.server.agent.tools.wallart.WallartMcpClient;
 import io.breland.bbagent.server.agent.transport.MessageTransportRegistry;
 import io.breland.bbagent.server.agent.transport.bb.BBHttpClientWrapper;
 import io.breland.bbagent.server.agent.transport.bb.BlueBubblesMessageTransport;
+import io.breland.bbagent.server.agent.transport.lxmf.LxmfBridgeClient;
+import io.breland.bbagent.server.agent.transport.lxmf.LxmfMessageTransport;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
@@ -43,6 +45,43 @@ class AgentToolRegistryTest {
   private static final String KUBERNETES_TOOL_ALLOWED_ACCOUNT_ID =
       "9f80c2a0-de6f-4c56-8027-29b1673bb0d5";
   private static final String LEGACY_ALLOWED_SENDER = "+18033861737";
+
+  @Test
+  void groupIconIsDiscoverableOnlyInBlueChatGroups() throws Exception {
+    var registry = registryForAccount("account-1");
+    var mapper = new ObjectMapper();
+    var group = groupMessage();
+    assertNotNull(registry.resolveTool("get_group_icon", group).tool());
+    assertEquals("bluebubbles", registry.toolCategory("get_group_icon"));
+    assertNull(registry.resolveTool("get_group_icon", directMessage("alice")).tool());
+    var lxmf =
+        new IncomingMessage(
+            "lxmf",
+            "group",
+            "incoming",
+            null,
+            "show group photo",
+            false,
+            "lxmf",
+            "sender",
+            true,
+            Instant.EPOCH,
+            List.of(),
+            false);
+    assertNull(registry.resolveTool("get_group_icon", lxmf).tool());
+    var args =
+        mapper
+            .createObjectNode()
+            .put("query", "retrieve current group icon photo")
+            .put("categoryFilter", "bluebubbles")
+            .put("maxResults", 5);
+    assertTrue(
+        toolSearch(registry, mapper, ToolContextFixture.with(group).build(), args)
+            .contains("get_group_icon"));
+    assertFalse(
+        toolSearch(registry, mapper, ToolContextFixture.with(directMessage("alice")).build(), args)
+            .contains("get_group_icon"));
+  }
 
   @Test
   void includesKubernetesToolsForAllowedAccountId() {
@@ -244,7 +283,10 @@ class AgentToolRegistryTest {
         mock(GcalClient.class),
         null,
         mock(GiphyClient.class),
-        new MessageTransportRegistry(List.of(new BlueBubblesMessageTransport(bbHttpClientWrapper))),
+        new MessageTransportRegistry(
+            List.of(
+                new BlueBubblesMessageTransport(bbHttpClientWrapper),
+                new LxmfMessageTransport(mock(LxmfBridgeClient.class)))),
         new ObjectMapper(),
         () -> mock(OpenAIClient.class),
         null,
