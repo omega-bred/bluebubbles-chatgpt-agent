@@ -15,28 +15,22 @@ public class MessageTransportRegistry {
   @Autowired
   public MessageTransportRegistry(List<MessageTransport> transports) {
     this.transports = new LinkedHashMap<>();
-    MessageTransport blueBubblesTransport = null;
     for (MessageTransport transport : transports) {
       if (transport == null || transport.id() == null || transport.id().isBlank()) {
         continue;
       }
       this.transports.put(transport.id(), transport);
-      if (IncomingMessage.TRANSPORT_BLUEBUBBLES.equals(transport.id())) {
-        blueBubblesTransport = transport;
-      }
     }
     this.fallbackTransport =
-        blueBubblesTransport != null
-            ? blueBubblesTransport
-            : this.transports.values().stream().findFirst().orElse(null);
+        this.transports.getOrDefault(
+            IncomingMessage.TRANSPORT_BLUEBUBBLES,
+            this.transports.values().stream().findFirst().orElse(null));
   }
 
   public MessageTransport resolve(IncomingMessage message) {
     if (message == null) {
       return fallbackTransport;
     }
-    String id = message.transportOrDefault();
-    MessageTransport transport = transports.get(id);
-    return transport != null ? transport : fallbackTransport;
+    return transports.getOrDefault(message.transportOrDefault(), fallbackTransport);
   }
 }
