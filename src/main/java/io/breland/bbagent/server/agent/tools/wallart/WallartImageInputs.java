@@ -180,7 +180,15 @@ public class WallartImageInputs {
       if (message == null
           || message.getChats() == null
           || message.getChats().stream()
-              .noneMatch(chat -> chat != null && incoming.chatGuid().equals(chat.getGuid()))) {
+              .noneMatch(
+                  chat ->
+                      chat != null
+                          && StringUtils.isNotBlank(chat.getGuid())
+                          && BBHttpClientWrapper.normalizeDirectAnyChatGuid(
+                                  incoming.chatGuid(), incoming.service())
+                              .equals(
+                                  BBHttpClientWrapper.normalizeDirectAnyChatGuid(
+                                      chat.getGuid(), incoming.service())))) {
         throw new IllegalArgumentException(
             "The selected image message is not in this conversation.");
       }

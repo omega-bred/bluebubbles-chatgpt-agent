@@ -1315,7 +1315,8 @@ public class BBHttpClientWrapper {
     return normalizeDirectAnyChatGuid(chatGuid, BBMessageAgent.IMESSAGE_SERVICE);
   }
 
-  static String normalizeDirectAnyChatGuid(String chatGuid, String service) {
+  /** Resolve BlueBubbles direct-chat service aliases without changing group identifiers. */
+  public static String normalizeDirectAnyChatGuid(String chatGuid, String service) {
     if (chatGuid == null || !chatGuid.startsWith(ANY_DIRECT_CHAT_PREFIX)) {
       return chatGuid;
     }

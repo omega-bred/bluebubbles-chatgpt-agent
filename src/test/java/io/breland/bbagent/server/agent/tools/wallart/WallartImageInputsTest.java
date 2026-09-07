@@ -104,6 +104,77 @@ class WallartImageInputsTest {
     verify(bb, never()).getAttachment(anyString());
   }
 
+  @org.junit.jupiter.params.ParameterizedTest
+  @org.junit.jupiter.params.provider.CsvSource({
+    "any;-;alice@example.com,iMessage;-;alice@example.com,iMessage",
+    "iMessage;-;alice@example.com,any;-;alice@example.com,iMessage",
+    "any;-;+14155550101,SMS;-;+14155550101,SMS"
+  })
+  void acceptsDirectChatAliasesForRepliedAndHistoricalPhotos(
+      String incomingGuid, String storedGuid, String service) throws Exception {
+    when(bb.getMessage("earlier"))
+        .thenReturn(
+            new Message()
+                .chats(List.of(new Chat().guid(storedGuid)))
+                .attachments(List.of(Map.of("base64", png(), "mimeType", "image/png"))));
+    var incoming =
+        new IncomingMessage(
+                incomingGuid,
+                "incoming",
+                null,
+                "compose",
+                false,
+                service,
+                "alice@example.com",
+                false,
+                Instant.EPOCH,
+                List.of(),
+                false)
+            .withThreadOriginatorGuid("earlier");
+    assertEquals(1, inputs.resolve(incoming, List.of(ref(1))).size());
+    assertEquals(
+        1,
+        inputs
+            .resolve(incoming, List.of(new ImageReference("attachment", 1, "earlier", null, null)))
+            .size());
+  }
+
+  @org.junit.jupiter.params.ParameterizedTest
+  @org.junit.jupiter.params.provider.CsvSource({
+    "any;-;alice@example.com,iMessage;-;bob@example.com",
+    "iMessage;-;alice@example.com,SMS;-;alice@example.com",
+    "any;-;alice@example.com,SMS;-;alice@example.com",
+    "any;+;group-one,iMessage;+;group-one",
+    "iMessage;+;group-one,iMessage;+;group-two"
+  })
+  void aliasNormalizationDoesNotMergeDifferentChatsOrServices(
+      String incomingGuid, String storedGuid) {
+    when(bb.getMessage("foreign"))
+        .thenReturn(
+            new Message()
+                .chats(List.of(new Chat().guid(storedGuid)))
+                .attachments(List.of(Map.of("guid", "private-image", "mimeType", "image/png"))));
+    var incoming =
+        new IncomingMessage(
+            incomingGuid,
+            "incoming",
+            null,
+            "compose",
+            false,
+            "iMessage",
+            "alice@example.com",
+            false,
+            Instant.EPOCH,
+            List.of(),
+            false);
+    assertThrows(
+        IllegalArgumentException.class,
+        () ->
+            inputs.resolve(
+                incoming, List.of(new ImageReference("attachment", 1, "foreign", null, null))));
+    verify(bb, never()).getAttachment(anyString());
+  }
+
   @Test
   void supportsExplicitEarlierMessageAndDownloadsMetadataOnce() throws Exception {
     when(bb.getMessage("older"))
