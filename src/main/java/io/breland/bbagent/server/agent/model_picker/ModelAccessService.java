@@ -26,7 +26,7 @@ public class ModelAccessService {
   public static final String STANDARD_RESPONSES_MODEL = "openrouter/z-ai/glm-5.2";
   public static final String PREMIUM_MODEL_KEY = "chatgpt";
   public static final String PREMIUM_MODEL_LABEL = "ChatGPT";
-  public static final String PREMIUM_RESPONSES_MODEL = "openai/gpt-5.6-sol";
+  public static final String PREMIUM_RESPONSES_MODEL = "openai/gpt-5.6-terra";
   public static final String CLAUDE_MODEL_KEY = "claude";
   public static final String CLAUDE_MODEL_LABEL = "Claude";
   public static final String CLAUDE_RESPONSES_MODEL = "anthropic/claude-sonnet-4-6";

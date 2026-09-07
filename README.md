@@ -28,7 +28,7 @@ Google Calendar + other tools. Built with Spring Boot + OpenAPI.
 In a BlueBubbles chat with the ChatGPT model selected, ask BlueChat to draw or edit an image and it sends the generated
 photo directly to the conversation. Attached photos can serve as editing references. Ordinary
 image requests use the built-in image-generation tool; wall-art tools are used when you explicitly
-ask to display artwork on the wall. ChatGPT uses GPT-5.6 Sol by default, with the existing GPT Image
+ask to display artwork on the wall. ChatGPT uses GPT-5.6 Terra by default, with the existing GPT Image
 1.5 generator. Images produced alongside other tool calls are retained for delivery, including
 multiple completed images from the same turn.
 LXMF remains text-only and does not enable image generation.

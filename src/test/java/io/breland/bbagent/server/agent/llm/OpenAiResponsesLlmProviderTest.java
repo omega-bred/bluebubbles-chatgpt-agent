@@ -74,7 +74,7 @@ class OpenAiResponsesLlmProviderTest {
       for (List<AgentTool> functions : List.of(List.of(search), List.of(search, wall))) {
         provider.createResponse(new LlmRequest(chatgpt, List.of(), functions, message, null));
         JsonNode request = received.get();
-        assertEquals("openai/gpt-5.6-sol", request.path("model").asText());
+        assertEquals("openai/gpt-5.6-terra", request.path("model").asText());
         assertEquals(1, countTools(request, "image_generation"));
         assertEquals(functions.size(), countTools(request, "function"));
         for (JsonNode tool : request.path("tools")) {
@@ -110,7 +110,7 @@ class OpenAiResponsesLlmProviderTest {
               List.of(),
               false);
       provider.createResponse(new LlmRequest(chatgpt, List.of(), List.of(search), lxmf, null));
-      assertEquals("openai/gpt-5.6-sol", received.get().path("model").asText());
+      assertEquals("openai/gpt-5.6-terra", received.get().path("model").asText());
       assertEquals(0, countTools(received.get(), "image_generation"));
       assertEquals(1, countTools(received.get(), "function"));
     } finally {
