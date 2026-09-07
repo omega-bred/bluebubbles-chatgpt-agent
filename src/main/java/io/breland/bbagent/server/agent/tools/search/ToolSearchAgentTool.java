@@ -27,7 +27,7 @@ public final class ToolSearchAgentTool implements ToolProvider {
   private static final int MAX_MAX_RESULTS = 10;
   private static final String CATEGORIES =
       "bluebubbles, google_calendar, website, assistant, scheduled, memory, kubernetes, feedback,"
-          + " limits, other";
+          + " limits, wallart, other";
 
   private final ObjectMapper objectMapper;
   private final BiFunction<IncomingMessage, String, List<ToolIndexEntry>> toolEntriesProvider;
