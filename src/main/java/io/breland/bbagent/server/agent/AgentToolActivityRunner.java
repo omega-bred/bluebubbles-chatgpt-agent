@@ -2,8 +2,10 @@ package io.breland.bbagent.server.agent;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.openai.models.responses.ResponseFunctionCallOutputItem;
 import com.openai.models.responses.ResponseFunctionToolCall;
 import com.openai.models.responses.ResponseInputItem;
+import com.openai.models.responses.ResponseInputTextContent;
 import io.breland.bbagent.server.agent.tools.AgentTool;
 import io.breland.bbagent.server.agent.tools.AgentToolRegistry;
 import io.breland.bbagent.server.agent.tools.ToolContext;
@@ -43,6 +45,7 @@ public final class AgentToolActivityRunner {
     String failureType;
     String toolCategory = toolRegistry.toolCategory(toolCall.name());
     boolean success = false;
+    java.util.List<ResponseFunctionCallOutputItem> modelContent = java.util.List.of();
     Instant startedAt = Instant.now();
     try {
       JsonNode args = objectMapper.readTree(toolCall.arguments());
@@ -56,6 +59,7 @@ public final class AgentToolActivityRunner {
             truncateToolOutputForModel(tool.handler().apply(toolContext, args), toolCall.name());
         failureType = classifyFailure(output);
         success = failureType == null;
+        if (success) modelContent = toolContext.modelContent();
       }
     } catch (Exception e) {
       output = "Tool call failed: " + e.getMessage();
@@ -66,12 +70,17 @@ public final class AgentToolActivityRunner {
     recordToolCallMetric(
         toolCall.name(), message, success, failureType, durationMillis, toolCategory);
 
-    ResponseInputItem.FunctionCallOutput toolOutput =
-        ResponseInputItem.FunctionCallOutput.builder()
-            .callId(toolCall.callId())
-            .output(output)
-            .build();
-    return ResponseInputItem.ofFunctionCallOutput(toolOutput);
+    ResponseInputItem.FunctionCallOutput.Builder toolOutput =
+        ResponseInputItem.FunctionCallOutput.builder().callId(toolCall.callId()).output(output);
+    if (!modelContent.isEmpty()) {
+      var content = new java.util.ArrayList<ResponseFunctionCallOutputItem>();
+      content.add(
+          ResponseFunctionCallOutputItem.ofInputText(
+              ResponseInputTextContent.builder().text(output).build()));
+      content.addAll(modelContent);
+      toolOutput.outputOfResponseFunctionCallOutputItemList(content);
+    }
+    return ResponseInputItem.ofFunctionCallOutput(toolOutput.build());
   }
 
   static String truncateToolOutputForModel(String output, String toolName) {

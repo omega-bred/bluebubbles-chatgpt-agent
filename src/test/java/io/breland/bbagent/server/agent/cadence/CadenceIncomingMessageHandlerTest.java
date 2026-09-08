@@ -27,6 +27,36 @@ import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
 
 class CadenceIncomingMessageHandlerTest {
+  @org.junit.jupiter.params.ParameterizedTest
+  @org.junit.jupiter.params.provider.ValueSource(
+      strings = {
+        "Loved a message", "Reacted 👍 to “Want me to make a second version?”",
+        "Liked it, can you make another?", "Thanks, what time is it?"
+      })
+  void reactionsAndQuestionsReachTheModelForContextualResponseDecisions(String text) {
+    Fixture fixture = fixture();
+    IncomingMessage message = message("reaction", text, false, false);
+    when(fixture.profileService().getAssistantResponsiveness(message.chatGuid()))
+        .thenReturn(AssistantResponsiveness.DEFAULT);
+    MessageTransport transport = Mockito.mock(MessageTransport.class);
+    when(fixture.transportRegistry().resolve(message)).thenReturn(transport);
+    when(transport.hydrateConversationState(message.chatGuid(), message))
+        .thenReturn(new ConversationState());
+    fixture.handler().handleIncomingMessage(message);
+    fixture.handler().handleIncomingMessage(message);
+    verify(fixture.workflowLauncher()).startWorkflow(any());
+  }
+
+  @Test
+  void silentModeStillDoesNotInvokeOnATapback() {
+    Fixture fixture = fixture();
+    IncomingMessage message = message("reaction", "Liked “Chat, proceed?”", false, false);
+    when(fixture.profileService().getAssistantResponsiveness(message.chatGuid()))
+        .thenReturn(AssistantResponsiveness.SILENT);
+    fixture.handler().handleIncomingMessage(message);
+    verifyNoInteractions(fixture.workflowLauncher());
+  }
+
   @Test
   void silentGroupMessageIsJournaledWithoutLaunchingAssistantWorkflow() {
     Fixture fixture = fixture();
@@ -58,7 +88,6 @@ class CadenceIncomingMessageHandlerTest {
 
     fixture.handler().handleIncomingMessage(message("self", "hello", true, false));
     fixture.handler().handleIncomingMessage(message("system", "joined", false, true));
-    fixture.handler().handleIncomingMessage(message("reaction", "Loved a message", false, false));
     fixture.handler().handleIncomingMessage(message("blank", " ", false, false));
 
     verify(fixture.journalService(), never()).recordEligibleMessage(any());

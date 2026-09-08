@@ -111,8 +111,7 @@ public final class CadenceIncomingMessageHandler {
     }
     synchronized (state) {
       state.recordPendingIncomingTurn(message);
-      state.setLatestWorkflowMessageGuid(message.messageGuid());
-      state.setLatestWorkflowRunId(null);
+      markLatestWorkflow(state, message);
     }
     recordAcceptedMessageMetric(message);
     return new PreparedIncomingMessage(state, message);
@@ -161,9 +160,6 @@ public final class CadenceIncomingMessageHandler {
     if (message.isSystemMessage()) {
       return false;
     }
-    if (MessageReactionSupport.isReactionMessage(message.text())) {
-      return false;
-    }
     if ((message.text() == null || message.text().isBlank())
         && (message.attachments() == null || message.attachments().isEmpty())) {
       if (message.isBlueBubblesTransport()
@@ -198,8 +194,7 @@ public final class CadenceIncomingMessageHandler {
     }
     synchronized (state) {
       state.recordPendingIncomingTurn(message);
-      state.setLatestWorkflowMessageGuid(message.messageGuid());
-      state.setLatestWorkflowRunId(null);
+      markLatestWorkflow(state, message);
     }
     recordAcceptedMessageMetric(message);
     startCadenceWorkflow(state, message);
@@ -219,11 +214,24 @@ public final class CadenceIncomingMessageHandler {
     }
     String chatGuid = IncomingMessage.chatGuidOrNull(message);
     if (chatGuid != null) {
-      return chatGuid;
+      return MessageReactionSupport.isTapbackNotification(message.text())
+          ? AgentWorkflowContext.reactionWorkflowId(chatGuid)
+          : chatGuid;
     }
     log.warn("Message did not have a chat guid - this is unexpected");
     return UUID.randomUUID().toString();
   }
 
   private record PreparedIncomingMessage(ConversationState state, IncomingMessage message) {}
+
+  private static void markLatestWorkflow(ConversationState state, IncomingMessage message) {
+    if (MessageReactionSupport.isTapbackNotification(message.text())) {
+      state.setLatestReactionMessageGuid(message.messageGuid());
+    } else {
+      state.setLatestWorkflowMessageGuid(message.messageGuid());
+      state.setLatestWorkflowRunId(null);
+      // A newer substantive message supersedes a reaction response as well as the prior request.
+      state.setLatestReactionMessageGuid(null);
+    }
+  }
 }

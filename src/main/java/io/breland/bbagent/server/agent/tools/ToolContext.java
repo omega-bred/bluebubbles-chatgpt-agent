@@ -1,6 +1,7 @@
 package io.breland.bbagent.server.agent.tools;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.openai.models.responses.ResponseFunctionCallOutputItem;
 import io.breland.bbagent.server.agent.AgentOutboundService;
 import io.breland.bbagent.server.agent.AgentWorkflowContext;
 import io.breland.bbagent.server.agent.ConversationState;
@@ -15,6 +16,8 @@ import org.springframework.lang.Nullable;
 
 @RequiredArgsConstructor
 public class ToolContext {
+  private final java.util.List<ResponseFunctionCallOutputItem> modelContent =
+      new java.util.ArrayList<>();
   private final AgentOutboundService outboundService;
   private final ConversationStateStore conversationStateStore;
   private final ObjectMapper objectMapper;
@@ -24,6 +27,15 @@ public class ToolContext {
 
   public IncomingMessage message() {
     return message;
+  }
+
+  /** Binary content for the model, separate from the text result and its truncation budget. */
+  public void addModelContent(ResponseFunctionCallOutputItem content) {
+    modelContent.add(content);
+  }
+
+  public java.util.List<ResponseFunctionCallOutputItem> modelContent() {
+    return java.util.List.copyOf(modelContent);
   }
 
   public ConversationState getConversationState(String chatGuid) {

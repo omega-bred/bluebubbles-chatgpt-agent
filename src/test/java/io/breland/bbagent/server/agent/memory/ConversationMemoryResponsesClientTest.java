@@ -100,7 +100,7 @@ class ConversationMemoryResponsesClientTest {
     List<ResponseInputItem> input = params.input().orElseThrow().asResponse();
     assertThat(input).hasSize(2);
     assertThat(input.getFirst().asEasyInputMessage().role())
-        .isEqualTo(EasyInputMessage.Role.DEVELOPER);
+        .isEqualTo(EasyInputMessage.Role.SYSTEM);
     assertThat(input.getFirst().asEasyInputMessage().content().asTextInput())
         .isEqualTo("instructions");
     assertThat(input.get(1).asEasyInputMessage().role()).isEqualTo(EasyInputMessage.Role.USER);

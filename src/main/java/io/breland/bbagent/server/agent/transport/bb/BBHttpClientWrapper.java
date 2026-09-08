@@ -682,7 +682,8 @@ public class BBHttpClientWrapper {
         () -> {
           ApiResponseMessage response =
               this.messageApi
-                  .apiV1MessageMessageGuidGet(messageGuid, password, "chats,participants")
+                  .apiV1MessageMessageGuidGet(
+                      messageGuid, password, "chats,participants,attachment")
                   .block(apiTimeout);
           response = requirePresent(response, "get message");
           requireSuccessfulResponse(response.getStatus(), response.getMessage(), "get message");
@@ -811,7 +812,10 @@ public class BBHttpClientWrapper {
             .after(Instant.now().minus(30, ChronoUnit.DAYS).getEpochSecond())
             .offset(offset != null && offset >= 0 ? offset : 0)
             .limit(limit != null && limit > 0 ? limit : 20)
-            .with(Set.of(ApiV1MessageQueryPostRequest.WithEnum.HANDLE));
+            .with(
+                Set.of(
+                    ApiV1MessageQueryPostRequest.WithEnum.HANDLE,
+                    ApiV1MessageQueryPostRequest.WithEnum.ATTACHMENT));
     List<WhereClause> where = new ArrayList<>();
     if (StringUtils.isNotBlank(query)) {
       where.add(
@@ -1398,7 +1402,7 @@ public class BBHttpClientWrapper {
                   .apiV1ChatChatGuidMessageGet(
                       chatGuid,
                       password,
-                      "handle,chats",
+                      "handle,chats,attachment",
                       after == null ? null : Long.toString(after.toEpochMilli()),
                       before == null ? null : Long.toString(before.toEpochMilli()),
                       offset,

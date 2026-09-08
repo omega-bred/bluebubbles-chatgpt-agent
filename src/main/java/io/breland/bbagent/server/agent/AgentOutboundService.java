@@ -141,7 +141,10 @@ public final class AgentOutboundService {
       if (!status.tracked() || status.rateLimit() == null || !status.rateLimit().exhausted()) {
         return false;
       }
-      sendRateLimitExceededNotice(message, status, workflowContext);
+      if (!io.breland.bbagent.server.agent.reactions.MessageReactionSupport.isTapbackNotification(
+          message.text())) {
+        sendRateLimitExceededNotice(message, status, workflowContext);
+      }
       return true;
     } catch (RuntimeException e) {
       log.warn("Failed to check message response rate limit for {}", message, e);

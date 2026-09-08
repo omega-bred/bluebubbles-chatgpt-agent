@@ -194,6 +194,14 @@ public class CadenceMessageWorkflowImpl implements CadenceMessageWorkflow {
           return;
         }
 
+        // Preserve replay of histories created before intentional silence was distinguished from
+        // an empty provider response. New runs must not retry or send a poll fallback for silence.
+        if (BBMessageAgent.NO_RESPONSE_TEXT.equalsIgnoreCase(trimmedText)
+            && Workflow.getVersion("honor-intentional-silence", Workflow.DEFAULT_VERSION, 1) >= 1) {
+          activities.finalizeWorkflow(message, request.workflowContext(), false);
+          return;
+        }
+
         if (emptyResponseRetries >= MAX_EMPTY_ASSISTANT_RESPONSE_RETRIES) {
           String pollUpdateFallback =
               BlueBubblesPollSupport.fallbackUserVisiblePollNotification(message);

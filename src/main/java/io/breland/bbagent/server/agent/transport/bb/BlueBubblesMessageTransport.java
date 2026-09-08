@@ -6,7 +6,6 @@ import io.breland.bbagent.generated.bluebubblesclient.model.ApiV1MessageTextPost
 import io.breland.bbagent.server.agent.ConversationState;
 import io.breland.bbagent.server.agent.ConversationTurn;
 import io.breland.bbagent.server.agent.IncomingMessage;
-import io.breland.bbagent.server.agent.reactions.MessageReactionSupport;
 import io.breland.bbagent.server.agent.transport.MessageTransport;
 import io.breland.bbagent.server.agent.transport.OutgoingTextMessage;
 import java.time.Instant;
@@ -79,13 +78,17 @@ public class BlueBubblesMessageTransport implements MessageTransport {
         || isCurrentMessage(msg.getGuid(), currentMessage)) {
       return;
     }
-    IncomingMessage hydratedMessage = IncomingMessage.create(msg);
+    IncomingMessage hydratedMessage =
+        IncomingMessage.create(msg)
+            .withAttachments(
+                io.breland.bbagent.server.agent.cadence.models.IncomingAttachment.fromHistory(
+                    msg.getAttachments(), bbHttpClientWrapper.getObjectMapper()));
     Instant timestamp =
         hydratedMessage != null && hydratedMessage.timestamp() != null
             ? hydratedMessage.timestamp()
             : Instant.now();
     if (Boolean.TRUE.equals(msg.getIsFromMe())) {
-      state.addTurn(ConversationTurn.assistant(msg.getText(), timestamp));
+      state.addTurn(ConversationTurn.assistant(hydratedMessage.summaryForHistory(), timestamp));
     } else if (hydratedMessage != null) {
       state.recordIncomingTurnIfAbsent(hydratedMessage);
     }
@@ -101,7 +104,8 @@ public class BlueBubblesMessageTransport implements MessageTransport {
       return false;
     }
     String text = msg.getText();
-    return text != null && !text.isBlank() && !MessageReactionSupport.isReactionMessage(text);
+    return (text != null && !text.isBlank())
+        || (msg.getAttachments() != null && !msg.getAttachments().isEmpty());
   }
 
   private boolean isCurrentMessage(String hydratedMessageGuid, IncomingMessage currentMessage) {

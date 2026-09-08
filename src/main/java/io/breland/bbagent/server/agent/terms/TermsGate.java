@@ -59,6 +59,11 @@ public final class TermsGate {
     if (resolved.account().getTermsAcceptedAt() != null) {
       return false;
     }
+    // A tapback is neither a request to start service nor explicit acceptance of the terms.
+    if (io.breland.bbagent.server.agent.reactions.MessageReactionSupport.isTapbackNotification(
+        message.text())) {
+      return true;
+    }
     ConversationState.PendingTermsAcceptance pending = findPendingAcceptance(state, message);
     if (shouldValidateAgreement(message, pending)
         && agreementValidator.isHighConfidenceAgreement(message.text())) {

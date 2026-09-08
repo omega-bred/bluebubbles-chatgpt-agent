@@ -20,6 +20,70 @@ import org.junit.jupiter.api.Test;
 import org.mockito.InOrder;
 
 class CadenceMessageWorkflowImplTest {
+  @Test
+  void oldWorkflowHistoriesRetainTheirRecordedSilenceRetryPath() {
+    String silence = io.breland.bbagent.server.agent.BBMessageAgent.NO_RESPONSE_TEXT;
+    when(activities.createResponseBundle(
+            org.mockito.ArgumentMatchers.anyString(),
+            org.mockito.ArgumentMatchers.eq(message),
+            org.mockito.ArgumentMatchers.eq(context)))
+        .thenReturn(finalBundle(silence), finalBundle("old retry answer"));
+    when(activities.handleGeneratedImages(
+            org.mockito.ArgumentMatchers.anyString(),
+            org.mockito.ArgumentMatchers.anyString(),
+            org.mockito.ArgumentMatchers.eq(message),
+            org.mockito.ArgumentMatchers.eq(context)))
+        .thenReturn(new ImageSendResult(false, false));
+    try (var workflow = org.mockito.Mockito.mockStatic(com.uber.cadence.workflow.Workflow.class)) {
+      workflow
+          .when(
+              () ->
+                  com.uber.cadence.workflow.Workflow.getVersion(
+                      "honor-intentional-silence",
+                      com.uber.cadence.workflow.Workflow.DEFAULT_VERSION,
+                      1))
+          .thenReturn(com.uber.cadence.workflow.Workflow.DEFAULT_VERSION);
+      new CadenceMessageWorkflowImpl(activities).run(request);
+    }
+    verify(activities).sendThreadAwareText(message, "old retry answer", context);
+  }
+
+  @Test
+  void intentionalSilenceFinishesWithoutRetryOrSendingAnything() {
+    String silence = io.breland.bbagent.server.agent.BBMessageAgent.NO_RESPONSE_TEXT;
+    when(activities.createResponseBundle("[]", message, context)).thenReturn(finalBundle(silence));
+    when(activities.handleGeneratedImages("{}", silence, message, context))
+        .thenReturn(new ImageSendResult(false, false));
+    try (var workflow = org.mockito.Mockito.mockStatic(com.uber.cadence.workflow.Workflow.class)) {
+      workflow
+          .when(
+              () ->
+                  com.uber.cadence.workflow.Workflow.getVersion(
+                      "honor-intentional-silence",
+                      com.uber.cadence.workflow.Workflow.DEFAULT_VERSION,
+                      1))
+          .thenReturn(1);
+      new CadenceMessageWorkflowImpl(activities).run(request);
+    }
+    verify(activities, times(1)).createResponseBundle("[]", message, context);
+    verify(activities).finalizeWorkflow(message, context, false);
+    verify(activities, org.mockito.Mockito.never())
+        .sendThreadAwareText(
+            org.mockito.ArgumentMatchers.any(),
+            org.mockito.ArgumentMatchers.any(),
+            org.mockito.ArgumentMatchers.any());
+    verify(activities, org.mockito.Mockito.never())
+        .sendReaction(
+            org.mockito.ArgumentMatchers.any(),
+            org.mockito.ArgumentMatchers.any(),
+            org.mockito.ArgumentMatchers.any());
+    verify(activities, org.mockito.Mockito.never())
+        .executeToolCallsJson(
+            org.mockito.ArgumentMatchers.any(),
+            org.mockito.ArgumentMatchers.any(),
+            org.mockito.ArgumentMatchers.any());
+  }
+
   private final CadenceAgentActivities activities = mock(CadenceAgentActivities.class);
   private final IncomingMessage message =
       new IncomingMessage(

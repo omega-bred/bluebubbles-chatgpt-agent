@@ -222,7 +222,10 @@ public record IncomingMessage(
 
   public String summaryForHistory() {
     StringBuilder builder = new StringBuilder();
-    if (sender != null && !sender.isBlank()) {
+    if (messageGuid != null && !messageGuid.isBlank()) {
+      builder.append("[messageGuid=").append(messageGuid).append("] ");
+    }
+    if (!Boolean.TRUE.equals(fromMe) && sender != null && !sender.isBlank()) {
       builder.append(sender).append(": ");
     }
     if (text != null && !text.isBlank()) {
@@ -231,14 +234,40 @@ public record IncomingMessage(
       builder.append("[no text]");
     }
     if (attachments != null && !attachments.isEmpty()) {
-      long imageCount =
-          attachments.stream()
-              .filter(att -> att.mimeType() != null && att.mimeType().startsWith("image/"))
-              .count();
+      long imageCount = attachments.stream().filter(IncomingAttachment::mayBeImage).count();
       if (imageCount > 0) {
         builder.append(" [").append(imageCount).append(" image(s)]");
       }
+      for (IncomingAttachment attachment : attachments) {
+        builder
+            .append(" [attachmentGuid=")
+            .append(attachment.guid())
+            .append(" filename=")
+            .append(attachment.filename())
+            .append(" mimeType=")
+            .append(attachment.mimeType())
+            .append("]");
+      }
     }
     return builder.toString();
+  }
+
+  public IncomingMessage withAttachments(List<IncomingAttachment> newAttachments) {
+    return new IncomingMessage(
+        transport,
+        chatGuid,
+        messageGuid,
+        threadOriginatorGuid,
+        text,
+        fromMe,
+        service,
+        sender,
+        isGroup,
+        timestamp,
+        newAttachments,
+        balloonBundleId,
+        associatedMessageGuid,
+        replyToGuid,
+        isSystemMessage);
   }
 }

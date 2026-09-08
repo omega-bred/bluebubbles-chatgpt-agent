@@ -44,6 +44,10 @@ final class WorkflowResponseGate {
       return true;
     }
     synchronized (state) {
+      if (workflowContext.isReactionWorkflow()) {
+        return StringUtils.isNotBlank(workflowContext.messageGuid())
+            && workflowContext.messageGuid().equals(state.getLatestReactionMessageGuid());
+      }
       String latestWorkflowMessageGuid = state.getLatestWorkflowMessageGuid();
       if (StringUtils.isNotBlank(latestWorkflowMessageGuid)
           && StringUtils.isNotBlank(workflowContext.messageGuid())

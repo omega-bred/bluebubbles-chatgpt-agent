@@ -14,6 +14,7 @@ import io.breland.bbagent.server.agent.tools.assistant.AssistantResponsivenessAg
 import io.breland.bbagent.server.agent.tools.bb.CurrentConversationInfoAgentTool;
 import io.breland.bbagent.server.agent.tools.bb.GetGroupIconAgentTool;
 import io.breland.bbagent.server.agent.tools.bb.GetThreadContextAgentTool;
+import io.breland.bbagent.server.agent.tools.bb.LoadConversationImagesAgentTool;
 import io.breland.bbagent.server.agent.tools.bb.ReadPollAgentTool;
 import io.breland.bbagent.server.agent.tools.bb.RenameConversationAgentTool;
 import io.breland.bbagent.server.agent.tools.bb.SearchConvoHistoryAgentTool;
@@ -90,6 +91,7 @@ public final class AgentToolRegistry {
       Set.of(ConfigureGroupCatchupAgentTool.TOOL_NAME);
   private static final Set<String> BLUEBUBBLES_ONLY_TOOLS =
       Set.of(
+          LoadConversationImagesAgentTool.TOOL_NAME,
           SearchConvoHistoryAgentTool.TOOL_NAME,
           CurrentConversationInfoAgentTool.TOOL_NAME,
           RenameConversationAgentTool.TOOL_NAME,
@@ -102,6 +104,7 @@ public final class AgentToolRegistry {
           ReadPollAgentTool.TOOL_NAME);
   private static final Set<String> BLUEBUBBLES_TOOL_NAMES =
       Set.of(
+          LoadConversationImagesAgentTool.TOOL_NAME,
           SendTextAgentTool.TOOL_NAME,
           SendReactionAgentTool.TOOL_NAME,
           SearchConvoHistoryAgentTool.TOOL_NAME,
@@ -421,6 +424,7 @@ public final class AgentToolRegistry {
     registerTool(new SendPollAgentTool(bbHttpClientWrapper).getTool());
     registerTool(new ReadPollAgentTool(bbHttpClientWrapper).getTool());
     registerTool(new SearchConvoHistoryAgentTool(bbHttpClientWrapper).getTool());
+    registerTool(new LoadConversationImagesAgentTool(bbHttpClientWrapper).getTool());
     registerTool(new CurrentConversationInfoAgentTool(bbHttpClientWrapper).getTool());
     registerTool(new RenameConversationAgentTool(bbHttpClientWrapper).getTool());
     registerTool(new SetGroupIconAgentTool(bbHttpClientWrapper, openAiSupplier).getTool());

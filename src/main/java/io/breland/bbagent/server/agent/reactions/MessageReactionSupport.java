@@ -26,6 +26,14 @@ public final class MessageReactionSupport {
 
   private MessageReactionSupport() {}
 
+  /** A complete transport notification, not ordinary text such as 'Liked it, can you edit it?'. */
+  public static boolean isTapbackNotification(String text) {
+    if (text == null) return false;
+    return text.strip()
+        .matches(
+            "(?is)(?:(?:Loved|Liked|Disliked|Questioned|Emphasized|Laughed at) |Reacted .+ to |Removed .+ from )(?:[\"“].*[\"”]|(?:a|an) (?:message|image|photo|video|movie|attachment|audio message))");
+  }
+
   public static boolean isReactionMessage(String text) {
     if (text == null) {
       return false;

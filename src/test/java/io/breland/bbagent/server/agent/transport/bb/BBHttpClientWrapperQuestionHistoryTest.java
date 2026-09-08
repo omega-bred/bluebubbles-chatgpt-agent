@@ -74,7 +74,7 @@ class BBHttpClientWrapperQuestionHistoryTest {
         .apiV1ChatChatGuidMessageGet(
             eq("group"),
             eq("pw"),
-            eq("handle,chats"),
+            eq("handle,chats,attachment"),
             eq(Long.toString(FROM.toEpochMilli())),
             eq(Long.toString(TO.toEpochMilli())),
             eq(0),

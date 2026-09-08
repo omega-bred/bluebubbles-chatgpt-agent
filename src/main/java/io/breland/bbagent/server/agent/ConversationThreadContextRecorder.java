@@ -18,10 +18,12 @@ public final class ConversationThreadContextRecorder {
     if (threadRootGuid == null || threadRootGuid.isBlank()) {
       return;
     }
-    List<String> imageUrls = attachmentInputBuilder.resolveImageUrls(message);
+    List<String> imageUrls = attachmentInputBuilder.resolveImageReferences(message);
+    String imageMessageGuid = imageUrls.isEmpty() ? null : message.messageGuid();
     ConversationState.ThreadContext existing = state.getThreadContext(threadRootGuid);
     if ((imageUrls == null || imageUrls.isEmpty()) && existing != null) {
       imageUrls = existing.lastImageUrls();
+      imageMessageGuid = existing.lastImageMessageGuid();
     }
     String timestamp =
         message.timestamp() != null ? message.timestamp().toString() : Instant.now().toString();
@@ -32,6 +34,7 @@ public final class ConversationThreadContextRecorder {
             message.text(),
             message.sender(),
             timestamp,
+            imageMessageGuid,
             imageUrls);
     state.recordThreadMessage(threadRootGuid, context);
   }

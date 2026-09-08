@@ -4,6 +4,7 @@ import static io.breland.bbagent.server.agent.tools.JsonSchemaUtilities.jsonSche
 
 import io.breland.bbagent.generated.bluebubblesclient.model.Message;
 import io.breland.bbagent.server.agent.IncomingMessage;
+import io.breland.bbagent.server.agent.cadence.models.IncomingAttachment;
 import io.breland.bbagent.server.agent.tools.AgentTool;
 import io.breland.bbagent.server.agent.tools.ToolJson;
 import io.breland.bbagent.server.agent.tools.ToolProvider;
@@ -20,7 +21,10 @@ public class SearchConvoHistoryAgentTool implements ToolProvider {
 
   @Schema(description = "Search recent message history for the current conversation.")
   public record SearchConversationHistoryRequest(
-      @Schema(description = "Substring query for message text.") String query,
+      @Schema(
+              description =
+                  "Optional substring query for message text. Omit to include photo-only messages; image contents are not text-searchable.")
+          String query,
       @Schema(description = "Maximum number of messages to return.") Integer limit,
       @Schema(description = "Offset for pagination.") Integer offset) {}
 
@@ -34,7 +38,9 @@ public class SearchConvoHistoryAgentTool implements ToolProvider {
         "Search recent message history for the current conversation. The tool only supports case"
             + " insensitive substring searches when searching for text - so you may need to use it"
             + " multiple times with variations of the target text. It is limited to 1 month of"
-            + " history.",
+            + " history. Returns attachment metadata and message GUIDs. Omit query to find photos"
+            + " without captions, paginate with offset, then use load_conversation_images to inspect"
+            + " or reuse selected photos as actual model image inputs.",
         jsonSchema(SearchConversationHistoryRequest.class),
         false,
         (context, args) -> {
@@ -61,6 +67,10 @@ public class SearchConvoHistoryAgentTool implements ToolProvider {
                 entry.put("text", msg.getText());
                 entry.put("dateCreated", msg.getDateCreated());
                 entry.put("sender", BlueBubblesHandleAddress.from(msg.getHandle()));
+                entry.put("isFromMe", msg.getIsFromMe());
+                entry.put(
+                    "attachments",
+                    IncomingAttachment.fromHistory(msg.getAttachments(), context.getMapper()));
                 messages.add(entry);
               });
 

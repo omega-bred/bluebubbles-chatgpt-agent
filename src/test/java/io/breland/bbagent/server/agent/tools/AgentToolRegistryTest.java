@@ -69,6 +69,9 @@ class AgentToolRegistryTest {
             List.of(),
             false);
     assertNull(registry.resolveTool("get_group_icon", lxmf).tool());
+    assertNull(registry.resolveTool("load_conversation_images", lxmf).tool());
+    assertNotNull(registry.resolveTool("load_conversation_images", group).tool());
+    assertNotNull(registry.resolveTool("load_conversation_images", directMessage("alice")).tool());
     var args =
         mapper
             .createObjectNode()

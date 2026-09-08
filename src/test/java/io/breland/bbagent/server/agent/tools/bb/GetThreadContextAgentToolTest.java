@@ -31,6 +31,7 @@ class GetThreadContextAgentToolTest {
             "last text",
             "+15555550123",
             "2026-06-03T12:00:00Z",
+            "last-guid",
             List.of("attachment_guid:image-1")));
     String output =
         new GetThreadContextAgentTool(Mockito.mock(BBHttpClientWrapper.class))

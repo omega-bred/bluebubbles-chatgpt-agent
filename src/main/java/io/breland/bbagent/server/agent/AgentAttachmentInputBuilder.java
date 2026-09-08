@@ -45,8 +45,16 @@ public final class AgentAttachmentInputBuilder {
     return new ResolvedAttachments(imageUrls, files);
   }
 
-  List<String> resolveImageUrls(IncomingMessage message) {
-    return resolve(message).imageUrls();
+  List<String> resolveImageReferences(IncomingMessage message) {
+    if (message == null || message.attachments() == null) return List.of();
+    return message.attachments().stream()
+        .filter(IncomingAttachment::mayBeImage)
+        .map(
+            attachment ->
+                StringUtils.isNotBlank(attachment.guid())
+                    ? "attachment_guid:" + attachment.guid()
+                    : "image")
+        .toList();
   }
 
   private Optional<String> resolveAttachmentImageUrl(IncomingAttachment attachment) {

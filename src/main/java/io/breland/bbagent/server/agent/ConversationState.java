@@ -37,6 +37,7 @@ public class ConversationState {
   @Getter @Setter private Instant latestProcessedMessageTimestamp;
   @Getter @Setter private String latestWorkflowRunId;
   @Getter @Setter private String latestWorkflowMessageGuid;
+  @Getter @Setter private String latestReactionMessageGuid;
 
   public synchronized List<ConversationTurn> history() {
     return new ArrayList<>(history);
@@ -263,6 +264,7 @@ public class ConversationState {
       String lastMessageText,
       String lastMessageSender,
       String lastMessageTimestamp,
+      String lastImageMessageGuid,
       List<String> lastImageUrls) {}
 
   public record PendingIncomingTurn(String messageGuid, String fingerprint, ConversationTurn turn) {

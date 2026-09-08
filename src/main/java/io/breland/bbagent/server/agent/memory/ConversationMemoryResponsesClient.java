@@ -289,7 +289,12 @@ public class ConversationMemoryResponsesClient {
                 List.of(
                     ResponseInputItem.ofEasyInputMessage(
                         EasyInputMessage.builder()
-                            .role(EasyInputMessage.Role.DEVELOPER)
+                            .role(
+                                io.breland.bbagent.server.agent.model_picker.ModelAccessService
+                                        .DEVELOPER_MESSAGE_SYSTEM_SQUASH_MODELS
+                                        .contains(model)
+                                    ? EasyInputMessage.Role.SYSTEM
+                                    : EasyInputMessage.Role.DEVELOPER)
                             .content(instructions)
                             .build()),
                     ResponseInputItem.ofEasyInputMessage(

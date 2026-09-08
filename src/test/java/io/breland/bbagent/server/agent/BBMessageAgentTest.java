@@ -78,6 +78,65 @@ import org.mockito.Mockito;
 import reactor.core.publisher.Mono;
 
 class BBMessageAgentTest {
+  @Test
+  void laterTextInAThreadKeepsTheOriginalPhotoMessageReferenceWithoutDownloading() {
+    var bb = Mockito.mock(BBHttpClientWrapper.class);
+    var recorder = new ConversationThreadContextRecorder(new AgentAttachmentInputBuilder(bb));
+    var state = new ConversationState();
+    var photo =
+        incomingMessage("chat", "photo-message", "a photo", 1_000L)
+            .withThreadOriginatorGuid("root")
+            .withAttachments(
+                List.of(
+                    new io.breland.bbagent.server.agent.cadence.models.IncomingAttachment(
+                        "photo-attachment",
+                        "image/png",
+                        "photo.png",
+                        null,
+                        "data:image/png;base64,private",
+                        null)));
+    recorder.updateThreadContext(state, photo);
+    recorder.updateThreadContext(
+        state,
+        incomingMessage("chat", "later-text", "use it again", 2_000L)
+            .withThreadOriginatorGuid("root"));
+    var thread = state.getThreadContext("root");
+    assertThat(thread.lastMessageGuid()).isEqualTo("later-text");
+    assertThat(thread.lastImageMessageGuid()).isEqualTo("photo-message");
+    assertThat(thread.lastImageUrls()).containsExactly("attachment_guid:photo-attachment");
+    verify(bb, never()).getAttachment(anyString());
+  }
+
+  @Test
+  void photoOnlyMessagesSurviveRestartHydrationAndFailedPendingTurnsKeepReferences() {
+    StubBBHttpClientWrapper bb = new StubBBHttpClientWrapper();
+    String chat = "iMessage;-;photo-history";
+    var photo = blueBubblesMessage(chat, "earlier-photo", null, false, 1_000L);
+    photo.setAttachments(
+        List.of(Map.of("guid", "image-guid", "mimeType", "image/heic", "transferName", "JD.HEIC")));
+    bb.setMessages(chat, List.of(photo));
+    var agent = newAgent(Mockito.mock(OpenAIClient.class), bb);
+    var current = incomingMessage(chat, "current", "Use the earlier photo", 2_000L);
+    var hydrated = agent.computeConversationState(chat, current);
+    assertThat(hydrated.history()).hasSize(1);
+    assertThat(hydrated.history().getFirst().content())
+        .contains("earlier-photo", "image-guid", "JD.HEIC", "1 image(s)");
+
+    var pending = new ConversationState();
+    pending.recordPendingIncomingTurn(
+        IncomingMessage.create(photo)
+            .withAttachments(
+                List.of(
+                    new io.breland.bbagent.server.agent.cadence.models.IncomingAttachment(
+                        "image-guid", "image/heic", "JD.HEIC", null, null, null))));
+    // No assistant response was recorded for the photo (e.g. its earlier workflow failed).
+    String input =
+        promptBuilder(bb)
+            .buildConversationInput(pending.history(), pending.pendingIncomingTurns(), current)
+            .toString();
+    assertThat(input).contains("earlier-photo", "image-guid", "load_conversation_images");
+  }
+
   private static final String DEVELOPER_PROMPT_MARKER = "Only call send_text";
 
   @Test
@@ -137,6 +196,41 @@ class BBMessageAgentTest {
     assertEquals(1, bbHttpClientWrapper.sentTexts.size());
     assertTrue(bbHttpClientWrapper.sentTexts.getFirst().contains("Terms of Use"));
     assertTrue(bbHttpClientWrapper.sentTexts.getFirst().contains("Reply YES"));
+  }
+
+  @Test
+  void tapbackDoesNotAcceptTermsOrSendAnUnsolicitedTermsPrompt() {
+    AgentAccountResolver resolver = Mockito.mock(AgentAccountResolver.class);
+    when(resolver.resolveOrCreate(any(IncomingMessage.class)))
+        .thenReturn(
+            Optional.of(
+                new AgentAccountResolver.ResolvedAccount(account("new-account", null), List.of())));
+    var bb = new StubBBHttpClientWrapper();
+    var launcher = Mockito.mock(CadenceWorkflowLauncher.class);
+    var agent = newAgent(Mockito.mock(OpenAIClient.class), bb, resolver, launcher);
+    var reaction = incomingMessage("iMessage;-;terms-tapback", "reaction", "Liked “Yes”", 1_000L);
+    agent.handleIncomingMessage(reaction);
+    assertThat(bb.sentTexts).isEmpty();
+    verify(resolver, never()).acceptTerms(any(IncomingMessage.class));
+    verify(launcher, never()).startWorkflow(any());
+  }
+
+  @Test
+  void tapbackAtQuotaDoesNotSendAnUnsolicitedLimitNotice() {
+    var limits = Mockito.mock(MessageResponseRateLimitService.class);
+    var rate = Mockito.mock(io.breland.bbagent.server.ratelimit.RateLimitStatus.class);
+    when(rate.exhausted()).thenReturn(true);
+    when(limits.statusFor(any()))
+        .thenReturn(
+            new MessageResponseRateLimitService.MessageResponseLimitStatus(
+                true, "account", false, rate));
+    var bb = new StubBBHttpClientWrapper();
+    var agent = newAgent(Mockito.mock(OpenAIClient.class), bb, profileService(), limits);
+    assertThat(
+            agent.notifyIfMessageResponseLimitExceeded(
+                incomingMessage("chat", "reaction", "Loved an image", 1_000L), null))
+        .isTrue();
+    assertThat(bb.sentTexts).isEmpty();
   }
 
   @Test
@@ -398,6 +492,45 @@ class BBMessageAgentTest {
   }
 
   @Test
+  void tapbackWorkflowsPreserveOngoingRequestsAndBecomeStaleWhenANewRequestArrives() {
+    var launcher = Mockito.mock(CadenceWorkflowLauncher.class);
+    when(launcher.startWorkflow(any()))
+        .thenReturn(
+            new WorkflowExecution().setRunId("run-request"),
+            new WorkflowExecution().setRunId("run-reaction"),
+            new WorkflowExecution().setRunId("run-new"));
+    var agent = newAgent(Mockito.mock(OpenAIClient.class), new StubBBHttpClientWrapper(), launcher);
+    String chat = "iMessage;-;react-while-working";
+    agent.handleIncomingMessage(incomingMessage(chat, "request", "Make an image", 1_000L));
+    agent.handleIncomingMessage(
+        incomingMessage(chat, "reaction", "Liked “I am working on it”", 2_000L));
+    var captor = ArgumentCaptor.forClass(CadenceMessageWorkflowRequest.class);
+    verify(launcher, times(2)).startWorkflow(captor.capture());
+    var main = captor.getAllValues().get(0).workflowContext();
+    var reaction = captor.getAllValues().get(1).workflowContext();
+    assertThat(main.workflowId()).isEqualTo(chat);
+    assertThat(reaction.workflowId()).isEqualTo(chat + ":reaction");
+    assertThat(agent.canSendResponsesForWorkflowRun(main, "run-request")).isTrue();
+    assertThat(agent.canSendResponsesForWorkflowRun(reaction, "run-reaction")).isTrue();
+
+    agent.handleIncomingMessage(
+        incomingMessage(chat, "new-request", "Actually make a landscape", 3_000L));
+    assertThat(agent.canSendResponsesForWorkflowRun(main, "run-request")).isFalse();
+    assertThat(agent.canSendResponsesForWorkflowRun(reaction, "run-reaction")).isFalse();
+  }
+
+  @org.junit.jupiter.params.ParameterizedTest
+  @org.junit.jupiter.params.provider.ValueSource(
+      strings = {
+        "Liked it, can you make another?",
+        "Loved that idea. What next?",
+        "Reacted? Can you explain?"
+      })
+  void ordinaryRequestsAreNotClassifiedAsTapbackNotifications(String text) {
+    assertFalse(MessageReactionSupport.isTapbackNotification(text));
+  }
+
+  @Test
   void recordsCurrentUserTurnBeforeAssistantTurn() {
     BBMessageAgent agent =
         newAgent(Mockito.mock(OpenAIClient.class), new StubBBHttpClientWrapper());
@@ -412,7 +545,7 @@ class BBMessageAgentTest {
     List<ConversationTurn> history = state.history();
     assertEquals(2, history.size());
     assertEquals("user", history.get(0).role());
-    assertEquals("Alice: can you check this?", history.get(0).content());
+    assertEquals("[messageGuid=msg-order-1] Alice: can you check this?", history.get(0).content());
     assertEquals("assistant", history.get(1).role());
     assertEquals("Yep, checking now.", history.get(1).content());
   }
@@ -622,7 +755,7 @@ class BBMessageAgentTest {
     String catchupGuidance =
         prompt.substring(
             prompt.indexOf("In a group chat, use get_group_catchup"),
-            prompt.indexOf("Use web_search for current info"));
+            prompt.indexOf("Use built-in web_search for current info"));
     assertThat(catchupGuidance)
         .contains(
             "only to resolve unresolved_participants",
@@ -895,7 +1028,9 @@ class BBMessageAgentTest {
         promptBuilder(new StubBBHttpClientWrapper())
             .buildConversationInput(
                 List.of(
-                    ConversationTurn.user("Alice: older user text", Instant.ofEpochSecond(1_000L)),
+                    ConversationTurn.user(
+                        "[messageGuid=msg-user] Alice: older user text",
+                        Instant.ofEpochSecond(1_000L)),
                     ConversationTurn.assistant(
                         "older assistant text", Instant.ofEpochSecond(2_000L))),
                 List.of(),
@@ -1084,8 +1219,8 @@ class BBMessageAgentTest {
 
     List<ConversationTurn> history = state.history();
     assertEquals(3, history.size());
-    assertEquals("Alice: first request", history.get(0).content());
-    assertEquals("Alice: second request", history.get(1).content());
+    assertEquals("[messageGuid=msg-pending-a] Alice: first request", history.get(0).content());
+    assertEquals("[messageGuid=msg-pending-b] Alice: second request", history.get(1).content());
     assertEquals("Handled both.", history.get(2).content());
     assertTrue(state.pendingIncomingTurns().isEmpty());
   }
@@ -1168,9 +1303,9 @@ class BBMessageAgentTest {
     List<ConversationTurn> history = state.history();
     assertEquals(2, history.size());
     assertEquals("user", history.get(0).role());
-    assertEquals("Alice: older user text", history.get(0).content());
+    assertEquals("[messageGuid=msg-user] Alice: older user text", history.get(0).content());
     assertEquals("assistant", history.get(1).role());
-    assertEquals("assistant reply", history.get(1).content());
+    assertEquals("[messageGuid=msg-assistant] assistant reply", history.get(1).content());
   }
 
   @Test

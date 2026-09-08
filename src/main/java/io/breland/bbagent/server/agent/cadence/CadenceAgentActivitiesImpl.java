@@ -29,6 +29,7 @@ import org.springframework.stereotype.Component;
 @RequiredArgsConstructor
 @Slf4j
 public class CadenceAgentActivitiesImpl implements CadenceAgentActivities {
+  private static final String INPUT_IMAGE_BLOB_PREFIX = "bluechat-input-image:";
 
   private final ConversationStateStore conversationStateStore;
   private final CadenceIncomingMessageHandler incomingMessageHandler;
@@ -48,7 +49,9 @@ public class CadenceAgentActivitiesImpl implements CadenceAgentActivities {
     try {
       List<ConversationState.PendingIncomingTurn> pendingIncomingTurns =
           pendingIncomingTurns(message);
-      return toJson(promptBuilder.buildConversationInput(history, pendingIncomingTurns, message));
+      return externalizeInputImages(
+          toJson(promptBuilder.buildConversationInput(history, pendingIncomingTurns, message)),
+          message.chatGuid());
     } catch (Exception e) {
       throw new RuntimeException("Failed to serialize conversation input", e);
     }
@@ -118,6 +121,7 @@ public class CadenceAgentActivitiesImpl implements CadenceAgentActivities {
     }
     try {
       JsonNode inputNode = objectMapper.readTree(inputItemsJson);
+      hydrateInputImages(inputNode, message.chatGuid());
       List<ResponseInputItem> inputItems =
           JsonValue.fromJsonNode(inputNode).convert(new TypeReference<>() {});
       var response = responseCreator.createResponse(inputItems, message, workflowContext);
@@ -181,7 +185,7 @@ public class CadenceAgentActivitiesImpl implements CadenceAgentActivities {
                 .build();
         outputs.add(toolActivityRunner.run(call, message, workflowContext));
       }
-      return toJson(outputs);
+      return externalizeInputImages(toJson(outputs), message.chatGuid());
     } catch (Exception e) {
       throw new RuntimeException("Failed to execute tool calls", e);
     }
@@ -320,6 +324,55 @@ public class CadenceAgentActivitiesImpl implements CadenceAgentActivities {
   private String toJson(Object value) throws Exception {
     JsonNode node = JsonValue.from(value).convert(JsonNode.class);
     return objectMapper.writeValueAsString(node);
+  }
+
+  /**
+   * Keep binary inputs out of Cadence activity results/history, as with generated image outputs.
+   */
+  private String externalizeInputImages(String json, String conversationId) throws Exception {
+    JsonNode node = objectMapper.readTree(json);
+    visitInputImages(
+        node,
+        image -> {
+          String url = image.path("image_url").asText();
+          if (url.startsWith("data:image/")) {
+            String id = "input-image-" + java.util.UUID.randomUUID();
+            blobStore.storeBlob(conversationId, id, url);
+            image.put("image_url", INPUT_IMAGE_BLOB_PREFIX + id);
+          }
+        });
+    return objectMapper.writeValueAsString(node);
+  }
+
+  private void hydrateInputImages(JsonNode node, String conversationId) {
+    visitInputImages(
+        node,
+        image -> {
+          String url = image.path("image_url").asText();
+          if (url.startsWith(INPUT_IMAGE_BLOB_PREFIX)) {
+            String data =
+                blobStore.getBlob(conversationId, url.substring(INPUT_IMAGE_BLOB_PREFIX.length()));
+            if (data != null) {
+              image.put("image_url", data);
+            } else {
+              image.removeAll();
+              image.put("type", "input_text");
+              image.put(
+                  "text",
+                  "This previously loaded image input expired or the server restarted. "
+                      + "Reload it with load_conversation_images using its messageGuid from this conversation before inspecting or editing it. Do not assume a photo description is the image.");
+            }
+          }
+        });
+  }
+
+  private static void visitInputImages(
+      JsonNode node, java.util.function.Consumer<ObjectNode> visitor) {
+    if (node instanceof ObjectNode object && "input_image".equals(node.path("type").asText())) {
+      visitor.accept(object);
+    } else if (node != null && node.isContainerNode()) {
+      node.forEach(child -> visitInputImages(child, visitor));
+    }
   }
 
   private String toJsonWithoutImageResults(

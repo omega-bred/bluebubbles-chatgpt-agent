@@ -30,7 +30,9 @@ public final class AgentResponseHelper {
   public static final String EMPTY_ASSISTANT_RESPONSE_RETRY_INSTRUCTION =
       "Your previous response did not contain a user-visible assistant message or a tool call. "
           + "Continue now with either a concise user-visible answer or the next tool call needed to "
-          + "answer. Do not put the answer only in reasoning.";
+          + "answer, or output exactly "
+          + BBMessageAgent.NO_RESPONSE_TEXT
+          + " if no response is needed under the conversation rules. Do not put the answer only in reasoning.";
 
   private AgentResponseHelper() {}
 

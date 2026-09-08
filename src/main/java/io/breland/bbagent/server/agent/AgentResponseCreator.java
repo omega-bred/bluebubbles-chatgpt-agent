@@ -1,5 +1,6 @@
 package io.breland.bbagent.server.agent;
 
+import com.openai.models.responses.EasyInputMessage;
 import com.openai.models.responses.Response;
 import com.openai.models.responses.ResponseInputItem;
 import io.breland.bbagent.server.agent.llm.LlmProvider;
@@ -32,11 +33,18 @@ public final class AgentResponseCreator {
       List<ResponseInputItem> inputItems,
       IncomingMessage message,
       AgentWorkflowContext workflowContext) {
+    ModelAccessService.ModelAccess modelAccess = modelPicker.resolveModelAccess(message);
+    List<ResponseInputItem> withCapabilities = new java.util.ArrayList<>(inputItems);
+    withCapabilities.add(
+        ResponseInputItem.ofEasyInputMessage(
+            EasyInputMessage.builder()
+                .role(EasyInputMessage.Role.DEVELOPER)
+                .content(modelCapabilityInstruction(modelAccess, message))
+                .build()));
     List<ResponseInputItem> requestInputItems =
         modelPicker.shouldSquashDeveloperMessagesIntoSystem(message)
-            ? ResponseInputMessages.squashDeveloperMessagesIntoSystem(inputItems)
-            : inputItems;
-    ModelAccessService.ModelAccess modelAccess = modelPicker.resolveModelAccess(message);
+            ? ResponseInputMessages.squashDeveloperMessagesIntoSystem(withCapabilities)
+            : withCapabilities;
     List<AgentTool> tools = toolRegistry.toolsForModel(message, requestInputItems);
     LlmRequest request =
         new LlmRequest(modelAccess, requestInputItems, tools, message, workflowContext);
@@ -74,6 +82,19 @@ public final class AgentResponseCreator {
           e);
       return null;
     }
+  }
+
+  static String modelCapabilityInstruction(
+      ModelAccessService.ModelAccess access, IncomingMessage message) {
+    boolean images =
+        access.premium() && access.supportsImageGeneration() && message.isBlueBubblesTransport();
+    boolean web = access.premium() && access.supportsWebSearch();
+    return "Built-in capabilities for this request: image_generation="
+        + (images ? "available" : "unavailable")
+        + "; web_search="
+        + (web ? "available" : "unavailable")
+        + ". This reflects the selected model and transport now; earlier assistant claims about availability may be stale. "
+        + "Built-in tools cannot be discovered with toolSearchTool. Discover other function tools as needed.";
   }
 
   private void recordLlmCallMetric(
