@@ -106,7 +106,7 @@ public final class AgentResponseCreator {
     if (startedNanos <= 0L) {
       return;
     }
-    if (isCanaryAccount(message)) {
+    if (profileService.isCanaryAccount(message)) {
       return;
     }
     try {
@@ -121,13 +121,6 @@ public final class AgentResponseCreator {
     } catch (RuntimeException e) {
       log.warn("Failed to record LLM call metric", e);
     }
-  }
-
-  private boolean isCanaryAccount(IncomingMessage message) {
-    if (message == null) {
-      return false;
-    }
-    return profileService.isCanaryAccount(message);
   }
 
   private static long elapsedMillis(long startedNanos) {
