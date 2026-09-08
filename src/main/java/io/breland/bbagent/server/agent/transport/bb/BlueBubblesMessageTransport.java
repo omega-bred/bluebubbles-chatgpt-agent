@@ -3,6 +3,7 @@ package io.breland.bbagent.server.agent.transport.bb;
 import io.breland.bbagent.generated.bluebubblesclient.model.ApiV1ChatChatGuidMessageGet200ResponseDataInner;
 import io.breland.bbagent.generated.bluebubblesclient.model.ApiV1MessageReactPostRequest;
 import io.breland.bbagent.generated.bluebubblesclient.model.ApiV1MessageTextPostRequest;
+import io.breland.bbagent.server.agent.AssistantMessageText;
 import io.breland.bbagent.server.agent.ConversationState;
 import io.breland.bbagent.server.agent.ConversationTurn;
 import io.breland.bbagent.server.agent.IncomingMessage;
@@ -88,7 +89,12 @@ public class BlueBubblesMessageTransport implements MessageTransport {
             ? hydratedMessage.timestamp()
             : Instant.now();
     if (Boolean.TRUE.equals(msg.getIsFromMe())) {
-      state.addTurn(ConversationTurn.assistant(hydratedMessage.summaryForHistory(), timestamp));
+      String text = AssistantMessageText.stripLeadingMessageGuid(hydratedMessage.text());
+      state.addTurn(
+          ConversationTurn.assistant(
+              text == null || text.isBlank() ? "[no text]" : text,
+              timestamp,
+              hydratedMessage.metadataForHistory()));
     } else if (hydratedMessage != null) {
       state.recordIncomingTurnIfAbsent(hydratedMessage);
     }

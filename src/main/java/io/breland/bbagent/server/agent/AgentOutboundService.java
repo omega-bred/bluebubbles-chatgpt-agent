@@ -34,6 +34,7 @@ public final class AgentOutboundService {
 
   public void recordAssistantTurn(
       IncomingMessage message, String content, AgentWorkflowContext workflowContext) {
+    content = AssistantMessageText.stripLeadingMessageGuid(content);
     String chatGuid = IncomingMessage.chatGuidOrNull(message);
     if (chatGuid == null || content == null || content.isBlank()) {
       return;
@@ -77,14 +78,26 @@ public final class AgentOutboundService {
     MessageTransport transport = transportRegistry.resolve(message);
     String replyTarget =
         transport.supportsThreadReplies() ? ThreadReplySupport.threadRootGuid(message) : null;
-    return transport.sendText(message, new OutgoingTextMessage(text, replyTarget, null, null));
+    return sendTextUnmetered(message, new OutgoingTextMessage(text, replyTarget, null, null));
   }
 
   public boolean sendTextUnmetered(IncomingMessage message, OutgoingTextMessage outgoingMessage) {
     if (message == null || outgoingMessage == null || outgoingMessage.text() == null) {
       return false;
     }
-    return transportRegistry.resolve(message).sendText(message, outgoingMessage);
+    String text = AssistantMessageText.stripLeadingMessageGuid(outgoingMessage.text());
+    if (text.isBlank()) {
+      return false;
+    }
+    return transportRegistry
+        .resolve(message)
+        .sendText(
+            message,
+            new OutgoingTextMessage(
+                text,
+                outgoingMessage.selectedMessageGuid(),
+                outgoingMessage.effectId(),
+                outgoingMessage.partIndex()));
   }
 
   public boolean sendTextFromTool(
@@ -97,7 +110,7 @@ public final class AgentOutboundService {
     if (!consumeMessageResponseQuota(message, workflowContext)) {
       return false;
     }
-    return transportRegistry.resolve(message).sendText(message, outgoingMessage);
+    return sendTextUnmetered(message, outgoingMessage);
   }
 
   public boolean sendReactionFromTool(

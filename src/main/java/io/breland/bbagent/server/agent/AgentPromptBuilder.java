@@ -103,6 +103,17 @@ public final class AgentPromptBuilder {
     items.add(ResponseInputItem.ofEasyInputMessage(developerMessage(message)));
     if (history != null) {
       for (ConversationTurn turn : history) {
+        // Tool references are context, not examples of assistant reply text to imitate.
+        if (StringUtils.isNotBlank(turn.metadata())) {
+          items.add(
+              ResponseInputItem.ofEasyInputMessage(
+                  EasyInputMessage.builder()
+                      .role(EasyInputMessage.Role.USER)
+                      .content(
+                          "Metadata for the following historical message (for tool references, not part of the message text): "
+                              + turn.metadata())
+                      .build()));
+        }
         items.add(ResponseInputItem.ofEasyInputMessage(turn.toEasyInputMessage()));
       }
     }

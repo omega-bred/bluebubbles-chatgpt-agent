@@ -233,6 +233,20 @@ public record IncomingMessage(
     } else {
       builder.append("[no text]");
     }
+    appendAttachmentSummary(builder);
+    return builder.toString();
+  }
+
+  public String metadataForHistory() {
+    StringBuilder builder = new StringBuilder();
+    if (messageGuid != null && !messageGuid.isBlank()) {
+      builder.append("[messageGuid=").append(messageGuid).append("]");
+    }
+    appendAttachmentSummary(builder);
+    return builder.toString().trim();
+  }
+
+  private void appendAttachmentSummary(StringBuilder builder) {
     if (attachments != null && !attachments.isEmpty()) {
       long imageCount = attachments.stream().filter(IncomingAttachment::mayBeImage).count();
       if (imageCount > 0) {
@@ -249,7 +263,6 @@ public record IncomingMessage(
             .append("]");
       }
     }
-    return builder.toString();
   }
 
   public IncomingMessage withAttachments(List<IncomingAttachment> newAttachments) {

@@ -55,6 +55,7 @@ import io.breland.bbagent.server.agent.tools.ToolContextFixture;
 import io.breland.bbagent.server.agent.tools.assistant.AssistantNameAgentTool;
 import io.breland.bbagent.server.agent.tools.bb.RenameConversationAgentTool;
 import io.breland.bbagent.server.agent.tools.search.ToolSearchAgentTool;
+import io.breland.bbagent.server.agent.transport.OutgoingTextMessage;
 import io.breland.bbagent.server.agent.transport.bb.BBHttpClientWrapper;
 import io.breland.bbagent.server.metrics.AgentMetricsService;
 import io.breland.bbagent.server.metrics.AgentToolMetricEvent;
@@ -73,6 +74,9 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.NullAndEmptySource;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mockito;
 import reactor.core.publisher.Mono;
@@ -1305,7 +1309,137 @@ class BBMessageAgentTest {
     assertEquals("user", history.get(0).role());
     assertEquals("[messageGuid=msg-user] Alice: older user text", history.get(0).content());
     assertEquals("assistant", history.get(1).role());
-    assertEquals("[messageGuid=msg-assistant] assistant reply", history.get(1).content());
+    assertEquals("assistant reply", history.get(1).content());
+    assertEquals("[messageGuid=msg-assistant]", history.get(1).metadata());
+  }
+
+  @ParameterizedTest
+  @NullAndEmptySource
+  @ValueSource(
+      strings = {"1,907 standings so far", "The literal example is [messageGuid=example]."})
+  void hydratedAssistantHistoryKeepsToolMetadataOutOfAssistantText(String priorReply) {
+    StubBBHttpClientWrapper wrapper = new StubBBHttpClientWrapper();
+    String chatGuid = "iMessage;+;chat-history-metadata";
+    wrapper.setMessages(
+        chatGuid,
+        List.of(
+            blueBubblesMessage(chatGuid, "msg-assistant", priorReply, true, 2_000L)
+                .attachments(
+                    List.of(
+                        Map.of(
+                            "guid", "assistant-image",
+                            "mimeType", "image/png",
+                            "transferName", "standings.png"))),
+            blueBubblesMessage(chatGuid, "msg-user", "older user text", false, 1_000L)));
+    IncomingMessage current = incomingMessage(chatGuid, "msg-current", "use that photo", 3_000L);
+    BBMessageAgent agent = newAgent(Mockito.mock(OpenAIClient.class), wrapper);
+    ConversationState state = agent.computeConversationState(chatGuid, current);
+
+    List<ResponseInputItem> input =
+        promptBuilder(wrapper).buildConversationInput(state.history(), List.of(), current);
+
+    List<ResponseInputItem> assistantItems =
+        input.stream()
+            .filter(item -> item.isEasyInputMessage())
+            .filter(
+                item -> item.asEasyInputMessage().role().equals(EasyInputMessage.Role.ASSISTANT))
+            .toList();
+    assertThat(assistantItems).hasSize(1);
+    assertThat(extractText(assistantItems.getFirst()))
+        .isEqualTo(priorReply == null || priorReply.isBlank() ? "[no text]" : priorReply);
+
+    int assistantIndex = input.indexOf(assistantItems.getFirst());
+    ResponseInputItem metadata = input.get(assistantIndex - 1);
+    assertEquals(EasyInputMessage.Role.USER, metadata.asEasyInputMessage().role());
+    assertThat(extractText(metadata))
+        .contains(
+            "[messageGuid=msg-assistant]",
+            "[1 image(s)]",
+            "attachmentGuid=assistant-image",
+            "filename=standings.png",
+            "mimeType=image/png")
+        .doesNotContain("older user text", "1,907 standings so far", "The literal example");
+    assertThat(input.stream().map(this::extractText))
+        .contains("[messageGuid=msg-user] Alice: older user text");
+  }
+
+  @ParameterizedTest
+  @ValueSource(strings = {"threaded", "tool", "unmetered"})
+  void removesEchoedMessageGuidAtTheSendBoundaryAndKeepsThreadRouting(String sendPath) {
+    StubBBHttpClientWrapper wrapper = new StubBBHttpClientWrapper();
+    BBMessageAgent agent = newAgent(Mockito.mock(OpenAIClient.class), wrapper);
+    String guid = "11111111-2222-4333-8444-555555555555";
+    String chat = "iMessage;+;chat-prefix";
+    IncomingMessage incoming =
+        incomingMessage(chat, guid, "Chat. Should I move to sf", 1_000L)
+            .withThreadOriginatorGuid(guid);
+    String reply = "big question! 🌉\n\nSF pros:\n- walkable + solid transit";
+    String modelText = "[messageGuid=" + guid + "] " + reply;
+    OutgoingTextMessage outgoing = new OutgoingTextMessage(modelText, guid, "effect", 2);
+    boolean sent =
+        switch (sendPath) {
+          case "threaded" -> agent.sendThreadAwareText(incoming, modelText, null);
+          case "tool" -> agent.sendTextFromTool(incoming, outgoing, null);
+          default -> agent.sendTextUnmetered(incoming, outgoing);
+        };
+
+    assertTrue(sent);
+    assertThat(wrapper.sentTextRequests).hasSize(1);
+    ApiV1MessageTextPostRequest request = wrapper.sentTextRequests.getFirst();
+    assertEquals(reply, request.getMessage());
+    assertEquals(chat, request.getChatGuid());
+    assertEquals(guid, request.getSelectedMessageGuid());
+    if (!sendPath.equals("threaded")) {
+      assertEquals("effect", request.getEffectId());
+      assertEquals(2, request.getPartIndex());
+    }
+
+    ConversationState state = new ConversationState();
+    agent.getConversations().put(chat, state);
+    agent.recordAssistantTurnForCurrentMessage(incoming, modelText, null);
+    assertEquals(reply, state.history().getLast().content());
+  }
+
+  @Test
+  void previouslyLeakedPrefixIsRemovedWhenAssistantHistoryIsReloaded() {
+    StubBBHttpClientWrapper wrapper = new StubBBHttpClientWrapper();
+    String chat = "iMessage;+;chat-prefix-history";
+    wrapper.setMessages(
+        chat,
+        List.of(
+            blueBubblesMessage(
+                chat,
+                "actual-assistant-message",
+                "[messageGuid=11111111-2222-4333-8444-555555555555] big question! 🌉",
+                true,
+                1_000L)));
+    BBMessageAgent agent = newAgent(Mockito.mock(OpenAIClient.class), wrapper);
+
+    List<ConversationTurn> history =
+        agent
+            .computeConversationState(chat, incomingMessage(chat, "current", "why?", 2_000L))
+            .history();
+
+    assertThat(history).hasSize(1);
+    assertEquals("big question! 🌉", history.getFirst().content());
+    assertEquals("[messageGuid=actual-assistant-message]", history.getFirst().metadata());
+  }
+
+  @Test
+  void prefixWithoutReplyTextIsNotSentOrRecordedAsAnEmptyMessage() {
+    StubBBHttpClientWrapper wrapper = new StubBBHttpClientWrapper();
+    BBMessageAgent agent = newAgent(Mockito.mock(OpenAIClient.class), wrapper);
+    IncomingMessage incoming = incomingMessage("chat", "current", "hello", 1_000L);
+    String prefix = "[messageGuid=11111111-2222-4333-8444-555555555555]";
+    ConversationState state = new ConversationState();
+    agent.getConversations().put("chat", state);
+
+    assertFalse(agent.sendThreadAwareText(incoming, prefix, null));
+    assertFalse(agent.sendTextFromTool(incoming, OutgoingTextMessage.plain(prefix), null));
+    agent.recordAssistantTurnForCurrentMessage(incoming, prefix, null);
+
+    assertThat(wrapper.sentTextRequests).isEmpty();
+    assertThat(state.history()).isEmpty();
   }
 
   @Test

@@ -80,6 +80,18 @@ call:send_text{message:Clone repos, cherry-pick commit, and push to GitHub.,thre
   }
 
   @Test
+  void normalizeAssistantTextRemovesEchoedPrefixFromPlainAndJsonReplies() throws Exception {
+    ObjectMapper mapper = new ObjectMapper();
+    String reply = "[messageGuid=11111111-2222-4333-8444-555555555555] big question! 🌉";
+
+    assertEquals("big question! 🌉", AgentResponseHelper.normalizeAssistantText(mapper, reply));
+    assertEquals(
+        "big question! 🌉",
+        AgentResponseHelper.normalizeAssistantText(
+            mapper, mapper.createObjectNode().put("message", reply).toString()));
+  }
+
+  @Test
   void extractFunctionCalls_fallsBackToTextWhenNoNativeToolCalls() {
     Response response = responseWithText("call:send_giphy{query:artist painting}");
 

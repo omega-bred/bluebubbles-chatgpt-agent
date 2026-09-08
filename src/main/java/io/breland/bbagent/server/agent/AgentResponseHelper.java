@@ -124,13 +124,16 @@ public final class AgentResponseHelper {
         JsonNode node = objectMapper.readTree(trimmed);
         JsonNode messageNode = node.get("message");
         if (messageNode != null && messageNode.isTextual()) {
-          return stripTextFunctionCallLines(messageNode.asText()).trim();
+          return AssistantMessageText.stripLeadingMessageGuid(
+                  stripTextFunctionCallLines(messageNode.asText()))
+              .trim();
         }
       } catch (Exception ignored) {
-        return stripTextFunctionCallLines(trimmed).trim();
+        return AssistantMessageText.stripLeadingMessageGuid(stripTextFunctionCallLines(trimmed))
+            .trim();
       }
     }
-    return stripTextFunctionCallLines(trimmed).trim();
+    return AssistantMessageText.stripLeadingMessageGuid(stripTextFunctionCallLines(trimmed)).trim();
   }
 
   public static String stripTextFunctionCallLines(String text) {
