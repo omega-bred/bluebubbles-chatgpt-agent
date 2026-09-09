@@ -145,7 +145,7 @@ public final class AgentOutboundService {
 
   public boolean notifyIfMessageResponseLimitExceeded(
       IncomingMessage message, AgentWorkflowContext workflowContext) {
-    if (message == null || isCanaryAccount(message)) {
+    if (message == null || profileService.isCanaryAccount(message)) {
       return false;
     }
     try {
@@ -167,7 +167,7 @@ public final class AgentOutboundService {
 
   public boolean consumeMessageResponseQuota(
       IncomingMessage message, AgentWorkflowContext workflowContext) {
-    if (isCanaryAccount(message)) {
+    if (profileService.isCanaryAccount(message)) {
       return true;
     }
     if (!canSendResponses(workflowContext)) {
@@ -198,9 +198,5 @@ public final class AgentOutboundService {
     if (sendThreadAwareTextUnmetered(message, text)) {
       recordAssistantTurn(message, text, workflowContext);
     }
-  }
-
-  private boolean isCanaryAccount(IncomingMessage message) {
-    return message != null && profileService.isCanaryAccount(message);
   }
 }
