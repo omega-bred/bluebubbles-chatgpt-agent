@@ -195,27 +195,15 @@ public final class TermsGate {
   }
 
   private static String promptThreadRootGuid(IncomingMessage message) {
-    if (message == null) {
-      return null;
-    }
-    String existingThreadRootGuid = agreementThreadRootGuid(message);
-    if (StringUtils.isNotBlank(existingThreadRootGuid)) {
-      return existingThreadRootGuid;
-    }
-    return message.messageGuid();
+    return message == null
+        ? null
+        : StringUtils.defaultIfBlank(agreementThreadRootGuid(message), message.messageGuid());
   }
 
   private static String agreementThreadRootGuid(IncomingMessage message) {
-    if (message == null) {
-      return null;
-    }
-    if (StringUtils.isNotBlank(message.threadOriginatorGuid())) {
-      return message.threadOriginatorGuid();
-    }
-    if (StringUtils.isNotBlank(message.replyToGuid())) {
-      return message.replyToGuid();
-    }
-    return null;
+    return message == null
+        ? null
+        : StringUtils.firstNonBlank(message.threadOriginatorGuid(), message.replyToGuid());
   }
 
   @FunctionalInterface
