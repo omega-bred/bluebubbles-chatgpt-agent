@@ -5,9 +5,11 @@ import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Deque;
 import java.util.HashSet;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.SequencedSet;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import lombok.Getter;
@@ -17,14 +19,10 @@ public class ConversationState {
   private static final int MAX_RECENT_INCOMING_IDENTIFIERS = BBMessageAgent.MAX_HISTORY * 4;
 
   private final Deque<ConversationTurn> history = new ArrayDeque<>();
-  private final Deque<String> recentIncomingMessageGuidOrder = new ArrayDeque<>();
-  private final Set<String> recentIncomingMessageGuids = new HashSet<>();
-  private final Deque<String> recentIncomingMessageFingerprintOrder = new ArrayDeque<>();
-  private final Set<String> recentIncomingMessageFingerprints = new HashSet<>();
-  private final Deque<String> recordedIncomingMessageGuidOrder = new ArrayDeque<>();
-  private final Set<String> recordedIncomingMessageGuids = new HashSet<>();
-  private final Deque<String> recordedIncomingMessageFingerprintOrder = new ArrayDeque<>();
-  private final Set<String> recordedIncomingMessageFingerprints = new HashSet<>();
+  private final SequencedSet<String> recentIncomingMessageGuids = new LinkedHashSet<>();
+  private final SequencedSet<String> recentIncomingMessageFingerprints = new LinkedHashSet<>();
+  private final SequencedSet<String> recordedIncomingMessageGuids = new LinkedHashSet<>();
+  private final SequencedSet<String> recordedIncomingMessageFingerprints = new LinkedHashSet<>();
   private final Deque<PendingIncomingTurn> pendingIncomingTurns = new ArrayDeque<>();
   private final Set<String> pendingIncomingMessageGuids = new HashSet<>();
   private final Set<String> pendingIncomingMessageFingerprints = new HashSet<>();
@@ -81,8 +79,8 @@ public class ConversationState {
     }
     String guid = normalize(message.messageGuid());
     String fingerprint = normalize(message.computeMessageFingerprint());
-    remember(recentIncomingMessageGuidOrder, recentIncomingMessageGuids, guid);
-    remember(recentIncomingMessageFingerprintOrder, recentIncomingMessageFingerprints, fingerprint);
+    remember(recentIncomingMessageGuids, guid);
+    remember(recentIncomingMessageFingerprints, fingerprint);
     lastProcessedMessageGuid = guid;
     lastProcessedMessageFingerprint = fingerprint;
     if (message.timestamp() != null
@@ -105,9 +103,8 @@ public class ConversationState {
     }
     Instant timestamp = message.timestamp() != null ? message.timestamp() : Instant.now();
     addTurn(ConversationTurn.user(message.summaryForHistory(), timestamp));
-    remember(recordedIncomingMessageGuidOrder, recordedIncomingMessageGuids, guid);
-    remember(
-        recordedIncomingMessageFingerprintOrder, recordedIncomingMessageFingerprints, fingerprint);
+    remember(recordedIncomingMessageGuids, guid);
+    remember(recordedIncomingMessageFingerprints, fingerprint);
   }
 
   public synchronized void recordPendingIncomingTurn(IncomingMessage message) {
@@ -158,11 +155,8 @@ public class ConversationState {
         continue;
       }
       addTurn(pending.turn());
-      remember(recordedIncomingMessageGuidOrder, recordedIncomingMessageGuids, guid);
-      remember(
-          recordedIncomingMessageFingerprintOrder,
-          recordedIncomingMessageFingerprints,
-          fingerprint);
+      remember(recordedIncomingMessageGuids, guid);
+      remember(recordedIncomingMessageFingerprints, fingerprint);
     }
     pendingIncomingMessageGuids.clear();
     pendingIncomingMessageFingerprints.clear();
@@ -246,15 +240,12 @@ public class ConversationState {
         + (cleanThreadRootGuid == null ? "" : cleanThreadRootGuid);
   }
 
-  private static void remember(Deque<String> order, Set<String> values, String value) {
-    if (value == null || values.contains(value)) {
+  private static void remember(SequencedSet<String> values, String value) {
+    if (value == null || !values.add(value)) {
       return;
     }
-    order.addLast(value);
-    values.add(value);
-    while (order.size() > MAX_RECENT_INCOMING_IDENTIFIERS) {
-      String removed = order.removeFirst();
-      values.remove(removed);
+    while (values.size() > MAX_RECENT_INCOMING_IDENTIFIERS) {
+      values.removeFirst();
     }
   }
 
