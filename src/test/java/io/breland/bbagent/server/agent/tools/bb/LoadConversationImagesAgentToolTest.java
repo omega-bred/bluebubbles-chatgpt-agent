@@ -63,8 +63,7 @@ class LoadConversationImagesAgentToolTest {
     when(factory.create(incoming, null)).thenReturn(ToolContextFixture.with(incoming).build());
     AgentToolRegistry registry = mock(AgentToolRegistry.class);
     AgentTool tool = new LoadConversationImagesAgentTool(bb).getTool();
-    when(registry.resolveTool(tool.name(), incoming))
-        .thenReturn(new AgentToolRegistry.ResolvedTool(tool));
+    when(registry.resolveTool(tool.name(), incoming)).thenReturn(tool);
     AgentToolActivityRunner runner =
         new AgentToolActivityRunner(mapper, factory, registry, mock(AgentMetricsService.class));
     var result =

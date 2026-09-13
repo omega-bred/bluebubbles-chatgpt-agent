@@ -38,9 +38,7 @@ public final class AgentToolActivityRunner {
       IncomingMessage message,
       AgentWorkflowContext workflowContext) {
     log.info("Invoking tool {}", toolCall.name());
-    AgentToolRegistry.ResolvedTool resolvedTool =
-        toolRegistry.resolveTool(toolCall.name(), message);
-    AgentTool tool = resolvedTool.tool();
+    AgentTool tool = toolRegistry.resolveTool(toolCall.name(), message);
     String output;
     String failureType;
     String toolCategory = toolRegistry.toolCategory(toolCall.name());

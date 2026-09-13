@@ -51,9 +51,9 @@ class AgentToolRegistryTest {
     var registry = registryForAccount("account-1");
     var mapper = new ObjectMapper();
     var group = groupMessage();
-    assertNotNull(registry.resolveTool("get_group_icon", group).tool());
+    assertNotNull(registry.resolveTool("get_group_icon", group));
     assertEquals("bluebubbles", registry.toolCategory("get_group_icon"));
-    assertNull(registry.resolveTool("get_group_icon", directMessage("alice")).tool());
+    assertNull(registry.resolveTool("get_group_icon", directMessage("alice")));
     var lxmf =
         new IncomingMessage(
             "lxmf",
@@ -68,10 +68,10 @@ class AgentToolRegistryTest {
             Instant.EPOCH,
             List.of(),
             false);
-    assertNull(registry.resolveTool("get_group_icon", lxmf).tool());
-    assertNull(registry.resolveTool("load_conversation_images", lxmf).tool());
-    assertNotNull(registry.resolveTool("load_conversation_images", group).tool());
-    assertNotNull(registry.resolveTool("load_conversation_images", directMessage("alice")).tool());
+    assertNull(registry.resolveTool("get_group_icon", lxmf));
+    assertNull(registry.resolveTool("load_conversation_images", lxmf));
+    assertNotNull(registry.resolveTool("load_conversation_images", group));
+    assertNotNull(registry.resolveTool("load_conversation_images", directMessage("alice")));
     var args =
         mapper
             .createObjectNode()
@@ -95,9 +95,7 @@ class AgentToolRegistryTest {
     assertTrue(tools.contains(KubernetesReadOnlyAgentTool.TOOL_NAME));
     assertTrue(tools.contains(KubernetesPodLogsAgentTool.TOOL_NAME));
     assertNotNull(
-        registry
-            .resolveTool(KubernetesPodLogsAgentTool.TOOL_NAME, directMessage("someone-else"))
-            .tool());
+        registry.resolveTool(KubernetesPodLogsAgentTool.TOOL_NAME, directMessage("someone-else")));
   }
 
   @Test
@@ -109,9 +107,8 @@ class AgentToolRegistryTest {
     assertFalse(tools.contains(KubernetesReadOnlyAgentTool.TOOL_NAME));
     assertFalse(tools.contains(KubernetesPodLogsAgentTool.TOOL_NAME));
     assertNull(
-        registry
-            .resolveTool(KubernetesPodLogsAgentTool.TOOL_NAME, directMessage(LEGACY_ALLOWED_SENDER))
-            .tool());
+        registry.resolveTool(
+            KubernetesPodLogsAgentTool.TOOL_NAME, directMessage(LEGACY_ALLOWED_SENDER)));
   }
 
   @Test
@@ -145,8 +142,8 @@ class AgentToolRegistryTest {
       assertTrue(toolNames(registry.availableTools(allowedDirect)).contains(name));
       assertTrue(toolNames(registry.availableTools(allowedGroup)).contains(name));
       assertFalse(toolNames(registry.availableTools(deniedDirect)).contains(name));
-      assertNotNull(registry.resolveTool(name, allowedGroup).tool());
-      assertNull(registry.resolveTool(name, deniedDirect).tool());
+      assertNotNull(registry.resolveTool(name, allowedGroup));
+      assertNull(registry.resolveTool(name, deniedDirect));
       assertEquals("wallart", registry.toolCategory(name));
     }
   }
@@ -253,15 +250,14 @@ class AgentToolRegistryTest {
     assertTrue(
         toolNames(registry.availableTools(groupMessage()))
             .contains(GetGroupCatchupAgentTool.TOOL_NAME));
-    assertNotNull(registry.resolveTool(GetGroupCatchupAgentTool.TOOL_NAME, groupMessage()).tool());
+    assertNotNull(registry.resolveTool(GetGroupCatchupAgentTool.TOOL_NAME, groupMessage()));
     assertTrue(
         toolNames(registry.availableTools(directMessage("person")))
             .contains(ConfigureGroupCatchupAgentTool.TOOL_NAME));
     assertFalse(
         toolNames(registry.availableTools(groupMessage()))
             .contains(ConfigureGroupCatchupAgentTool.TOOL_NAME));
-    assertNull(
-        registry.resolveTool(ConfigureGroupCatchupAgentTool.TOOL_NAME, groupMessage()).tool());
+    assertNull(registry.resolveTool(ConfigureGroupCatchupAgentTool.TOOL_NAME, groupMessage()));
   }
 
   private static AgentToolRegistry registryForAccount(String accountId) {
@@ -310,7 +306,7 @@ class AgentToolRegistryTest {
   private static List<String> toolSearch(
       AgentToolRegistry registry, ObjectMapper mapper, ToolContext context, ObjectNode args)
       throws Exception {
-    AgentTool tool = registry.resolveTool(ToolSearchAgentTool.TOOL_NAME, context.message()).tool();
+    AgentTool tool = registry.resolveTool(ToolSearchAgentTool.TOOL_NAME, context.message());
     assertNotNull(tool);
     String output = tool.handler().apply(context, args);
     return mapper.readValue(output, new TypeReference<List<String>>() {});

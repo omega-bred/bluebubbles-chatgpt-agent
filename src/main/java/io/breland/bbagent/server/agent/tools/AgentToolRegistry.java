@@ -210,7 +210,7 @@ public final class AgentToolRegistry {
       selectedTools.put(toolSearchTool.name(), toolSearchTool);
     }
     for (String toolName : toolSearchReferences(inputItems)) {
-      AgentTool tool = resolveTool(toolName, message).tool();
+      AgentTool tool = resolveTool(toolName, message);
       if (tool != null && !ToolSearchAgentTool.TOOL_NAME.equals(tool.name())) {
         selectedTools.put(tool.name(), tool);
       }
@@ -226,12 +226,12 @@ public final class AgentToolRegistry {
         .toList();
   }
 
-  public ResolvedTool resolveTool(String toolName, IncomingMessage message) {
+  public @Nullable AgentTool resolveTool(String toolName, IncomingMessage message) {
     AgentTool tool = tools.get(toolName);
     if (tool != null && shouldIncludeTool(tool, message, resolveAccountId(message))) {
-      return new ResolvedTool(tool);
+      return tool;
     }
-    return new ResolvedTool(null);
+    return null;
   }
 
   public String toolCategory(String toolName) {
@@ -490,6 +490,4 @@ public final class AgentToolRegistry {
     }
     tools.put(tool.name(), tool);
   }
-
-  public record ResolvedTool(@Nullable AgentTool tool) {}
 }
