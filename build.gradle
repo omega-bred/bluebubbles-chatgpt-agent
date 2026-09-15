@@ -9,7 +9,7 @@ plugins {
 	id 'io.spring.dependency-management' version '1.1.7'
 	id 'org.openapi.generator' version '7.22.0'
 	id 'com.diffplug.spotless' version '8.4.0'
-    id "org.flywaydb.flyway" version "13.3.0"
+    id "org.flywaydb.flyway" version "13.4.0"
 }
 
 var grp = 'io.breland.bbagent'
@@ -215,7 +215,7 @@ dependencies {
 //	implementation 'com.clerk:backend-api:3.1.0'
 
     // auth components
-    implementation 'dev.openfga:openfga-sdk:0.9.9'
+    implementation 'dev.openfga:openfga-sdk:0.9.11'
 
 
 	implementation("org.apache.httpcomponents.client5:httpclient5:5.6.3")
@@ -245,10 +245,10 @@ dependencies {
     implementation "org.springframework.boot:spring-boot-starter-webclient"
 
 
-    implementation 'com.spotify:completable-futures:0.3.1'
+    implementation 'com.spotify:completable-futures:0.3.6'
 
     // Google Calendar
-    implementation 'com.google.api-client:google-api-client:2.8.1'
+    implementation 'com.google.api-client:google-api-client:2.9.0'
     implementation 'com.google.oauth-client:google-oauth-client-jetty:1.39.0'
     implementation 'com.google.http-client:google-http-client-jackson2:1.43.3'
     implementation 'com.google.apis:google-api-services-calendar:v3-rev20251207-2.0.0'
@@ -262,7 +262,7 @@ dependencies {
     implementation 'io.modelcontextprotocol.sdk:mcp-json-jackson2:1.1.1'
 
     implementation("com.openai:openai-java-spring-boot-starter:4.31.0")
-    implementation("com.anthropic:anthropic-java:2.34.0")
+    implementation("com.anthropic:anthropic-java:2.59.0")
     implementation("com.google.genai:google-genai:1.55.0")
     implementation("com.uber.cadence:cadence-client:3.13.1")
 
