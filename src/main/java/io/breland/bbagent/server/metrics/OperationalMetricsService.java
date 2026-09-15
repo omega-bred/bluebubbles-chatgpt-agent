@@ -37,8 +37,38 @@ public class OperationalMetricsService {
 
   public OperationalMetricsService(@Nullable MeterRegistry meterRegistry) {
     this.meterRegistry = meterRegistry;
-    registerBlueBubblesHealthGauges();
-    registerMemoryBacklogGauges();
+    registerGauge(
+        "bbagent.bluebubbles.health.up",
+        "Whether the last BlueBubbles health check was healthy",
+        blueBubblesHealthUp);
+    registerGauge(
+        "bbagent.bluebubbles.health.icloud.connected",
+        "Whether the last BlueBubbles iCloud account check was connected",
+        blueBubblesIcloudConnected);
+    registerGauge(
+        "bbagent.bluebubbles.health.last_check.epoch_seconds",
+        "Epoch seconds for the last BlueBubbles health check",
+        blueBubblesLastCheckEpochSeconds);
+    registerGauge(
+        "bbagent.bluebubbles.health.last_success.epoch_seconds",
+        "Epoch seconds for the last healthy BlueBubbles health check",
+        blueBubblesLastSuccessEpochSeconds);
+    registerGauge(
+        "bbagent.bluebubbles.health.consecutive_failures",
+        "Consecutive failed BlueBubbles health checks",
+        blueBubblesConsecutiveFailures);
+    registerGauge(
+        "bbagent.memory.backlog.extraction.age.seconds",
+        "Age in seconds of the oldest due conversation memory extraction",
+        memoryOldestExtractionAgeSeconds);
+    registerGauge(
+        "bbagent.memory.backlog.projection.age.seconds",
+        "Age in seconds of the oldest due conversation memory projection",
+        memoryOldestProjectionAgeSeconds);
+    registerGauge(
+        "bbagent.memory.backlog.failed.work",
+        "Conversation memory work items with a recorded failure",
+        memoryFailedWorkCount);
   }
 
   public void recordAcceptedMessage(
@@ -380,57 +410,12 @@ public class OperationalMetricsService {
     incrementCounter("bbagent.memory." + metricComponent + ".count", description + " count", tags);
   }
 
-  private void registerBlueBubblesHealthGauges() {
+  private void registerGauge(String name, String description, Number value) {
     if (meterRegistry == null) {
       return;
     }
-    Gauge.builder("bbagent.bluebubbles.health.up", blueBubblesHealthUp, AtomicInteger::get)
-        .description("Whether the last BlueBubbles health check was healthy")
-        .register(meterRegistry);
-    Gauge.builder(
-            "bbagent.bluebubbles.health.icloud.connected",
-            blueBubblesIcloudConnected,
-            AtomicInteger::get)
-        .description("Whether the last BlueBubbles iCloud account check was connected")
-        .register(meterRegistry);
-    Gauge.builder(
-            "bbagent.bluebubbles.health.last_check.epoch_seconds",
-            blueBubblesLastCheckEpochSeconds,
-            AtomicLong::get)
-        .description("Epoch seconds for the last BlueBubbles health check")
-        .register(meterRegistry);
-    Gauge.builder(
-            "bbagent.bluebubbles.health.last_success.epoch_seconds",
-            blueBubblesLastSuccessEpochSeconds,
-            AtomicLong::get)
-        .description("Epoch seconds for the last healthy BlueBubbles health check")
-        .register(meterRegistry);
-    Gauge.builder(
-            "bbagent.bluebubbles.health.consecutive_failures",
-            blueBubblesConsecutiveFailures,
-            AtomicLong::get)
-        .description("Consecutive failed BlueBubbles health checks")
-        .register(meterRegistry);
-  }
-
-  private void registerMemoryBacklogGauges() {
-    if (meterRegistry == null) {
-      return;
-    }
-    Gauge.builder(
-            "bbagent.memory.backlog.extraction.age.seconds",
-            memoryOldestExtractionAgeSeconds,
-            AtomicLong::get)
-        .description("Age in seconds of the oldest due conversation memory extraction")
-        .register(meterRegistry);
-    Gauge.builder(
-            "bbagent.memory.backlog.projection.age.seconds",
-            memoryOldestProjectionAgeSeconds,
-            AtomicLong::get)
-        .description("Age in seconds of the oldest due conversation memory projection")
-        .register(meterRegistry);
-    Gauge.builder("bbagent.memory.backlog.failed.work", memoryFailedWorkCount, AtomicLong::get)
-        .description("Conversation memory work items with a recorded failure")
+    Gauge.builder(name, value, Number::doubleValue)
+        .description(description)
         .register(meterRegistry);
   }
 
