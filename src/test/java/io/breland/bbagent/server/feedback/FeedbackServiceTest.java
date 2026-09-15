@@ -9,13 +9,18 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import io.breland.bbagent.generated.model.AdminFeedbackListResponse;
+import io.breland.bbagent.generated.model.AdminFeedbackListResponse.StatusEnum;
 import io.breland.bbagent.server.agent.IncomingMessage;
 import io.breland.bbagent.server.linear.LinearIssueService;
 import io.breland.bbagent.server.linear.LinearIssueService.FeedbackIssueInput;
 import io.breland.bbagent.server.linear.LinearIssueService.LinearIssue;
 import java.time.Instant;
 import java.util.List;
+import java.util.stream.Stream;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
 import org.mockito.ArgumentCaptor;
 
 class FeedbackServiceTest {
@@ -52,19 +57,37 @@ class FeedbackServiceTest {
     assertEquals("Alice", issue.sender());
   }
 
-  @Test
-  void legacyAdminFeedbackInboxReturnsEmptyAfterPostgresCleanup() {
+  @ParameterizedTest
+  @MethodSource("feedbackStatuses")
+  void legacyAdminFeedbackInboxReturnsEmptyAfterPostgresCleanup(
+      String status, StatusEnum expectedStatus) {
     FeedbackService feedbackService = new FeedbackService(mock(LinearIssueService.class));
 
-    AdminFeedbackListResponse unread = feedbackService.listFeedback("unread", 100);
+    AdminFeedbackListResponse response = feedbackService.listFeedback(status, 100);
 
-    assertEquals(AdminFeedbackListResponse.StatusEnum.UNREAD, unread.getStatus());
-    assertTrue(unread.getItems().isEmpty());
-    assertEquals(0L, unread.getUnreadCount());
-    assertEquals(0L, unread.getReadCount());
-    assertEquals(0L, unread.getTotalCount());
+    assertEquals(expectedStatus, response.getStatus());
+    assertTrue(response.getItems().isEmpty());
+    assertEquals(0L, response.getUnreadCount());
+    assertEquals(0L, response.getReadCount());
+    assertEquals(0L, response.getTotalCount());
     assertTrue(feedbackService.markRead("BLU-456").isEmpty());
     assertTrue(feedbackService.markUnread("BLU-456").isEmpty());
+  }
+
+  private static Stream<Arguments> feedbackStatuses() {
+    return Stream.of(
+        Arguments.of(null, StatusEnum.UNREAD),
+        Arguments.of("", StatusEnum.UNREAD),
+        Arguments.of(" \t ", StatusEnum.UNREAD),
+        Arguments.of("all", StatusEnum.ALL),
+        Arguments.of("ALL", StatusEnum.ALL),
+        Arguments.of(" All ", StatusEnum.ALL),
+        Arguments.of("read", StatusEnum.READ),
+        Arguments.of("READ", StatusEnum.READ),
+        Arguments.of("\tReAd\n", StatusEnum.READ),
+        Arguments.of("unread", StatusEnum.UNREAD),
+        Arguments.of("UNREAD", StatusEnum.UNREAD),
+        Arguments.of("unsupported", StatusEnum.UNREAD));
   }
 
   private IncomingMessage incomingMessage() {

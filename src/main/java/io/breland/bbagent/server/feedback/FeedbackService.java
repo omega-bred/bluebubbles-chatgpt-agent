@@ -2,6 +2,7 @@ package io.breland.bbagent.server.feedback;
 
 import io.breland.bbagent.generated.model.AdminFeedbackItem;
 import io.breland.bbagent.generated.model.AdminFeedbackListResponse;
+import io.breland.bbagent.generated.model.AdminFeedbackListResponse.StatusEnum;
 import io.breland.bbagent.server.agent.IncomingMessage;
 import io.breland.bbagent.server.linear.LinearIssueService;
 import io.breland.bbagent.server.linear.LinearIssueService.FeedbackIssueInput;
@@ -52,9 +53,14 @@ public class FeedbackService {
   }
 
   public AdminFeedbackListResponse listFeedback(String status, Integer limit) {
-    FeedbackStatus resolvedStatus = FeedbackStatus.from(status);
+    StatusEnum resolvedStatus =
+        switch (StringUtils.trimToEmpty(status).toLowerCase(Locale.ROOT)) {
+          case "all" -> StatusEnum.ALL;
+          case "read" -> StatusEnum.READ;
+          default -> StatusEnum.UNREAD;
+        };
     return new AdminFeedbackListResponse()
-        .status(AdminFeedbackListResponse.StatusEnum.fromValue(resolvedStatus.value))
+        .status(resolvedStatus)
         .items(List.of())
         .unreadCount(0L)
         .readCount(0L)
@@ -80,24 +86,4 @@ public class FeedbackService {
   }
 
   public record RecordedFeedback(String feedbackId, Instant submittedAt) {}
-
-  private enum FeedbackStatus {
-    ALL("all"),
-    UNREAD("unread"),
-    READ("read");
-
-    private final String value;
-
-    FeedbackStatus(String value) {
-      this.value = value;
-    }
-
-    private static FeedbackStatus from(String value) {
-      return switch (StringUtils.trimToEmpty(value).toLowerCase(Locale.ROOT)) {
-        case "all" -> ALL;
-        case "read" -> READ;
-        default -> UNREAD;
-      };
-    }
-  }
 }
