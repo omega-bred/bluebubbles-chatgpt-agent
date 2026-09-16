@@ -344,6 +344,7 @@ class WebsiteAccountServiceTest {
     return new WebsiteAccountLinkTokenEntity(
         "hash",
         "account-1",
+        WebsiteAccountService.LINK_PURPOSE_ACCOUNT_LINK,
         "iMessage;+;chat-1",
         "Alice",
         "iMessage",
