@@ -59,31 +59,6 @@ public class WebsiteAccountLinkTokenEntity {
   public WebsiteAccountLinkTokenEntity(
       String tokenHash,
       String accountId,
-      String chatGuid,
-      String sender,
-      String service,
-      boolean group,
-      String sourceMessageGuid,
-      Instant expiresAt,
-      Instant createdAt,
-      Instant updatedAt) {
-    this(
-        tokenHash,
-        accountId,
-        "account_link",
-        chatGuid,
-        sender,
-        service,
-        group,
-        sourceMessageGuid,
-        expiresAt,
-        createdAt,
-        updatedAt);
-  }
-
-  public WebsiteAccountLinkTokenEntity(
-      String tokenHash,
-      String accountId,
       String purpose,
       String chatGuid,
       String sender,
