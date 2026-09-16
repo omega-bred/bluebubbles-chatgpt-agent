@@ -1767,10 +1767,7 @@ public class ConversationMemoryStore {
 
   @Transactional
   public void completeCatchupPreferenceClaim(
-      CatchupPreferenceClaim claim,
-      Instant nextDeliveryAt,
-      Instant completedAt,
-      @Nullable String outcome) {
+      CatchupPreferenceClaim claim, Instant nextDeliveryAt, Instant completedAt) {
     jdbcTemplate.update(
         """
         update group_catchup_preferences
