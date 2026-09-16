@@ -1,13 +1,61 @@
 package io.breland.bbagent.server.metrics;
 
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.micrometer.core.instrument.Gauge;
 import io.micrometer.core.instrument.Tag;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.time.Duration;
+import java.util.Map;
 import org.junit.jupiter.api.Test;
 
 class OperationalMetricsServiceTest {
+
+  @Test
+  void registersAllGaugesWithTheirExistingDescriptionsAndInitialValues() {
+    SimpleMeterRegistry registry = new SimpleMeterRegistry();
+    OperationalMetricsService service = new OperationalMetricsService(registry);
+    Map<String, String> descriptions =
+        Map.of(
+            "bbagent.bluebubbles.health.up",
+            "Whether the last BlueBubbles health check was healthy",
+            "bbagent.bluebubbles.health.icloud.connected",
+            "Whether the last BlueBubbles iCloud account check was connected",
+            "bbagent.bluebubbles.health.last_check.epoch_seconds",
+            "Epoch seconds for the last BlueBubbles health check",
+            "bbagent.bluebubbles.health.last_success.epoch_seconds",
+            "Epoch seconds for the last healthy BlueBubbles health check",
+            "bbagent.bluebubbles.health.consecutive_failures",
+            "Consecutive failed BlueBubbles health checks",
+            "bbagent.memory.backlog.extraction.age.seconds",
+            "Age in seconds of the oldest due conversation memory extraction",
+            "bbagent.memory.backlog.projection.age.seconds",
+            "Age in seconds of the oldest due conversation memory projection",
+            "bbagent.memory.backlog.failed.work",
+            "Conversation memory work items with a recorded failure");
+
+    assertEquals(descriptions.size(), registry.getMeters().size());
+    descriptions.forEach(
+        (name, description) -> {
+          Gauge gauge = registry.get(name).gauge();
+          assertEquals(description, gauge.getId().getDescription());
+          assertTrue(gauge.getId().getTags().isEmpty());
+          assertEquals(0.0, gauge.value());
+        });
+    java.lang.ref.Reference.reachabilityFence(service);
+  }
+
+  @Test
+  void acceptsMissingRegistryForGaugeRegistrationAndUpdates() {
+    assertDoesNotThrow(
+        () -> {
+          OperationalMetricsService service = new OperationalMetricsService(null);
+          service.recordBlueBubblesHealthCheck(true, true, null, Duration.ZERO);
+          service.updateMemoryBacklog(Duration.ofSeconds(1), Duration.ofSeconds(2), 3);
+        });
+  }
 
   @Test
   void recordsToolInvocationCountersAndTimers() {
@@ -93,6 +141,19 @@ class OperationalMetricsServiceTest {
             .tag("failure_type", "timeout")
             .counter()
             .count());
+
+    service.recordBlueBubblesHealthCheck(true, true, null, Duration.ofMillis(10));
+
+    assertEquals(1.0, registry.get("bbagent.bluebubbles.health.up").gauge().value());
+    assertEquals(1.0, registry.get("bbagent.bluebubbles.health.icloud.connected").gauge().value());
+    assertEquals(
+        0.0, registry.get("bbagent.bluebubbles.health.consecutive_failures").gauge().value());
+    double lastCheck =
+        registry.get("bbagent.bluebubbles.health.last_check.epoch_seconds").gauge().value();
+    assertTrue(lastCheck > 0);
+    assertEquals(
+        lastCheck,
+        registry.get("bbagent.bluebubbles.health.last_success.epoch_seconds").gauge().value());
   }
 
   @Test
