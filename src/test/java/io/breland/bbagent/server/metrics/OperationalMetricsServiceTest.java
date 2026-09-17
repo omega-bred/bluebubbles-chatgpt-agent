@@ -7,11 +7,50 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import io.micrometer.core.instrument.Gauge;
 import io.micrometer.core.instrument.Tag;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
+import java.io.FileNotFoundException;
+import java.io.IOException;
 import java.time.Duration;
 import java.util.Map;
+import java.util.concurrent.TimeoutException;
+import java.util.stream.Stream;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
 
 class OperationalMetricsServiceTest {
+
+  @ParameterizedTest
+  @MethodSource("failureTypes")
+  void classifiesDirectAndWrappedFailures(Throwable failure, String expected) {
+    assertEquals(expected, OperationalMetricsService.failureType(failure));
+    assertEquals(expected, OperationalMetricsService.failureType(new RuntimeException(failure)));
+  }
+
+  private static Stream<Arguments> failureTypes() {
+    return Stream.of(
+        Arguments.of(null, "exception"),
+        Arguments.of(new Exception(), "exception"),
+        Arguments.of(new TimeoutException(), "timeout"),
+        Arguments.of(new InterruptedException(), "interrupted"),
+        Arguments.of(new IllegalArgumentException(), "invalid_request"),
+        Arguments.of(new NumberFormatException(), "invalid_request"),
+        Arguments.of(new IllegalStateException(), "invalid_response"),
+        Arguments.of(new IOException(), "io_exception"),
+        Arguments.of(new FileNotFoundException(), "io_exception"),
+        Arguments.of(new IllegalStateException(new TimeoutException()), "timeout"),
+        Arguments.of(new IllegalArgumentException(new InterruptedException()), "interrupted"),
+        Arguments.of(new IllegalStateException(new IllegalArgumentException()), "invalid_request"),
+        Arguments.of(new IOException(new IllegalStateException()), "invalid_response"));
+  }
+
+  @Test
+  void doesNotClassifySuppressedExceptionsAsCauses() {
+    IOException failure = new IOException();
+    failure.addSuppressed(new TimeoutException());
+
+    assertEquals("io_exception", OperationalMetricsService.failureType(failure));
+  }
 
   @Test
   void registersAllGaugesWithTheirExistingDescriptionsAndInitialValues() {

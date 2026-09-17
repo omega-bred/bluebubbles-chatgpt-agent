@@ -31,6 +31,7 @@ import java.util.function.Supplier;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
+import org.apache.commons.lang3.exception.ExceptionUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.ParameterizedTypeReference;
@@ -301,17 +302,6 @@ public class BBHttpClientWrapper {
 
   private static long elapsedMillis(long startedNanos) {
     return Duration.ofNanos(System.nanoTime() - startedNanos).toMillis();
-  }
-
-  private static boolean isTimeout(Throwable throwable) {
-    Throwable current = throwable;
-    while (current != null) {
-      if (current instanceof TimeoutException) {
-        return true;
-      }
-      current = current.getCause();
-    }
-    return false;
   }
 
   private static void requireSuccessfulResponse(Integer status, String message, String operation) {
@@ -1132,7 +1122,7 @@ public class BBHttpClientWrapper {
           elapsedMillis(attemptStartedNanos),
           elapsedMillis(overallStartedNanos));
     } catch (Exception e) {
-      if (isTimeout(e)) {
+      if (ExceptionUtils.indexOfType(e, TimeoutException.class) >= 0) {
         failureType = "timeout";
         log.warn(
             "Timed out waiting for BlueBubbles direct text send response chatGuid={} tempGuid={} attempt={} timeout={} attemptElapsedMs={} totalElapsedMs={}. Checking chat history before retrying.",
