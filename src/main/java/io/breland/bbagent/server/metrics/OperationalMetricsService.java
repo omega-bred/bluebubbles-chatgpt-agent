@@ -15,6 +15,7 @@ import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import org.apache.commons.lang3.StringUtils;
+import org.apache.commons.lang3.exception.ExceptionUtils;
 import org.springframework.lang.Nullable;
 import org.springframework.stereotype.Service;
 
@@ -210,19 +211,19 @@ public class OperationalMetricsService {
     if (throwable == null) {
       return "exception";
     }
-    if (hasCause(throwable, TimeoutException.class)) {
+    if (ExceptionUtils.indexOfType(throwable, TimeoutException.class) >= 0) {
       return "timeout";
     }
-    if (hasCause(throwable, InterruptedException.class)) {
+    if (ExceptionUtils.indexOfType(throwable, InterruptedException.class) >= 0) {
       return "interrupted";
     }
-    if (hasCause(throwable, IllegalArgumentException.class)) {
+    if (ExceptionUtils.indexOfType(throwable, IllegalArgumentException.class) >= 0) {
       return "invalid_request";
     }
-    if (hasCause(throwable, IllegalStateException.class)) {
+    if (ExceptionUtils.indexOfType(throwable, IllegalStateException.class) >= 0) {
       return "invalid_response";
     }
-    if (hasCause(throwable, IOException.class)) {
+    if (ExceptionUtils.indexOfType(throwable, IOException.class) >= 0) {
       return "io_exception";
     }
     return "exception";
@@ -511,16 +512,5 @@ public class OperationalMetricsService {
             || normalized.equals("deleted")
         ? normalized
         : "unknown";
-  }
-
-  private static boolean hasCause(Throwable throwable, Class<? extends Throwable> type) {
-    Throwable current = throwable;
-    while (current != null) {
-      if (type.isInstance(current)) {
-        return true;
-      }
-      current = current.getCause();
-    }
-    return false;
   }
 }
