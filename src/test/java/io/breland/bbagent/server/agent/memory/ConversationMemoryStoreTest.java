@@ -84,70 +84,7 @@ class ConversationMemoryStoreTest {
   }
 
   @Test
-  void pagesJournalMessagesByTimestampAndGuidWithAnExclusiveUpperBound() {
-    String accountId = createAccount("journal-page@example.com");
-    String conversationId =
-        store.upsertConversation(
-            "bluebubbles", "iMessage;+;journal-page", true, "Journal page", OBSERVED_AT);
-    JournalMessage first =
-        new JournalMessage(
-            "message-a",
-            conversationId,
-            accountId,
-            "first",
-            OBSERVED_AT,
-            false,
-            false,
-            "hash-first");
-    JournalMessage second =
-        new JournalMessage(
-            "message-b",
-            conversationId,
-            accountId,
-            "second",
-            OBSERVED_AT,
-            false,
-            false,
-            "hash-second");
-    JournalMessage atExclusiveEnd =
-        new JournalMessage(
-            "message-end",
-            conversationId,
-            accountId,
-            "outside",
-            OBSERVED_AT.plusSeconds(1),
-            false,
-            false,
-            "hash-outside");
-    store.recordMessage(first);
-    store.recordMessage(second);
-    store.recordMessage(atExclusiveEnd);
-
-    List<JournalMessage> firstPage =
-        store.findMessagePage(
-            conversationId,
-            OBSERVED_AT.minusSeconds(1),
-            OBSERVED_AT.plusSeconds(1),
-            null,
-            null,
-            1,
-            Duration.ofSeconds(5));
-    List<JournalMessage> secondPage =
-        store.findMessagePage(
-            conversationId,
-            OBSERVED_AT.minusSeconds(1),
-            OBSERVED_AT.plusSeconds(1),
-            firstPage.getFirst().sourceTimestamp(),
-            firstPage.getFirst().messageGuid(),
-            10,
-            Duration.ofSeconds(5));
-
-    assertThat(firstPage).extracting(JournalMessage::messageGuid).containsExactly("message-a");
-    assertThat(secondPage).extracting(JournalMessage::messageGuid).containsExactly("message-b");
-  }
-
-  @Test
-  void pagesJournalMessagesNewestFirstWithAnExclusiveOlderCursor() {
+  void pagesJournalMessagesNewestFirstWithExclusiveUpperBoundAndOlderCursor() {
     String accountId = createAccount("journal-descending@example.com");
     String conversationId =
         store.upsertConversation(
@@ -162,6 +99,26 @@ class ConversationMemoryStoreTest {
     store.recordMessage(
         new JournalMessage(
             "message-b", conversationId, accountId, "second", OBSERVED_AT, false, false, "hash-b"));
+    store.recordMessage(
+        new JournalMessage(
+            "message-start",
+            conversationId,
+            accountId,
+            "inclusive start",
+            OBSERVED_AT.minusSeconds(1),
+            false,
+            false,
+            "hash-start"));
+    store.recordMessage(
+        new JournalMessage(
+            "message-end",
+            conversationId,
+            accountId,
+            "exclusive end",
+            OBSERVED_AT.plusSeconds(1),
+            false,
+            false,
+            "hash-end"));
 
     List<JournalMessage> newest =
         store.findMessagePageDescending(
@@ -183,7 +140,9 @@ class ConversationMemoryStoreTest {
             Duration.ofSeconds(5));
 
     assertThat(newest).extracting(JournalMessage::messageGuid).containsExactly("message-b");
-    assertThat(older).extracting(JournalMessage::messageGuid).containsExactly("message-a");
+    assertThat(older)
+        .extracting(JournalMessage::messageGuid)
+        .containsExactly("message-a", "message-start");
   }
 
   @Test
@@ -249,7 +208,7 @@ class ConversationMemoryStoreTest {
     int sharedTimeout = inspectingTemplate.getQueryTimeout();
     ConversationMemoryStore timeoutStore = new ConversationMemoryStore(inspectingTemplate);
 
-    timeoutStore.findMessagePage(
+    timeoutStore.findMessagePageDescending(
         "missing-conversation",
         OBSERVED_AT.minusSeconds(1),
         OBSERVED_AT.plusSeconds(1),
@@ -282,7 +241,7 @@ class ConversationMemoryStoreTest {
     inspectingTemplate.setQueryTimeout(1);
     ConversationMemoryStore timeoutStore = new ConversationMemoryStore(inspectingTemplate);
 
-    timeoutStore.findMessagePage(
+    timeoutStore.findMessagePageDescending(
         "missing-conversation",
         OBSERVED_AT.minusSeconds(1),
         OBSERVED_AT.plusSeconds(1),
