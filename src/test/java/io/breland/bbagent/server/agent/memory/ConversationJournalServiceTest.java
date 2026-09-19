@@ -1,6 +1,9 @@
 package io.breland.bbagent.server.agent.memory;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 
 import io.breland.bbagent.server.agent.BBMessageAgent;
 import io.breland.bbagent.server.agent.IncomingMessage;
@@ -8,6 +11,8 @@ import io.breland.bbagent.server.agent.account.AgentAccountResolver;
 import java.time.Instant;
 import java.util.List;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.transaction.annotation.Transactional;
@@ -20,6 +25,75 @@ class ConversationJournalServiceTest {
   @Autowired private ConversationJournalService journalService;
   @Autowired private ConversationMemoryStore store;
   @Autowired private AgentAccountResolver accountResolver;
+
+  @ParameterizedTest
+  @CsvSource(
+      textBlock =
+          """
+          bluebubbles, iMessage, false, chat, hello,           false, true
+          bluebubbles, iMessage,      , chat, hello,           false, true
+          bluebubbles, iMessage, true,  chat, hello,           false, false
+          bluebubbles,         , false, chat, hello,           false, true
+          bluebubbles, imessage, false, chat, hello,           false, true
+          bluebubbles, SMS,      false, chat, hello,           false, false
+                     , iMessage, false, chat, hello,           false, true
+          '',          iMessage, false, chat, hello,           false, true
+          BLUEBUBBLES, iMessage, false, chat, hello,           false, true
+          lxmf,                , false, chat, hello,           false, true
+          LXMF,        SMS,      false, chat, hello,           false, true
+          unsupported, iMessage, false, chat, hello,           false, false
+          bluebubbles, iMessage, false,     , hello,           false, false
+          bluebubbles, iMessage, false, ' ', hello,           false, false
+          bluebubbles, iMessage, false, chat,                , false, false
+          bluebubbles, iMessage, false, chat, ' ',             false, false
+          bluebubbles, iMessage, false, chat, Loved a message, false, false
+          bluebubbles, iMessage, false, chat, hello,           true,  false
+          """)
+  void checksEligibilityBeforeResolvingAccounts(
+      String transport,
+      String service,
+      Boolean fromMe,
+      String chatGuid,
+      String text,
+      boolean systemMessage,
+      boolean eligible) {
+    ConversationMemoryStore store = mock(ConversationMemoryStore.class);
+    AgentAccountResolver resolver = mock(AgentAccountResolver.class);
+    ConversationJournalService journal = new ConversationJournalService(store, resolver, null);
+    IncomingMessage message =
+        new IncomingMessage(
+            transport,
+            chatGuid,
+            "message",
+            null,
+            text,
+            fromMe,
+            service,
+            "member@example.com",
+            true,
+            NOW,
+            List.of(),
+            systemMessage);
+
+    journal.recordEligibleMessage(message);
+
+    if (eligible) {
+      verify(resolver).resolveOrCreate(message);
+    } else {
+      verifyNoInteractions(resolver);
+    }
+    verifyNoInteractions(store);
+  }
+
+  @Test
+  void ignoresNullMessagesBeforeResolvingAccounts() {
+    ConversationMemoryStore store = mock(ConversationMemoryStore.class);
+    AgentAccountResolver resolver = mock(AgentAccountResolver.class);
+
+    new ConversationJournalService(store, resolver, null).recordEligibleMessage(null);
+
+    verifyNoInteractions(store, resolver);
+  }
 
   @Test
   void enabledGroupJournalsMessageAndPostponesOneDebouncedWorkItem() {

@@ -1,10 +1,10 @@
 package io.breland.bbagent.server.agent.memory;
 
-import io.breland.bbagent.server.agent.BBMessageAgent;
+import static io.breland.bbagent.server.agent.memory.ConversationMemoryModels.isEligibleConversationText;
+
 import io.breland.bbagent.server.agent.IncomingMessage;
 import io.breland.bbagent.server.agent.account.AgentAccountResolver;
 import io.breland.bbagent.server.agent.memory.ConversationMemoryModels.JournalMessage;
-import io.breland.bbagent.server.agent.reactions.MessageReactionSupport;
 import java.time.Duration;
 import java.time.Instant;
 import lombok.extern.slf4j.Slf4j;
@@ -40,7 +40,7 @@ public class ConversationJournalService {
   }
 
   public void recordEligibleMessage(IncomingMessage message) {
-    if (!isEligible(message)) {
+    if (!isEligibleConversationText(message) || Boolean.TRUE.equals(message.fromMe())) {
       return;
     }
     String accountId =
@@ -76,21 +76,5 @@ public class ConversationJournalService {
             false,
             DigestUtils.sha256Hex(text)));
     store.scheduleExtraction(conversationId, observedAt.plus(debounce));
-  }
-
-  private boolean isEligible(IncomingMessage message) {
-    if (message == null
-        || Boolean.TRUE.equals(message.fromMe())
-        || message.isSystemMessage()
-        || StringUtils.isBlank(IncomingMessage.chatGuidOrNull(message))
-        || StringUtils.isBlank(message.text())
-        || MessageReactionSupport.isReactionMessage(message.text())) {
-      return false;
-    }
-    if (message.isBlueBubblesTransport()) {
-      return message.service() == null
-          || BBMessageAgent.IMESSAGE_SERVICE.equalsIgnoreCase(message.service());
-    }
-    return message.isLxmfTransport();
   }
 }

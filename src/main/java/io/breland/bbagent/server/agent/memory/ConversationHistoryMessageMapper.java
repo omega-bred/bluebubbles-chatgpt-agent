@@ -1,7 +1,8 @@
 package io.breland.bbagent.server.agent.memory;
 
+import static io.breland.bbagent.server.agent.memory.ConversationMemoryModels.isEligibleConversationText;
+
 import io.breland.bbagent.generated.bluebubblesclient.model.ApiV1ChatChatGuidMessageGet200ResponseDataInner;
-import io.breland.bbagent.server.agent.BBMessageAgent;
 import io.breland.bbagent.server.agent.IncomingMessage;
 import io.breland.bbagent.server.agent.memory.ConversationMemoryModels.JournalMessage;
 import io.breland.bbagent.server.agent.memory.ConversationQuestionAnsweringModels.ParticipantDescriptor;
@@ -33,7 +34,7 @@ public class ConversationHistoryMessageMapper {
       throw new IllegalArgumentException("mapping session must not be null");
     }
     IncomingMessage incoming = IncomingMessage.create(rawMessage);
-    if (!eligible(incoming)
+    if (!isEligibleConversationText(incoming)
         || StringUtils.isBlank(incoming.messageGuid())
         || incoming.timestamp() == null) {
       return Optional.empty();
@@ -79,21 +80,6 @@ public class ConversationHistoryMessageMapper {
             message.sourceTimestamp(),
             message.text().trim(),
             participant.hint()));
-  }
-
-  private boolean eligible(IncomingMessage message) {
-    if (message == null
-        || message.isSystemMessage()
-        || StringUtils.isBlank(IncomingMessage.chatGuidOrNull(message))
-        || StringUtils.isBlank(message.text())
-        || MessageReactionSupport.isReactionMessage(message.text())) {
-      return false;
-    }
-    if (message.isBlueBubblesTransport()) {
-      return message.service() == null
-          || BBMessageAgent.IMESSAGE_SERVICE.equalsIgnoreCase(message.service());
-    }
-    return message.isLxmfTransport();
   }
 
   public static final class MappingSession {
