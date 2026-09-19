@@ -1,6 +1,9 @@
 package io.breland.bbagent.server.agent.memory;
 
+import io.breland.bbagent.server.agent.BBMessageAgent;
+import io.breland.bbagent.server.agent.IncomingMessage;
 import io.breland.bbagent.server.agent.memory.ConversationQuestionAnsweringModels.GroupQuestionAnswer;
+import io.breland.bbagent.server.agent.reactions.MessageReactionSupport;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
@@ -13,6 +16,22 @@ import org.apache.commons.lang3.StringUtils;
 
 public final class ConversationMemoryModels {
   private ConversationMemoryModels() {}
+
+  // Whether to include fromMe messages depends on the caller.
+  static boolean isEligibleConversationText(IncomingMessage message) {
+    if (message == null
+        || message.isSystemMessage()
+        || StringUtils.isBlank(IncomingMessage.chatGuidOrNull(message))
+        || StringUtils.isBlank(message.text())
+        || MessageReactionSupport.isReactionMessage(message.text())) {
+      return false;
+    }
+    if (message.isBlueBubblesTransport()) {
+      return message.service() == null
+          || BBMessageAgent.IMESSAGE_SERVICE.equalsIgnoreCase(message.service());
+    }
+    return message.isLxmfTransport();
+  }
 
   public enum ArtifactKind {
     GROUP_DECISION,
