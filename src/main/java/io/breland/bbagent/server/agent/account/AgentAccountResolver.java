@@ -14,6 +14,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -24,22 +25,12 @@ import org.springframework.transaction.annotation.Transactional;
 
 @Service
 @Slf4j
+@RequiredArgsConstructor
 public class AgentAccountResolver {
   private final AgentAccountRepository accountRepository;
   private final AgentAccountIdentityRepository identityRepository;
   private final JdbcTemplate jdbcTemplate;
-  private final BBHttpClientWrapper bbHttpClientWrapper;
-
-  public AgentAccountResolver(
-      AgentAccountRepository accountRepository,
-      AgentAccountIdentityRepository identityRepository,
-      JdbcTemplate jdbcTemplate,
-      @Nullable BBHttpClientWrapper bbHttpClientWrapper) {
-    this.accountRepository = accountRepository;
-    this.identityRepository = identityRepository;
-    this.jdbcTemplate = jdbcTemplate;
-    this.bbHttpClientWrapper = bbHttpClientWrapper;
-  }
+  private final @Nullable BBHttpClientWrapper bbHttpClientWrapper;
 
   @Transactional
   public Optional<ResolvedAccount> resolveOrCreate(IncomingMessage message) {
