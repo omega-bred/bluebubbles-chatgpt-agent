@@ -13,7 +13,7 @@
     "axios": "^1.20.0",
     "cap-widget": "^0.1.57",
     "keycloak-js": "^26.2.4",
-    "react": "^19.2.8",
+    "react": "^19.3.0",
     "react-dom": "^19.2.8"
   },
   "devDependencies": {
@@ -23,7 +23,7 @@
     "@babel/preset-typescript": "^8.0.1",
     "@babel/traverse": "^8.0.4",
     "@babel/types": "^8.0.4",
-    "@types/react": "^19.2.18",
+    "@types/react": "^19.3.0",
     "@types/react-dom": "^19.2.7",
     "@vitejs/plugin-react": "^6.1.1",
     "@tailwindcss/postcss": "4.3.3",
