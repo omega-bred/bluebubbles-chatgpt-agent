@@ -14,7 +14,7 @@ import org.springframework.transaction.annotation.Transactional;
 class HindsightMemoryStoreTest {
   @Autowired HindsightMemoryStore memories;
   @Autowired ConversationMemoryStore conversations;
-  private final Instant now = Instant.now();
+  private final Instant now = Instant.now().truncatedTo(java.time.temporal.ChronoUnit.MILLIS);
 
   @Test
   void exactAudienceBanksPreventJoinerAndCrossGroupLeaks() {
@@ -52,7 +52,7 @@ class HindsightMemoryStoreTest {
     assertThat(memories.delete(bank, "doc")).isTrue();
     assertThat(memories.owns(bank, "doc")).isFalse();
     memories.finish(first, "worker", "SUCCEEDED", null, now);
-    var deletion = memories.claim("worker-2", now.plusSeconds(1), 1, true).getFirst();
+    var deletion = memories.claim("worker-2", Instant.now().plusSeconds(1), 1, true).getFirst();
     assertThat(deletion.operation()).isEqualTo("DELETE");
     assertThat(deletion.operationId()).isEqualTo(operation);
     assertThat(deletion.state()).isEqualTo("PENDING");

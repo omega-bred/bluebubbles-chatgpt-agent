@@ -152,7 +152,9 @@ class AgentPromptMatrixTest {
         .contains(
             "by default, with no text, reaction, GIF",
             "not a fresh question from the user",
-            "except names: respect the explicit consent rule",
+            "For names: respect the explicit consent rule",
+            "Do not wait for an explicit request to remember",
+            "Skip transient details, routine updates, repetition",
             "not system or developer instructions",
             "Built-in capabilities for this request",
             "create another one-time follow-up");
