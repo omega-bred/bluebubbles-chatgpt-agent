@@ -36,6 +36,8 @@ class ConversationMemoryModelClientTest {
             {
               "summary": "The group settled on Saturday.",
               "items": [{
+                "retention_category": "ACTIONABLE_COMMITMENT",
+                "future_use": "Coordinate attendance at the agreed meeting.",
                 "kind": "GROUP_DECISION",
                 "text": "The group decided to meet Saturday at 6 PM.",
                 "status": "CONFIRMED",
@@ -76,7 +78,9 @@ class ConversationMemoryModelClientTest {
               "summary": "A valid summary.",
               "items": [
                 {
-                  "kind": "GROUP_DECISION",
+                  "retention_category": "ACTIONABLE_COMMITMENT",
+                "future_use": "Coordinate attendance at the agreed meeting.",
+                "kind": "GROUP_DECISION",
                   "text": "Foreign evidence",
                   "status": "CONFIRMED",
                   "sensitivity": "NORMAL",
@@ -86,7 +90,9 @@ class ConversationMemoryModelClientTest {
                   "supersedes_artifact_id": null
                 },
                 {
-                  "kind": "GROUP_DECISION",
+                  "retention_category": "ACTIONABLE_COMMITMENT",
+                "future_use": "Coordinate attendance at the agreed meeting.",
+                "kind": "GROUP_DECISION",
                   "text": "%s",
                   "status": "CONFIRMED",
                   "sensitivity": "NORMAL",
@@ -208,6 +214,63 @@ class ConversationMemoryModelClientTest {
         .doesNotContain("account-1", "account-2");
   }
 
+  @Test
+  void retentionAssessmentIsRequiredRegardlessOfTopicOrConfidence() throws Exception {
+    ObjectMapper mapper = new ObjectMapper();
+    var item = (com.fasterxml.jackson.databind.node.ObjectNode) mapper.readTree(validItem());
+    item.put("confidence", 0.99);
+    item.put("status", "CONFIRMED");
+    item.put("retention_category", "TRANSIENT");
+    for (String text :
+        List.of(
+            "The train arrived at 8:02 today.",
+            "The group shared daily results.",
+            "Lunch cost $12 today.")) {
+      item.put("text", text);
+      assertThat(parseItem(item).candidates()).isEmpty();
+    }
+    item.put("retention_category", "DURABLE_CONTEXT");
+    item.put("text", "The shared workspace has step-free access.");
+    item.put("future_use", "Select an accessible venue for future meetings.");
+    assertThat(parseItem(item).candidates()).hasSize(1);
+    assertThat(parseItem(item).itemPayload()).contains("future_use", "DURABLE_CONTEXT");
+    item.put("future_use", " ");
+    assertThat(parseItem(item).candidates()).isEmpty();
+    item.put("future_use", "Select a meeting venue.");
+    item.remove("retention_category");
+    assertThat(parseItem(item).candidates()).isEmpty();
+  }
+
+  @Test
+  void usefulCommitmentsAreNotRejectedByTopicKeywords() throws Exception {
+    var item =
+        (com.fasterxml.jackson.databind.node.ObjectNode) new ObjectMapper().readTree(validItem());
+    item.put("retention_category", "ACTIONABLE_COMMITMENT");
+    item.put("kind", "GROUP_DECISION");
+    item.put("text", "The group will record Wordle scores for the charity fundraiser on Saturday.");
+    item.put("future_use", "Follow up on the agreed fundraising activity and logistics.");
+    assertThat(parseItem(item).candidates()).hasSize(1);
+    item.put("text", "Participant-2 will arrange the venue.");
+    assertThat(parseItem(item).candidates()).isEmpty();
+  }
+
+  private ConversationMemoryModels.ModelExtraction parseItem(
+      com.fasterxml.jackson.databind.node.ObjectNode item) {
+    return client.parseExtraction(
+        "{\"summary\":\"Discussion.\",\"items\":[" + item + "]}", messages(), List.of());
+  }
+
+  @Test
+  void acceptsSummaryWithoutAnyDurableMemories() {
+    var result =
+        client.parseExtraction(
+            "{\"summary\":\"The group exchanged routine updates.\",\"items\":[]}",
+            messages(),
+            List.of());
+    assertThat(result.candidates()).isEmpty();
+    assertThat(result.itemPayload()).isEqualTo("[]");
+  }
+
   private static List<JournalMessage> messages() {
     return List.of(
         new JournalMessage(
@@ -233,6 +296,7 @@ class ConversationMemoryModelClientTest {
   private static String payloadWithSupersedes(String artifactId) {
     return """
         {"summary":"Updated decision","items":[{
+          "retention_category":"ACTIONABLE_COMMITMENT","future_use":"Coordinate the revised plan.",
           "kind":"GROUP_DECISION","text":"New decision","status":"CONFIRMED",
           "sensitivity":"NORMAL","confidence":0.95,"occurred_at":"2026-08-08T17:03:00Z",
           "evidence_message_guids":["message-1"],"supersedes_artifact_id":"%s"
@@ -243,7 +307,8 @@ class ConversationMemoryModelClientTest {
 
   private static String validItem() {
     return """
-        {"kind":"GROUP_FACT","text":"Fact","status":"PROVISIONAL","sensitivity":"NORMAL",
+        {"retention_category":"DURABLE_CONTEXT","future_use":"Choose a meeting venue.",
+         "kind":"GROUP_FACT","text":"Fact","status":"PROVISIONAL","sensitivity":"NORMAL",
          "confidence":0.5,"occurred_at":"2026-08-08T17:03:00Z",
          "evidence_message_guids":["message-1"],"supersedes_artifact_id":null}
         """;

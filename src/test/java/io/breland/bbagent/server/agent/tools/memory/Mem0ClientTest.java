@@ -56,6 +56,42 @@ class Mem0ClientTest {
     }
   }
 
+  @org.junit.jupiter.params.ParameterizedTest
+  @org.junit.jupiter.params.provider.CsvSource(
+      value = {
+        "[]|true",
+        "{\"results\":[]}|true",
+        "{}|false",
+        "{\"results\":[],\"event_id\":\"queued-event\"}|false",
+        "{\"results\":[],\"status\":\"PENDING\"}|false"
+      },
+      delimiter = '|')
+  void distinguishesCompletedEmptyResultsFromUnknownOrQueuedResponses(String payload, boolean noOp)
+      throws IOException {
+    HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+    server.createContext(
+        "/v1/memories/",
+        exchange -> {
+          byte[] response = payload.getBytes(StandardCharsets.UTF_8);
+          exchange.getResponseHeaders().add("Content-Type", "application/json");
+          exchange.sendResponseHeaders(200, response.length);
+          exchange.getResponseBody().write(response);
+          exchange.close();
+        });
+    server.start();
+    try {
+      Mem0Client client =
+          new Mem0Client(
+              "http://127.0.0.1:" + server.getAddress().getPort(), "test-key", "", "", mapper);
+      var result = client.addMemory("account:account-1", "A fact", Map.of());
+      assertThat(result.success()).isTrue();
+      assertThat(result.memoryId()).isNull();
+      assertThat(result.noOp()).isEqualTo(noOp);
+    } finally {
+      server.stop(0);
+    }
+  }
+
   @Test
   void groupProjectionUsesCanonicalScopeAndOpaqueMetadata() throws IOException {
     AtomicReference<JsonNode> requestBody = new AtomicReference<>();

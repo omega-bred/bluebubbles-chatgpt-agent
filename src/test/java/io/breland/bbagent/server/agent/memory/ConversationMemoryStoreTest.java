@@ -312,6 +312,76 @@ class ConversationMemoryStoreTest {
             });
   }
 
+  @org.junit.jupiter.params.ParameterizedTest
+  @org.junit.jupiter.params.provider.CsvSource({
+    "GROUP_FACT,0.96,1",
+    "GROUP_FACT,0.50,2",
+    "GROUP_DECISION,0.96,2"
+  })
+  void repeatedFactsDoNotCreateNewProjectionsJustBecauseTheSourceDateChanges(
+      ConversationMemoryModels.ArtifactKind kind, double firstConfidence, int expectedArtifacts) {
+    String accountId = createAccount("repeat-fact@example.com");
+    String laterAccountId = createAccount("later-repeat@example.com");
+    String conversationId =
+        store.upsertConversation(
+            "bluebubbles", "iMessage;+;repeat-fact", true, "Meetup", OBSERVED_AT);
+    store.recordMembership(conversationId, accountId, OBSERVED_AT.minusSeconds(1));
+    java.util.ArrayList<String> ids = new java.util.ArrayList<>();
+    for (int i = 0; i < 2; i++) {
+      Instant at = OBSERVED_AT.plusSeconds(i * 86400L);
+      if (i == 1) {
+        store.recordMembership(conversationId, laterAccountId, at);
+      }
+      JournalMessage source =
+          new JournalMessage(
+              "repeat-" + i,
+              conversationId,
+              accountId,
+              "Our meeting room is upstairs.",
+              at,
+              false,
+              false,
+              "source-" + i);
+      store.recordMessage(source);
+      store.scheduleExtraction(conversationId, at);
+      WorkClaim claim = store.claimDueExtractionWork("repeat-worker", at, 1).getFirst();
+      ids.addAll(
+          store.saveExtraction(
+              claim,
+              new ExtractionBatch(
+                  conversationId,
+                  List.of(source),
+                  List.of(
+                      new ExtractionCandidate(
+                          kind,
+                          i == 0
+                              ? "Our meeting room is upstairs."
+                              : " our meeting room is upstairs. ",
+                          CONFIRMED,
+                          NORMAL,
+                          i == 0 ? firstConfidence : 0.96,
+                          at,
+                          null,
+                          List.of(source.messageGuid()),
+                          null,
+                          "hash-" + i)),
+                  "Meeting room discussed.",
+                  "[]",
+                  "corpus-" + i,
+                  at)));
+    }
+    if (expectedArtifacts == 1) {
+      assertThat(ids.get(1)).isEqualTo(ids.getFirst());
+      assertThat(store.findActiveArtifacts(conversationId)).hasSize(1);
+      assertThat(store.isInArtifactAudience(ids.getFirst(), laterAccountId)).isFalse();
+      assertThat(store.claimDueProjections("projection-worker", OBSERVED_AT.plusSeconds(86400), 10))
+          .hasSize(1);
+    } else {
+      assertThat(ids.get(1)).isNotEqualTo(ids.getFirst());
+      assertThat(store.findActiveArtifacts(conversationId)).hasSize(2);
+    }
+  }
+
   @Test
   void artifactAudienceExcludesAccountsThatJoinLater() {
     String originalAccountId = createAccount("original@example.com");

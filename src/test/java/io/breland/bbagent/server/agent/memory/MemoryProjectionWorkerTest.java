@@ -128,6 +128,57 @@ class MemoryProjectionWorkerTest {
     verify(metrics).recordMemoryProjection("UPSERT", false, "group_memory_disabled", Duration.ZERO);
   }
 
+  @Test
+  void completedEmptyMem0ResultDoesNotRetry() {
+    when(store.claimDueProjections("worker-1", NOW, 25)).thenReturn(List.of(upsertClaim));
+    when(store.findProjectionArtifact("artifact-1")).thenReturn(Optional.of(artifact()));
+    when(store.isInArtifactAudience("artifact-1", "account-1")).thenReturn(true);
+    when(mem0Client.addMemory(anyString(), anyString(), anyMap()))
+        .thenReturn(new Mem0Client.MemoryMutationResult(true, null, true));
+
+    worker.processDueProjections();
+
+    verify(store).completeProjection(upsertClaim, null, NOW);
+    verify(store, never()).failProjection(upsertClaim, NOW, "mem0_write_failed");
+  }
+
+  @Test
+  void unknownSuccessfulResponseIsNotMistakenForCompletedEmptyResult() {
+    when(store.claimDueProjections("worker-1", NOW, 25)).thenReturn(List.of(upsertClaim));
+    when(store.findProjectionArtifact("artifact-1")).thenReturn(Optional.of(artifact()));
+    when(store.isInArtifactAudience("artifact-1", "account-1")).thenReturn(true);
+    when(mem0Client.addMemory(anyString(), anyString(), anyMap()))
+        .thenReturn(new Mem0Client.MemoryMutationResult(true, null));
+
+    worker.processDueProjections();
+
+    verify(store).failProjection(upsertClaim, NOW, "mem0_write_failed");
+  }
+
+  @Test
+  void skipsPreviouslyQueuedBatchLocalIdentitiesWithoutCallingMem0() {
+    when(store.claimDueProjections("worker-1", NOW, 25)).thenReturn(List.of(upsertClaim));
+    when(store.findProjectionArtifact("artifact-1"))
+        .thenReturn(
+            Optional.of(
+                new ProjectionArtifact(
+                    "artifact-1",
+                    "conversation-1",
+                    "Planning",
+                    ArtifactKind.GROUP_FACT,
+                    "Participant-2 will arrange the venue.",
+                    ArtifactStatus.CONFIRMED,
+                    ArtifactSensitivity.NORMAL,
+                    0.99,
+                    NOW,
+                    null)));
+
+    worker.processDueProjections();
+
+    verify(store).completeProjection(upsertClaim, null, NOW);
+    verify(mem0Client, never()).addMemory(anyString(), anyString(), anyMap());
+  }
+
   private static ProjectionArtifact artifact() {
     return new ProjectionArtifact(
         "artifact-1",

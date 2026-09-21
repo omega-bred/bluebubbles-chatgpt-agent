@@ -143,7 +143,7 @@ public class MemoryProjectionWorker {
     metadata.put("source", "bbagent_group_memory");
     Mem0Client.MemoryMutationResult result =
         mem0Client.addMemory("account:" + claim.accountId(), projectionText(artifact), metadata);
-    if (!result.success() || StringUtils.isBlank(result.memoryId())) {
+    if (!result.success() || (!result.noOp() && StringUtils.isBlank(result.memoryId()))) {
       store.failProjection(claim, now, "mem0_write_failed");
       return "mem0_write_failed";
     }
@@ -162,7 +162,8 @@ public class MemoryProjectionWorker {
   }
 
   private boolean isEligible(ProjectionArtifact artifact, Instant now) {
-    return artifact.status() == ArtifactStatus.CONFIRMED
+    return GroupMemoryRetentionPolicy.isRetainable(artifact.text())
+        && artifact.status() == ArtifactStatus.CONFIRMED
         && artifact.sensitivity() == ArtifactSensitivity.NORMAL
         && artifact.confidence() >= minimumConfidence
         && (artifact.expiresAt() == null || artifact.expiresAt().isAfter(now));

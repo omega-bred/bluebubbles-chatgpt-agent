@@ -51,7 +51,11 @@ public class Mem0Client {
 
   public record StoredMemory(String memoryId, String memory) {}
 
-  public record MemoryMutationResult(boolean success, String memoryId) {}
+  public record MemoryMutationResult(boolean success, String memoryId, boolean noOp) {
+    public MemoryMutationResult(boolean success, String memoryId) {
+      this(success, memoryId, false);
+    }
+  }
 
   public MemoryMutationResult addMemory(
       String userId, String memory, Map<String, Object> metadata) {
@@ -79,7 +83,17 @@ public class Mem0Client {
               .retrieve()
               .bodyToMono(JsonNode.class)
               .block(API_TIMEOUT);
-      return new MemoryMutationResult(true, findMemoryId(response));
+      // Only an explicit empty result collection is a completed no-op. An unknown or
+      // asynchronous response without a memory ID must not be mistaken for one.
+      JsonNode results =
+          response == null ? null : response.isArray() ? response : response.get("results");
+      boolean noOp =
+          results != null
+              && results.isArray()
+              && results.isEmpty()
+              && !response.has("event_id")
+              && !response.has("status");
+      return new MemoryMutationResult(true, findMemoryId(response), noOp);
     } catch (WebClientResponseException e) {
       log.warn("Mem0 add memory failed: status={}", e.getStatusCode());
       return new MemoryMutationResult(false, null);

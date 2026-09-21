@@ -722,12 +722,29 @@ public class ConversationMemoryStore {
           jdbcTemplate.query(
               """
               select artifact_id from conversation_memory_artifacts
-               where conversation_id = ? and content_hash = ? and occurred_at = ?
+               where conversation_id = ? and (
+                 (content_hash = ? and occurred_at = ?)
+                 or (? = 'GROUP_FACT' and kind = 'GROUP_FACT'
+                     and lower(trim(artifact_text)) = lower(trim(?))
+                     and status = ? and sensitivity = ?
+                     and (confidence >= ? or ? < ?)
+                     and status not in ('SUPERSEDED', 'DELETED')
+                     and (expires_at is null or expires_at > ?)
+                     and ? = true))
               """,
               (resultSet, rowNumber) -> resultSet.getString(1),
               batch.conversationId(),
               candidate.contentHash(),
-              candidate.occurredAt());
+              candidate.occurredAt(),
+              candidate.kind().name(),
+              candidate.text(),
+              candidate.status().name(),
+              candidate.sensitivity().name(),
+              minimumConfidence,
+              candidate.confidence(),
+              minimumConfidence,
+              batch.processedAt(),
+              candidate.supersedesArtifactId() == null);
       if (!existingArtifactIds.isEmpty()) {
         savedArtifactIds.add(existingArtifactIds.getFirst());
         continue;
