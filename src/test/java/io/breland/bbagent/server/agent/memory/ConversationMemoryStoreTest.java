@@ -33,6 +33,7 @@ class ConversationMemoryStoreTest {
   private static final Instant OBSERVED_AT = Instant.parse("2026-08-08T17:03:00Z");
 
   @Autowired private ConversationMemoryStore store;
+  @Autowired private HindsightMemoryStore memories;
   @Autowired private AgentAccountResolver accountResolver;
   @Autowired private DataSource dataSource;
 
@@ -70,7 +71,7 @@ class ConversationMemoryStoreTest {
     String conversationId =
         store.upsertConversation(
             "bluebubbles", "iMessage;+;group-1", true, "Trip planning", OBSERVED_AT);
-    store.recordMembership(conversationId, accountId, OBSERVED_AT);
+    verifiedMembership(conversationId, accountId, OBSERVED_AT);
     store.recordMessage(
         message("message-1", conversationId, accountId, "Let's meet Saturday at 6"));
 
@@ -265,10 +266,10 @@ class ConversationMemoryStoreTest {
     Instant firstEnd = OBSERVED_AT.minusSeconds(120);
     Instant secondStart = OBSERVED_AT.minusSeconds(60);
 
-    store.recordMembership(conversationId, accountId, firstStart);
+    verifiedMembership(conversationId, accountId, firstStart);
     store.replaceActiveMemberships(conversationId, java.util.Set.of(), firstEnd);
-    store.recordMembership(conversationId, accountId, secondStart);
-    store.recordMembership(conversationId, otherAccountId, OBSERVED_AT.minusSeconds(240));
+    verifiedMembership(conversationId, accountId, secondStart);
+    verifiedMembership(conversationId, otherAccountId, OBSERVED_AT.minusSeconds(240));
 
     assertThat(
             store.findMembershipIntervals(
@@ -325,12 +326,12 @@ class ConversationMemoryStoreTest {
     String conversationId =
         store.upsertConversation(
             "bluebubbles", "iMessage;+;repeat-fact", true, "Meetup", OBSERVED_AT);
-    store.recordMembership(conversationId, accountId, OBSERVED_AT.minusSeconds(1));
+    verifiedMembership(conversationId, accountId, OBSERVED_AT.minusSeconds(1));
     java.util.ArrayList<String> ids = new java.util.ArrayList<>();
     for (int i = 0; i < 2; i++) {
       Instant at = OBSERVED_AT.plusSeconds(i * 86400L);
       if (i == 1) {
-        store.recordMembership(conversationId, laterAccountId, at);
+        verifiedMembership(conversationId, laterAccountId, at);
       }
       JournalMessage source =
           new JournalMessage(
@@ -374,7 +375,7 @@ class ConversationMemoryStoreTest {
       assertThat(ids.get(1)).isEqualTo(ids.getFirst());
       assertThat(store.findActiveArtifacts(conversationId)).hasSize(1);
       assertThat(store.isInArtifactAudience(ids.getFirst(), laterAccountId)).isFalse();
-      assertThat(store.claimDueProjections("projection-worker", OBSERVED_AT.plusSeconds(86400), 10))
+      assertThat(memories.claim("projection-worker", OBSERVED_AT.plusSeconds(86400), 10, true))
           .hasSize(1);
     } else {
       assertThat(ids.get(1)).isNotEqualTo(ids.getFirst());
@@ -388,7 +389,7 @@ class ConversationMemoryStoreTest {
     String laterAccountId = createAccount("later@example.com");
     String conversationId =
         store.upsertConversation("bluebubbles", "iMessage;+;group-3", true, "Launch", OBSERVED_AT);
-    store.recordMembership(conversationId, originalAccountId, OBSERVED_AT.minusSeconds(30));
+    verifiedMembership(conversationId, originalAccountId, OBSERVED_AT.minusSeconds(30));
     JournalMessage source =
         message("message-decision", conversationId, originalAccountId, "Ship on Monday");
     store.recordMessage(source);
@@ -418,7 +419,7 @@ class ConversationMemoryStoreTest {
                 "corpus-hash",
                 OBSERVED_AT));
     String artifactId = artifactIds.getFirst();
-    store.recordMembership(conversationId, laterAccountId, OBSERVED_AT.plusSeconds(1));
+    verifiedMembership(conversationId, laterAccountId, OBSERVED_AT.plusSeconds(1));
 
     assertThat(store.isInArtifactAudience(artifactId, originalAccountId)).isTrue();
     assertThat(store.isInArtifactAudience(artifactId, laterAccountId)).isFalse();
@@ -431,7 +432,7 @@ class ConversationMemoryStoreTest {
     String conversationId =
         store.upsertConversation(
             "bluebubbles", "iMessage;+;digest-audience", true, "Digest", OBSERVED_AT);
-    store.recordMembership(conversationId, originalAccountId, OBSERVED_AT.minusSeconds(30));
+    verifiedMembership(conversationId, originalAccountId, OBSERVED_AT.minusSeconds(30));
 
     JournalMessage firstSource =
         new JournalMessage(
@@ -459,7 +460,7 @@ class ConversationMemoryStoreTest {
             OBSERVED_AT));
 
     Instant laterAt = OBSERVED_AT.plusSeconds(120);
-    store.recordMembership(conversationId, laterAccountId, laterAt);
+    verifiedMembership(conversationId, laterAccountId, laterAt);
     JournalMessage secondSource =
         new JournalMessage(
             "digest-source-2",
@@ -517,7 +518,7 @@ class ConversationMemoryStoreTest {
         store.upsertConversation(
             "bluebubbles", "iMessage;+;retention", true, "Retention", OBSERVED_AT);
     Instant oldAt = OBSERVED_AT.minus(Duration.ofDays(100));
-    store.recordMembership(conversationId, accountId, oldAt.minusSeconds(1));
+    verifiedMembership(conversationId, accountId, oldAt.minusSeconds(1));
     JournalMessage oldSource =
         new JournalMessage(
             "retention-old",
@@ -610,13 +611,12 @@ class ConversationMemoryStoreTest {
             artifact ->
                 assertThat(artifact.status())
                     .isEqualTo(ConversationMemoryModels.ArtifactStatus.DELETED));
-    assertThat(store.claimDueProjections("retention-project", OBSERVED_AT, 10))
+    assertThat(memories.claim("retention-project", OBSERVED_AT, 10, true))
         .singleElement()
         .satisfies(
             claim -> {
               assertThat(claim.artifactId()).isEqualTo(artifactId);
-              assertThat(claim.operation())
-                  .isEqualTo(ConversationMemoryModels.ProjectionOperation.DELETE);
+              assertThat(claim.operation()).isEqualTo("DELETE");
             });
   }
 
@@ -644,7 +644,7 @@ class ConversationMemoryStoreTest {
     String groupConversationId =
         store.upsertConversation(
             "bluebubbles", "iMessage;+;proactive-group", true, "Project", OBSERVED_AT);
-    store.recordMembership(groupConversationId, accountId, OBSERVED_AT.minusSeconds(60));
+    verifiedMembership(groupConversationId, accountId, OBSERVED_AT.minusSeconds(60));
     store.enableMemory(groupConversationId, accountId, OBSERVED_AT.minusSeconds(30));
 
     assertThat(store.findCatchupPreference(accountId, groupConversationId)).isEmpty();
@@ -659,11 +659,11 @@ class ConversationMemoryStoreTest {
     String olderDirect =
         store.upsertConversation(
             "bluebubbles", "iMessage;-;older", false, "Older", OBSERVED_AT.minusSeconds(20));
-    store.recordMembership(olderDirect, accountId, OBSERVED_AT.minusSeconds(20));
+    verifiedMembership(olderDirect, accountId, OBSERVED_AT.minusSeconds(20));
     String newerDirect =
         store.upsertConversation(
             "bluebubbles", "iMessage;-;newer", false, "Newer", OBSERVED_AT.minusSeconds(10));
-    store.recordMembership(newerDirect, accountId, OBSERVED_AT.minusSeconds(10));
+    verifiedMembership(newerDirect, accountId, OBSERVED_AT.minusSeconds(10));
 
     assertThat(store.findPreferredDirectConversation(accountId, OBSERVED_AT))
         .get()
@@ -702,7 +702,7 @@ class ConversationMemoryStoreTest {
     String conversationId =
         store.upsertConversation(
             "bluebubbles", "iMessage;+;group-checkpoint", true, "Checkpoint", OBSERVED_AT);
-    store.recordMembership(conversationId, accountId, OBSERVED_AT.minusSeconds(30));
+    verifiedMembership(conversationId, accountId, OBSERVED_AT.minusSeconds(30));
     JournalMessage source =
         message("message-checkpoint", conversationId, accountId, "Saturday at six");
     store.recordMessage(source);
@@ -800,7 +800,7 @@ class ConversationMemoryStoreTest {
     String conversationId =
         store.upsertConversation(
             "bluebubbles", "iMessage;+;group-supersedes", true, "Plans", OBSERVED_AT);
-    store.recordMembership(conversationId, accountId, OBSERVED_AT.minusSeconds(1));
+    verifiedMembership(conversationId, accountId, OBSERVED_AT.minusSeconds(1));
     JournalMessage firstSource = message("message-first", conversationId, accountId, "Meet Friday");
     store.recordMessage(firstSource);
     store.scheduleExtraction(conversationId, OBSERVED_AT);
@@ -830,8 +830,8 @@ class ConversationMemoryStoreTest {
                     "first-corpus-hash",
                     OBSERVED_AT))
             .getFirst();
-    var firstProjection = store.claimDueProjections("project-first", OBSERVED_AT, 10).getFirst();
-    store.completeProjection(firstProjection, "memory-first", OBSERVED_AT);
+    var firstProjection = memories.claim("project-first", OBSERVED_AT, 10, true).getFirst();
+    memories.finish(firstProjection, "project-first", "SUCCEEDED", null, OBSERVED_AT);
 
     JournalMessage secondSource =
         message("message-second", conversationId, accountId, "Actually meet Saturday");
@@ -861,32 +861,34 @@ class ConversationMemoryStoreTest {
             "second-corpus-hash",
             secondAt));
 
-    assertThat(store.claimDueProjections("project-delete", secondAt, 10))
+    assertThat(memories.claim("project-delete", secondAt, 10, true))
         .anySatisfy(
             claim -> {
               assertThat(claim.artifactId()).isEqualTo(firstArtifactId);
-              assertThat(claim.operation())
-                  .isEqualTo(ConversationMemoryModels.ProjectionOperation.DELETE);
+              assertThat(claim.operation()).isEqualTo("DELETE");
             });
   }
 
   @Test
-  void canonicalMemoryOwnershipCannotMoveAcrossScopes() {
-    String accountId = createAccount("memory-owner@example.com");
-    String canonicalScope = "account:" + accountId;
-    store.recordCanonicalMemory(canonicalScope, "memory-1", "hash-1", OBSERVED_AT);
+  void documentOwnershipCannotMoveAcrossScopes() {
+    String bank = memories.personalBank(createAccount("memory-owner@example.com"));
+    String other = memories.personalBank(createAccount("another-memory-owner@example.com"));
+    memories.save(bank, "memory-1", null, "Likes tea", OBSERVED_AT, OBSERVED_AT);
+    assertThat(memories.owns(bank, "memory-1")).isTrue();
+    assertThat(memories.owns(other, "memory-1")).isFalse();
+    assertThat(memories.delete(other, "memory-1")).isFalse();
+    assertThat(memories.delete(bank, "memory-1")).isTrue();
+    assertThat(memories.owns(bank, "memory-1")).isFalse();
+  }
 
-    assertThat(store.ownsCanonicalMemory(canonicalScope, "memory-1")).isTrue();
-    assertThat(store.ownsCanonicalMemory("account:another-account", "memory-1")).isFalse();
-    assertThatThrownBy(
-            () ->
-                store.recordCanonicalMemory(
-                    "account:another-account", "memory-1", "hash-2", OBSERVED_AT))
-        .hasMessageContaining("already owned by another canonical scope");
-
-    store.updateCanonicalMemory(canonicalScope, "memory-1", "hash-2", OBSERVED_AT.plusSeconds(1));
-    store.deleteCanonicalMemory(canonicalScope, "memory-1");
-    assertThat(store.ownsCanonicalMemory(canonicalScope, "memory-1")).isFalse();
+  private void verifiedMembership(String conversation, String account, Instant at) {
+    store.recordMembership(conversation, account, at);
+    new JdbcTemplate(dataSource)
+        .update(
+            "update agent_conversations set roster_verified_since = ? where conversation_id = ? and (roster_verified_since is null or roster_verified_since > ?)",
+            java.sql.Timestamp.from(at),
+            conversation,
+            java.sql.Timestamp.from(at));
   }
 
   private String createAccount(String email) {

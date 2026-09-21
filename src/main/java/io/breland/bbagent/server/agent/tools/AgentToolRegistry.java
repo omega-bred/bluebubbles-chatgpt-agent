@@ -44,7 +44,7 @@ import io.breland.bbagent.server.agent.tools.limits.GetUsageLimitsAgentTool;
 import io.breland.bbagent.server.agent.tools.memory.ConfigureGroupCatchupAgentTool;
 import io.breland.bbagent.server.agent.tools.memory.ConfigureGroupMemoryAgentTool;
 import io.breland.bbagent.server.agent.tools.memory.GetGroupCatchupAgentTool;
-import io.breland.bbagent.server.agent.tools.memory.Mem0Client;
+import io.breland.bbagent.server.agent.tools.memory.HindsightClient;
 import io.breland.bbagent.server.agent.tools.memory.MemoryDeleteAgentTool;
 import io.breland.bbagent.server.agent.tools.memory.MemoryGetAgentTool;
 import io.breland.bbagent.server.agent.tools.memory.MemorySaveAgentTool;
@@ -160,7 +160,7 @@ public final class AgentToolRegistry {
 
   public AgentToolRegistry(
       BBHttpClientWrapper bbHttpClientWrapper,
-      Mem0Client mem0Client,
+      HindsightClient hindsightClient,
       GcalClient gcalClient,
       @Nullable WebsiteAccountService websiteAccountService,
       GiphyClient giphyClient,
@@ -182,7 +182,7 @@ public final class AgentToolRegistry {
     this.wallartMcpAgentTool = wallartMcpAgentTool;
     registerBuiltInTools(
         bbHttpClientWrapper,
-        mem0Client,
+        hindsightClient,
         gcalClient,
         websiteAccountService,
         giphyClient,
@@ -405,7 +405,7 @@ public final class AgentToolRegistry {
 
   private void registerBuiltInTools(
       BBHttpClientWrapper bbHttpClientWrapper,
-      Mem0Client mem0Client,
+      HindsightClient hindsightClient,
       GcalClient gcalClient,
       @Nullable WebsiteAccountService websiteAccountService,
       GiphyClient giphyClient,
@@ -438,10 +438,12 @@ public final class AgentToolRegistry {
     if (modelAccessService != null) {
       registerTool(new SetPreferredModelAgentTool(modelAccessService).getTool());
     }
-    registerTool(new MemorySaveAgentTool(mem0Client, memoryScopeResolver).getTool());
-    registerTool(new MemoryGetAgentTool(mem0Client, memoryScopeResolver).getTool());
-    registerTool(new MemoryUpdateAgentTool(mem0Client, memoryScopeResolver).getTool());
-    registerTool(new MemoryDeleteAgentTool(mem0Client, memoryScopeResolver).getTool());
+    if (hindsightClient.isConfigured()) {
+      registerTool(new MemorySaveAgentTool(hindsightClient, memoryScopeResolver).getTool());
+      registerTool(new MemoryGetAgentTool(hindsightClient, memoryScopeResolver).getTool());
+      registerTool(new MemoryUpdateAgentTool(hindsightClient, memoryScopeResolver).getTool());
+      registerTool(new MemoryDeleteAgentTool(hindsightClient, memoryScopeResolver).getTool());
+    }
     if (memoryScopeResolver != null) {
       registerTool(new GetGroupCatchupAgentTool(memoryScopeResolver).getTool());
       registerTool(new ConfigureGroupCatchupAgentTool(memoryScopeResolver).getTool());

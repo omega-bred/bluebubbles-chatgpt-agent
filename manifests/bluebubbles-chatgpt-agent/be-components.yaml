@@ -24,10 +24,10 @@ spec:
 apiVersion: onepassword.com/v1
 kind: OnePasswordItem
 metadata:
-  name: mem0-api-key #this name will also be used for naming the generated kubernetes secret
+  name: hindsight-secrets
   namespace: bluebubbles-chatgpt-agent
 spec:
-  itemPath: "vaults/Kubernetes/items/mem0-api-key"
+  itemPath: "vaults/Kubernetes/items/hindsight-secrets"
 ---
 apiVersion: onepassword.com/v1
 kind: OnePasswordItem
@@ -281,21 +281,15 @@ spec:
               value: "lxmf-free-tier"
             - name: BBAGENT_CANARY_CLEANUP_MAX_AGE
               value: "PT24H"
-            - name: "MEM0_API_KEY"
+            - name: HINDSIGHT_ENABLED
+              value: "true"
+            - name: HINDSIGHT_BASE_URL
+              value: "http://hindsight-api.hindsight.svc.cluster.local:8888"
+            - name: HINDSIGHT_API_KEY
               valueFrom:
                 secretKeyRef:
-                  key: "password"
-                  name: mem0-api-key
-            - name: "MEM0_ORG_ID"
-              valueFrom:
-                secretKeyRef:
-                  key: "org-id"
-                  name: mem0-api-key
-            - name: "MEM0_PROJECT_ID"
-              valueFrom:
-                secretKeyRef:
-                  key: "project-id"
-                  name: mem0-api-key
+                  key: HINDSIGHT_API_TENANT_API_KEY
+                  name: hindsight-secrets
             - name: POSTGRES_JDBC_URL
               value: "jdbc:postgresql://bb-chatgpt-agent-db-2.bluebubbles-chatgpt-agent.svc.cluster.local:5432/bb_chatgpt_agent?sslmode=require"
             - name: POSTGRES_USER

@@ -1,110 +1,102 @@
 package io.breland.bbagent.server.agent.memory;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.mockito.ArgumentMatchers.anyString;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.never;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.*;
 
-import io.breland.bbagent.server.agent.memory.ConversationMemoryModels.ArtifactKind;
-import io.breland.bbagent.server.agent.memory.ConversationMemoryModels.ArtifactSensitivity;
-import io.breland.bbagent.server.agent.memory.ConversationMemoryModels.ArtifactStatus;
-import io.breland.bbagent.server.agent.memory.ConversationMemoryModels.ProjectedArtifact;
-import io.breland.bbagent.server.agent.tools.ToolContext;
-import io.breland.bbagent.server.agent.tools.memory.Mem0Client;
-import java.time.Clock;
+import io.breland.bbagent.server.agent.memory.HindsightMemoryStore.*;
+import io.breland.bbagent.server.agent.tools.memory.HindsightClient;
 import java.time.Instant;
-import java.time.ZoneOffset;
-import java.util.List;
-import java.util.Optional;
+import java.util.*;
 import org.junit.jupiter.api.Test;
 
 class AuthorizedMemoryRetrievalServiceTest {
-  private static final Instant NOW = Instant.parse("2026-08-08T18:00:00Z");
   private final ConversationMemoryStore store = mock(ConversationMemoryStore.class);
-  private final Mem0Client mem0Client = mock(Mem0Client.class);
-  private final ToolContext context = mock(ToolContext.class);
-  private final AuthorizedMemoryRetrievalService service =
-      new AuthorizedMemoryRetrievalService(store, mem0Client, Clock.fixed(NOW, ZoneOffset.UTC));
+  private final HindsightMemoryStore memories = mock(HindsightMemoryStore.class);
+  private final ConversationMembershipService memberships =
+      mock(ConversationMembershipService.class);
+  private final HindsightClient client = mock(HindsightClient.class);
+
+  private AuthorizedMemoryRetrievalService service(boolean group) {
+    when(client.isConfigured()).thenReturn(true);
+    return new AuthorizedMemoryRetrievalService(
+        store, memories, memberships, client, .85, group, 12);
+  }
+
+  private Document document(String state, String operation) {
+    return new Document(
+        "doc",
+        "personal",
+        null,
+        "Likes tea",
+        "hash",
+        Instant.now(),
+        "op",
+        operation,
+        state,
+        0,
+        Instant.now());
+  }
 
   @Test
-  void returnsAuthorizedGroupArtifactsAsReadOnlyWithoutAMemoryId() {
-    when(context.canonicalAccountId()).thenReturn(Optional.of("account-1"));
-    when(mem0Client.searchMemories("account:account-1", "Saturday"))
-        .thenReturn(List.of(new Mem0Client.StoredMemory("memory-1", "projected text")));
-    when(store.findProjectedArtifact("memory-1", "account-1"))
-        .thenReturn(Optional.of(projectedArtifact()));
-    when(store.isInArtifactAudience("artifact-1", "account-1")).thenReturn(true);
-
-    var results = service.search(context, "Saturday");
-
-    assertThat(results)
+  void personalMemoryWorksWithGroupFeatureDisabled() {
+    var service = service(false);
+    var context = MemoryScopeResolverTest.context(false, "alice", "account");
+    when(memories.readableBanks("account", null, Set.of(), false, 12))
+        .thenReturn(List.of(new Bank("personal", "account", null)));
+    when(client.recall("personal", "tea"))
+        .thenReturn(List.of(new HindsightClient.RecalledMemory("doc", "extracted tea", "hash")));
+    when(memories.document("doc")).thenReturn(Optional.of(document("SUCCEEDED", "UPSERT")));
+    assertThat(service.search(context, "tea"))
         .singleElement()
-        .satisfies(
-            memory -> {
-              assertThat(memory.artifactId()).isEqualTo("artifact-1");
-              assertThat(memory.memory()).isEqualTo("Meet Saturday at 6 PM.");
-              assertThat(memory.sourceGroup()).isEqualTo("Trip planning");
-              assertThat(memory.readOnly()).isTrue();
-              assertThat(memory.memoryId()).isNull();
-            });
+        .satisfies(m -> assertThat(m.memory()).isEqualTo("Likes tea"));
+    verifyNoInteractions(memberships);
   }
 
   @Test
-  void laterJoinerCannotHydrateAnEarlierProjectedHit() {
-    when(context.canonicalAccountId()).thenReturn(Optional.of("account-later"));
-    when(mem0Client.searchMemories("account:account-later", "Saturday"))
-        .thenReturn(List.of(new Mem0Client.StoredMemory("memory-1", "projected text")));
-    when(store.findProjectedArtifact("memory-1", "account-later"))
-        .thenReturn(Optional.of(projectedArtifact()));
-    when(store.isInArtifactAudience("artifact-1", "account-later")).thenReturn(false);
-
-    assertThat(service.search(context, "Saturday")).isEmpty();
+  void deletedPendingAndStaleFactsAreNeverReturned() {
+    var service = service(false);
+    var context = MemoryScopeResolverTest.context(false, "alice", "account");
+    when(memories.readableBanks("account", null, Set.of(), false, 12))
+        .thenReturn(List.of(new Bank("personal", "account", null)));
+    when(client.recall("personal", "tea"))
+        .thenReturn(List.of(new HindsightClient.RecalledMemory("doc", "old fact", "hash")));
+    when(memories.document("doc"))
+        .thenReturn(
+            Optional.of(document("SUCCEEDED", "DELETE")),
+            Optional.of(document("PENDING", "UPSERT")));
+    assertThat(service.search(context, "tea")).isEmpty();
+    assertThat(service.search(context, "tea")).isEmpty();
+    when(memories.document("doc")).thenReturn(Optional.of(document("SUCCEEDED", "UPSERT")));
+    when(client.recall("personal", "tea"))
+        .thenReturn(List.of(new HindsightClient.RecalledMemory("doc", "old fact", "stale")));
+    assertThat(service.search(context, "tea")).isEmpty();
   }
 
   @Test
-  void ordinaryPersonalMemoryKeepsItsMutableMemoryId() {
-    when(context.canonicalAccountId()).thenReturn(Optional.of("account-1"));
-    when(mem0Client.searchMemories("account:account-1", "tea"))
-        .thenReturn(List.of(new Mem0Client.StoredMemory("personal-1", "Likes tea")));
-    when(store.findProjectedArtifact("personal-1", "account-1")).thenReturn(Optional.empty());
-    when(store.ownsCanonicalMemory("account:account-1", "personal-1")).thenReturn(true);
-
-    var results = service.search(context, "tea");
-
-    assertThat(results)
-        .singleElement()
-        .satisfies(
-            memory -> {
-              assertThat(memory.memoryId()).isEqualTo("personal-1");
-              assertThat(memory.readOnly()).isFalse();
-            });
+  void groupSearchCannotFallBackToPersonalOrOtherGroups() {
+    var service = service(true);
+    var context = MemoryScopeResolverTest.context(true, "alice", "account");
+    when(store.findEnabledConversationId("bluebubbles", "chat")).thenReturn(Optional.of("group"));
+    when(memberships.refreshGroupMembership("group")).thenReturn(Set.of("account", "new-member"));
+    when(memories.readableBanks("account", "group", Set.of("account", "new-member"), true, 12))
+        .thenReturn(List.of(new Bank("audience", null, "group")));
+    service.search(context, "tea");
+    verify(client).recall("audience", "tea");
+    verify(client, never()).recall("personal", "tea");
+    verify(memories).readableBanks("account", "group", Set.of("account", "new-member"), true, 12);
   }
 
   @Test
-  void globalFeatureGuardPreventsMemoryReads() {
-    AuthorizedMemoryRetrievalService disabled =
-        new AuthorizedMemoryRetrievalService(
-            store, mem0Client, Clock.fixed(NOW, ZoneOffset.UTC), 0.85, false);
-
-    assertThat(disabled.search(context, "Saturday")).isEmpty();
-
-    verify(mem0Client, never()).searchMemories(anyString(), anyString());
-  }
-
-  private static ProjectedArtifact projectedArtifact() {
-    return new ProjectedArtifact(
-        "artifact-1",
-        "memory-1",
-        "conversation-1",
-        "Trip planning",
-        ArtifactKind.GROUP_DECISION,
-        "Meet Saturday at 6 PM.",
-        ArtifactStatus.CONFIRMED,
-        ArtifactSensitivity.NORMAL,
-        0.96,
-        NOW.minusSeconds(60),
-        null);
+  void unavailableRosterOrDisabledProviderMakesNoRecall() {
+    var service = service(true);
+    var context = MemoryScopeResolverTest.context(true, "alice", "account");
+    when(store.findEnabledConversationId("bluebubbles", "chat")).thenReturn(Optional.of("group"));
+    when(memberships.refreshGroupMembership("group"))
+        .thenThrow(new ConversationMembershipService.MembershipRefreshException("offline"));
+    assertThat(service.search(context, "tea")).isEmpty();
+    when(client.isConfigured()).thenReturn(false);
+    assertThat(service.search(MemoryScopeResolverTest.context(false, "alice", "account"), "tea"))
+        .isEmpty();
+    verify(client, never()).recall(anyString(), anyString());
   }
 }

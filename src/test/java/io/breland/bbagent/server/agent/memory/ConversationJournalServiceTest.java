@@ -17,7 +17,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.transaction.annotation.Transactional;
 
-@SpringBootTest
+@SpringBootTest(properties = "bbagent.memory.group.enabled=true")
 @Transactional
 class ConversationJournalServiceTest {
   private static final Instant NOW = Instant.parse("2026-08-08T18:00:00Z");

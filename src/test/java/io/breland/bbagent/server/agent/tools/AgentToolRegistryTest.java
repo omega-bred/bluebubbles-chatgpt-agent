@@ -23,7 +23,7 @@ import io.breland.bbagent.server.agent.tools.kubernetes.KubernetesPodLogsAgentTo
 import io.breland.bbagent.server.agent.tools.kubernetes.KubernetesReadOnlyAgentTool;
 import io.breland.bbagent.server.agent.tools.memory.ConfigureGroupCatchupAgentTool;
 import io.breland.bbagent.server.agent.tools.memory.GetGroupCatchupAgentTool;
-import io.breland.bbagent.server.agent.tools.memory.Mem0Client;
+import io.breland.bbagent.server.agent.tools.memory.HindsightClient;
 import io.breland.bbagent.server.agent.tools.search.ToolSearchAgentTool;
 import io.breland.bbagent.server.agent.tools.wallart.WallartConversationAccess;
 import io.breland.bbagent.server.agent.tools.wallart.WallartMcpAgentTool;
@@ -273,12 +273,30 @@ class AgentToolRegistryTest {
       String accountId,
       MemoryScopeResolver memoryScopeResolver,
       WallartMcpAgentTool wallartMcpAgentTool) {
+    return registryForAccount(accountId, memoryScopeResolver, wallartMcpAgentTool, true);
+  }
+
+  @Test
+  void disabledHindsightHasNoMemoryTools() {
+    var registry = registryForAccount("account", null, null, false);
+    for (String tool : List.of("memory_save", "memory_get", "memory_update", "memory_delete")) {
+      assertNull(registry.resolveTool(tool, directMessage("alice")));
+    }
+  }
+
+  private static AgentToolRegistry registryForAccount(
+      String accountId,
+      MemoryScopeResolver memoryScopeResolver,
+      WallartMcpAgentTool wallartMcpAgentTool,
+      boolean memoryEnabled) {
     BBHttpClientWrapper bbHttpClientWrapper = mock(BBHttpClientWrapper.class);
     AgentProfileService profileService = mock(AgentProfileService.class);
     when(profileService.resolveOrCreateAccountId(any())).thenReturn(Optional.ofNullable(accountId));
+    HindsightClient memory = mock(HindsightClient.class);
+    when(memory.isConfigured()).thenReturn(memoryEnabled);
     return new AgentToolRegistry(
         bbHttpClientWrapper,
-        mock(Mem0Client.class),
+        memory,
         mock(GcalClient.class),
         null,
         mock(GiphyClient.class),

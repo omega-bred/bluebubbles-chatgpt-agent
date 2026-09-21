@@ -11,7 +11,7 @@ import org.springframework.lang.Nullable;
 
 public class MemoryDeleteAgentTool implements ToolProvider {
   public static final String TOOL_NAME = "memory_delete";
-  private final Mem0Client mem0Client;
+  private final HindsightClient hindsightClient;
   private final @Nullable MemoryScopeResolver scopeResolver;
 
   @Schema(description = "Delete a stored memory.")
@@ -22,8 +22,9 @@ public class MemoryDeleteAgentTool implements ToolProvider {
           @JsonProperty("memory_id")
           String memoryId) {}
 
-  public MemoryDeleteAgentTool(Mem0Client mem0Client, @Nullable MemoryScopeResolver scopeResolver) {
-    this.mem0Client = mem0Client;
+  public MemoryDeleteAgentTool(
+      HindsightClient hindsightClient, @Nullable MemoryScopeResolver scopeResolver) {
+    this.hindsightClient = hindsightClient;
     this.scopeResolver = scopeResolver;
   }
 
@@ -34,7 +35,7 @@ public class MemoryDeleteAgentTool implements ToolProvider {
         jsonSchema(MemoryDeleteRequest.class),
         false,
         (context, args) -> {
-          if (!mem0Client.isConfigured()) {
+          if (!hindsightClient.isConfigured()) {
             return "not configured";
           }
           if (scopeResolver == null) {
@@ -58,12 +59,11 @@ public class MemoryDeleteAgentTool implements ToolProvider {
           if (!scopeResolver.ownsMemory(canonicalScope, memoryId)) {
             return "memory does not belong to the current scope";
           }
-          boolean deleted = mem0Client.deleteMemory(memoryId);
+          boolean deleted = scopeResolver.delete(canonicalScope, memoryId);
           if (!deleted) {
             return "failed";
           }
-          scopeResolver.removeOwnership(canonicalScope, memoryId);
-          return "deleted";
+          return "removed from recall; deletion queued";
         });
   }
 }

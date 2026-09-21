@@ -39,12 +39,12 @@ class ConversationMembershipServiceTest {
 
     assertThat(store.activeMembershipAccountIds(conversationId, Instant.now()))
         .containsExactlyInAnyOrder(
-            senderAccountId, createAccount("alice@example.com"), createAccount("bob@example.com"));
+            createAccount("alice@example.com"), createAccount("bob@example.com"));
 
     membershipService.refreshGroupMembership(conversationId);
 
     assertThat(store.activeMembershipAccountIds(conversationId, Instant.now()))
-        .containsExactlyInAnyOrder(senderAccountId, createAccount("alice@example.com"));
+        .containsExactlyInAnyOrder(createAccount("alice@example.com"));
   }
 
   @Test

@@ -18,7 +18,7 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.transaction.annotation.Transactional;
 
-@SpringBootTest
+@SpringBootTest(properties = "bbagent.memory.group.enabled=true")
 @Transactional
 class ConversationMemorySettingsServiceTest {
   private static final Instant NOW = Instant.parse("2026-08-08T18:00:00Z");

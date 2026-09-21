@@ -1,195 +1,85 @@
 package io.breland.bbagent.server.agent.memory;
 
-import static org.assertj.core.api.Assertions.assertThat;
-import static org.mockito.ArgumentMatchers.anyMap;
-import static org.mockito.ArgumentMatchers.anyString;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.never;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.*;
 
-import io.breland.bbagent.server.agent.memory.ConversationMemoryModels.ArtifactKind;
-import io.breland.bbagent.server.agent.memory.ConversationMemoryModels.ArtifactSensitivity;
-import io.breland.bbagent.server.agent.memory.ConversationMemoryModels.ArtifactStatus;
-import io.breland.bbagent.server.agent.memory.ConversationMemoryModels.ProjectionArtifact;
-import io.breland.bbagent.server.agent.memory.ConversationMemoryModels.ProjectionClaim;
-import io.breland.bbagent.server.agent.memory.ConversationMemoryModels.ProjectionOperation;
-import io.breland.bbagent.server.agent.tools.memory.Mem0Client;
-import io.breland.bbagent.server.metrics.OperationalMetricsService;
-import java.time.Clock;
-import java.time.Duration;
+import io.breland.bbagent.server.agent.memory.HindsightMemoryStore.*;
+import io.breland.bbagent.server.agent.tools.memory.HindsightClient;
 import java.time.Instant;
-import java.time.ZoneOffset;
-import java.util.List;
-import java.util.Map;
-import java.util.Optional;
+import java.util.*;
 import org.junit.jupiter.api.Test;
-import org.mockito.ArgumentCaptor;
 
 class MemoryProjectionWorkerTest {
-  private static final Instant NOW = Instant.parse("2026-08-08T18:00:00Z");
-  private final ConversationMemoryStore store = mock(ConversationMemoryStore.class);
-  private final Mem0Client mem0Client = mock(Mem0Client.class);
-  private final OperationalMetricsService metrics = mock(OperationalMetricsService.class);
-  private final ProjectionClaim upsertClaim =
-      new ProjectionClaim(
-          "artifact-1",
-          "account-1",
-          ProjectionOperation.UPSERT,
-          "projection-hash",
-          "worker-1",
-          NOW.plusSeconds(300));
+  private final HindsightMemoryStore store = mock(HindsightMemoryStore.class);
+  private final HindsightClient client = mock(HindsightClient.class);
   private final MemoryProjectionWorker worker =
-      new MemoryProjectionWorker(
-          store, mem0Client, metrics, Clock.fixed(NOW, ZoneOffset.UTC), "worker-1");
+      new MemoryProjectionWorker(store, client, null, true);
+
+  private Document doc(String operation) {
+    return new Document(
+        "doc",
+        "bank",
+        null,
+        "Likes tea",
+        "hash",
+        Instant.now(),
+        "stable-op",
+        operation,
+        "PENDING",
+        0,
+        Instant.now());
+  }
 
   @Test
-  void projectsAConfirmedArtifactToTheSnapshottedAccount() {
-    when(store.claimDueProjections("worker-1", NOW, 25)).thenReturn(List.of(upsertClaim));
-    when(store.findProjectionArtifact("artifact-1")).thenReturn(Optional.of(artifact()));
-    when(store.isInArtifactAudience("artifact-1", "account-1")).thenReturn(true);
-    when(mem0Client.addMemory(
-            org.mockito.ArgumentMatchers.eq("account:account-1"),
-            org.mockito.ArgumentMatchers.anyString(),
-            anyMap()))
-        .thenReturn(new Mem0Client.MemoryMutationResult(true, "memory-1"));
-
+  void disabledProviderDoesNotClaimWork() {
     worker.processDueProjections();
-
-    ArgumentCaptor<String> memory = ArgumentCaptor.forClass(String.class);
-    @SuppressWarnings("unchecked")
-    ArgumentCaptor<Map<String, Object>> metadata = ArgumentCaptor.forClass(Map.class);
-    verify(mem0Client)
-        .addMemory(
-            org.mockito.ArgumentMatchers.eq("account:account-1"),
-            memory.capture(),
-            metadata.capture());
-    assertThat(memory.getValue())
-        .isEqualTo("Collective group decision (Trip planning, 2026-08-08): Meet Saturday at 6 PM.");
-    assertThat(metadata.getValue())
-        .containsEntry("artifact_id", "artifact-1")
-        .containsEntry("conversation_id", "conversation-1")
-        .containsEntry("source", "bbagent_group_memory");
-    assertThat(metadata.getValue().toString())
-        .doesNotContain("iMessage", "account-1", "+1555", "Meet Saturday");
-    verify(store).completeProjection(upsertClaim, "memory-1", NOW);
-    verify(metrics).recordMemoryProjection("UPSERT", true, null, Duration.ZERO);
+    verifyNoInteractions(store);
   }
 
   @Test
-  void failedMem0WriteLeavesTheProjectionRetryable() {
-    when(store.claimDueProjections("worker-1", NOW, 25)).thenReturn(List.of(upsertClaim));
-    when(store.findProjectionArtifact("artifact-1")).thenReturn(Optional.of(artifact()));
-    when(store.isInArtifactAudience("artifact-1", "account-1")).thenReturn(true);
-    when(mem0Client.addMemory(
-            org.mockito.ArgumentMatchers.anyString(),
-            org.mockito.ArgumentMatchers.anyString(),
-            anyMap()))
-        .thenReturn(new Mem0Client.MemoryMutationResult(false, null));
-
-    worker.processDueProjections();
-
-    verify(store).failProjection(upsertClaim, NOW, "mem0_write_failed");
-    verify(metrics).recordMemoryProjection("UPSERT", false, "mem0_write_failed", Duration.ZERO);
-    verify(store, never()).completeProjection(upsertClaim, null, NOW);
+  void retryAfterLostAcknowledgementReusesOperationAndDocument() {
+    Document doc = doc("UPSERT");
+    when(client.operationStatus("bank", "stable-op")).thenReturn("not_found");
+    when(store.bank("bank")).thenReturn(Optional.of(new Bank("bank", "account", null)));
+    when(client.configureBank("bank", false)).thenReturn(true);
+    when(client.retain("bank", "doc", "stable-op", "Likes tea", "hash", doc.occurredAt()))
+        .thenReturn(false, true);
+    worker.process(doc);
+    worker.process(doc);
+    verify(client, times(2))
+        .retain("bank", "doc", "stable-op", "Likes tea", "hash", doc.occurredAt());
+    verify(store).finish(eq(doc), anyString(), eq("PROCESSING"), isNull(), any());
   }
 
   @Test
-  void deleteProjectionRemovesTheExistingMem0Memory() {
-    ProjectionClaim deleteClaim =
-        new ProjectionClaim(
-            "artifact-1",
-            "account-1",
-            ProjectionOperation.DELETE,
-            "projection-hash",
-            "worker-1",
-            NOW.plusSeconds(300));
-    when(store.claimDueProjections("worker-1", NOW, 25)).thenReturn(List.of(deleteClaim));
-    when(store.projectionMemoryId("artifact-1", "account-1")).thenReturn(Optional.of("memory-1"));
-    when(mem0Client.deleteMemory("memory-1")).thenReturn(true);
-
-    worker.processDueProjections();
-
-    verify(mem0Client).deleteMemory("memory-1");
-    verify(store).completeProjection(deleteClaim, null, NOW);
+  void completedZeroFactOperationIsSuccessfulWithoutAnotherWrite() {
+    Document doc = doc("UPSERT");
+    when(client.operationStatus("bank", "stable-op")).thenReturn("completed");
+    worker.process(doc);
+    verify(store).finish(eq(doc), anyString(), eq("SUCCEEDED"), isNull(), any());
+    verify(client, never())
+        .retain(anyString(), anyString(), anyString(), anyString(), anyString(), any());
   }
 
   @Test
-  void globalFeatureGuardKeepsUpsertsRetryableWithoutCallingMem0() {
-    when(store.claimDueProjections("worker-1", NOW, 25)).thenReturn(List.of(upsertClaim));
-    MemoryProjectionWorker disabled =
-        new MemoryProjectionWorker(
-            store, mem0Client, metrics, Clock.fixed(NOW, ZoneOffset.UTC), "worker-1", 0.85, false);
-
-    disabled.processDueProjections();
-
-    verify(store).failProjection(upsertClaim, NOW, "group_memory_disabled");
-    verify(mem0Client, never()).addMemory(anyString(), anyString(), anyMap());
-    verify(metrics).recordMemoryProjection("UPSERT", false, "group_memory_disabled", Duration.ZERO);
+  void deletionWaitsForInFlightRetainThenDeletesDocument() {
+    Document doc = doc("DELETE");
+    when(client.operationStatus("bank", "stable-op")).thenReturn("processing", "completed");
+    worker.process(doc);
+    verify(client, never()).deleteDocument(anyString(), anyString());
+    when(client.deleteDocument("bank", "doc")).thenReturn(true);
+    worker.process(doc);
+    verify(client).deleteDocument("bank", "doc");
+    verify(store).finish(eq(doc), anyString(), eq("SUCCEEDED"), isNull(), any());
   }
 
   @Test
-  void completedEmptyMem0ResultDoesNotRetry() {
-    when(store.claimDueProjections("worker-1", NOW, 25)).thenReturn(List.of(upsertClaim));
-    when(store.findProjectionArtifact("artifact-1")).thenReturn(Optional.of(artifact()));
-    when(store.isInArtifactAudience("artifact-1", "account-1")).thenReturn(true);
-    when(mem0Client.addMemory(anyString(), anyString(), anyMap()))
-        .thenReturn(new Mem0Client.MemoryMutationResult(true, null, true));
-
-    worker.processDueProjections();
-
-    verify(store).completeProjection(upsertClaim, null, NOW);
-    verify(store, never()).failProjection(upsertClaim, NOW, "mem0_write_failed");
-  }
-
-  @Test
-  void unknownSuccessfulResponseIsNotMistakenForCompletedEmptyResult() {
-    when(store.claimDueProjections("worker-1", NOW, 25)).thenReturn(List.of(upsertClaim));
-    when(store.findProjectionArtifact("artifact-1")).thenReturn(Optional.of(artifact()));
-    when(store.isInArtifactAudience("artifact-1", "account-1")).thenReturn(true);
-    when(mem0Client.addMemory(anyString(), anyString(), anyMap()))
-        .thenReturn(new Mem0Client.MemoryMutationResult(true, null));
-
-    worker.processDueProjections();
-
-    verify(store).failProjection(upsertClaim, NOW, "mem0_write_failed");
-  }
-
-  @Test
-  void skipsPreviouslyQueuedBatchLocalIdentitiesWithoutCallingMem0() {
-    when(store.claimDueProjections("worker-1", NOW, 25)).thenReturn(List.of(upsertClaim));
-    when(store.findProjectionArtifact("artifact-1"))
-        .thenReturn(
-            Optional.of(
-                new ProjectionArtifact(
-                    "artifact-1",
-                    "conversation-1",
-                    "Planning",
-                    ArtifactKind.GROUP_FACT,
-                    "Participant-2 will arrange the venue.",
-                    ArtifactStatus.CONFIRMED,
-                    ArtifactSensitivity.NORMAL,
-                    0.99,
-                    NOW,
-                    null)));
-
-    worker.processDueProjections();
-
-    verify(store).completeProjection(upsertClaim, null, NOW);
-    verify(mem0Client, never()).addMemory(anyString(), anyString(), anyMap());
-  }
-
-  private static ProjectionArtifact artifact() {
-    return new ProjectionArtifact(
-        "artifact-1",
-        "conversation-1",
-        "Trip planning",
-        ArtifactKind.GROUP_DECISION,
-        "Meet Saturday at 6 PM.",
-        ArtifactStatus.CONFIRMED,
-        ArtifactSensitivity.NORMAL,
-        0.96,
-        NOW.minusSeconds(60),
-        null);
+  void terminalProviderFailureDoesNotGenerateNewOperation() {
+    Document doc = doc("UPSERT");
+    when(client.operationStatus("bank", "stable-op")).thenReturn("failed");
+    worker.process(doc);
+    verify(store)
+        .finish(eq(doc), anyString(), eq("EXHAUSTED"), eq("hindsight_operation_failed"), any());
+    verify(client, never())
+        .retain(anyString(), anyString(), anyString(), anyString(), anyString(), any());
   }
 }

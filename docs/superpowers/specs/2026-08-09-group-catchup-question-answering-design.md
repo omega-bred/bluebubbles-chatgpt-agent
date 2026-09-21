@@ -1,5 +1,7 @@
 # Group Catch-up Question Answering Design
 
+> Historical design: the memory provider, per-account group projections, and legacy scope fallbacks described here were superseded by [optional Hindsight memory](../../hindsight-memory.md). Current code imports no existing memories.
+
 ## Goal
 
 Extend `get_group_catchup` so an authorized user can ask a precise natural-language question about an enabled group conversation from either a one-to-one chat or that group itself and receive an evidence-backed, server-generated answer. A group conversation may query only itself; cross-group retrieval remains available only from an authorized one-to-one chat. The default range is the preceding 24 hours. Explicit requests may search older iMessage history without the current 30-day search-tool limit, subject to confirmed membership, source availability, and honest coverage reporting.

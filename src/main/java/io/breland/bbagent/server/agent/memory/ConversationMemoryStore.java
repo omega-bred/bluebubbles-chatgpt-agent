@@ -3,7 +3,6 @@ package io.breland.bbagent.server.agent.memory;
 import static io.breland.bbagent.server.TimeSupport.offset;
 import static io.breland.bbagent.server.agent.memory.ConversationMemoryModels.ArtifactSensitivity.NORMAL;
 import static io.breland.bbagent.server.agent.memory.ConversationMemoryModels.ArtifactStatus.CONFIRMED;
-import static io.breland.bbagent.server.agent.memory.ConversationMemoryModels.ProjectionOperation.UPSERT;
 
 import io.breland.bbagent.server.agent.memory.ConversationMemoryModels.AuthorizedGroup;
 import io.breland.bbagent.server.agent.memory.ConversationMemoryModels.CatchupPreference;
@@ -20,10 +19,7 @@ import io.breland.bbagent.server.agent.memory.ConversationMemoryModels.JournalMe
 import io.breland.bbagent.server.agent.memory.ConversationMemoryModels.MemoryBacklog;
 import io.breland.bbagent.server.agent.memory.ConversationMemoryModels.MemoryCleanupResult;
 import io.breland.bbagent.server.agent.memory.ConversationMemoryModels.ProactiveDelivery;
-import io.breland.bbagent.server.agent.memory.ConversationMemoryModels.ProjectedArtifact;
 import io.breland.bbagent.server.agent.memory.ConversationMemoryModels.ProjectionArtifact;
-import io.breland.bbagent.server.agent.memory.ConversationMemoryModels.ProjectionClaim;
-import io.breland.bbagent.server.agent.memory.ConversationMemoryModels.ProjectionOperation;
 import io.breland.bbagent.server.agent.memory.ConversationMemoryModels.SummaryMaterial;
 import io.breland.bbagent.server.agent.memory.ConversationMemoryModels.WorkClaim;
 import io.breland.bbagent.server.agent.memory.ConversationQuestionAnsweringModels.MembershipInterval;
@@ -49,7 +45,6 @@ import org.springframework.transaction.annotation.Transactional;
 @Repository
 public class ConversationMemoryStore {
   private static final Duration EXTRACTION_LEASE = Duration.ofMinutes(5);
-  private static final Duration PROJECTION_LEASE = Duration.ofMinutes(5);
   private static final Duration CATCHUP_LEASE = Duration.ofMinutes(5);
   private static final int MAX_JOURNAL_PAGE_SIZE = 500;
   private static final RowMapper<JournalMessage> JOURNAL_MESSAGE_ROW_MAPPER =
@@ -66,6 +61,7 @@ public class ConversationMemoryStore {
 
   private final PostgresCompatibleJdbcTemplate jdbcTemplate;
   private final double minimumConfidence;
+  private final HindsightMemoryStore hindsight;
 
   @Autowired
   public ConversationMemoryStore(
@@ -73,6 +69,7 @@ public class ConversationMemoryStore {
       @Value("${bbagent.memory.group.minimum-confidence:0.85}") double minimumConfidence) {
     this.jdbcTemplate = new PostgresCompatibleJdbcTemplate(jdbcTemplate);
     this.minimumConfidence = minimumConfidence;
+    this.hindsight = new HindsightMemoryStore(jdbcTemplate);
   }
 
   public ConversationMemoryStore(JdbcTemplate jdbcTemplate) {
@@ -248,11 +245,10 @@ public class ConversationMemoryStore {
         conversationId);
     jdbcTemplate.update(
         """
-        update conversation_memory_projections
-           set operation = 'DELETE', state = 'PENDING', available_at = ?, claimed_by = null,
-               claimed_until = null, last_error_code = null, updated_at = ?
-         where artifact_id in (
-           select artifact_id from conversation_memory_artifacts where conversation_id = ?
+        update hindsight_memory_documents
+           set operation = 'DELETE', state = 'PENDING', available_at = ?, attempt_count = 0, last_error_code = null, updated_at = ?
+         where bank_id in (
+           select bank_id from hindsight_memory_banks where conversation_id = ?
          )
         """,
         disabledAt,
@@ -486,6 +482,10 @@ public class ConversationMemoryStore {
   public void replaceActiveMemberships(
       String conversationId, Set<String> accountIds, Instant observedAt) {
     Set<String> desiredAccountIds = accountIds == null ? Set.of() : Set.copyOf(accountIds);
+    jdbcTemplate.update(
+        "update agent_conversations set roster_verified_since = coalesce(roster_verified_since, ?) where conversation_id = ?",
+        observedAt,
+        conversationId);
     List<ActiveMembership> activeMemberships =
         jdbcTemplate.query(
             """
@@ -517,22 +517,6 @@ public class ConversationMemoryStore {
         recordMembership(conversationId, accountId, observedAt);
       }
     }
-  }
-
-  @Transactional(readOnly = true)
-  public Optional<String> latestSenderAccountId(String conversationId) {
-    return jdbcTemplate
-        .query(
-            """
-            select sender_account_id from agent_conversation_messages
-             where conversation_id = ? and sender_account_id is not null and removed = false
-             order by source_timestamp desc, message_guid desc
-             limit 1
-            """,
-            (resultSet, rowNumber) -> resultSet.getString(1),
-            conversationId)
-        .stream()
-        .findFirst();
   }
 
   @Transactional
@@ -778,7 +762,8 @@ public class ConversationMemoryStore {
             messageGuid);
       }
       List<String> audienceAccountIds =
-          activeMembershipAccountIds(batch.conversationId(), candidate.occurredAt());
+          verifiedWindowAudience(
+              batch.conversationId(), batch.sourceMessages(), batch.processedAt());
       for (String accountId : audienceAccountIds) {
         jdbcTemplate.update(
             """
@@ -788,21 +773,16 @@ public class ConversationMemoryStore {
             artifactId,
             accountId,
             now);
-        if (isProjectionEligible(candidate)) {
-          jdbcTemplate.update(
-              """
-              insert into conversation_memory_projections
-                (artifact_id, account_id, operation, state, projection_hash, available_at,
-                 attempt_count, updated_at)
-              values (?, ?, ?, 'PENDING', ?, ?, 0, ?)
-              """,
-              artifactId,
-              accountId,
-              UPSERT.name(),
-              candidate.contentHash(),
-              now,
-              now);
-        }
+      }
+      if (isProjectionEligible(candidate) && !audienceAccountIds.isEmpty()) {
+        String bank = hindsight.groupBank(batch.conversationId(), Set.copyOf(audienceAccountIds));
+        hindsight.save(
+            bank,
+            artifactId,
+            artifactId,
+            candidate.text(),
+            candidate.occurredAt(),
+            batch.processedAt());
       }
       if (StringUtils.isNotBlank(candidate.supersedesArtifactId())) {
         jdbcTemplate.update(
@@ -817,9 +797,9 @@ public class ConversationMemoryStore {
             batch.conversationId());
         jdbcTemplate.update(
             """
-            update conversation_memory_projections
+            update hindsight_memory_documents
                set operation = 'DELETE', state = 'PENDING', available_at = ?,
-                   claimed_by = null, claimed_until = null, last_error_code = null, updated_at = ?
+                   attempt_count = 0, last_error_code = null, updated_at = ?
              where artifact_id = ?
             """,
             now,
@@ -846,63 +826,6 @@ public class ConversationMemoryStore {
     return List.copyOf(savedArtifactIds);
   }
 
-  @Transactional
-  public List<ProjectionClaim> claimDueProjections(String workerId, Instant now, int limit) {
-    if (limit <= 0) {
-      return List.of();
-    }
-    Instant claimedUntil = now.plus(PROJECTION_LEASE);
-    List<ProjectionCandidate> candidates =
-        jdbcTemplate.query(
-            """
-            select artifact_id, account_id, operation, projection_hash
-              from conversation_memory_projections
-             where state in ('PENDING', 'FAILED') and available_at <= ?
-               and (claimed_until is null or claimed_until < ?)
-             order by available_at, artifact_id, account_id
-             limit ?
-            """,
-            (resultSet, rowNumber) ->
-                new ProjectionCandidate(
-                    resultSet.getString("artifact_id"),
-                    resultSet.getString("account_id"),
-                    ProjectionOperation.valueOf(resultSet.getString("operation")),
-                    resultSet.getString("projection_hash")),
-            now,
-            now,
-            limit);
-    List<ProjectionClaim> claims = new ArrayList<>();
-    for (ProjectionCandidate candidate : candidates) {
-      int updated =
-          jdbcTemplate.update(
-              """
-              update conversation_memory_projections
-                 set claimed_by = ?, claimed_until = ?, attempt_count = attempt_count + 1,
-                     updated_at = ?
-               where artifact_id = ? and account_id = ? and state in ('PENDING', 'FAILED')
-                 and available_at <= ? and (claimed_until is null or claimed_until < ?)
-              """,
-              workerId,
-              claimedUntil,
-              now,
-              candidate.artifactId(),
-              candidate.accountId(),
-              now,
-              now);
-      if (updated == 1) {
-        claims.add(
-            new ProjectionClaim(
-                candidate.artifactId(),
-                candidate.accountId(),
-                candidate.operation(),
-                candidate.projectionHash(),
-                workerId,
-                claimedUntil));
-      }
-    }
-    return List.copyOf(claims);
-  }
-
   @Transactional(readOnly = true)
   public Optional<ProjectionArtifact> findProjectionArtifact(String artifactId) {
     return jdbcTemplate
@@ -921,110 +844,6 @@ public class ConversationMemoryStore {
   }
 
   @Transactional(readOnly = true)
-  public Optional<ProjectedArtifact> findProjectedArtifact(String mem0MemoryId, String accountId) {
-    return jdbcTemplate
-        .query(
-            """
-            select a.artifact_id, p.mem0_memory_id, a.conversation_id, c.display_name, a.kind,
-                   a.artifact_text, a.status, a.sensitivity, a.confidence, a.occurred_at,
-                   a.expires_at
-              from conversation_memory_projections p
-              join conversation_memory_artifacts a on a.artifact_id = p.artifact_id
-              join agent_conversations c on c.conversation_id = a.conversation_id
-             where p.mem0_memory_id = ? and p.account_id = ? and p.operation = 'UPSERT'
-               and p.state = 'SUCCEEDED'
-            """,
-            (resultSet, rowNumber) ->
-                new ProjectedArtifact(
-                    resultSet.getString("artifact_id"),
-                    resultSet.getString("mem0_memory_id"),
-                    resultSet.getString("conversation_id"),
-                    resultSet.getString("display_name"),
-                    ConversationMemoryModels.ArtifactKind.valueOf(resultSet.getString("kind")),
-                    resultSet.getString("artifact_text"),
-                    ConversationMemoryModels.ArtifactStatus.valueOf(resultSet.getString("status")),
-                    ConversationMemoryModels.ArtifactSensitivity.valueOf(
-                        resultSet.getString("sensitivity")),
-                    resultSet.getDouble("confidence"),
-                    resultSet.getTimestamp("occurred_at").toInstant(),
-                    toInstant(resultSet.getTimestamp("expires_at"))),
-            mem0MemoryId,
-            accountId)
-        .stream()
-        .findFirst();
-  }
-
-  @Transactional(readOnly = true)
-  public Optional<String> projectionMemoryId(String artifactId, String accountId) {
-    return jdbcTemplate
-        .query(
-            """
-            select mem0_memory_id from conversation_memory_projections
-             where artifact_id = ? and account_id = ? and mem0_memory_id is not null
-            """,
-            (resultSet, rowNumber) -> resultSet.getString(1),
-            artifactId,
-            accountId)
-        .stream()
-        .findFirst();
-  }
-
-  @Transactional
-  public void completeProjection(
-      ProjectionClaim claim, @Nullable String mem0MemoryId, Instant completedAt) {
-    int updated =
-        jdbcTemplate.update(
-            """
-            update conversation_memory_projections
-               set state = 'SUCCEEDED', mem0_memory_id = ?, claimed_by = null,
-                   claimed_until = null, last_error_code = null, updated_at = ?
-             where artifact_id = ? and account_id = ? and claimed_by = ? and claimed_until >= ?
-            """,
-            StringUtils.trimToNull(mem0MemoryId),
-            completedAt,
-            claim.artifactId(),
-            claim.accountId(),
-            claim.workerId(),
-            completedAt);
-    if (updated != 1) {
-      throw new IllegalStateException("projection work lease is not owned by this worker");
-    }
-  }
-
-  @Transactional
-  public void failProjection(ProjectionClaim claim, Instant failedAt, String errorCode) {
-    Integer attempts =
-        jdbcTemplate.queryForObject(
-            """
-            select attempt_count from conversation_memory_projections
-             where artifact_id = ? and account_id = ? and claimed_by = ? and claimed_until >= ?
-            """,
-            Integer.class,
-            claim.artifactId(),
-            claim.accountId(),
-            claim.workerId(),
-            failedAt);
-    if (attempts == null) {
-      return;
-    }
-    Duration retryDelay = projectionRetryDelay(attempts);
-    jdbcTemplate.update(
-        """
-        update conversation_memory_projections
-           set state = 'FAILED', available_at = ?, claimed_by = null, claimed_until = null,
-               last_error_code = ?, updated_at = ?
-         where artifact_id = ? and account_id = ? and claimed_by = ? and claimed_until >= ?
-        """,
-        failedAt.plus(retryDelay),
-        StringUtils.truncate(errorCode, 64),
-        failedAt,
-        claim.artifactId(),
-        claim.accountId(),
-        claim.workerId(),
-        failedAt);
-  }
-
-  @Transactional(readOnly = true)
   public boolean isInArtifactAudience(String artifactId, String accountId) {
     Integer count =
         jdbcTemplate.queryForObject(
@@ -1035,30 +854,6 @@ public class ConversationMemoryStore {
             Integer.class,
             artifactId,
             accountId);
-    return count != null && count > 0;
-  }
-
-  @Transactional(readOnly = true)
-  public boolean isReadOnlyGroupArtifact(String canonicalScope, String identifier) {
-    ScopeKey scope = parseCanonicalScope(canonicalScope);
-    if (!scope.type().equals("ACCOUNT") || StringUtils.isBlank(identifier)) {
-      return false;
-    }
-    Integer count =
-        jdbcTemplate.queryForObject(
-            """
-            select count(*)
-              from conversation_memory_audiences audience
-              left join conversation_memory_projections projection
-                on projection.artifact_id = audience.artifact_id
-               and projection.account_id = audience.account_id
-             where audience.account_id = ?
-               and (audience.artifact_id = ? or projection.mem0_memory_id = ?)
-            """,
-            Integer.class,
-            scope.id(),
-            identifier,
-            identifier);
     return count != null && count > 0;
   }
 
@@ -1525,8 +1320,8 @@ public class ConversationMemoryStore {
       projectionArguments.add(now);
       projectionArguments.addAll(expiredArtifactIds);
       jdbcTemplate.update(
-          "update conversation_memory_projections set operation = 'DELETE', state = 'PENDING', "
-              + "available_at = ?, claimed_by = null, claimed_until = null, "
+          "update hindsight_memory_documents set operation = 'DELETE', state = 'PENDING', "
+              + "available_at = ?, attempt_count = 0, "
               + "last_error_code = null, updated_at = ? where artifact_id in ("
               + placeholders
               + ")",
@@ -1547,7 +1342,7 @@ public class ConversationMemoryStore {
     List<Instant> projectionRows =
         jdbcTemplate.query(
             """
-            select min(available_at) from conversation_memory_projections
+            select min(available_at) from hindsight_memory_documents
              where state in ('PENDING', 'FAILED') and available_at <= ?
             """,
             (resultSet, rowNumber) -> toInstant(resultSet.getTimestamp(1)),
@@ -1558,7 +1353,7 @@ public class ConversationMemoryStore {
             """
             select
               (select count(*) from conversation_memory_work where last_error_code is not null)
-              + (select count(*) from conversation_memory_projections where state = 'FAILED')
+              + (select count(*) from hindsight_memory_documents where state in ('FAILED', 'EXHAUSTED'))
               + (select count(*) from conversation_digest_work where last_error_code is not null)
             """,
             Long.class);
@@ -1851,103 +1646,26 @@ public class ConversationMemoryStore {
         deliveryId);
   }
 
-  @Transactional
-  public void recordCanonicalMemory(
-      String canonicalScope, String mem0MemoryId, String contentHash, Instant recordedAt) {
-    ScopeKey scope = parseCanonicalScope(canonicalScope);
-    requireText(mem0MemoryId, "Mem0 memory id");
-    requireText(contentHash, "memory content hash");
-    Objects.requireNonNull(recordedAt, "recordedAt");
-    List<ScopeKey> existingScopes =
-        jdbcTemplate.query(
-            "select scope_type, scope_id from canonical_memory_records where mem0_memory_id = ?",
-            (resultSet, rowNumber) ->
-                new ScopeKey(resultSet.getString("scope_type"), resultSet.getString("scope_id")),
-            mem0MemoryId);
-    if (!existingScopes.isEmpty()) {
-      ScopeKey existing = existingScopes.getFirst();
-      if (!existing.equals(scope)) {
-        throw new IllegalStateException("memory id is already owned by another canonical scope");
-      }
-      jdbcTemplate.update(
-          """
-          update canonical_memory_records
-             set content_hash = ?, updated_at = ?
-           where mem0_memory_id = ? and scope_type = ? and scope_id = ?
-          """,
-          contentHash,
-          recordedAt,
-          mem0MemoryId,
-          scope.type(),
-          scope.id());
-      return;
-    }
-    jdbcTemplate.update(
-        """
-        insert into canonical_memory_records
-          (memory_record_id, scope_type, scope_id, mem0_memory_id, content_hash, created_at,
-           updated_at)
-        values (?, ?, ?, ?, ?, ?, ?)
-        """,
-        UUID.randomUUID().toString(),
-        scope.type(),
-        scope.id(),
-        mem0MemoryId,
-        contentHash,
-        recordedAt,
-        recordedAt);
-  }
-
-  @Transactional(readOnly = true)
-  public boolean ownsCanonicalMemory(String canonicalScope, String mem0MemoryId) {
-    ScopeKey scope = parseCanonicalScope(canonicalScope);
-    if (StringUtils.isBlank(mem0MemoryId)) {
-      return false;
-    }
-    Integer count =
+  private List<String> verifiedWindowAudience(
+      String conversationId, List<JournalMessage> messages, Instant processedAt) {
+    if (messages.isEmpty()) return List.of();
+    Instant earliest =
+        messages.stream()
+            .map(JournalMessage::sourceTimestamp)
+            .min(Instant::compareTo)
+            .orElseThrow();
+    Integer verified =
         jdbcTemplate.queryForObject(
-            """
-            select count(*) from canonical_memory_records
-             where scope_type = ? and scope_id = ? and mem0_memory_id = ?
-            """,
+            "select count(*) from agent_conversations where conversation_id = ? and roster_verified_since <= ?",
             Integer.class,
-            scope.type(),
-            scope.id(),
-            mem0MemoryId);
-    return count != null && count > 0;
-  }
-
-  @Transactional
-  public void updateCanonicalMemory(
-      String canonicalScope, String mem0MemoryId, String contentHash, Instant updatedAt) {
-    ScopeKey scope = parseCanonicalScope(canonicalScope);
-    int updated =
-        jdbcTemplate.update(
-            """
-            update canonical_memory_records set content_hash = ?, updated_at = ?
-             where scope_type = ? and scope_id = ? and mem0_memory_id = ?
-            """,
-            contentHash,
-            updatedAt,
-            scope.type(),
-            scope.id(),
-            mem0MemoryId);
-    if (updated != 1) {
-      throw new IllegalStateException("canonical memory ownership changed");
-    }
-  }
-
-  @Transactional
-  public void deleteCanonicalMemory(String canonicalScope, String mem0MemoryId) {
-    ScopeKey scope = parseCanonicalScope(canonicalScope);
-    jdbcTemplate.update(
-        """
-        delete from canonical_memory_records
-         where scope_type = ? and scope_id = ? and mem0_memory_id = ?
-        """,
-        scope.type(),
-        scope.id(),
-        mem0MemoryId);
+            conversationId,
+            earliest);
+    if (verified == null || verified == 0) return List.of();
+    Set<String> audience = new HashSet<>(activeMembershipAccountIds(conversationId, earliest));
+    for (JournalMessage message : messages)
+      audience.retainAll(activeMembershipAccountIds(conversationId, message.sourceTimestamp()));
+    audience.retainAll(activeMembershipAccountIds(conversationId, processedAt));
+    return audience.stream().sorted().toList();
   }
 
   private void validateCandidateEvidence(
@@ -1962,7 +1680,8 @@ public class ConversationMemoryStore {
   }
 
   private boolean isProjectionEligible(ExtractionCandidate candidate) {
-    return candidate.status() == CONFIRMED
+    return GroupMemoryRetentionPolicy.isRetainable(candidate.text())
+        && candidate.status() == CONFIRMED
         && candidate.sensitivity() == NORMAL
         && candidate.confidence() >= minimumConfidence;
   }
@@ -2155,38 +1874,10 @@ public class ConversationMemoryStore {
     return intersection == null ? Set.of() : Set.copyOf(intersection);
   }
 
-  private Duration projectionRetryDelay(int attempts) {
-    if (attempts <= 1) {
-      return Duration.ofSeconds(30);
-    }
-    if (attempts == 2) {
-      return Duration.ofMinutes(2);
-    }
-    if (attempts == 3) {
-      return Duration.ofMinutes(10);
-    }
-    return Duration.ofHours(1);
-  }
-
   private void requireText(String value, String label) {
     if (StringUtils.isBlank(value)) {
       throw new IllegalArgumentException("missing " + label);
     }
-  }
-
-  private ScopeKey parseCanonicalScope(String canonicalScope) {
-    requireText(canonicalScope, "canonical scope");
-    String[] parts = canonicalScope.split(":", 2);
-    if (parts.length != 2 || StringUtils.isBlank(parts[1])) {
-      throw new IllegalArgumentException("invalid canonical memory scope");
-    }
-    String type =
-        switch (parts[0]) {
-          case "account" -> "ACCOUNT";
-          case "conversation" -> "CONVERSATION";
-          default -> throw new IllegalArgumentException("invalid canonical memory scope");
-        };
-    return new ScopeKey(type, parts[1]);
   }
 
   private Instant toInstant(java.sql.Timestamp timestamp) {
@@ -2253,14 +1944,9 @@ public class ConversationMemoryStore {
     }
   }
 
-  private record ProjectionCandidate(
-      String artifactId, String accountId, ProjectionOperation operation, String projectionHash) {}
-
   private record ActiveMembership(String membershipId, String accountId) {}
 
   private record DigestKey(String conversationId, Instant periodStart, Instant periodEnd) {}
 
   private record CatchupPreferenceKey(String accountId, String conversationId) {}
-
-  private record ScopeKey(String type, String id) {}
 }

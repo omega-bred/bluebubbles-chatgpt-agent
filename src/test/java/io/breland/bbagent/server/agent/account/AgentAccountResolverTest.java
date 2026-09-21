@@ -143,6 +143,10 @@ class AgentAccountResolverTest {
             "merge-message-hash");
     memoryStore.recordMessage(message);
     memoryStore.scheduleExtraction(conversationId, now);
+    jdbcTemplate.update(
+        "update agent_conversations set roster_verified_since = ? where conversation_id = ?",
+        now,
+        conversationId);
     String artifactId =
         memoryStore
             .saveExtraction(
@@ -167,19 +171,11 @@ class AgentAccountResolverTest {
                     "merge-corpus-hash",
                     now))
             .getFirst();
-    jdbcTemplate.update(
-        """
-        insert into canonical_memory_records
-          (memory_record_id, scope_type, scope_id, mem0_memory_id, content_hash, created_at,
-           updated_at)
-        values (?, 'ACCOUNT', ?, ?, ?, ?, ?)
-        """,
-        UUID.randomUUID().toString(),
-        sourceAccountId,
-        "mem0-merge-record",
-        "canonical-hash",
-        now,
-        now);
+    var hindsight = new io.breland.bbagent.server.agent.memory.HindsightMemoryStore(jdbcTemplate);
+    String sourceBank = hindsight.personalBank(sourceAccountId);
+    hindsight.save(sourceBank, "merge-document", null, "Likes tea", now);
+    String groupBank =
+        hindsight.groupBank(conversationId, java.util.Set.of(sourceAccountId, targetAccountId));
     memoryStore.saveCatchupPreference(
         targetAccountId,
         conversationId,
@@ -236,17 +232,9 @@ class AgentAccountResolverTest {
             "agent_conversation_memberships", "conversation_id", conversationId, targetAccountId));
     assertEquals(
         1, rowCount("conversation_memory_audiences", "artifact_id", artifactId, targetAccountId));
-    assertEquals(
-        1, rowCount("conversation_memory_projections", "artifact_id", artifactId, targetAccountId));
-    assertEquals(
-        1,
-        jdbcTemplate.queryForObject(
-            """
-            select count(*) from canonical_memory_records
-             where scope_type = 'ACCOUNT' and scope_id = ?
-            """,
-            Integer.class,
-            targetAccountId));
+    assertEquals(1, rowCount("hindsight_bank_audiences", "bank_id", groupBank, targetAccountId));
+    assertEquals(targetAccountId, hindsight.bank(sourceBank).orElseThrow().accountId());
+    assertTrue(hindsight.owns(hindsight.personalBank(targetAccountId), "merge-document"));
     var mergedPreference =
         memoryStore.findCatchupPreference(targetAccountId, conversationId).orElseThrow();
     assertTrue(mergedPreference.enabled());

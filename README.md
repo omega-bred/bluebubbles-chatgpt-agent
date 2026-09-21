@@ -9,7 +9,7 @@ Google Calendar + other tools. Built with Spring Boot + OpenAPI.
 - Optional GIF replies via Giphy
 - OpenAI Responses API support (including image generation, web search)
 - OpenAPI spec and generated TypeScript client
-- Integration with Mem0
+- Optional self-hosted Hindsight memory for canonical users and shared group audiences
 - Website account dashboard, support contact form, terms/privacy pages, and admin abuse controls
 - Subscription billing through Stripe and BTCPay
 - Rich texting support (thread replies, reactions, message effects)
@@ -288,3 +288,14 @@ or LXMF address. Blocked accounts are dropped before terms gating, model calls, 
 ## Deploying
 
 An example kubernetes deployment spec with all the resources is provided in `manifests/bluebubbls-chatgpt-agent`. You'll need to adjust the secrets and URLs accordingly.
+
+## Optional long-term memory
+
+[Hindsight memory](docs/hindsight-memory.md) is disabled by default. Enable it with
+`HINDSIGHT_ENABLED=true` and `HINDSIGHT_BASE_URL`; set `HINDSIGHT_API_KEY` if your server requires
+bearer authentication. Personal memories follow canonical accounts; group memories use separate
+audience banks and group opt-in. Retrieval is encouraged for substantive requests, while retention
+remains selective. The integration starts empty and imports no existing provider memories.
+
+See the [configuration, authorization, and operations guide](docs/hindsight-memory.md) for limits,
+queued writes, deletion, and deployment details.

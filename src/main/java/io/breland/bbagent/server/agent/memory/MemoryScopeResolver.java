@@ -5,8 +5,6 @@ import io.breland.bbagent.server.agent.tools.ToolContext;
 import java.time.Instant;
 import java.util.Optional;
 import org.apache.commons.codec.digest.DigestUtils;
-import org.apache.commons.lang3.StringUtils;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.lang.Nullable;
 import org.springframework.stereotype.Service;
@@ -14,88 +12,80 @@ import org.springframework.stereotype.Service;
 @Service
 public class MemoryScopeResolver {
   private final ConversationMemoryStore store;
-  private final boolean legacyScopeReadEnabled;
-  private final @Nullable AuthorizedMemoryRetrievalService authorizedMemoryRetrievalService;
-  private final @Nullable ConversationDigestService conversationDigestService;
-  private final @Nullable ProactiveCatchupService proactiveCatchupService;
+  private final HindsightMemoryStore memories;
+  private final ConversationMembershipService memberships;
+  private final boolean groupsEnabled;
+  private final AuthorizedMemoryRetrievalService retrieval;
+  private final @Nullable ConversationDigestService digests;
+  private final @Nullable ProactiveCatchupService catchup;
 
-  @Autowired
   public MemoryScopeResolver(
       ConversationMemoryStore store,
-      @Value("${bbagent.memory.legacy-scope-read-enabled:true}") boolean legacyScopeReadEnabled,
-      @Nullable AuthorizedMemoryRetrievalService authorizedMemoryRetrievalService,
-      @Nullable ConversationDigestService conversationDigestService,
-      @Nullable ProactiveCatchupService proactiveCatchupService) {
+      HindsightMemoryStore memories,
+      ConversationMembershipService memberships,
+      @Value("${bbagent.memory.group.enabled:false}") boolean groupsEnabled,
+      AuthorizedMemoryRetrievalService retrieval,
+      @Nullable ConversationDigestService digests,
+      @Nullable ProactiveCatchupService catchup) {
     this.store = store;
-    this.legacyScopeReadEnabled = legacyScopeReadEnabled;
-    this.authorizedMemoryRetrievalService = authorizedMemoryRetrievalService;
-    this.conversationDigestService = conversationDigestService;
-    this.proactiveCatchupService = proactiveCatchupService;
-  }
-
-  public MemoryScopeResolver(ConversationMemoryStore store, boolean legacyScopeReadEnabled) {
-    this(store, legacyScopeReadEnabled, null, null, null);
+    this.memories = memories;
+    this.memberships = memberships;
+    this.groupsEnabled = groupsEnabled;
+    this.retrieval = retrieval;
+    this.digests = digests;
+    this.catchup = catchup;
   }
 
   public Optional<String> primaryScope(ToolContext context) {
-    if (context == null || context.message() == null) {
+    if (context == null || context.message() == null || context.canonicalAccountId().isEmpty())
+      return Optional.empty();
+    IncomingMessage message = context.message();
+    String account = context.canonicalAccountId().orElseThrow();
+    if (!message.isGroup()) return Optional.of(memories.personalBank(account));
+    if (!groupsEnabled || IncomingMessage.chatGuidOrNull(message) == null) return Optional.empty();
+    var conversation =
+        store.findEnabledConversationId(message.transportOrDefault(), message.chatGuid());
+    if (conversation.isEmpty()) return Optional.empty();
+    try {
+      var audience = memberships.refreshGroupMembership(conversation.get());
+      if (!audience.contains(account)) return Optional.empty();
+      return Optional.of(memories.groupBank(conversation.get(), audience));
+    } catch (ConversationMembershipService.MembershipRefreshException e) {
       return Optional.empty();
     }
-    IncomingMessage message = context.message();
-    if (message.isGroup()) {
-      String chatGuid = IncomingMessage.chatGuidOrNull(message);
-      if (chatGuid == null) {
-        return Optional.empty();
-      }
-      return store
-          .findEnabledConversationId(message.transportOrDefault(), chatGuid)
-          .map(conversationId -> "conversation:" + conversationId);
-    }
-    return context.canonicalAccountId().map(accountId -> "account:" + accountId);
   }
 
-  public Optional<String> legacyReadScope(ToolContext context) {
-    if (!legacyScopeReadEnabled || context == null || context.message() == null) {
-      return Optional.empty();
-    }
-    IncomingMessage message = context.message();
-    if (message.isGroup()) {
-      return Optional.ofNullable(IncomingMessage.chatGuidOrNull(message));
-    }
-    return Optional.ofNullable(StringUtils.trimToNull(message.sender()));
+  public String save(String bank, String text, IncomingMessage message) {
+    String id = DigestUtils.sha256Hex(bank + "\n" + message.messageGuid() + "\n" + text);
+    return memories.save(
+        bank, id, null, text, message.timestamp() == null ? Instant.now() : message.timestamp());
   }
 
-  public void recordOwnership(String canonicalScope, String memoryId, String text) {
-    store.recordCanonicalMemory(
-        canonicalScope, memoryId, DigestUtils.sha256Hex(text), Instant.now());
+  public boolean ownsMemory(String bank, String id) {
+    return memories.owns(bank, id);
   }
 
-  public boolean ownsMemory(String canonicalScope, String memoryId) {
-    return store.ownsCanonicalMemory(canonicalScope, memoryId);
+  public boolean isReadOnlyMemory(String bank, String id) {
+    return memories.document(id).filter(d -> d.artifactId() != null).isPresent();
   }
 
-  public boolean isReadOnlyMemory(String canonicalScope, String identifier) {
-    return store.isReadOnlyGroupArtifact(canonicalScope, identifier);
+  public boolean update(String bank, String id, String text) {
+    return memories.replace(bank, id, text);
+  }
+
+  public boolean delete(String bank, String id) {
+    return memories.delete(bank, id);
   }
 
   public Optional<AuthorizedMemoryRetrievalService> authorizedRetrievalService() {
-    return Optional.ofNullable(authorizedMemoryRetrievalService);
+    return Optional.of(retrieval);
   }
 
   public Optional<ConversationDigestService> conversationDigestService() {
-    return Optional.ofNullable(conversationDigestService);
+    return Optional.ofNullable(digests);
   }
 
   public Optional<ProactiveCatchupService> proactiveCatchupService() {
-    return Optional.ofNullable(proactiveCatchupService);
-  }
-
-  public void updateOwnership(String canonicalScope, String memoryId, String text) {
-    store.updateCanonicalMemory(
-        canonicalScope, memoryId, DigestUtils.sha256Hex(text), Instant.now());
-  }
-
-  public void removeOwnership(String canonicalScope, String memoryId) {
-    store.deleteCanonicalMemory(canonicalScope, memoryId);
+    return Optional.ofNullable(catchup);
   }
 }

@@ -32,9 +32,6 @@ def opSecretMappings = [
     "op://Kubernetes/openai-bluebubbles-chatgpt-agent-api-key/base-url":"OPENAI_BASE_URL",
     "op://Kubernetes/BlueBubbles/password": "BLUEBUBBLES_PASSWORD",
     "op://Kubernetes/BlueBubbles/host": "BLUEBUBBLES_PATH",
-    "op://Kubernetes/mem0-api-key/password": "MEM0_API_KEY",
-    "op://Kubernetes/mem0-api-key/project-id": "MEM0_PROJECT_ID",
-    "op://Kubernetes/mem0-api-key/org-id": "MEM0_ORG_ID",
     "op://Kubernetes/giphy-api-key/password": "GIPHY_API_KEY",
     "op://Kubernetes/gcal-oauth-state-secret/password": "GCAL_OAUTH_STATE_SECRET",
     "op://Kubernetes/gcal-mcp-server/client_secret_552753055766-0fnkjtl0ug4i39hhrr0q9jk49648akra.apps.googleusercontent.com.json": "GCAL_OAUTH_CLIENT_CREDENTIALS_JSON_TEXT",
@@ -51,6 +48,11 @@ def opSecretMappings = [
     "op://Kubernetes/linear-bbagent/api-key": "LINEAR_API_KEY",
     "op://Kubernetes/linear-bbagent/team-id": "LINEAR_TEAM_ID"
 ]
+// Optional integrations should not prompt for credentials when disabled.
+if (System.getenv('HINDSIGHT_ENABLED') == 'true') {
+    opSecretMappings['op://Kubernetes/hindsight-secrets/HINDSIGHT_API_TENANT_API_KEY'] = 'HINDSIGHT_API_KEY'
+}
+
 
 def resolveSecret = { String propName, String opRef ->
     def fromEnv = System.getenv(propName)

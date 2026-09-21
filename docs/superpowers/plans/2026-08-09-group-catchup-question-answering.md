@@ -1,5 +1,7 @@
 # Group Catch-up Question Answering Implementation Plan
 
+> Historical design: the memory provider, per-account group projections, and legacy scope fallbacks described here were superseded by [optional Hindsight memory](../../hindsight-memory.md). Current code imports no existing memories.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Extend `get_group_catchup` with optional, authorized natural-language question answering over recent or explicitly requested iMessage group history from a one-to-one chat or the current group itself, without exposing raw transcripts to the main conversation model.

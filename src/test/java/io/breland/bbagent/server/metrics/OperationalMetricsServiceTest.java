@@ -229,7 +229,8 @@ class OperationalMetricsServiceTest {
     SimpleMeterRegistry registry = new SimpleMeterRegistry();
     OperationalMetricsService service = new OperationalMetricsService(registry);
 
-    service.recordMemoryProjection("upsert", false, "mem0_write_failed", Duration.ofMillis(20));
+    service.recordMemoryProjection(
+        "upsert", false, "hindsight_write_failed", Duration.ofMillis(20));
     service.recordMemoryDigest("reconcile", true, null, Duration.ofMillis(30));
     service.recordMemoryCatchup(true, null, Duration.ofMillis(40));
     service.recordMemoryProactiveDelivery(
@@ -243,7 +244,7 @@ class OperationalMetricsServiceTest {
             .get("bbagent.memory.projection.count")
             .tag("operation", "upsert")
             .tag("outcome", "failure")
-            .tag("failure_type", "mem0_write_failed")
+            .tag("failure_type", "hindsight_write_failed")
             .counter()
             .count());
     assertEquals(

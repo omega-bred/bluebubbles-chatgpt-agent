@@ -295,8 +295,8 @@ public final class AgentPromptBuilder {
                 + toolSearchInstruction()
                 + "Use the "
                 + MemoryGetAgentTool.TOOL_NAME
-                + " tool when memory could improve your response (skip if no reply is needed or another tool is more appropriate). "
-                + "Before asking for missing factual context, check relevant memory or conversation tools when they could already contain the answer. Do not search memory to infer consent or authorization, and do not repeat a lookup that already returned insufficient information. "
+                + " tool, when available, early in substantive replies: planning, advice, recommendations, follow-ups, references to people or projects, and questions whose answer could benefit from prior context. Do not wait for an explicit request to remember. A focused lookup is encouraged even when relevance is uncertain; use a different query when it could resolve a specific gap. Skip greetings, simple acknowledgements, self-contained transformations, and messages needing no reply. "
+                + "Before asking for missing factual context, check relevant memory or conversation tools when they could already contain the answer. Do not search memory to infer consent or authorization, and do not repeat an identical lookup that already returned insufficient information. "
                 + "Send a natural language query to the tool describing what information may help you answer. "
                 + "If no reply is needed, output exactly "
                 + BBMessageAgent.NO_RESPONSE_TEXT
@@ -350,9 +350,9 @@ public final class AgentPromptBuilder {
                   + "For Google Calendar requests, use the available calendar tools. If the account is not linked, call "
                   + ManageAccountsAgentTool.TOOL_NAME
                   + " to get an auth_url and have the user complete the OAuth flow in their browser. "
-                  + "When a substantive user message shares useful personal information, use the "
+                  + "When a substantive user message shares durable personal context or an actionable commitment with concrete future usefulness, use the "
                   + MemorySaveAgentTool.TOOL_NAME
-                  + " tool to persist that info, except names: respect the explicit consent rule above for all name storage, including memory. Do not save bare reactions or acknowledgements. "
+                  + " tool, when available, to persist that info. Skip transient details, routine updates, repetition, and inferred preferences. For names: respect the explicit consent rule above for all name storage, including memory. Do not save bare reactions or acknowledgements. "
                   + feedbackInstruction()
                   + "For prior interactions, use visible context or memory when it can help. LXMF cannot retrieve chat photos. If memory could help answer a question, call "
                   + MemoryGetAgentTool.TOOL_NAME
@@ -465,10 +465,10 @@ public final class AgentPromptBuilder {
                 + " to get an auth_url and have the user complete the OAuth flow in their browser. "
                 + "If multiple calendar accounts are linked, pass account_key (the account id from manage_accounts list, or 'default') to the calendar tools to pick the right account; ask if ambiguous. "
                 + actionAndFollowupInstruction()
-                + "When a substantive user message shares useful personal information, "
+                + "When a substantive user message shares durable personal context or an actionable commitment with concrete future usefulness, "
                 + "use the "
                 + MemorySaveAgentTool.TOOL_NAME
-                + " tool to persist that info, except names: respect the explicit consent rule above for all name storage, including memory. Do not save bare reactions or acknowledgements. "
+                + " tool, when available, to persist that info. Skip transient details, routine updates, repetition, and inferred preferences. For names: respect the explicit consent rule above for all name storage, including memory. Do not save bare reactions or acknowledgements. "
                 + "Use the current conversation identity; do not ask for an identifier. "
                 + "For semantic facts about the user or prior interactions, use memory; for exact messages or photos, prefer conversation history and image retrieval. If memory could help answer a question, "
                 + "call "

@@ -55,7 +55,7 @@ public class ConversationMembershipService {
     for (ChatParticipant participant : chat.getParticipants()) {
       String address = participant == null ? null : participant.getAddress();
       if (StringUtils.isBlank(address)) {
-        continue;
+        throw new MembershipRefreshException("Participant identity was missing");
       }
       String accountId =
           accountResolver
@@ -65,7 +65,6 @@ public class ConversationMembershipService {
                   () -> new MembershipRefreshException("Participant identity could not resolve"));
       accountIds.add(accountId);
     }
-    store.latestSenderAccountId(conversationId).ifPresent(accountIds::add);
     if (accountIds.isEmpty()) {
       throw new MembershipRefreshException("Participant snapshot was empty");
     }

@@ -1,5 +1,7 @@
 # Near-Real-Time Group Memory Implementation Plan
 
+> Historical design: the memory provider, per-account group projections, and legacy scope fallbacks described here were superseded by [optional Hindsight memory](../../hindsight-memory.md). Current code imports no existing memories.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Make confirmed collective decisions from opted-in BlueChat group conversations available to authorized one-to-one chats within roughly 60 seconds, while also supporting complete time-bounded catch-up summaries, nightly reconciliation, and opt-in proactive digests.

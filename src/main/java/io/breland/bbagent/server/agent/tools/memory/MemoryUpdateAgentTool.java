@@ -11,7 +11,7 @@ import org.springframework.lang.Nullable;
 
 public class MemoryUpdateAgentTool implements ToolProvider {
   public static final String TOOL_NAME = "memory_update";
-  private final Mem0Client mem0Client;
+  private final HindsightClient hindsightClient;
   private final @Nullable MemoryScopeResolver scopeResolver;
 
   @Schema(description = "Update a stored memory.")
@@ -24,8 +24,9 @@ public class MemoryUpdateAgentTool implements ToolProvider {
       @Schema(description = "Updated memory text.", requiredMode = Schema.RequiredMode.REQUIRED)
           String memory) {}
 
-  public MemoryUpdateAgentTool(Mem0Client mem0Client, @Nullable MemoryScopeResolver scopeResolver) {
-    this.mem0Client = mem0Client;
+  public MemoryUpdateAgentTool(
+      HindsightClient hindsightClient, @Nullable MemoryScopeResolver scopeResolver) {
+    this.hindsightClient = hindsightClient;
     this.scopeResolver = scopeResolver;
   }
 
@@ -36,7 +37,7 @@ public class MemoryUpdateAgentTool implements ToolProvider {
         jsonSchema(MemoryUpdateRequest.class),
         false,
         (context, args) -> {
-          if (!mem0Client.isConfigured()) {
+          if (!hindsightClient.isConfigured()) {
             return "not configured";
           }
           if (scopeResolver == null) {
@@ -65,12 +66,11 @@ public class MemoryUpdateAgentTool implements ToolProvider {
             return "memory does not belong to the current scope";
           }
           String normalizedText = text.trim();
-          boolean updated = mem0Client.updateMemory(memoryId, normalizedText, null);
+          boolean updated = scopeResolver.update(canonicalScope, memoryId, normalizedText);
           if (!updated) {
-            return "failed";
+            return "memory is still processing; try again once processing completes";
           }
-          scopeResolver.updateOwnership(canonicalScope, memoryId, normalizedText);
-          return "updated";
+          return "update queued for memory processing";
         });
   }
 }

@@ -1,5 +1,7 @@
 # Full Group History Question Answering Implementation Plan
 
+> Historical design: the memory provider, per-account group projections, and legacy scope fallbacks described here were superseded by [optional Hindsight memory](../../hindsight-memory.md). Current code imports no existing memories.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Replace keyword-planned group-history QA with model-directed 500-message chronological windows that answer arbitrary questions, page backward intelligently, ask for approximate time when needed, and resolve participant names without exposing raw group transcripts to the main agent.

@@ -51,11 +51,6 @@ public final class ConversationMemoryModels {
     BLOCKED
   }
 
-  public enum ProjectionOperation {
-    UPSERT,
-    DELETE
-  }
-
   public record JournalMessage(
       String messageGuid,
       String conversationId,
@@ -148,29 +143,8 @@ public final class ConversationMemoryModels {
 
   public record WorkClaim(String conversationId, String workerId, Instant claimedUntil) {}
 
-  public record ProjectionClaim(
-      String artifactId,
-      String accountId,
-      ProjectionOperation operation,
-      String projectionHash,
-      String workerId,
-      Instant claimedUntil) {}
-
   public record ProjectionArtifact(
       String artifactId,
-      String conversationId,
-      String groupDisplayName,
-      ArtifactKind kind,
-      String text,
-      ArtifactStatus status,
-      ArtifactSensitivity sensitivity,
-      double confidence,
-      Instant occurredAt,
-      Instant expiresAt) {}
-
-  public record ProjectedArtifact(
-      String artifactId,
-      String mem0MemoryId,
       String conversationId,
       String groupDisplayName,
       ArtifactKind kind,

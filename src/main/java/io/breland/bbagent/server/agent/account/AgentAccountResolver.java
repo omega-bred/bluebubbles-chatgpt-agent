@@ -403,16 +403,14 @@ public class AgentAccountResolver {
         sourceAccountId);
     deleteAccountCollision(
         "conversation_memory_audiences", "artifact_id", targetAccountId, sourceAccountId);
-    deleteAccountCollision(
-        "conversation_memory_projections", "artifact_id", targetAccountId, sourceAccountId);
+    deleteAccountCollision("hindsight_bank_audiences", "bank_id", targetAccountId, sourceAccountId);
     deleteAccountCollision(
         "conversation_summary_audiences", "summary_id", targetAccountId, sourceAccountId);
     updateAccountColumn(
         "agent_conversation_memberships", "account_id", targetAccountId, sourceAccountId);
     updateAccountColumn(
         "conversation_memory_audiences", "account_id", targetAccountId, sourceAccountId);
-    updateAccountColumn(
-        "conversation_memory_projections", "account_id", targetAccountId, sourceAccountId);
+    updateAccountColumn("hindsight_bank_audiences", "account_id", targetAccountId, sourceAccountId);
     updateAccountColumn(
         "conversation_summary_audiences", "account_id", targetAccountId, sourceAccountId);
     updateAccountColumn(
@@ -434,14 +432,7 @@ public class AgentAccountResolver {
         sourceAccountId,
         targetAccountId);
     updateAccountColumn("group_catchup_deliveries", "account_id", targetAccountId, sourceAccountId);
-    jdbcTemplate.update(
-        """
-        update canonical_memory_records
-           set scope_id = ?, updated_at = current_timestamp
-         where scope_type = 'ACCOUNT' and scope_id = ?
-        """,
-        targetAccountId,
-        sourceAccountId);
+    updateAccountColumn("hindsight_memory_banks", "account_id", targetAccountId, sourceAccountId);
   }
 
   private void mergeCatchupPreferences(String targetAccountId, String sourceAccountId) {

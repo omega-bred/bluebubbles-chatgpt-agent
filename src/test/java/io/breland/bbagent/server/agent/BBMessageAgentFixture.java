@@ -25,7 +25,7 @@ import io.breland.bbagent.server.agent.tools.AgentToolRegistry;
 import io.breland.bbagent.server.agent.tools.ToolContextFactory;
 import io.breland.bbagent.server.agent.tools.gcal.GcalClient;
 import io.breland.bbagent.server.agent.tools.giphy.GiphyClient;
-import io.breland.bbagent.server.agent.tools.memory.Mem0Client;
+import io.breland.bbagent.server.agent.tools.memory.HindsightClient;
 import io.breland.bbagent.server.agent.transport.MessageTransportRegistry;
 import io.breland.bbagent.server.agent.transport.bb.BBHttpClientWrapper;
 import io.breland.bbagent.server.agent.transport.bb.BlueBubblesMessageTransport;
@@ -112,7 +112,7 @@ final class BBMessageAgentFixture {
     AgentToolRegistry toolRegistry =
         new AgentToolRegistry(
             bbHttpClientWrapper,
-            mock(Mem0Client.class),
+            mock(HindsightClient.class),
             mock(GcalClient.class),
             websiteAccountService,
             mock(GiphyClient.class),
