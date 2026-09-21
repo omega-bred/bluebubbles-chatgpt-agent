@@ -17,6 +17,8 @@ import java.util.List;
 import java.util.Map;
 import javax.imageio.ImageIO;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 class WallartContactPhotosTest {
   private final ObjectMapper mapper = new ObjectMapper();
@@ -43,6 +45,55 @@ class WallartContactPhotosTest {
     assertFalse(resolved.toString().contains(data));
     verify(bb, never()).getContactPhotosForAddress(eq("alice@example.com"), any());
     verify(bb, never()).getSharedContactPhoto(anyString(), any());
+  }
+
+  @Test
+  void contactAliasesKeepPhoneThenEmailOrderDuplicatesAndWhitespace() throws Exception {
+    participants("alice@example.com");
+    Contact contact =
+        mapper.readValue(
+            """
+            {
+              "displayName": "Alice",
+              "phoneNumbers": [null, {}, {"address": null}, {"address": "  "},
+                {"address": " +1 (415) 555-0101 "}, {"address": "+14155550102"}],
+              "emails": [null, {}, {"address": ""}, {"address": " alice@example.com "},
+                {"address": "alice@example.com"}, {"address": "alice@example.com"}]
+            }
+            """,
+            Contact.class);
+    contact.setAvatar(WallartImageInputsTest.png());
+    when(bb.getContactPhotosForAddress(eq("alice@example.com"), any()))
+        .thenReturn(List.of(contact));
+
+    var photo = photos.resolve(message()).getFirst();
+    assertEquals("available", photo.status());
+    assertEquals(
+        List.of(
+            " +1 (415) 555-0101 ",
+            "+14155550102",
+            " alice@example.com ",
+            "alice@example.com",
+            "alice@example.com"),
+        photo.aliases());
+    photo.aliases().add("another@example.com");
+    assertEquals("another@example.com", photo.aliases().getLast());
+  }
+
+  @ParameterizedTest
+  @ValueSource(strings = {"phoneNumbers", "emails"})
+  void contactLookupToleratesEitherMissingAddressList(String missingList) throws Exception {
+    participants("alice@example.com");
+    String retainedList = missingList.equals("phoneNumbers") ? "emails" : "phoneNumbers";
+    var node = mapper.createObjectNode().put("avatar", WallartImageInputsTest.png());
+    node.putNull(missingList);
+    node.putArray(retainedList).addObject().put("address", "alice@example.com");
+    when(bb.getContactPhotosForAddress(eq("alice@example.com"), any()))
+        .thenReturn(List.of(mapper.treeToValue(node, Contact.class)));
+
+    var photo = photos.resolve(message()).getFirst();
+    assertEquals("available", photo.status());
+    assertEquals(List.of("alice@example.com"), photo.aliases());
   }
 
   @Test
