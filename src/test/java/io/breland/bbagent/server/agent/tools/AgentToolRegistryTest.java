@@ -70,6 +70,7 @@ class AgentToolRegistryTest {
             false);
     assertNull(registry.resolveTool("get_group_icon", lxmf));
     assertNull(registry.resolveTool("load_conversation_images", lxmf));
+    assertNull(registry.resolveTool("get_contact_photo", lxmf));
     assertNotNull(registry.resolveTool("load_conversation_images", group));
     assertNotNull(registry.resolveTool("load_conversation_images", directMessage("alice")));
     var args =
@@ -84,6 +85,24 @@ class AgentToolRegistryTest {
     assertFalse(
         toolSearch(registry, mapper, ToolContextFixture.with(directMessage("alice")).build(), args)
             .contains("get_group_icon"));
+  }
+
+  @Test
+  void contactPhotoIsDiscoverableForDirectAndGroupBlueChat() throws Exception {
+    var registry = registryForAccount("account-1");
+    var mapper = new ObjectMapper();
+    assertNotNull(registry.resolveTool("get_contact_photo", groupMessage()));
+    assertNotNull(registry.resolveTool("get_contact_photo", directMessage("alice")));
+    assertEquals("bluebubbles", registry.toolCategory("get_contact_photo"));
+    var args =
+        mapper
+            .createObjectNode()
+            .put("query", "view send my contact profile photo")
+            .put("categoryFilter", "bluebubbles")
+            .put("maxResults", 5);
+    assertTrue(
+        toolSearch(registry, mapper, ToolContextFixture.with(directMessage("alice")).build(), args)
+            .contains("get_contact_photo"));
   }
 
   @Test

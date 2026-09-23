@@ -12,6 +12,7 @@ import io.breland.bbagent.server.agent.profile.AgentProfileService;
 import io.breland.bbagent.server.agent.tools.assistant.AssistantNameAgentTool;
 import io.breland.bbagent.server.agent.tools.assistant.AssistantResponsivenessAgentTool;
 import io.breland.bbagent.server.agent.tools.bb.CurrentConversationInfoAgentTool;
+import io.breland.bbagent.server.agent.tools.bb.GetContactPhotoAgentTool;
 import io.breland.bbagent.server.agent.tools.bb.GetGroupIconAgentTool;
 import io.breland.bbagent.server.agent.tools.bb.GetThreadContextAgentTool;
 import io.breland.bbagent.server.agent.tools.bb.LoadConversationImagesAgentTool;
@@ -92,6 +93,7 @@ public final class AgentToolRegistry {
   private static final Set<String> BLUEBUBBLES_ONLY_TOOLS =
       Set.of(
           LoadConversationImagesAgentTool.TOOL_NAME,
+          GetContactPhotoAgentTool.TOOL_NAME,
           SearchConvoHistoryAgentTool.TOOL_NAME,
           CurrentConversationInfoAgentTool.TOOL_NAME,
           RenameConversationAgentTool.TOOL_NAME,
@@ -105,6 +107,7 @@ public final class AgentToolRegistry {
   private static final Set<String> BLUEBUBBLES_TOOL_NAMES =
       Set.of(
           LoadConversationImagesAgentTool.TOOL_NAME,
+          GetContactPhotoAgentTool.TOOL_NAME,
           SendTextAgentTool.TOOL_NAME,
           SendReactionAgentTool.TOOL_NAME,
           SearchConvoHistoryAgentTool.TOOL_NAME,
@@ -429,6 +432,12 @@ public final class AgentToolRegistry {
     registerTool(new RenameConversationAgentTool(bbHttpClientWrapper).getTool());
     registerTool(new SetGroupIconAgentTool(bbHttpClientWrapper, openAiSupplier).getTool());
     registerTool(new GetGroupIconAgentTool(bbHttpClientWrapper).getTool());
+    registerTool(
+        new GetContactPhotoAgentTool(
+                bbHttpClientWrapper,
+                new io.breland.bbagent.server.agent.tools.wallart.WallartContactPhotos(
+                    bbHttpClientWrapper))
+            .getTool());
     registerTool(
         new SendGiphyAgentTool(
                 bbHttpClientWrapper, giphyClient, openAiSupplier, operationalMetricsService)

@@ -25,6 +25,49 @@ public class WallartContactPhotos {
 
   /** All addresses originate in fresh conversation metadata, never arbitrary tool arguments. */
   public List<Photo> resolve(IncomingMessage message) {
+    List<String> addresses = participants(message);
+    long deadline = System.nanoTime() + Duration.ofSeconds(60).toNanos();
+    List<Photo> result = new ArrayList<>();
+    long retainedBytes = 0;
+    for (String address : addresses) {
+      // If a phone and email match one verified contact, include that person once.
+      if (result.stream().anyMatch(photo -> photo.matches(address))) continue;
+      Photo photo = resolveOne(address, deadline);
+      if (photo.image() != null) {
+        if (retainedBytes + photo.image().bytes().length > WallartImageInputs.MAX_TOTAL_BYTES) {
+          photo =
+              new Photo(
+                  photo.participant(),
+                  photo.name(),
+                  photo.aliases(),
+                  null,
+                  photo.source(),
+                  "photo_budget_exceeded");
+        } else retainedBytes += photo.image().bytes().length;
+      }
+      result.add(photo);
+    }
+    return result;
+  }
+
+  /** Resolve only the incoming sender, after confirming current chat membership. */
+  public Photo resolveSender(IncomingMessage message) {
+    List<String> addresses = participants(message);
+    if (StringUtils.isBlank(message.sender())) {
+      throw new IllegalArgumentException("The incoming sender is unavailable.");
+    }
+    String address =
+        addresses.stream()
+            .filter(candidate -> AgentAccountIdentifiers.equivalent(candidate, message.sender()))
+            .findFirst()
+            .orElseThrow(
+                () ->
+                    new IllegalArgumentException(
+                        "Unable to verify the sender in this conversation."));
+    return resolveOne(address, System.nanoTime() + Duration.ofSeconds(60).toNanos());
+  }
+
+  private List<String> participants(IncomingMessage message) {
     if (message == null
         || !message.isBlueBubblesTransport()
         || StringUtils.isBlank(message.chatGuid())) {
@@ -49,28 +92,7 @@ public class WallartContactPhotos {
     if (addresses.size() > 32)
       throw new IllegalArgumentException(
           "This chat has too many participants to look up contact photos; attach selected photos instead.");
-    long deadline = System.nanoTime() + Duration.ofSeconds(60).toNanos();
-    List<Photo> result = new ArrayList<>();
-    long retainedBytes = 0;
-    for (String address : addresses) {
-      // If a phone and email match one verified contact, include that person once.
-      if (result.stream().anyMatch(photo -> photo.matches(address))) continue;
-      Photo photo = resolveOne(address, deadline);
-      if (photo.image() != null) {
-        if (retainedBytes + photo.image().bytes().length > WallartImageInputs.MAX_TOTAL_BYTES) {
-          photo =
-              new Photo(
-                  photo.participant(),
-                  photo.name(),
-                  photo.aliases(),
-                  null,
-                  photo.source(),
-                  "photo_budget_exceeded");
-        } else retainedBytes += photo.image().bytes().length;
-      }
-      result.add(photo);
-    }
-    return result;
+    return addresses;
   }
 
   private Photo resolveOne(String address, long deadline) {

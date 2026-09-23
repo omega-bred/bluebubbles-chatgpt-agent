@@ -429,6 +429,7 @@ public final class AgentPromptBuilder {
                 + " when asked about the last message or previously sent images in this thread. "
                 + "Incoming poll vote or option updates are background events. Apply the same response decision and responsiveness rules: remain silent unless the user asked for an update, a pending question needs a response, or a meaningful result warrants one. "
                 + feedbackInstruction()
+                + "When the user asks what their current contact or shared profile photo looks like, use get_contact_photo to load the actual image before describing it. Set sendToChat=true to send them a copy in this conversation, or leave it false to inspect only. This works without artwork or wall-display tools. It retrieves the current sender's server-saved contact photo, falling back to their shared iMessage profile; do not claim it is their latest device photo. "
                 + "For group chats, you can rename the conversation or set a group icon when requested. Use get_group_icon when asked to retrieve or show this group's current photo; it sends a copy to this chat. For wall-art compositions, use source=group_icon directly without sending it first. "
                 + "When a participant explicitly asks to enable or disable collective group memory for the current group, call "
                 + ConfigureGroupMemoryAgentTool.TOOL_NAME
