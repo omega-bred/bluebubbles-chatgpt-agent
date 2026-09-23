@@ -1,6 +1,7 @@
 package io.breland.bbagent.server.agent.tools.wallart;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import io.breland.bbagent.generated.bluebubblesclient.model.AddressEntry;
 import io.breland.bbagent.generated.bluebubblesclient.model.Contact;
 import io.breland.bbagent.server.agent.IncomingMessage;
 import io.breland.bbagent.server.agent.account.AgentAccountIdentifiers;
@@ -10,6 +11,9 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 import lombok.RequiredArgsConstructor;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.stereotype.Component;
@@ -131,24 +135,13 @@ public class WallartContactPhotos {
 
   private static List<String> addresses(Contact contact) {
     if (contact == null) return List.of();
-    List<String> addresses = new ArrayList<>();
-    if (contact.getPhoneNumbers() != null)
-      contact
-          .getPhoneNumbers()
-          .forEach(
-              entry -> {
-                if (entry != null && StringUtils.isNotBlank(entry.getAddress()))
-                  addresses.add(entry.getAddress());
-              });
-    if (contact.getEmails() != null)
-      contact
-          .getEmails()
-          .forEach(
-              entry -> {
-                if (entry != null && StringUtils.isNotBlank(entry.getAddress()))
-                  addresses.add(entry.getAddress());
-              });
-    return addresses;
+    return Stream.of(contact.getPhoneNumbers(), contact.getEmails())
+        .filter(Objects::nonNull)
+        .flatMap(List::stream)
+        .filter(Objects::nonNull)
+        .map(AddressEntry::getAddress)
+        .filter(StringUtils::isNotBlank)
+        .collect(Collectors.toCollection(ArrayList::new));
   }
 
   private static Duration remaining(long deadline) {
