@@ -159,12 +159,8 @@ public final class BlueBubblesPollSupport {
   }
 
   private static String pollOptionsSummary(JsonNode poll) {
-    JsonNode options = poll == null ? null : poll.get("options");
-    if (options == null || !options.isArray() || options.isEmpty()) {
-      return null;
-    }
     StringJoiner joiner = new StringJoiner("; ");
-    for (JsonNode option : options) {
+    for (JsonNode option : arrayValues(poll, "options")) {
       String id = textValue(option, "optionIdentifier");
       String label = textValue(option, "text");
       if (label == null) {
@@ -179,20 +175,15 @@ public final class BlueBubblesPollSupport {
   }
 
   private static String pollResponsesSummary(JsonNode poll) {
-    JsonNode responses = poll == null ? null : poll.get("responses");
-    if (responses == null || !responses.isArray() || responses.isEmpty()) {
-      return null;
-    }
     Map<String, String> optionTexts = optionTextsByIdentifier(poll);
     StringJoiner joiner = new StringJoiner("; ");
-    for (JsonNode response : responses) {
+    for (JsonNode response : arrayValues(poll, "responses")) {
       String handle = textValue(response, "handle");
-      JsonNode optionIdentifiers = response.get("optionIdentifiers");
-      if (handle == null || optionIdentifiers == null || !optionIdentifiers.isArray()) {
+      if (handle == null) {
         continue;
       }
       StringJoiner votes = new StringJoiner(", ");
-      for (JsonNode optionIdentifier : optionIdentifiers) {
+      for (JsonNode optionIdentifier : arrayValues(response, "optionIdentifiers")) {
         String id = optionIdentifier.asText(null);
         if (id == null) {
           continue;
@@ -231,28 +222,17 @@ public final class BlueBubblesPollSupport {
   }
 
   private static String pollTallySummary(JsonNode poll) {
-    JsonNode options = poll == null ? null : poll.get("options");
-    if (options == null || !options.isArray() || options.isEmpty()) {
-      return null;
-    }
     Map<String, Integer> countsByOptionId = new LinkedHashMap<>();
-    JsonNode responses = poll.get("responses");
-    if (responses != null && responses.isArray()) {
-      for (JsonNode response : responses) {
-        JsonNode optionIdentifiers = response.get("optionIdentifiers");
-        if (optionIdentifiers == null || !optionIdentifiers.isArray()) {
-          continue;
-        }
-        for (JsonNode optionIdentifier : optionIdentifiers) {
-          String id = optionIdentifier.asText(null);
-          if (id != null) {
-            countsByOptionId.merge(id, 1, Integer::sum);
-          }
+    for (JsonNode response : arrayValues(poll, "responses")) {
+      for (JsonNode optionIdentifier : arrayValues(response, "optionIdentifiers")) {
+        String id = optionIdentifier.asText(null);
+        if (id != null) {
+          countsByOptionId.merge(id, 1, Integer::sum);
         }
       }
     }
     StringJoiner joiner = new StringJoiner(", ");
-    for (JsonNode option : options) {
+    for (JsonNode option : arrayValues(poll, "options")) {
       String id = textValue(option, "optionIdentifier");
       String label = textValue(option, "text");
       if (label == null) {
@@ -269,12 +249,8 @@ public final class BlueBubblesPollSupport {
   }
 
   private static String pollOptionLabelsSummary(JsonNode poll) {
-    JsonNode options = poll == null ? null : poll.get("options");
-    if (options == null || !options.isArray() || options.isEmpty()) {
-      return null;
-    }
     StringJoiner joiner = new StringJoiner(", ");
-    for (JsonNode option : options) {
+    for (JsonNode option : arrayValues(poll, "options")) {
       String label = textValue(option, "text");
       if (label != null) {
         joiner.add(label);
@@ -286,11 +262,7 @@ public final class BlueBubblesPollSupport {
 
   private static Map<String, String> optionTextsByIdentifier(JsonNode poll) {
     Map<String, String> optionTexts = new LinkedHashMap<>();
-    JsonNode options = poll == null ? null : poll.get("options");
-    if (options == null || !options.isArray()) {
-      return optionTexts;
-    }
-    for (JsonNode option : options) {
+    for (JsonNode option : arrayValues(poll, "options")) {
       String id = textValue(option, "optionIdentifier");
       String text = textValue(option, "text");
       if (id != null && text != null) {
@@ -302,17 +274,12 @@ public final class BlueBubblesPollSupport {
 
   private static Map<String, List<String>> votersByOptionIdentifier(JsonNode poll) {
     Map<String, List<String>> votersByOptionId = new LinkedHashMap<>();
-    JsonNode responses = poll == null ? null : poll.get("responses");
-    if (responses == null || !responses.isArray()) {
-      return votersByOptionId;
-    }
-    for (JsonNode response : responses) {
+    for (JsonNode response : arrayValues(poll, "responses")) {
       String handle = textValue(response, "handle");
-      JsonNode optionIdentifiers = response.get("optionIdentifiers");
-      if (handle == null || optionIdentifiers == null || !optionIdentifiers.isArray()) {
+      if (handle == null) {
         continue;
       }
-      for (JsonNode optionIdentifier : optionIdentifiers) {
+      for (JsonNode optionIdentifier : arrayValues(response, "optionIdentifiers")) {
         String id = optionIdentifier.asText(null);
         if (id == null) {
           continue;
@@ -321,6 +288,11 @@ public final class BlueBubblesPollSupport {
       }
     }
     return votersByOptionId;
+  }
+
+  private static Iterable<JsonNode> arrayValues(JsonNode node, String field) {
+    JsonNode value = node == null ? null : node.get(field);
+    return value != null && value.isArray() ? value : List.of();
   }
 
   private static String textValue(JsonNode node, String field) {
