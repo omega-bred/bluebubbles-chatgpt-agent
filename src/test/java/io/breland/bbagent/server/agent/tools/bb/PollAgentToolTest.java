@@ -32,7 +32,8 @@ class PollAgentToolTest {
   @Test
   void sendPollUsesCurrentConversationAndReturnsPollJson() throws Exception {
     CapturingBBHttpClientWrapper wrapper = new CapturingBBHttpClientWrapper(mapper);
-    IncomingMessage message = incomingMessage("iMessage;-;+15555550123", null, null);
+    IncomingMessage message =
+        plainIncomingMessage("iMessage;-;+15555550123", "request-guid", "send a poll");
     ToolContext context = toolContext(message, null);
     JsonNode args =
         mapper.readTree(
@@ -57,7 +58,8 @@ class PollAgentToolTest {
   @Test
   void sendPollAcceptsStringOptions() throws Exception {
     CapturingBBHttpClientWrapper wrapper = new CapturingBBHttpClientWrapper(mapper);
-    IncomingMessage message = incomingMessage("iMessage;-;+15555550123", null, null);
+    IncomingMessage message =
+        plainIncomingMessage("iMessage;-;+15555550123", "request-guid", "send a poll");
     ToolContext context = toolContext(message, null);
     JsonNode args =
         mapper.readTree(
@@ -73,6 +75,48 @@ class PollAgentToolTest {
     assertEquals("Dinner?", wrapper.lastPollTitle);
     assertEquals(List.of("Grilled chicken bowls", "Salmon salads"), wrapper.lastPollOptionTexts);
     assertTrue(output.contains("\"title\":\"Dinner?\""));
+  }
+
+  @Test
+  void repeatedSendCallsReuseOutcomeAndNewRequestsCanSend() throws Exception {
+    CapturingBBHttpClientWrapper wrapper = new CapturingBBHttpClientWrapper(mapper);
+    var tool = new SendPollAgentTool(wrapper).getTool();
+    var args = mapper.readTree("{\"title\":\"Dinner?\",\"options\":[\"Sushi\",\"Pizza\"]}");
+    var context = toolContext(plainIncomingMessage("chat", "request-1", "send a poll"), null);
+    String first = tool.handler().apply(context, args);
+    assertEquals(first, tool.handler().apply(context, args));
+    assertEquals(1, wrapper.sendCount);
+    tool.handler()
+        .apply(toolContext(plainIncomingMessage("chat", "request-2", "another poll"), null), args);
+    assertEquals(2, wrapper.sendCount);
+  }
+
+  @Test
+  void uncertainSendIsNotRetriedEvenWithChangedArguments() throws Exception {
+    CapturingBBHttpClientWrapper wrapper = new CapturingBBHttpClientWrapper(mapper);
+    wrapper.failSendPoll = true;
+    var tool = new SendPollAgentTool(wrapper).getTool();
+    var args = mapper.readTree("{\"title\":\"Dinner?\",\"options\":[\"Sushi\",\"Pizza\"]}");
+    var context = toolContext(plainIncomingMessage("chat", "request-1", "send a poll"), null);
+    String first = tool.handler().apply(context, args);
+    assertTrue(first.contains("may already have been sent"));
+    assertTrue(first.contains("Do not retry"));
+    var changed = mapper.readTree("{\"title\":\"Dinner retry\",\"options\":[\"Thai\",\"Pizza\"]}");
+    assertEquals(first, tool.handler().apply(context, changed));
+    assertEquals(1, wrapper.sendCount);
+  }
+
+  @Test
+  void pollUpdateCannotCreateAnotherPoll() throws Exception {
+    CapturingBBHttpClientWrapper wrapper = new CapturingBBHttpClientWrapper(mapper);
+    var args = mapper.readTree("{\"title\":\"Dinner?\",\"options\":[\"Sushi\",\"Pizza\"]}");
+    String output =
+        new SendPollAgentTool(wrapper)
+            .getTool()
+            .handler()
+            .apply(toolContext(incomingMessage("chat", "existing-poll", null), null), args);
+    assertTrue(output.contains("this is a poll update"));
+    assertEquals(0, wrapper.sendCount);
   }
 
   @Test
@@ -341,6 +385,8 @@ class PollAgentToolTest {
     private final Set<String> failingReadPollGuids = new HashSet<>();
     private JsonNode pollReadResponse;
     private boolean failReadPoll;
+    private boolean failSendPoll;
+    private int sendCount;
 
     CapturingBBHttpClientWrapper(ObjectMapper mapper) {
       super("pw", Mockito.mock(V1MessageApi.class), Mockito.mock(V1ContactApi.class));
@@ -349,6 +395,8 @@ class PollAgentToolTest {
 
     @Override
     public JsonNode sendPollJson(String chatGuid, String title, List<PollSendOption> options) {
+      sendCount++;
+      if (failSendPoll) throw new org.springframework.core.codec.DecodingException("bad response");
       this.lastPollChatGuid = chatGuid;
       this.lastPollTitle = title;
       this.lastPollOptionTexts = options.stream().map(PollSendOption::text).toList();

@@ -3688,9 +3688,9 @@ components:
           type: string
           nullable: true
         attributedText:
-          type: object
-          nullable: true
-          additionalProperties: true
+          description: >-
+            Option attributed text may be a plain string, structured object, array, or null
+            depending on the BlueBubbles response. Preserve the wire value.
         canBeEdited:
           type: boolean
 
@@ -3936,9 +3936,9 @@ components:
             - type: string
             - type: "null"
         attributedBody:
-          oneOf:
-            - type: string
-            - type: "null"
+          description: >-
+            Attributed message content may be a string, structured array, object, or null.
+            Poll send responses contain an array; preserve the wire value.
         handle:
           description: >-
             A BlueBubbles message handle. Wire responses may provide a scalar address, an object

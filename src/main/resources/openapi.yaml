@@ -2676,8 +2676,9 @@ components:
               type: string
               nullable: true
             attributedBody:
-              type: string
-              nullable: true
+              description: >-
+                Attributed message content may be a string, structured array, object, or null.
+                Preserve the BlueBubbles wire value.
             handle:
               type: object
               required:

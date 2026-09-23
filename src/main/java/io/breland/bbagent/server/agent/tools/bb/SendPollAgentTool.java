@@ -4,20 +4,32 @@ import static io.breland.bbagent.server.agent.tools.JsonSchemaUtilities.jsonSche
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.databind.JsonNode;
+import com.google.common.cache.Cache;
+import com.google.common.cache.CacheBuilder;
 import io.breland.bbagent.server.agent.tools.AgentTool;
 import io.breland.bbagent.server.agent.tools.ToolProvider;
 import io.breland.bbagent.server.agent.transport.bb.BBHttpClientWrapper;
+import io.breland.bbagent.server.agent.transport.bb.BlueBubblesPollSupport;
 import io.swagger.v3.oas.annotations.media.Schema;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import org.apache.commons.lang3.StringUtils;
 
+@lombok.extern.slf4j.Slf4j
 public class SendPollAgentTool implements ToolProvider {
 
   public static final String TOOL_NAME = "send_poll";
 
   private final BBHttpClientWrapper bbHttpClientWrapper;
+
+  // Keep the outcome even when response decoding fails: the server may already have sent the poll.
+  // This bounds repeat model calls within this process, not delivery across process restarts.
+  private final Cache<PollRequestKey, String> outcomes =
+      CacheBuilder.newBuilder().expireAfterWrite(Duration.ofHours(1)).maximumSize(10_000).build();
+
+  private record PollRequestKey(String chatGuid, String messageGuid) {}
 
   public SendPollAgentTool(BBHttpClientWrapper bbHttpClientWrapper) {
     this.bbHttpClientWrapper = bbHttpClientWrapper;
@@ -44,6 +56,12 @@ public class SendPollAgentTool implements ToolProvider {
           if (context.message() == null || !context.message().isBlueBubblesTransport()) {
             return "polls are only supported on BlueChat/iMessage conversations";
           }
+          if (BlueBubblesPollSupport.isPollBundle(context.message().balloonBundleId())) {
+            return "skipped: this is a poll update, not a request to create another poll. Read or summarize the existing poll.";
+          }
+          if (StringUtils.isBlank(context.message().messageGuid())) {
+            return "skipped: cannot safely send a poll without an incoming message identifier";
+          }
           SendPollRequest request = context.getMapper().convertValue(args, SendPollRequest.class);
           if (StringUtils.isBlank(request.title())) {
             return "missing title";
@@ -52,13 +70,26 @@ public class SendPollAgentTool implements ToolProvider {
           if (options.size() < 2) {
             return "missing options";
           }
-          if (!context.consumeMessageResponseQuota()) {
-            return "skipped: quota exceeded or outdated workflow";
-          }
           String chatGuid = context.message().chatGuid();
-          JsonNode data = bbHttpClientWrapper.sendPollJson(chatGuid, request.title(), options);
-          context.recordAssistantTurn("Sent poll: " + request.title());
-          return data.toString();
+          return outcomes
+              .asMap()
+              .computeIfAbsent(
+                  new PollRequestKey(chatGuid, context.message().messageGuid()),
+                  key -> {
+                    if (!context.consumeMessageResponseQuota()) {
+                      return "skipped: quota exceeded or outdated workflow";
+                    }
+                    try {
+                      JsonNode data =
+                          bbHttpClientWrapper.sendPollJson(chatGuid, request.title(), options);
+                      context.recordAssistantTurn("Sent poll: " + request.title());
+                      return data.toString();
+                    } catch (RuntimeException e) {
+                      log.warn(
+                          "Poll send outcome could not be confirmed; suppressing repeat sends", e);
+                      return "failed: poll delivery could not be confirmed. The poll may already have been sent. Do not retry or claim it failed to send; check the existing poll instead.";
+                    }
+                  });
         });
   }
 
