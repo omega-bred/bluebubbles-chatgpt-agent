@@ -16,7 +16,7 @@ public struct BlueBubblesMessageReceivedRequestData: Codable, JSONEncodable, Has
     public var originalROWID: Int
     public var guid: String
     public var text: String?
-    public var attributedBody: String?
+    public var attributedBody: AnyCodable?
     public var handle: BlueBubblesMessageReceivedRequestDataHandle?
     public var handleId: Int?
     public var otherHandle: Int?
@@ -48,7 +48,7 @@ public struct BlueBubblesMessageReceivedRequestData: Codable, JSONEncodable, Has
     public var partCount: Int?
     public var tempGuid: String?
 
-    public init(originalROWID: Int, guid: String, text: String? = nil, attributedBody: String? = nil, handle: BlueBubblesMessageReceivedRequestDataHandle? = nil, handleId: Int? = nil, otherHandle: Int? = nil, attachments: [BlueBubblesMessageReceivedRequestDataAttachmentsInner]? = nil, subject: String? = nil, error: Int? = nil, dateCreated: Int64? = nil, dateRead: Int64? = nil, dateDelivered: Int64? = nil, isDelivered: Bool? = nil, isFromMe: Bool? = nil, hasDdResults: Bool? = nil, isArchived: Bool? = nil, itemType: Int? = nil, groupTitle: String? = nil, groupActionType: Int? = nil, balloonBundleId: String? = nil, associatedMessageGuid: String? = nil, associatedMessageType: String? = nil, replyToGuid: String? = nil, expressiveSendStyleId: String? = nil, threadOriginatorGuid: String? = nil, hasPayloadData: Bool? = nil, chats: [BlueBubblesMessageReceivedRequestDataChatsInner]? = nil, messageSummaryInfo: AnyCodable? = nil, payloadData: AnyCodable? = nil, dateEdited: Int? = nil, dateRetracted: Int? = nil, partCount: Int? = nil, tempGuid: String? = nil) {
+    public init(originalROWID: Int, guid: String, text: String? = nil, attributedBody: AnyCodable? = nil, handle: BlueBubblesMessageReceivedRequestDataHandle? = nil, handleId: Int? = nil, otherHandle: Int? = nil, attachments: [BlueBubblesMessageReceivedRequestDataAttachmentsInner]? = nil, subject: String? = nil, error: Int? = nil, dateCreated: Int64? = nil, dateRead: Int64? = nil, dateDelivered: Int64? = nil, isDelivered: Bool? = nil, isFromMe: Bool? = nil, hasDdResults: Bool? = nil, isArchived: Bool? = nil, itemType: Int? = nil, groupTitle: String? = nil, groupActionType: Int? = nil, balloonBundleId: String? = nil, associatedMessageGuid: String? = nil, associatedMessageType: String? = nil, replyToGuid: String? = nil, expressiveSendStyleId: String? = nil, threadOriginatorGuid: String? = nil, hasPayloadData: Bool? = nil, chats: [BlueBubblesMessageReceivedRequestDataChatsInner]? = nil, messageSummaryInfo: AnyCodable? = nil, payloadData: AnyCodable? = nil, dateEdited: Int? = nil, dateRetracted: Int? = nil, partCount: Int? = nil, tempGuid: String? = nil) {
         self.originalROWID = originalROWID
         self.guid = guid
         self.text = text
