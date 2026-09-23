@@ -5,7 +5,7 @@ import static org.mockito.Mockito.mock;
 
 import com.google.gson.reflect.TypeToken;
 import com.uber.cadence.converter.DataConverter;
-import com.uber.cadence.serviceclient.WorkflowServiceTChannel;
+import com.uber.cadence.serviceclient.WorkflowServiceGrpc;
 import io.breland.bbagent.server.agent.AgentWorkflowProperties;
 import io.breland.bbagent.server.agent.ConversationTurn;
 import java.nio.charset.StandardCharsets;
@@ -16,7 +16,7 @@ import org.junit.jupiter.api.Test;
 class CadenceConversationHistoryTest {
   private final DataConverter converter =
       new CadenceWorkflowConfig()
-          .cadenceWorkflowClient(mock(WorkflowServiceTChannel.class), new AgentWorkflowProperties())
+          .cadenceWorkflowClient(mock(WorkflowServiceGrpc.class), new AgentWorkflowProperties())
           .getOptions()
           .getDataConverter();
 

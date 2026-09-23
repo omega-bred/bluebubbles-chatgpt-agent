@@ -14,5 +14,5 @@ public class AgentWorkflowProperties {
   private String cadenceDomain = "default";
   private String cadenceTaskList = "bbagent";
   private String cadenceHost = "localhost";
-  private int cadencePort = 7933;
+  private int cadencePort = 7833;
 }

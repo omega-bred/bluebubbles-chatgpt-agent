@@ -80,9 +80,9 @@ public class CadenceWorkflowLauncher {
               info.getExecution().getWorkflowId(),
               info.getExecution().getRunId(),
               Optional.ofNullable(info.getType()).map(type -> type.getName()).orElse(null),
-              info.isSetCloseStatus() ? info.getCloseStatus().name() : "Running",
-              info.isSetStartTime() ? info.getStartTime() : null,
-              info.isSetExecutionTime() ? info.getExecutionTime() : null,
+              info.getCloseStatus() != null ? info.getCloseStatus().name() : "Running",
+              info.getStartTime() != 0 ? info.getStartTime() : null,
+              info.getExecutionTime() != 0 ? info.getExecutionTime() : null,
               decodeMemo(info.getMemo())));
     }
     return summaries;
@@ -152,13 +152,12 @@ public class CadenceWorkflowLauncher {
     }
     DataConverter converter = workflowClient.getOptions().getDataConverter();
     Map<String, Object> decoded = new LinkedHashMap<>();
-    for (Map.Entry<String, java.nio.ByteBuffer> entry : memo.getFields().entrySet()) {
+    for (Map.Entry<String, byte[]> entry : memo.getFields().entrySet()) {
       if (entry.getKey() == null || entry.getValue() == null) {
         continue;
       }
       try {
-        byte[] data = new byte[entry.getValue().remaining()];
-        entry.getValue().duplicate().get(data);
+        byte[] data = entry.getValue();
         Object value = converter.fromData(data, Object.class, Object.class);
         decoded.put(entry.getKey(), value);
       } catch (Exception e) {

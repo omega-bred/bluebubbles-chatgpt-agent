@@ -15,7 +15,7 @@ import com.uber.cadence.client.WorkflowClientOptions;
 import com.uber.cadence.converter.DataConverter;
 import com.uber.cadence.converter.JsonDataConverter;
 import com.uber.cadence.serviceclient.ClientOptions;
-import com.uber.cadence.serviceclient.WorkflowServiceTChannel;
+import com.uber.cadence.serviceclient.WorkflowServiceGrpc;
 import com.uber.cadence.worker.Worker;
 import com.uber.cadence.worker.WorkerFactory;
 import io.breland.bbagent.server.agent.AgentWorkflowProperties;
@@ -32,18 +32,18 @@ import org.springframework.context.annotation.Profile;
 public class CadenceWorkflowConfig {
 
   @Bean
-  public WorkflowServiceTChannel cadenceService(AgentWorkflowProperties properties) {
+  public WorkflowServiceGrpc cadenceService(AgentWorkflowProperties properties) {
     ClientOptions options =
         ClientOptions.newBuilder()
             .setHost(properties.getCadenceHost())
             .setPort(properties.getCadencePort())
             .build();
-    return new WorkflowServiceTChannel(options);
+    return new WorkflowServiceGrpc(options);
   }
 
   @Bean
   public WorkflowClient cadenceWorkflowClient(
-      WorkflowServiceTChannel cadenceService, AgentWorkflowProperties properties) {
+      WorkflowServiceGrpc cadenceService, AgentWorkflowProperties properties) {
     DataConverter dataConverter =
         new JsonDataConverter(
             builder ->
