@@ -31,7 +31,6 @@ public class BBMessageAgent {
   private final AgentToolActivityRunner toolActivityRunner;
   private final AgentOutboundService outboundService;
   private final AgentResponseCreator responseCreator;
-  private final ConversationThreadContextRecorder threadContextRecorder;
   private final NativeAppSessionService nativeAppSessionService;
 
   public Map<String, ConversationState> getConversations() {
@@ -70,17 +69,9 @@ public class BBMessageAgent {
     outboundService.recordAssistantTurn(message, content, workflowContext);
   }
 
-  public void recordIncomingTurnsForResponse(ConversationState state, IncomingMessage message) {
-    outboundService.recordIncomingTurnsForResponse(state, message);
-  }
-
   public boolean sendThreadAwareText(
       IncomingMessage message, String text, AgentWorkflowContext workflowContext) {
     return outboundService.sendThreadAwareText(message, text, workflowContext);
-  }
-
-  public boolean sendThreadAwareTextUnmetered(IncomingMessage message, String text) {
-    return outboundService.sendThreadAwareTextUnmetered(message, text);
   }
 
   public boolean sendTextUnmetered(IncomingMessage message, OutgoingTextMessage outgoingMessage) {
@@ -92,17 +83,6 @@ public class BBMessageAgent {
       OutgoingTextMessage outgoingMessage,
       AgentWorkflowContext workflowContext) {
     return outboundService.sendTextFromTool(message, outgoingMessage, workflowContext);
-  }
-
-  public boolean sendReactionFromTool(
-      IncomingMessage message,
-      String conversationId,
-      String selectedMessageGuid,
-      String reaction,
-      Integer partIndex,
-      AgentWorkflowContext workflowContext) {
-    return outboundService.sendReactionFromTool(
-        message, conversationId, selectedMessageGuid, reaction, partIndex, workflowContext);
   }
 
   public boolean notifyIfMessageResponseLimitExceeded(
@@ -127,9 +107,5 @@ public class BBMessageAgent {
       IncomingMessage message,
       AgentWorkflowContext workflowContext) {
     return toolActivityRunner.run(toolCall, message, workflowContext);
-  }
-
-  public void updateThreadContext(ConversationState state, IncomingMessage message) {
-    threadContextRecorder.updateThreadContext(state, message);
   }
 }
