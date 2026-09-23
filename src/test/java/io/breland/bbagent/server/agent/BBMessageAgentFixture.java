@@ -179,7 +179,6 @@ final class BBMessageAgentFixture {
         toolActivityRunner,
         outboundService,
         responseCreator,
-        new ConversationThreadContextRecorder(new AgentAttachmentInputBuilder(bbHttpClientWrapper)),
         nativeAppSessionService);
   }
 
