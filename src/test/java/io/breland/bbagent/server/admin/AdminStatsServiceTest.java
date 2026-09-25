@@ -4,17 +4,20 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.breland.bbagent.generated.model.AdminBucketModelStats;
 import io.breland.bbagent.generated.model.AdminStatsResponse;
 import io.breland.bbagent.server.agent.IncomingMessage;
 import io.breland.bbagent.server.agent.account.AgentAccountResolver;
 import io.breland.bbagent.server.agent.canary.AgentCanaryService;
 import io.breland.bbagent.server.agent.model_picker.ModelAccessService;
 import io.breland.bbagent.server.agent.persistence.account.AgentAccountRepository;
+import io.breland.bbagent.server.agent.persistence.metrics.AgentMessageMetricEntity;
 import io.breland.bbagent.server.agent.persistence.metrics.AgentMessageMetricRepository;
 import io.breland.bbagent.server.agent.persistence.metrics.AgentToolMetricRepository;
 import io.breland.bbagent.server.metrics.AgentToolMetricEvent;
 import java.time.Instant;
 import java.util.List;
+import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -67,6 +70,43 @@ class AdminStatsServiceTest {
                 model -> ModelAccessService.STANDARD_MODEL_LABEL.equals(model.getModelLabel())));
     assertEquals(
         3L, stats.getTimeline().stream().mapToLong(bucket -> bucket.getMessageCount()).sum());
+  }
+
+  @Test
+  void senderAndTimelineModelsPreserveLabelsAndDescendingCounts() {
+    metricRepository.deleteAll();
+    toolMetricRepository.deleteAll();
+    Instant from = Instant.parse("2026-09-24T10:00:00Z");
+    for (String label :
+        List.of("Other", "Original", "Renamed", "Original", "Renamed", "Original")) {
+      metricRepository.save(
+          new AgentMessageMetricEntity(
+              UUID.randomUUID().toString(),
+              from.plusSeconds(30),
+              IncomingMessage.TRANSPORT_BLUEBUBBLES,
+              null,
+              null,
+              "sender-hash",
+              label.equals("Other") ? "other" : "shared",
+              label,
+              "responses-model",
+              false,
+              "CADENCE",
+              from));
+    }
+
+    AdminStatsResponse stats = adminStatsService.getStatistics(from, from.plusSeconds(7200));
+    List<AdminBucketModelStats> expected =
+        List.of(
+            new AdminBucketModelStats().modelKey("shared").modelLabel("Original").messageCount(3L),
+            new AdminBucketModelStats().modelKey("shared").modelLabel("Renamed").messageCount(2L),
+            new AdminBucketModelStats().modelKey("other").modelLabel("Other").messageCount(1L));
+
+    assertEquals(1, stats.getSenders().size());
+    assertEquals(expected, stats.getSenders().getFirst().getModels());
+    assertEquals(2, stats.getTimeline().size());
+    assertEquals(expected, stats.getTimeline().getFirst().getModels());
+    assertTrue(stats.getTimeline().get(1).getModels().isEmpty());
   }
 
   @Test

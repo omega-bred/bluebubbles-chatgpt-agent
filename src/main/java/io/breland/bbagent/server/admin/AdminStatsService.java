@@ -228,6 +228,19 @@ public class AdminStatsService implements AgentMetricsService {
         .toList();
   }
 
+  private static List<AdminBucketModelStats> modelCountStats(
+      Map<BucketModelKey, Long> modelCounts) {
+    return modelCounts.entrySet().stream()
+        .sorted(Map.Entry.<BucketModelKey, Long>comparingByValue().reversed())
+        .map(
+            entry ->
+                new AdminBucketModelStats()
+                    .modelKey(entry.getKey().modelKey())
+                    .modelLabel(entry.getKey().modelLabel())
+                    .messageCount(entry.getValue()))
+        .toList();
+  }
+
   private List<AdminToolStats> toolStats(Instant from, Instant to, long totalToolCalls) {
     return metricsStore.summarizeToolsByTool(from, to).stream()
         .map(
@@ -400,23 +413,13 @@ public class AdminStatsService implements AgentMetricsService {
     }
 
     private AdminSenderStats toResponse(long totalMessages) {
-      List<AdminBucketModelStats> models =
-          modelCounts.entrySet().stream()
-              .sorted(Map.Entry.<BucketModelKey, Long>comparingByValue().reversed())
-              .map(
-                  entry ->
-                      new AdminBucketModelStats()
-                          .modelKey(entry.getKey().modelKey())
-                          .modelLabel(entry.getKey().modelLabel())
-                          .messageCount(entry.getValue()))
-              .toList();
       return new AdminSenderStats()
           .accountKeyHash(accountKeyHash)
           .accountBucket(accountBucket(accountKeyHash))
           .messageCount(messageCount)
           .percentage(totalMessages == 0 ? 0.0 : (double) messageCount / totalMessages)
           .lastSeenAt(offset(lastSeenAt))
-          .models(models);
+          .models(modelCountStats(modelCounts));
     }
 
     private String accountBucket(String accountKeyHash) {
@@ -440,22 +443,12 @@ public class AdminStatsService implements AgentMetricsService {
     }
 
     private AdminStatsBucket toResponse() {
-      List<AdminBucketModelStats> models =
-          modelCounts.entrySet().stream()
-              .sorted(Map.Entry.<BucketModelKey, Long>comparingByValue().reversed())
-              .map(
-                  entry ->
-                      new AdminBucketModelStats()
-                          .modelKey(entry.getKey().modelKey())
-                          .modelLabel(entry.getKey().modelLabel())
-                          .messageCount(entry.getValue()))
-              .toList();
       return new AdminStatsBucket()
           .bucketStart(offset(start))
           .bucketEnd(offset(end))
           .messageCount(messageCount)
           .activeUsers((long) users.size())
-          .models(models);
+          .models(modelCountStats(modelCounts));
     }
   }
 }
