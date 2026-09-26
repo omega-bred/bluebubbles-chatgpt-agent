@@ -8,6 +8,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import io.breland.bbagent.server.agent.IncomingMessage;
 import io.breland.bbagent.server.agent.account.AgentAccountResolver;
+import io.breland.bbagent.server.agent.memory.ConversationMemoryModels.ConversationRecord;
 import io.breland.bbagent.server.agent.memory.ConversationMemoryModels.DigestBatch;
 import io.breland.bbagent.server.agent.memory.ConversationMemoryModels.ExtractionBatch;
 import io.breland.bbagent.server.agent.memory.ConversationMemoryModels.ExtractionCandidate;
@@ -20,6 +21,8 @@ import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
 import javax.sql.DataSource;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -36,6 +39,37 @@ class ConversationMemoryStoreTest {
   @Autowired private HindsightMemoryStore memories;
   @Autowired private AgentAccountResolver accountResolver;
   @Autowired private DataSource dataSource;
+
+  @ParameterizedTest
+  @ValueSource(booleans = {false, true})
+  void conversationQueriesPreserveAllFieldsAndNullableMemoryMetadata(boolean enabled) {
+    String displayName = enabled ? "Trip planning" : null;
+    String accountId = enabled ? createAccount("memory-enabler@example.com") : null;
+    Instant enabledAt = enabled ? OBSERVED_AT.plusSeconds(30) : null;
+    String conversationId =
+        store.upsertConversation(
+            "bluebubbles", "iMessage;+;record-mapping", true, displayName, OBSERVED_AT);
+    if (enabled) {
+      store.enableMemory(conversationId, accountId, enabledAt);
+    }
+    ConversationRecord expected =
+        new ConversationRecord(
+            conversationId,
+            "bluebubbles",
+            "iMessage;+;record-mapping",
+            true,
+            displayName,
+            enabledAt,
+            accountId,
+            OBSERVED_AT);
+
+    assertThat(store.findConversation(conversationId)).contains(expected);
+    assertThat(store.findConversation("bluebubbles", "iMessage;+;record-mapping"))
+        .contains(expected);
+    assertThat(store.findMemoryEnabledConversations())
+        .containsExactlyElementsOf(enabled ? List.of(expected) : List.of());
+    assertThat(store.findConversation("missing-conversation")).isEmpty();
+  }
 
   @Test
   void extractionWorkUsesPostgresCompatibleTimestampArguments() {

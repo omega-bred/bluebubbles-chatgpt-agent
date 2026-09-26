@@ -47,6 +47,17 @@ public class ConversationMemoryStore {
   private static final Duration EXTRACTION_LEASE = Duration.ofMinutes(5);
   private static final Duration CATCHUP_LEASE = Duration.ofMinutes(5);
   private static final int MAX_JOURNAL_PAGE_SIZE = 500;
+  private static final RowMapper<ConversationRecord> CONVERSATION_ROW_MAPPER =
+      (resultSet, rowNumber) ->
+          new ConversationRecord(
+              resultSet.getString("conversation_id"),
+              resultSet.getString("transport"),
+              resultSet.getString("external_conversation_id"),
+              resultSet.getBoolean("is_group"),
+              resultSet.getString("display_name"),
+              toInstant(resultSet.getTimestamp("memory_enabled_at")),
+              resultSet.getString("memory_enabled_by_account_id"),
+              resultSet.getTimestamp("last_observed_at").toInstant());
   private static final RowMapper<JournalMessage> JOURNAL_MESSAGE_ROW_MAPPER =
       (resultSet, rowNumber) ->
           new JournalMessage(
@@ -175,16 +186,7 @@ public class ConversationMemoryStore {
                    memory_enabled_at, memory_enabled_by_account_id, last_observed_at
               from agent_conversations where conversation_id = ?
             """,
-            (resultSet, rowNumber) ->
-                new ConversationRecord(
-                    resultSet.getString("conversation_id"),
-                    resultSet.getString("transport"),
-                    resultSet.getString("external_conversation_id"),
-                    resultSet.getBoolean("is_group"),
-                    resultSet.getString("display_name"),
-                    toInstant(resultSet.getTimestamp("memory_enabled_at")),
-                    resultSet.getString("memory_enabled_by_account_id"),
-                    resultSet.getTimestamp("last_observed_at").toInstant()),
+            CONVERSATION_ROW_MAPPER,
             conversationId)
         .stream()
         .findFirst();
@@ -1020,16 +1022,7 @@ public class ConversationMemoryStore {
          where is_group = true and memory_enabled_at is not null
          order by conversation_id
         """,
-        (resultSet, rowNumber) ->
-            new ConversationRecord(
-                resultSet.getString("conversation_id"),
-                resultSet.getString("transport"),
-                resultSet.getString("external_conversation_id"),
-                resultSet.getBoolean("is_group"),
-                resultSet.getString("display_name"),
-                toInstant(resultSet.getTimestamp("memory_enabled_at")),
-                resultSet.getString("memory_enabled_by_account_id"),
-                resultSet.getTimestamp("last_observed_at").toInstant()));
+        CONVERSATION_ROW_MAPPER);
   }
 
   @Transactional(readOnly = true)
@@ -1880,7 +1873,7 @@ public class ConversationMemoryStore {
     }
   }
 
-  private Instant toInstant(java.sql.Timestamp timestamp) {
+  private static Instant toInstant(java.sql.Timestamp timestamp) {
     return timestamp == null ? null : timestamp.toInstant();
   }
 
