@@ -104,22 +104,6 @@ public final class AgentToolRegistry {
           GetThreadContextAgentTool.TOOL_NAME,
           SendPollAgentTool.TOOL_NAME,
           ReadPollAgentTool.TOOL_NAME);
-  private static final Set<String> BLUEBUBBLES_TOOL_NAMES =
-      Set.of(
-          LoadConversationImagesAgentTool.TOOL_NAME,
-          GetContactPhotoAgentTool.TOOL_NAME,
-          SendTextAgentTool.TOOL_NAME,
-          SendReactionAgentTool.TOOL_NAME,
-          SearchConvoHistoryAgentTool.TOOL_NAME,
-          CurrentConversationInfoAgentTool.TOOL_NAME,
-          RenameConversationAgentTool.TOOL_NAME,
-          SetGroupIconAgentTool.TOOL_NAME,
-          GetGroupIconAgentTool.TOOL_NAME,
-          ConfigureGroupMemoryAgentTool.TOOL_NAME,
-          SendGiphyAgentTool.TOOL_NAME,
-          GetThreadContextAgentTool.TOOL_NAME,
-          SendPollAgentTool.TOOL_NAME,
-          ReadPollAgentTool.TOOL_NAME);
   private static final Set<String> GCAL_TOOL_NAMES =
       Set.of(
           ListCalendarsAgentTool.TOOL_NAME,
@@ -244,7 +228,9 @@ public final class AgentToolRegistry {
     if (ToolSearchAgentTool.TOOL_NAME.equals(toolName)) {
       return "tool_search";
     }
-    if (BLUEBUBBLES_TOOL_NAMES.contains(toolName)) {
+    if (BLUEBUBBLES_ONLY_TOOLS.contains(toolName)
+        || SendTextAgentTool.TOOL_NAME.equals(toolName)
+        || SendReactionAgentTool.TOOL_NAME.equals(toolName)) {
       return "bluebubbles";
     }
     if (GCAL_TOOL_NAMES.contains(toolName)) {

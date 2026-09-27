@@ -40,11 +40,56 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Collectors;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 class AgentToolRegistryTest {
   private static final String KUBERNETES_TOOL_ALLOWED_ACCOUNT_ID =
       "9f80c2a0-de6f-4c56-8027-29b1673bb0d5";
   private static final String LEGACY_ALLOWED_SENDER = "+18033861737";
+
+  @ParameterizedTest
+  @ValueSource(
+      strings = {
+        "load_conversation_images",
+        "get_contact_photo",
+        "send_text",
+        "send_reaction",
+        "search_convo_history",
+        "current_conversation_info",
+        "rename_conversation",
+        "set_group_icon",
+        "get_group_icon",
+        "configure_group_memory",
+        "send_giphy",
+        "get_thread_context",
+        "send_poll",
+        "read_poll"
+      })
+  void blueChatToolCategoriesDoNotMakeToolsAvailableOnLxmf(String toolName) {
+    var registry = registryForAccount("account-1");
+    var lxmf =
+        new IncomingMessage(
+            "lxmf",
+            "lxmf:sender",
+            "incoming",
+            null,
+            "hello",
+            false,
+            "LXMF",
+            "sender",
+            false,
+            Instant.EPOCH,
+            List.of(),
+            false);
+
+    assertEquals("bluebubbles", registry.toolCategory(toolName));
+    if ("send_text".equals(toolName)) {
+      assertNotNull(registry.resolveTool(toolName, lxmf));
+    } else {
+      assertNull(registry.resolveTool(toolName, lxmf));
+    }
+  }
 
   @Test
   void groupIconIsDiscoverableOnlyInBlueChatGroups() throws Exception {
