@@ -265,7 +265,7 @@ dependencies {
 
     implementation("com.openai:openai-java-spring-boot-starter:4.45.0")
     implementation("com.anthropic:anthropic-java:2.59.0")
-    implementation("com.google.genai:google-genai:1.55.0")
+    implementation("com.google.genai:google-genai:1.73.0")
     implementation("com.uber.cadence:cadence-client:4.0.0")
 
     implementation 'io.micrometer:micrometer-core'
