@@ -8,7 +8,6 @@ import io.breland.bbagent.server.agent.persistence.GcalCredentialRepository;
 import java.io.IOException;
 import java.util.Collection;
 import java.util.List;
-import java.util.Objects;
 import java.util.Set;
 import java.util.stream.Collectors;
 
@@ -66,13 +65,7 @@ public class PostgresCredentialDataStoreFactory implements DataStoreFactory {
       }
       return repository.findAllByStoreId(storeId).stream()
           .map(PostgresCredentialDataStore::toStoredCredential)
-          .anyMatch(
-              stored ->
-                  Objects.equals(stored.getAccessToken(), value.getAccessToken())
-                      && Objects.equals(stored.getRefreshToken(), value.getRefreshToken())
-                      && Objects.equals(
-                          stored.getExpirationTimeMilliseconds(),
-                          value.getExpirationTimeMilliseconds()));
+          .anyMatch(stored -> stored.equals(value));
     }
 
     @Override
