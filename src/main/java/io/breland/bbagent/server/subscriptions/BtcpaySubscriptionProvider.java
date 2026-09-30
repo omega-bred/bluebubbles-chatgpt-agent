@@ -16,6 +16,7 @@ import org.apache.commons.codec.digest.HmacUtils;
 import org.apache.commons.lang3.ObjectUtils;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.http.HttpHeaders;
+import org.springframework.http.converter.json.MappingJackson2HttpMessageConverter;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
 
@@ -30,10 +31,18 @@ public class BtcpaySubscriptionProvider implements SubscriptionProvider {
   private final SubscriptionProperties properties;
   private final RestClient restClient;
 
+  @SuppressWarnings("removal") // JsonNode and the injected ObjectMapper use Jackson 2.
   public BtcpaySubscriptionProvider(ObjectMapper objectMapper, SubscriptionProperties properties) {
     this.objectMapper = objectMapper;
     this.properties = properties;
-    this.restClient = RestClient.builder().baseUrl(baseUrl()).build();
+    this.restClient =
+        RestClient.builder()
+            .baseUrl(baseUrl())
+            .configureMessageConverters(
+                converters ->
+                    converters.withJsonConverter(
+                        new MappingJackson2HttpMessageConverter(objectMapper)))
+            .build();
   }
 
   @Override
