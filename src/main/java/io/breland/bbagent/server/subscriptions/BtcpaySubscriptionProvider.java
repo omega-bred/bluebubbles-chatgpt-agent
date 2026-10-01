@@ -16,6 +16,7 @@ import org.apache.commons.codec.digest.HmacUtils;
 import org.apache.commons.lang3.ObjectUtils;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpMethod;
 import org.springframework.http.converter.json.MappingJackson2HttpMessageConverter;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
@@ -91,60 +92,26 @@ public class BtcpaySubscriptionProvider implements SubscriptionProvider {
 
   @Override
   public ProviderSubscription fetchSubscription(SubscriptionLookup lookup) {
-    ensureConfigured();
-    ensureProviderPlanConfigured(lookup.providerPlan());
     JsonNode response =
-        restClient
-            .get()
-            .uri(
-                "/api/v1/stores/{storeId}/offerings/{offeringId}/subscribers/{customerSelector}",
-                settings().getStoreId(),
-                lookup.providerPlan().getOfferingId(),
-                lookup.customerSelector())
-            .header(HttpHeaders.AUTHORIZATION, authHeader())
-            .retrieve()
-            .body(JsonNode.class);
+        subscriberRequest(lookup, HttpMethod.GET, "").retrieve().body(JsonNode.class);
     return toProviderSubscription(
         lookup, response == null ? objectMapper.createObjectNode() : response);
   }
 
   @Override
   public ProviderSubscription suspendSubscription(SubscriptionLookup lookup, String reason) {
-    ensureConfigured();
-    ensureProviderPlanConfigured(lookup.providerPlan());
+    RestClient.RequestBodySpec request = subscriberRequest(lookup, HttpMethod.POST, "/suspend");
     Map<String, Object> body = new LinkedHashMap<>();
     body.put("reason", StringUtils.defaultIfBlank(reason, "Suspended by bbagent admin"));
-    JsonNode response =
-        restClient
-            .post()
-            .uri(
-                "/api/v1/stores/{storeId}/offerings/{offeringId}/subscribers/{customerSelector}/suspend",
-                settings().getStoreId(),
-                lookup.providerPlan().getOfferingId(),
-                lookup.customerSelector())
-            .header(HttpHeaders.AUTHORIZATION, authHeader())
-            .body(body)
-            .retrieve()
-            .body(JsonNode.class);
+    JsonNode response = request.body(body).retrieve().body(JsonNode.class);
     return toProviderSubscription(
         lookup, response == null ? objectMapper.createObjectNode() : response);
   }
 
   @Override
   public ProviderSubscription unsuspendSubscription(SubscriptionLookup lookup) {
-    ensureConfigured();
-    ensureProviderPlanConfigured(lookup.providerPlan());
     JsonNode response =
-        restClient
-            .post()
-            .uri(
-                "/api/v1/stores/{storeId}/offerings/{offeringId}/subscribers/{customerSelector}/unsuspend",
-                settings().getStoreId(),
-                lookup.providerPlan().getOfferingId(),
-                lookup.customerSelector())
-            .header(HttpHeaders.AUTHORIZATION, authHeader())
-            .retrieve()
-            .body(JsonNode.class);
+        subscriberRequest(lookup, HttpMethod.POST, "/unsuspend").retrieve().body(JsonNode.class);
     return toProviderSubscription(
         lookup, response == null ? objectMapper.createObjectNode() : response);
   }
@@ -304,6 +271,21 @@ public class BtcpaySubscriptionProvider implements SubscriptionProvider {
 
   private String authHeader() {
     return "token " + StringUtils.trimToEmpty(settings().getApiKey());
+  }
+
+  private RestClient.RequestBodySpec subscriberRequest(
+      SubscriptionLookup lookup, HttpMethod method, String action) {
+    ensureConfigured();
+    ensureProviderPlanConfigured(lookup.providerPlan());
+    return restClient
+        .method(method)
+        .uri(
+            "/api/v1/stores/{storeId}/offerings/{offeringId}/subscribers/{customerSelector}"
+                + action,
+            settings().getStoreId(),
+            lookup.providerPlan().getOfferingId(),
+            lookup.customerSelector())
+        .header(HttpHeaders.AUTHORIZATION, authHeader());
   }
 
   private JsonNode postJson(String uri, Map<String, Object> body) {
