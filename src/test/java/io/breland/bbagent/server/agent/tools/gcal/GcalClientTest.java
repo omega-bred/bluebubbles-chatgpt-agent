@@ -1,6 +1,7 @@
 package io.breland.bbagent.server.agent.tools.gcal;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -9,12 +10,22 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.google.api.client.auth.oauth2.StoredCredential;
 import io.breland.bbagent.server.agent.persistence.GcalCredentialEntity;
 import io.breland.bbagent.server.agent.persistence.GcalCredentialRepository;
+import java.io.IOException;
+import java.net.URLDecoder;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.Optional;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.ArgumentCaptor;
 import org.springframework.test.util.ReflectionTestUtils;
 
 class GcalClientTest {
+  @TempDir Path tempDirectory;
+
   private static final String CLIENT_SECRET_JSON =
       """
       {
@@ -27,16 +38,63 @@ class GcalClientTest {
       }
       """;
 
-  @Test
-  void authUrlRequestsConsentForRefreshToken() {
-    GcalClient client = client(mock(GcalCredentialRepository.class));
+  @ParameterizedTest
+  @ValueSource(booleans = {false, true})
+  void authUrlRequestsConsentForRefreshToken(boolean fromFile) throws IOException {
+    String path = "";
+    if (fromFile) {
+      Path secretFile = tempDirectory.resolve("client-secrets.json");
+      Files.writeString(secretFile, CLIENT_SECRET_JSON);
+      path = secretFile.toString();
+    }
+    GcalClient client =
+        client(
+            mock(GcalCredentialRepository.class),
+            path,
+            fromFile ? "invalid direct secret" : CLIENT_SECRET_JSON);
 
     String authUrl = client.getAuthUrl("account-1", "chat-1", "message-1");
 
-    assertThat(authUrl)
+    assertThat(URLDecoder.decode(authUrl, StandardCharsets.UTF_8))
+        .contains("client_id=client-id.apps.googleusercontent.com")
+        .contains("redirect_uri=http://localhost:8080/api/v1/gcal/completeOauth.gcal")
+        .contains("scope=https://www.googleapis.com/auth/calendar")
         .contains("access_type=offline")
         .contains("prompt=consent")
         .contains("include_granted_scopes=true");
+  }
+
+  @Test
+  void missingSecretFileFallsBackToDirectSecret() {
+    GcalClient client =
+        client(
+            mock(GcalCredentialRepository.class),
+            tempDirectory.resolve("missing.json").toString(),
+            CLIENT_SECRET_JSON);
+
+    assertThat(client.getAuthUrl("account-1", "chat-1", "message-1"))
+        .contains("client_id=client-id.apps.googleusercontent.com");
+  }
+
+  @ParameterizedTest
+  @ValueSource(booleans = {false, true})
+  void invalidSecretRetainsLoadFailure(boolean fromFile) throws IOException {
+    String path = "";
+    if (fromFile) {
+      Path secretFile = tempDirectory.resolve("invalid-client-secrets.json");
+      Files.writeString(secretFile, "invalid secret");
+      path = secretFile.toString();
+    }
+    GcalClient client =
+        client(
+            mock(GcalCredentialRepository.class),
+            path,
+            fromFile ? CLIENT_SECRET_JSON : "invalid secret");
+
+    assertThatThrownBy(() -> client.getAuthUrl("account-1", "chat-1", "message-1"))
+        .isInstanceOf(IllegalStateException.class)
+        .hasMessage("Failed to load Google client secrets")
+        .hasCauseInstanceOf(Exception.class);
   }
 
   @Test
@@ -65,9 +123,14 @@ class GcalClientTest {
   }
 
   private static GcalClient client(GcalCredentialRepository repository) {
+    return client(repository, "", CLIENT_SECRET_JSON);
+  }
+
+  private static GcalClient client(
+      GcalCredentialRepository repository, String secretPath, String secretJson) {
     return new GcalClient(
-        "",
-        CLIENT_SECRET_JSON,
+        secretPath,
+        secretJson,
         "http://localhost:8080/api/v1/gcal/completeOauth.gcal",
         "state-secret",
         "BlueChat",

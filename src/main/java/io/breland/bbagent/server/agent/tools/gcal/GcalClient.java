@@ -15,7 +15,6 @@ import com.google.api.client.googleapis.javanet.GoogleNetHttpTransport;
 import com.google.api.client.http.javanet.NetHttpTransport;
 import com.google.api.client.json.JsonFactory;
 import com.google.api.client.json.jackson2.JacksonFactory;
-import com.google.api.client.util.store.DataStoreFactory;
 import com.google.api.services.calendar.Calendar;
 import com.google.api.services.calendar.CalendarScopes;
 import com.google.api.services.calendar.model.CalendarListEntry;
@@ -24,10 +23,12 @@ import io.breland.bbagent.server.agent.persistence.GcalCredentialRepository;
 import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.InputStreamReader;
+import java.io.Reader;
 import java.io.StringReader;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Paths;
+import java.security.GeneralSecurityException;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
@@ -284,31 +285,14 @@ public class GcalClient {
         && !clientSecretPath.isBlank()
         && Files.exists(Paths.get(clientSecretPath))) {
       try (FileInputStream input = new FileInputStream(clientSecretPath)) {
-        GoogleClientSecrets clientSecrets =
-            GoogleClientSecrets.load(
-                JSON_FACTORY, new InputStreamReader(input, StandardCharsets.UTF_8));
-        DataStoreFactory dataStoreFactory =
-            new PostgresCredentialDataStoreFactory(credentialRepository);
-        return new GoogleAuthorizationCodeFlow.Builder(
-                GoogleNetHttpTransport.newTrustedTransport(), JSON_FACTORY, clientSecrets, SCOPES)
-            .setDataStoreFactory(dataStoreFactory)
-            .setAccessType("offline")
-            .build();
+        return buildFlow(new InputStreamReader(input, StandardCharsets.UTF_8));
       } catch (Exception e) {
         log.error("Failed to load Google client secrets via path", e);
         throw new IllegalStateException("Failed to load Google client secrets", e);
       }
     } else if (clientSecret != null && !clientSecret.isBlank()) {
       try {
-        GoogleClientSecrets clientSecrets =
-            GoogleClientSecrets.load(JSON_FACTORY, new StringReader(clientSecret));
-        DataStoreFactory dataStoreFactory =
-            new PostgresCredentialDataStoreFactory(credentialRepository);
-        return new GoogleAuthorizationCodeFlow.Builder(
-                GoogleNetHttpTransport.newTrustedTransport(), JSON_FACTORY, clientSecrets, SCOPES)
-            .setDataStoreFactory(dataStoreFactory)
-            .setAccessType("offline")
-            .build();
+        return buildFlow(new StringReader(clientSecret));
       } catch (Exception e) {
         log.error("Failed to load Google client secrets via direct", e);
         throw new IllegalStateException("Failed to load Google client secrets", e);
@@ -316,6 +300,16 @@ public class GcalClient {
     }
     log.warn("Failed to load Google client secrets");
     throw new IllegalStateException("Failed to load Google client secrets");
+  }
+
+  private GoogleAuthorizationCodeFlow buildFlow(Reader clientSecretsReader)
+      throws IOException, GeneralSecurityException {
+    GoogleClientSecrets clientSecrets = GoogleClientSecrets.load(JSON_FACTORY, clientSecretsReader);
+    return new GoogleAuthorizationCodeFlow.Builder(
+            GoogleNetHttpTransport.newTrustedTransport(), JSON_FACTORY, clientSecrets, SCOPES)
+        .setDataStoreFactory(new PostgresCredentialDataStoreFactory(credentialRepository))
+        .setAccessType("offline")
+        .build();
   }
 
   private String createOauthState(
