@@ -308,11 +308,12 @@ openApiGenerate {
 
 tasks.register('openApiGenerateTypescriptClient', GenerateTask) {
 	generatorName = 'typescript-axios'
+	templateDir.set(layout.projectDirectory.dir('openapi/templates/typescript-axios').asFile.path)
 	inputSpec.set(layout.projectDirectory.file('src/main/resources/openapi.yaml'))
 	outputDir.set(layout.buildDirectory.dir('typescript-client-generated'))
 	configOptions = [
 			npmName    : "@bluebubbles-chatgpt-agent/backend-client",
-			axiosVersion: "1.16.1",
+			axiosVersion: "1.20.0",
 			useTags    : "true",
 			supportsES6: "true"
 	]
