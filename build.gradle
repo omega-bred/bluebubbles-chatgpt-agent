@@ -308,7 +308,7 @@ openApiGenerate {
 
 tasks.register('openApiGenerateTypescriptClient', GenerateTask) {
 	generatorName = 'typescript-axios'
-	templateDir.set(layout.projectDirectory.dir('openapi/templates/typescript-axios').asFile.path)
+	templateDir.set(layout.projectDirectory.dir('openapi/templates/typescript-axios'))
 	inputSpec.set(layout.projectDirectory.file('src/main/resources/openapi.yaml'))
 	outputDir.set(layout.buildDirectory.dir('typescript-client-generated'))
 	configOptions = [
