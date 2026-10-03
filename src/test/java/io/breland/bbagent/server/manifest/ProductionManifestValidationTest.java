@@ -7,6 +7,7 @@ import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
@@ -22,6 +23,35 @@ class ProductionManifestValidationTest {
   void productionWorkloadsDoNotDeclareDuplicateEnvironmentVariables() throws IOException {
     List<String> duplicates = new ArrayList<>();
 
+    for (Map.Entry<String, List<String>> entry : environmentVariablesByContainer().entrySet()) {
+      Set<String> names = new HashSet<>();
+      for (String name : entry.getValue()) {
+        if (!names.add(name)) {
+          duplicates.add(entry.getKey() + ": " + name);
+        }
+      }
+    }
+
+    assertThat(duplicates)
+        .as("duplicate env names make Flux server-side apply reject the workload")
+        .isEmpty();
+  }
+
+  @Test
+  void productionAgentUsesImageDefaultsForVersionCoupledQuestionAnsweringLimits()
+      throws IOException {
+    Map<String, List<String>> environmentVariables = environmentVariablesByContainer();
+    String container = "bluebubbles-chatgpt-agent/bluebubbles-chatgpt-agent";
+
+    assertThat(environmentVariables).containsKey(container);
+    assertThat(environmentVariables.get(container))
+        .doesNotContain(
+            "BBAGENT_GROUP_MEMORY_QA_MAX_BATCH_CHARACTERS",
+            "BBAGENT_GROUP_MEMORY_QA_MAX_AGGREGATE_CHARACTERS");
+  }
+
+  private static Map<String, List<String>> environmentVariablesByContainer() throws IOException {
+    Map<String, List<String>> environmentVariables = new HashMap<>();
     try (InputStream input = Files.newInputStream(COMPONENTS_MANIFEST)) {
       for (Object document : new Yaml().loadAll(input)) {
         if (!(document instanceof Map<?, ?> resource)) {
@@ -34,20 +64,15 @@ class ProductionManifestValidationTest {
         String resourceName = stringValue(nested(resource, "metadata", "name"));
         for (Map<?, ?> container : mapList(podSpec.get("containers"))) {
           String containerName = stringValue(container.get("name"));
-          Set<String> names = new HashSet<>();
-          for (Map<?, ?> environmentVariable : mapList(container.get("env"))) {
-            String name = stringValue(environmentVariable.get("name"));
-            if (!names.add(name)) {
-              duplicates.add(resourceName + "/" + containerName + ": " + name);
-            }
-          }
+          List<String> names =
+              mapList(container.get("env")).stream()
+                  .map(environmentVariable -> stringValue(environmentVariable.get("name")))
+                  .toList();
+          environmentVariables.put(resourceName + "/" + containerName, names);
         }
       }
     }
-
-    assertThat(duplicates)
-        .as("duplicate env names make Flux server-side apply reject the workload")
-        .isEmpty();
+    return Map.copyOf(environmentVariables);
   }
 
   private static Map<?, ?> podSpec(Map<?, ?> resource) {
