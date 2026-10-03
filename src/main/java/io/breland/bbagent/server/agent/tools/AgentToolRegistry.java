@@ -349,27 +349,27 @@ public final class AgentToolRegistry {
     return references;
   }
 
-  private List<String> parseToolSearchOutput(String output) {
+  private Set<String> parseToolSearchOutput(String output) {
     if (StringUtils.isBlank(output)) {
-      return List.of();
+      return Set.of();
     }
     try {
       com.fasterxml.jackson.databind.JsonNode node = objectMapper.readTree(output);
-      List<String> toolNames = new ArrayList<>();
+      Set<String> toolNames = new LinkedHashSet<>();
       appendToolNames(toolNames, node);
       return toolNames;
     } catch (Exception ignored) {
-      return List.of();
+      return Set.of();
     }
   }
 
   private void appendToolNames(
-      List<String> toolNames, com.fasterxml.jackson.databind.JsonNode node) {
+      Set<String> toolNames, com.fasterxml.jackson.databind.JsonNode node) {
     if (node == null || node.isNull()) {
       return;
     }
-    if (node.isTextual()) {
-      addToolName(toolNames, node.asText());
+    if (node.isTextual() && StringUtils.isNotBlank(node.asText())) {
+      toolNames.add(node.asText());
       return;
     }
     if (node.isArray()) {
@@ -383,12 +383,6 @@ public final class AgentToolRegistry {
       appendToolNames(toolNames, node.get("tool_names"));
       appendToolNames(toolNames, node.get("toolReferences"));
       appendToolNames(toolNames, node.get("tool_references"));
-    }
-  }
-
-  private void addToolName(List<String> toolNames, String toolName) {
-    if (StringUtils.isNotBlank(toolName) && !toolNames.contains(toolName)) {
-      toolNames.add(toolName);
     }
   }
 
