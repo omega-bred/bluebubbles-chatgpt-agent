@@ -35,7 +35,7 @@ public class GetEventAgentTool extends GcalToolSupport implements ToolProvider {
           return withCalendar(
               context,
               request.accountKey(),
-              (client, accountKey) -> {
+              client -> {
                 String calendarId = resolveCalendarId(request.calendarId());
                 String eventId = request.eventId();
                 if (isBlank(eventId)) {
