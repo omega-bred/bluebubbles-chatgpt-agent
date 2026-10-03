@@ -7,12 +7,18 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.spy;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.openai.client.OpenAIClient;
+import com.openai.models.responses.ResponseFunctionToolCall;
+import com.openai.models.responses.ResponseInputItem;
 import io.breland.bbagent.server.agent.IncomingMessage;
 import io.breland.bbagent.server.agent.cadence.CadenceWorkflowLauncher;
 import io.breland.bbagent.server.agent.memory.MemoryScopeResolver;
@@ -47,6 +53,56 @@ class AgentToolRegistryTest {
   private static final String KUBERNETES_TOOL_ALLOWED_ACCOUNT_ID =
       "9f80c2a0-de6f-4c56-8027-29b1673bb0d5";
   private static final String LEGACY_ALLOWED_SENDER = "+18033861737";
+
+  @ParameterizedTest
+  @ValueSource(
+      strings = {
+        """
+        ["send_text", "send_reaction", "send_text", null, false, 17, "", "  ", "send_reaction"]
+        """,
+        """
+        {"tool_references": ["send_reaction", "send_text"], "tool_name": "send_reaction",
+         "toolName": "send_text", "toolNames": ["send_text", null], "tool_names": ["send_reaction"],
+         "toolReferences": [{"toolName": "send_text", "tool_name": "send_reaction"}]}
+        """,
+        """
+        ["send_text", {"toolReferences": ["send_reaction", ["send_text", "send_reaction"],
+         {"tool_name": null}]}]
+        """
+      })
+  void searchedToolReferencesPreserveOrderAndResolveEachNameOnce(String output) {
+    AgentToolRegistry registry = spy(registryForAccount("account-1"));
+    IncomingMessage message = groupMessage();
+
+    assertEquals(
+        List.of(ToolSearchAgentTool.TOOL_NAME, "send_text", "send_reaction"),
+        toolsForSearchOutput(registry, message, output).stream().map(AgentTool::name).toList());
+    verify(registry, times(1)).resolveTool("send_text", message);
+    verify(registry, times(1)).resolveTool("send_reaction", message);
+  }
+
+  @ParameterizedTest
+  @ValueSource(
+      strings = {
+        "",
+        "  ",
+        "null",
+        "false",
+        "12",
+        "[null, {}, \"\", \"  \", false, 17]",
+        "{\"name\": \"send_text\"}",
+        "not json"
+      })
+  void emptyOrUnsupportedSearchOutputsDoNotResolveAnyTools(String output) {
+    AgentToolRegistry registry = spy(registryForAccount("account-1"));
+
+    assertEquals(
+        List.of(ToolSearchAgentTool.TOOL_NAME),
+        toolsForSearchOutput(registry, groupMessage(), output).stream()
+            .map(AgentTool::name)
+            .toList());
+    verify(registry, never()).resolveTool(any(), any());
+  }
 
   @ParameterizedTest
   @ValueSource(
@@ -383,6 +439,24 @@ class AgentToolRegistryTest {
 
   private static Set<String> toolNames(List<AgentTool> tools) {
     return tools.stream().map(AgentTool::name).collect(Collectors.toSet());
+  }
+
+  private static List<AgentTool> toolsForSearchOutput(
+      AgentToolRegistry registry, IncomingMessage message, String output) {
+    return registry.toolsForModel(
+        message,
+        List.of(
+            ResponseInputItem.ofFunctionCall(
+                ResponseFunctionToolCall.builder()
+                    .name(ToolSearchAgentTool.TOOL_NAME)
+                    .arguments("{}")
+                    .callId("search-1")
+                    .build()),
+            ResponseInputItem.ofFunctionCallOutput(
+                ResponseInputItem.FunctionCallOutput.builder()
+                    .callId("search-1")
+                    .output(output)
+                    .build())));
   }
 
   private static List<String> toolSearch(
