@@ -220,7 +220,7 @@ dependencies {
     implementation 'dev.openfga:openfga-sdk:0.9.11'
 
 
-	implementation("org.apache.httpcomponents.client5:httpclient5:5.6.3")
+	implementation("org.apache.httpcomponents.client5:httpclient5:5.6.4")
 	implementation 'commons-codec:commons-codec'
 
 
@@ -243,7 +243,7 @@ dependencies {
 	runtimeOnly 'org.glassfish.jaxb:jaxb-runtime:4.0.9'
 	implementation 'jakarta.validation:jakarta.validation-api:3.1.1'
 	implementation 'jakarta.annotation:jakarta.annotation-api:3.0.0'
-	implementation 'org.openapitools:jackson-databind-nullable:0.2.8'
+	implementation 'org.openapitools:jackson-databind-nullable:0.2.12'
     implementation "org.springframework.boot:spring-boot-starter-webclient"
 
 
@@ -265,7 +265,7 @@ dependencies {
 
     implementation("com.openai:openai-java-spring-boot-starter:4.45.0")
     implementation("com.anthropic:anthropic-java:2.65.0")
-    implementation("com.google.genai:google-genai:1.73.0")
+    implementation("com.google.genai:google-genai:1.75.0")
     implementation("com.uber.cadence:cadence-client:4.0.0")
 
     implementation 'io.micrometer:micrometer-core'
@@ -277,7 +277,7 @@ dependencies {
     testImplementation 'org.mockito:mockito-core'
     testImplementation 'org.mockito:mockito-junit-jupiter'
     testImplementation 'org.springframework.security:spring-security-test'
-    testImplementation 'com.h2database:h2:2.2.224'
+    testImplementation 'com.h2database:h2:2.5.252'
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
 
     // generated java client
@@ -287,6 +287,36 @@ dependencies {
 
 tasks.named('test') {
 	useJUnitPlatform()
+}
+
+// Keep production migration checksums intact while adapting the legacy CTE/MERGE
+// syntax that H2 2.3+ no longer accepts and PostgreSQL's POSIX whitespace class
+// to H2's Java regex syntax. All other migrations run unchanged.
+tasks.register('prepareH2TestMigrations', Sync) {
+    inputs.file(layout.projectDirectory.file('build.gradle'))
+    from('src/main/resources/db/migration')
+    into(layout.buildDirectory.dir('h2-test-migrations'))
+    filesMatching('V11__backfill_website_account_identity_aliases.sql') {
+        filter { String line ->
+            if (line == 'WITH direct_links AS (') {
+                return 'MERGE INTO agent_account_identity_aliases target\nUSING (WITH direct_links AS ('
+            }
+            if (line == 'MERGE INTO agent_account_identity_aliases target') {
+                return ''
+            }
+            if (line == 'USING deduped source') {
+                return 'SELECT * FROM deduped) source'
+            }
+            return line.replace('[[:space:]]+', '\\s+')
+        }
+    }
+}
+
+tasks.named('processTestResources') {
+    dependsOn tasks.named('prepareH2TestMigrations')
+    from(layout.buildDirectory.dir('h2-test-migrations')) {
+        into 'db/h2-migration'
+    }
 }
 
 openApiGenerate {
