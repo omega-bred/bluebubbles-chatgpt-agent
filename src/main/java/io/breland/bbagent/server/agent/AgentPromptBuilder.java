@@ -320,18 +320,7 @@ public final class AgentPromptBuilder {
                   + "Use available tools for tasks like calendars, memory, scheduled follow-ups, or lookups when asked. "
                   + actionAndFollowupInstruction()
                   + websiteAccountInstruction()
-                  + "Use "
-                  + GetGroupCatchupAgentTool.TOOL_NAME
-                  + " for questions like what happened, what did I miss, or summaries of a group over a time range. Use "
-                  + MemoryGetAgentTool.TOOL_NAME
-                  + " for semantic facts and decisions. For questions about another group's messages, call "
-                  + GetGroupCatchupAgentTool.TOOL_NAME
-                  + " with the user's exact question. Pass relative phrases such as today or recently unchanged; the tool interprets them from timestamped recent history and may search older messages. Supply from/to only when the user clearly established an absolute range, and omit lookback_hours when question is present. If it returns clarification_question, ask that naturally and wait. If unresolved_participants is nonempty, use visible one-to-one context first; otherwise call "
-                  + MemoryGetAgentTool.TOOL_NAME
-                  + " once only to resolve unresolved_participants; do not change group-derived facts. If no supported name is found, keep the returned safe label. Keep internal retrieval machinery out of the answer. Explain relevant limits naturally, including missing history or unverified access; do not overstate the completeness of a summary. "
-                  + "When the user asks to enable, disable, or schedule proactive summaries from a group into this one-to-one chat, call "
-                  + ConfigureGroupCatchupAgentTool.TOOL_NAME
-                  + ". "
+                  + directGroupCatchupInstruction("Use ")
                   + "When the user asks about quota, usage limits, monthly messages, or remaining messages, call "
                   + GetUsageLimitsAgentTool.TOOL_NAME
                   + " before answering. "
@@ -386,18 +375,7 @@ public final class AgentPromptBuilder {
                         + " with the user's exact question for the current group's earlier messages. The tool stays within the current group. Pass relative phrases such as today or recently unchanged; the tool interprets them from timestamped recent history and may search older messages. Supply from/to only when the user clearly established an absolute range, and omit lookback_hours when question is present. If it returns clarification_question, ask that naturally and wait. If unresolved_participants is nonempty, use visible conversation context first; otherwise call "
                         + MemoryGetAgentTool.TOOL_NAME
                         + " once only to resolve unresolved_participants; do not change group-derived facts. If no supported name is found, keep the returned safe label. Keep internal retrieval machinery out of the answer. Explain relevant limits naturally, including missing history or unverified access; do not overstate the completeness of a summary. "
-                    : "In a one-to-one chat, use "
-                        + GetGroupCatchupAgentTool.TOOL_NAME
-                        + " for questions like what happened, what did I miss, or summaries of a group over a time range. Use "
-                        + MemoryGetAgentTool.TOOL_NAME
-                        + " for semantic facts and decisions. For questions about another group's messages, call "
-                        + GetGroupCatchupAgentTool.TOOL_NAME
-                        + " with the user's exact question. Pass relative phrases such as today or recently unchanged; the tool interprets them from timestamped recent history and may search older messages. Supply from/to only when the user clearly established an absolute range, and omit lookback_hours when question is present. If it returns clarification_question, ask that naturally and wait. If unresolved_participants is nonempty, use visible one-to-one context first; otherwise call "
-                        + MemoryGetAgentTool.TOOL_NAME
-                        + " once only to resolve unresolved_participants; do not change group-derived facts. If no supported name is found, keep the returned safe label. Keep internal retrieval machinery out of the answer. Explain relevant limits naturally, including missing history or unverified access; do not overstate the completeness of a summary. "
-                        + "When the user asks to enable, disable, or schedule proactive summaries from a group into this one-to-one chat, call "
-                        + ConfigureGroupCatchupAgentTool.TOOL_NAME
-                        + ". ")
+                    : directGroupCatchupInstruction("In a one-to-one chat, use "))
                 + "Use built-in web_search for current info or external lookups when relevant and available in this request. If unavailable, discover an appropriate lookup tool; explain any remaining limitation without inventing current facts. "
                 + "When the user asks about quota, usage limits, monthly messages, or remaining messages, call "
                 + GetUsageLimitsAgentTool.TOOL_NAME
@@ -485,6 +463,21 @@ public final class AgentPromptBuilder {
                 + BBMessageAgent.NO_RESPONSE_TEXT
                 + ".")
         .build();
+  }
+
+  private String directGroupCatchupInstruction(String introduction) {
+    return introduction
+        + GetGroupCatchupAgentTool.TOOL_NAME
+        + " for questions like what happened, what did I miss, or summaries of a group over a time range. Use "
+        + MemoryGetAgentTool.TOOL_NAME
+        + " for semantic facts and decisions. For questions about another group's messages, call "
+        + GetGroupCatchupAgentTool.TOOL_NAME
+        + " with the user's exact question. Pass relative phrases such as today or recently unchanged; the tool interprets them from timestamped recent history and may search older messages. Supply from/to only when the user clearly established an absolute range, and omit lookback_hours when question is present. If it returns clarification_question, ask that naturally and wait. If unresolved_participants is nonempty, use visible one-to-one context first; otherwise call "
+        + MemoryGetAgentTool.TOOL_NAME
+        + " once only to resolve unresolved_participants; do not change group-derived facts. If no supported name is found, keep the returned safe label. Keep internal retrieval machinery out of the answer. Explain relevant limits naturally, including missing history or unverified access; do not overstate the completeness of a summary. "
+        + "When the user asks to enable, disable, or schedule proactive summaries from a group into this one-to-one chat, call "
+        + ConfigureGroupCatchupAgentTool.TOOL_NAME
+        + ". ";
   }
 
   private String actionAndFollowupInstruction() {
