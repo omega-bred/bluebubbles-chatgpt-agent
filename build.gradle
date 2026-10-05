@@ -220,7 +220,7 @@ dependencies {
     implementation 'dev.openfga:openfga-sdk:0.9.11'
 
 
-	implementation("org.apache.httpcomponents.client5:httpclient5:5.6.3")
+	implementation("org.apache.httpcomponents.client5:httpclient5:5.6.4")
 	implementation 'commons-codec:commons-codec'
 
 
