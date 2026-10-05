@@ -40,7 +40,9 @@ class ConversationDigestServiceTest {
           null,
           questionAnsweringService,
           Clock.fixed(NOW, ZoneOffset.UTC),
-          "digest-worker");
+          "digest-worker",
+          null,
+          true);
 
   @Test
   void combinesCompletedDailyDigestsWithCurrentRollingSegments() {
@@ -231,8 +233,11 @@ class ConversationDigestServiceTest {
             mapper,
             null,
             null,
+            null,
             Clock.fixed(reconciliationTime, ZoneOffset.UTC),
-            "digest-worker");
+            "digest-worker",
+            null,
+            true);
     Instant periodStart = Instant.parse("2026-08-07T00:00:00Z");
     Instant periodEnd = Instant.parse("2026-08-08T00:00:00Z");
     ConversationRecord conversation =
@@ -291,6 +296,7 @@ class ConversationDigestServiceTest {
         new ConversationDigestService(
             store,
             mapper,
+            null,
             null,
             null,
             Clock.fixed(NOW, ZoneOffset.UTC),

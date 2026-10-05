@@ -80,66 +80,6 @@ public class ConversationDigestService {
       ObjectMapper objectMapper,
       @Nullable BBHttpClientWrapper bbHttpClientWrapper,
       @Nullable ConversationJournalService journalService,
-      Clock clock,
-      String workerId) {
-    this(
-        store,
-        objectMapper,
-        bbHttpClientWrapper,
-        journalService,
-        null,
-        clock,
-        workerId,
-        null,
-        true);
-  }
-
-  ConversationDigestService(
-      ConversationMemoryStore store,
-      ObjectMapper objectMapper,
-      @Nullable BBHttpClientWrapper bbHttpClientWrapper,
-      @Nullable ConversationJournalService journalService,
-      ConversationQuestionAnsweringService questionAnsweringService,
-      Clock clock,
-      String workerId) {
-    this(
-        store,
-        objectMapper,
-        bbHttpClientWrapper,
-        journalService,
-        questionAnsweringService,
-        clock,
-        workerId,
-        null,
-        true);
-  }
-
-  ConversationDigestService(
-      ConversationMemoryStore store,
-      ObjectMapper objectMapper,
-      @Nullable BBHttpClientWrapper bbHttpClientWrapper,
-      @Nullable ConversationJournalService journalService,
-      Clock clock,
-      String workerId,
-      @Nullable OperationalMetricsService metrics,
-      boolean globallyEnabled) {
-    this(
-        store,
-        objectMapper,
-        bbHttpClientWrapper,
-        journalService,
-        null,
-        clock,
-        workerId,
-        metrics,
-        globallyEnabled);
-  }
-
-  ConversationDigestService(
-      ConversationMemoryStore store,
-      ObjectMapper objectMapper,
-      @Nullable BBHttpClientWrapper bbHttpClientWrapper,
-      @Nullable ConversationJournalService journalService,
       @Nullable ConversationQuestionAnsweringService questionAnsweringService,
       Clock clock,
       String workerId,
