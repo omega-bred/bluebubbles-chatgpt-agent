@@ -46,7 +46,7 @@ class PaymentSubscriptionUniquenessMigrationTest {
   private static void migrate(String jdbcUrl, String target) {
     Flyway.configure()
         .dataSource(jdbcUrl, "sa", "")
-        .locations("classpath:db/migration")
+        .locations("classpath:db/h2-migration")
         .target(target)
         .cleanDisabled(true)
         .load()
