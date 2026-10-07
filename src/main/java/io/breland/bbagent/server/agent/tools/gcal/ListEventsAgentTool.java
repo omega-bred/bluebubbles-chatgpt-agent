@@ -50,7 +50,7 @@ public class ListEventsAgentTool extends GcalToolSupport implements ToolProvider
           return withCalendar(
               context,
               listEventsRequest.accountKey(),
-              (client, accountKey) -> {
+              client -> {
                 String calendarId = resolveCalendarId(listEventsRequest.calendarId());
                 ZoneId zone = resolveZone(listEventsRequest.timezone());
                 DateTime min = gcalClient.parseDateTime(listEventsRequest.timeMin(), zone);
