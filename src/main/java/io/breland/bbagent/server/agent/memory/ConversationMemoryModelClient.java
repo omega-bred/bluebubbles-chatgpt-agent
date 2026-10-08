@@ -5,7 +5,6 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
-import com.openai.client.OpenAIClient;
 import io.breland.bbagent.server.agent.memory.ConversationMemoryModels.ArtifactKind;
 import io.breland.bbagent.server.agent.memory.ConversationMemoryModels.ArtifactSensitivity;
 import io.breland.bbagent.server.agent.memory.ConversationMemoryModels.ArtifactStatus;
@@ -21,7 +20,6 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.function.Supplier;
 import org.apache.commons.codec.digest.DigestUtils;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -82,36 +80,6 @@ public class ConversationMemoryModelClient {
       ObjectMapper objectMapper,
       @Nullable OperationalMetricsService metrics) {
     this.responsesClient = responsesClient;
-    this.objectMapper = objectMapper;
-    this.metrics = metrics;
-  }
-
-  ConversationMemoryModelClient(
-      Supplier<OpenAIClient> openAiSupplier,
-      ObjectMapper objectMapper,
-      String extractionModel,
-      @Nullable OperationalMetricsService metrics) {
-    this(
-        openAiSupplier,
-        objectMapper,
-        extractionModel,
-        ConversationMemoryResponsesClient.DEFAULT_FALLBACK_MODEL,
-        ConversationMemoryResponsesClient.DEFAULT_MAX_PROMPT_PRICE,
-        ConversationMemoryResponsesClient.DEFAULT_MAX_COMPLETION_PRICE,
-        metrics);
-  }
-
-  ConversationMemoryModelClient(
-      Supplier<OpenAIClient> openAiSupplier,
-      ObjectMapper objectMapper,
-      String extractionModel,
-      String fallbackModel,
-      double maxPromptPrice,
-      double maxCompletionPrice,
-      @Nullable OperationalMetricsService metrics) {
-    this.responsesClient =
-        new ConversationMemoryResponsesClient(
-            openAiSupplier, extractionModel, fallbackModel, maxPromptPrice, maxCompletionPrice);
     this.objectMapper = objectMapper;
     this.metrics = metrics;
   }
