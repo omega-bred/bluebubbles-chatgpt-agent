@@ -129,25 +129,20 @@ public class GiphyClient {
       String id = item.path("id").asText(null);
       String title = item.path("title").asText("");
       JsonNode images = item.path("images");
-      String url = null;
-      if (images.hasNonNull("original")) {
-        url = images.path("original").path("url").asText(null);
-      }
-      if ((url == null || url.isBlank()) && images.hasNonNull("fixed_width")) {
-        url = images.path("fixed_width").path("url").asText(null);
-      }
+      String url = preferredImageUrl(images, "original", "fixed_width");
       if (url == null || url.isBlank()) {
         continue;
       }
-      String stillUrl = null;
-      if (images.hasNonNull("fixed_width_still")) {
-        stillUrl = images.path("fixed_width_still").path("url").asText(null);
-      }
-      if ((stillUrl == null || stillUrl.isBlank()) && images.hasNonNull("downsized_still")) {
-        stillUrl = images.path("downsized_still").path("url").asText(null);
-      }
+      String stillUrl = preferredImageUrl(images, "fixed_width_still", "downsized_still");
       results.add(new GiphyGif(id, title, url, stillUrl));
     }
     return results;
+  }
+
+  private static String preferredImageUrl(JsonNode images, String preferred, String fallback) {
+    String url = images.path(preferred).path("url").asText(null);
+    return (url == null || url.isBlank()) && images.hasNonNull(fallback)
+        ? images.path(fallback).path("url").asText(null)
+        : url;
   }
 }
