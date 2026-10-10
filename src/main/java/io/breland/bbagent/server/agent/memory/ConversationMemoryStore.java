@@ -69,6 +69,12 @@ public class ConversationMemoryStore {
               resultSet.getBoolean("from_agent"),
               resultSet.getBoolean("system_message"),
               resultSet.getString("content_hash"));
+  private static final RowMapper<AuthorizedGroup> AUTHORIZED_GROUP_ROW_MAPPER =
+      (resultSet, rowNumber) ->
+          new AuthorizedGroup(
+              resultSet.getString("conversation_id"),
+              resultSet.getString("display_name"),
+              resultSet.getTimestamp("last_activity_at").toInstant());
 
   private final PostgresCompatibleJdbcTemplate jdbcTemplate;
   private final double minimumConfidence;
@@ -874,11 +880,7 @@ public class ConversationMemoryStore {
          group by c.conversation_id, c.display_name
          order by last_activity_at desc, c.conversation_id
         """,
-        (resultSet, rowNumber) ->
-            new AuthorizedGroup(
-                resultSet.getString("conversation_id"),
-                resultSet.getString("display_name"),
-                resultSet.getTimestamp("last_activity_at").toInstant()),
+        AUTHORIZED_GROUP_ROW_MAPPER,
         accountId,
         toExclusive,
         fromInclusive);
@@ -888,7 +890,7 @@ public class ConversationMemoryStore {
   public List<AuthorizedGroup> findCurrentlyAuthorizedGroups(String accountId, Instant now) {
     return jdbcTemplate.query(
         """
-        select c.conversation_id, c.display_name, c.last_observed_at
+        select c.conversation_id, c.display_name, c.last_observed_at as last_activity_at
           from agent_conversations c
           join agent_conversation_memberships membership
             on membership.conversation_id = c.conversation_id
@@ -897,11 +899,7 @@ public class ConversationMemoryStore {
            and (membership.ended_at is null or membership.ended_at > ?)
          order by c.last_observed_at desc, c.conversation_id
         """,
-        (resultSet, rowNumber) ->
-            new AuthorizedGroup(
-                resultSet.getString("conversation_id"),
-                resultSet.getString("display_name"),
-                resultSet.getTimestamp("last_observed_at").toInstant()),
+        AUTHORIZED_GROUP_ROW_MAPPER,
         accountId,
         now,
         now);
@@ -913,7 +911,7 @@ public class ConversationMemoryStore {
     return jdbcTemplate
         .query(
             """
-            select c.conversation_id, c.display_name, c.last_observed_at
+            select c.conversation_id, c.display_name, c.last_observed_at as last_activity_at
               from agent_conversations c
               join agent_conversation_memberships membership
                 on membership.conversation_id = c.conversation_id
@@ -923,11 +921,7 @@ public class ConversationMemoryStore {
                and (membership.ended_at is null or membership.ended_at > ?)
              order by c.last_observed_at desc
             """,
-            (resultSet, rowNumber) ->
-                new AuthorizedGroup(
-                    resultSet.getString("conversation_id"),
-                    resultSet.getString("display_name"),
-                    resultSet.getTimestamp("last_observed_at").toInstant()),
+            AUTHORIZED_GROUP_ROW_MAPPER,
             transport,
             externalConversationId,
             accountId,
