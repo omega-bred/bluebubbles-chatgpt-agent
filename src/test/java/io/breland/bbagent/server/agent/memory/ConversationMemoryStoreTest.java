@@ -8,6 +8,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import io.breland.bbagent.server.agent.IncomingMessage;
 import io.breland.bbagent.server.agent.account.AgentAccountResolver;
+import io.breland.bbagent.server.agent.memory.ConversationMemoryModels.AuthorizedGroup;
 import io.breland.bbagent.server.agent.memory.ConversationMemoryModels.ConversationRecord;
 import io.breland.bbagent.server.agent.memory.ConversationMemoryModels.DigestBatch;
 import io.breland.bbagent.server.agent.memory.ConversationMemoryModels.ExtractionBatch;
@@ -69,6 +70,49 @@ class ConversationMemoryStoreTest {
     assertThat(store.findMemoryEnabledConversations())
         .containsExactlyElementsOf(enabled ? List.of(expected) : List.of());
     assertThat(store.findConversation("missing-conversation")).isEmpty();
+  }
+
+  @Test
+  void authorizedGroupQueriesPreserveFieldsOrderAndMissingResults() {
+    String accountId = createAccount("authorized-group-mapping@example.com");
+    Instant olderActivity = OBSERVED_AT.minusSeconds(1);
+    Instant newerActivity = OBSERVED_AT.plusMillis(123);
+    Instant membershipStart = OBSERVED_AT.minusSeconds(60);
+    Instant now = OBSERVED_AT.plusSeconds(60);
+    String unnamedId =
+        store.upsertConversation(
+            "bluebubbles", "iMessage;+;unnamed-authorized-group", true, null, olderActivity);
+    String namedId =
+        store.upsertConversation(
+            "lxmf", "named-authorized-group", true, "Trip planning 🌍", newerActivity);
+    for (String conversationId : List.of(unnamedId, namedId)) {
+      store.recordMembership(conversationId, accountId, membershipStart);
+      store.enableMemory(conversationId, accountId, membershipStart);
+    }
+    AuthorizedGroup unnamed = new AuthorizedGroup(unnamedId, null, olderActivity);
+    AuthorizedGroup named = new AuthorizedGroup(namedId, "Trip planning 🌍", newerActivity);
+
+    assertThat(store.findAuthorizedGroups(accountId, membershipStart, now))
+        .containsExactly(named, unnamed);
+    assertThat(store.findCurrentlyAuthorizedGroups(accountId, now)).containsExactly(named, unnamed);
+    assertThat(
+            store.findCurrentlyAuthorizedGroup(
+                accountId, "bluebubbles", "iMessage;+;unnamed-authorized-group", now))
+        .contains(unnamed);
+    assertThat(store.findCurrentlyAuthorizedGroup(accountId, "lxmf", "named-authorized-group", now))
+        .contains(named);
+    assertThat(store.findAuthorizedGroups("missing-account", membershipStart, now)).isEmpty();
+    assertThat(store.findCurrentlyAuthorizedGroups("missing-account", now)).isEmpty();
+    assertThat(
+            store.findCurrentlyAuthorizedGroup(
+                "missing-account", "lxmf", "named-authorized-group", now))
+        .isEmpty();
+    assertThat(
+            store.findCurrentlyAuthorizedGroup(
+                accountId, "bluebubbles", "named-authorized-group", now))
+        .isEmpty();
+    assertThat(store.findCurrentlyAuthorizedGroup(accountId, "lxmf", "missing-group", now))
+        .isEmpty();
   }
 
   @Test
