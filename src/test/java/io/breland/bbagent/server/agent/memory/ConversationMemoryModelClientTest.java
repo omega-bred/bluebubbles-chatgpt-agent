@@ -26,7 +26,14 @@ class ConversationMemoryModelClientTest {
   private static final Instant OCCURRED_AT = Instant.parse("2026-08-08T17:03:00Z");
   private final ConversationMemoryModelClient client =
       new ConversationMemoryModelClient(
-          () -> null, new ObjectMapper().findAndRegisterModules(), "test-model", null);
+          new ConversationMemoryResponsesClient(
+              () -> null,
+              "test-model",
+              ConversationMemoryResponsesClient.DEFAULT_FALLBACK_MODEL,
+              ConversationMemoryResponsesClient.DEFAULT_MAX_PROMPT_PRICE,
+              ConversationMemoryResponsesClient.DEFAULT_MAX_COMPLETION_PRICE),
+          new ObjectMapper().findAndRegisterModules(),
+          null);
 
   @Test
   void parsesTheStrictExtractionShape() {
@@ -196,9 +203,13 @@ class ConversationMemoryModelClientTest {
 
     var priceGuardedClient =
         new ConversationMemoryModelClient(
-            () -> openAIClient,
+            new ConversationMemoryResponsesClient(
+                () -> openAIClient,
+                "openrouter/z-ai/glm-5.2",
+                ConversationMemoryResponsesClient.DEFAULT_FALLBACK_MODEL,
+                ConversationMemoryResponsesClient.DEFAULT_MAX_PROMPT_PRICE,
+                ConversationMemoryResponsesClient.DEFAULT_MAX_COMPLETION_PRICE),
             new ObjectMapper().findAndRegisterModules(),
-            "openrouter/z-ai/glm-5.2",
             null);
 
     var extraction = priceGuardedClient.extract(messages(), List.of());
