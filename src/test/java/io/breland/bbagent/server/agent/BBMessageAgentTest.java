@@ -605,45 +605,49 @@ class BBMessageAgentTest {
     assertFalse(prompt.contains("start_retired_async_task"));
   }
 
-  @Test
-  void directBlueChatPromptForwardsPreciseGroupQuestionsWithoutMemorySubstitution() {
+  @ParameterizedTest
+  @ValueSource(booleans = {false, true})
+  void directPromptPreservesGroupCatchupInstructions(boolean lxmf) {
     IncomingMessage incoming =
-        incomingMessage(
-            "iMessage;-;+15555550123",
-            "msg-group-question-direct",
+        new IncomingMessage(
+            lxmf ? IncomingMessage.TRANSPORT_LXMF : IncomingMessage.TRANSPORT_BLUEBUBBLES,
+            lxmf ? "lxmf:aabbccdd" : "iMessage;-;+15555550123",
+            "msg-group-question",
+            null,
             "Who owns Project Atlas?",
-            1_000L);
+            false,
+            lxmf ? "LXMF" : "iMessage",
+            lxmf ? "aabbccdd" : "+15555550123",
+            false,
+            Instant.ofEpochSecond(1_000L),
+            List.of(),
+            false);
 
     String prompt =
         promptBuilder(new StubBBHttpClientWrapper())
             .buildConversationInput(List.of(), List.of(), incoming)
-            .toString();
+            .get(1)
+            .asEasyInputMessage()
+            .content()
+            .asTextInput();
 
+    String introduction = lxmf ? "Use " : "In a one-to-one chat, use ";
     String catchupGuidance =
         prompt.substring(
-            prompt.indexOf("In a one-to-one chat, use get_group_catchup"),
+            prompt.indexOf(introduction + "get_group_catchup"),
             prompt.indexOf(
-                "When the user asks to enable, disable, or schedule proactive summaries"));
-    assertTrue(prompt.contains("get_group_catchup with the user's exact question"));
-    assertTrue(prompt.contains("relative phrases such as today or recently unchanged"));
-    assertTrue(
-        prompt.contains("If it returns clarification_question, ask that naturally and wait"));
-    assertTrue(prompt.contains("only to resolve unresolved_participants"));
+                lxmf
+                    ? "When the user asks about quota"
+                    : "Use built-in web_search for current info"));
     assertThat(catchupGuidance)
-        .contains(
-            "omit lookback_hours when question is present",
-            "If unresolved_participants is nonempty",
-            "call memory_get once",
-            "do not change group-derived facts",
-            "keep the returned safe label");
-    assertThat(catchupGuidance.toLowerCase(Locale.ROOT))
-        .doesNotContain(
-            "authorized group",
-            "question_answer coverage",
-            "insufficient_evidence",
-            "exact evidence");
-    assertThat(catchupGuidance.toLowerCase(Locale.ROOT))
-        .doesNotContain(" count", " score", " game", " puzzle", " round", "wordle", "wordling");
+        .isEqualTo(
+            introduction
+                + "get_group_catchup for questions like what happened, what did I miss, or summaries of a group over a time range. Use "
+                + "memory_get for semantic facts and decisions. For questions about another group's messages, call "
+                + "get_group_catchup with the user's exact question. Pass relative phrases such as today or recently unchanged; the tool interprets them from timestamped recent history and may search older messages. Supply from/to only when the user clearly established an absolute range, and omit lookback_hours when question is present. If it returns clarification_question, ask that naturally and wait. If unresolved_participants is nonempty, use visible one-to-one context first; otherwise call "
+                + "memory_get once only to resolve unresolved_participants; do not change group-derived facts. If no supported name is found, keep the returned safe label. Keep internal retrieval machinery out of the answer. Explain relevant limits naturally, including missing history or unverified access; do not overstate the completeness of a summary. "
+                + "When the user asks to enable, disable, or schedule proactive summaries from a group into this one-to-one chat, call configure_group_catchup. ");
+    assertThat(prompt).containsOnlyOnce(catchupGuidance);
   }
 
   @Test
@@ -677,55 +681,6 @@ class BBMessageAgentTest {
         .contains("This transport cannot deliver generated images")
         .doesNotContain("call the built-in image_generation tool directly")
         .doesNotContain("The generated image is sent back to this chat automatically");
-  }
-
-  @Test
-  void directLxmfPromptForwardsPreciseGroupQuestionsWithoutMemorySubstitution() {
-    IncomingMessage incoming =
-        new IncomingMessage(
-            IncomingMessage.TRANSPORT_LXMF,
-            IncomingMessage.transportPrefix(IncomingMessage.TRANSPORT_LXMF, "aabbccdd"),
-            "msg-group-question-lxmf",
-            null,
-            "Which plan did the Hiking group choose?",
-            false,
-            "LXMF",
-            "aabbccdd",
-            false,
-            Instant.ofEpochSecond(1_000L),
-            List.of(),
-            false);
-
-    String prompt =
-        promptBuilder(new StubBBHttpClientWrapper())
-            .buildConversationInput(List.of(), List.of(), incoming)
-            .toString();
-
-    assertTrue(prompt.contains("get_group_catchup with the user's exact question"));
-    assertTrue(prompt.contains("relative phrases such as today or recently unchanged"));
-    assertTrue(
-        prompt.contains("If it returns clarification_question, ask that naturally and wait"));
-    assertTrue(prompt.contains("only to resolve unresolved_participants"));
-    String catchupGuidance =
-        prompt.substring(
-            prompt.indexOf("Use get_group_catchup for questions like"),
-            prompt.indexOf(
-                "When the user asks to enable, disable, or schedule proactive summaries"));
-    assertThat(catchupGuidance)
-        .contains(
-            "omit lookback_hours when question is present",
-            "If unresolved_participants is nonempty",
-            "call memory_get once",
-            "do not change group-derived facts",
-            "keep the returned safe label");
-    assertThat(catchupGuidance.toLowerCase(Locale.ROOT))
-        .doesNotContain(
-            "authorized group",
-            "question_answer coverage",
-            "insufficient_evidence",
-            "exact evidence");
-    assertThat(catchupGuidance.toLowerCase(Locale.ROOT))
-        .doesNotContain(" count", " score", " game", " puzzle", " round", "wordle", "wordling");
   }
 
   @Test
