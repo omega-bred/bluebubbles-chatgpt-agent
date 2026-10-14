@@ -24,6 +24,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.time.format.DateTimeParseException;
 import kotlin.Lazy;
+import kotlin.LazyKt;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Profile;
@@ -221,28 +222,10 @@ public class CadenceWorkflowConfig {
     public Lazy<?> deserialize(JsonElement json, Type typeOfT, JsonDeserializationContext context)
         throws JsonParseException {
       if (json == null || json.isJsonNull()) {
-        return new SimpleLazy<>(null);
+        return LazyKt.lazyOf(null);
       }
       Object value = context.deserialize(json, Object.class);
-      return new SimpleLazy<>(value);
-    }
-  }
-
-  static final class SimpleLazy<T> implements Lazy<T> {
-    private final T value;
-
-    SimpleLazy(T value) {
-      this.value = value;
-    }
-
-    @Override
-    public T getValue() {
-      return value;
-    }
-
-    @Override
-    public boolean isInitialized() {
-      return true;
+      return LazyKt.lazyOf(value);
     }
   }
 }
