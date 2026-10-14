@@ -16,6 +16,7 @@ import java.util.Map;
 import java.util.UUID;
 import java.util.function.BiFunction;
 import org.apache.commons.lang3.StringUtils;
+import org.apache.commons.lang3.math.NumberUtils;
 import org.springframework.ai.tool.toolsearch.ToolReference;
 import org.springframework.ai.tool.toolsearch.ToolSearchRequest;
 import org.springframework.ai.tool.toolsearch.index.lucene.LuceneToolIndex;
@@ -118,33 +119,19 @@ public final class ToolSearchAgentTool implements ToolProvider {
   }
 
   private static String textArg(JsonNode args, String fieldName) {
-    if (args == null) {
-      return null;
-    }
-    JsonNode value = args.get(fieldName);
-    if (value == null || value.isNull()) {
-      return null;
-    }
-    return value.asText(null);
+    return args == null ? null : args.path(fieldName).asText(null);
   }
 
   private static int intArg(JsonNode args, String fieldName, int fallback) {
     if (args == null) {
       return fallback;
     }
-    JsonNode value = args.get(fieldName);
-    if (value == null || value.isNull()) {
-      return fallback;
-    }
+    JsonNode value = args.path(fieldName);
     if (value.canConvertToInt()) {
       return value.asInt(fallback);
     }
     if (value.isTextual()) {
-      try {
-        return Integer.parseInt(value.asText());
-      } catch (NumberFormatException ignored) {
-        return fallback;
-      }
+      return NumberUtils.toInt(value.asText(), fallback);
     }
     return fallback;
   }
