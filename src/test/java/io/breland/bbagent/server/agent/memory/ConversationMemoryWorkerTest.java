@@ -41,7 +41,8 @@ class ConversationMemoryWorkerTest {
           modelClient,
           metrics,
           Clock.fixed(NOW, ZoneOffset.UTC),
-          "worker-1");
+          "worker-1",
+          true);
 
   @BeforeEach
   void setUp() {

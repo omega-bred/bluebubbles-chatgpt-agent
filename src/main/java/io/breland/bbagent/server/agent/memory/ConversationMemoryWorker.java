@@ -63,16 +63,6 @@ public class ConversationMemoryWorker {
       ConversationMemoryModelClient modelClient,
       @Nullable OperationalMetricsService metrics,
       Clock clock,
-      String workerId) {
-    this(store, membershipService, modelClient, metrics, clock, workerId, true);
-  }
-
-  ConversationMemoryWorker(
-      ConversationMemoryStore store,
-      ConversationMembershipService membershipService,
-      ConversationMemoryModelClient modelClient,
-      @Nullable OperationalMetricsService metrics,
-      Clock clock,
       String workerId,
       boolean globallyEnabled) {
     this.store = store;
