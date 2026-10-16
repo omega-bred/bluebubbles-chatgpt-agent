@@ -1,7 +1,7 @@
 package io.breland.bbagent.server.subscriptions;
 
+import static io.breland.bbagent.server.StringSupport.firstNonBlank;
 import static io.breland.bbagent.server.TimeSupport.offset;
-import static io.breland.bbagent.server.subscriptions.SubscriptionJson.firstNonBlank;
 
 import io.breland.bbagent.generated.model.AdminPremiumGrantRequest;
 import io.breland.bbagent.generated.model.AdminSubscriptionActionRequest;

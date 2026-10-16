@@ -7,10 +7,6 @@ import org.springframework.lang.Nullable;
 final class SubscriptionJson {
   private SubscriptionJson() {}
 
-  static @Nullable String firstNonBlank(@Nullable String... values) {
-    return StringUtils.trimToNull(StringUtils.firstNonBlank(values));
-  }
-
   static @Nullable String firstText(@Nullable JsonNode node, String... fieldNames) {
     if (node == null || node.isMissingNode() || node.isNull()) {
       return null;

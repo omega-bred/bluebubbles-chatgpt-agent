@@ -1,6 +1,6 @@
 package io.breland.bbagent.server.subscriptions;
 
-import static io.breland.bbagent.server.subscriptions.SubscriptionJson.firstNonBlank;
+import static io.breland.bbagent.server.StringSupport.firstNonBlank;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
