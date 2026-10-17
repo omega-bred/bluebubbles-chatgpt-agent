@@ -2,6 +2,7 @@ package io.breland.bbagent.server.agent.tools.giphy;
 
 import static io.breland.bbagent.server.agent.tools.JsonSchemaUtilities.jsonSchema;
 
+import com.google.common.primitives.Ints;
 import com.openai.client.OpenAIClient;
 import com.openai.models.ChatModel;
 import com.openai.models.responses.EasyInputMessage;
@@ -238,14 +239,7 @@ public class SendGiphyAgentTool implements ToolProvider {
       return null;
     }
     Matcher matcher = Pattern.compile("-?\\d+").matcher(text);
-    if (matcher.find()) {
-      try {
-        return Integer.parseInt(matcher.group());
-      } catch (NumberFormatException ignored) {
-        return null;
-      }
-    }
-    return null;
+    return matcher.find() ? Ints.tryParse(matcher.group()) : null;
   }
 
   private static String extractResponseText(Response response) {
