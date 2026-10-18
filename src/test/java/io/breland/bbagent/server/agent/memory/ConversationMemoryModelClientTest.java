@@ -16,6 +16,7 @@ import com.openai.models.responses.StructuredResponseOutputMessage;
 import com.openai.services.blocking.ResponseService;
 import io.breland.bbagent.server.agent.memory.ConversationMemoryModels.ExistingArtifact;
 import io.breland.bbagent.server.agent.memory.ConversationMemoryModels.JournalMessage;
+import java.time.Clock;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
@@ -31,7 +32,8 @@ class ConversationMemoryModelClientTest {
               "test-model",
               ConversationMemoryResponsesClient.DEFAULT_FALLBACK_MODEL,
               ConversationMemoryResponsesClient.DEFAULT_MAX_PROMPT_PRICE,
-              ConversationMemoryResponsesClient.DEFAULT_MAX_COMPLETION_PRICE),
+              ConversationMemoryResponsesClient.DEFAULT_MAX_COMPLETION_PRICE,
+              Clock.systemUTC()),
           new ObjectMapper().findAndRegisterModules(),
           null);
 
@@ -208,7 +210,8 @@ class ConversationMemoryModelClientTest {
                 "openrouter/z-ai/glm-5.2",
                 ConversationMemoryResponsesClient.DEFAULT_FALLBACK_MODEL,
                 ConversationMemoryResponsesClient.DEFAULT_MAX_PROMPT_PRICE,
-                ConversationMemoryResponsesClient.DEFAULT_MAX_COMPLETION_PRICE),
+                ConversationMemoryResponsesClient.DEFAULT_MAX_COMPLETION_PRICE,
+                Clock.systemUTC()),
             new ObjectMapper().findAndRegisterModules(),
             null);
 

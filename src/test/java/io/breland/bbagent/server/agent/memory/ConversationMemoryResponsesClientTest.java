@@ -38,7 +38,8 @@ class ConversationMemoryResponsesClientTest {
   @Test
   void rejectsBlankInputsAndNonPositiveTokenLimits() {
     ConversationMemoryResponsesClient client =
-        new ConversationMemoryResponsesClient(() -> null, "primary", "fallback", 0.4, 1.6);
+        new ConversationMemoryResponsesClient(
+            () -> null, "primary", "fallback", 0.4, 1.6, Clock.systemUTC());
 
     assertThatIllegalArgumentException()
         .isThrownBy(() -> client.create(" ", "input", 200, TestOutput.class));
@@ -60,7 +61,8 @@ class ConversationMemoryResponsesClientTest {
     when(outputItem.message()).thenReturn(Optional.empty());
     when(responseService.create(any(StructuredResponseCreateParams.class))).thenReturn(response);
     ConversationMemoryResponsesClient client =
-        new ConversationMemoryResponsesClient(() -> openAIClient, "primary", "fallback", 0.4, 1.6);
+        new ConversationMemoryResponsesClient(
+            () -> openAIClient, "primary", "fallback", 0.4, 1.6, Clock.systemUTC());
 
     assertThatIllegalStateException()
         .isThrownBy(() -> client.create("instructions", "input", 200, TestOutput.class))
@@ -84,7 +86,12 @@ class ConversationMemoryResponsesClientTest {
             });
     ConversationMemoryResponsesClient client =
         new ConversationMemoryResponsesClient(
-            () -> openAIClient, "openrouter/z-ai/glm-5.2", "openai/gpt-4.1-mini", 0.4, 1.6);
+            () -> openAIClient,
+            "openrouter/z-ai/glm-5.2",
+            "openai/gpt-4.1-mini",
+            0.4,
+            1.6,
+            Clock.systemUTC());
 
     ConversationMemoryResponsesClient.RoutedResponse<TestOutput> result =
         client.create("instructions", "input", 200, TestOutput.class);
@@ -136,7 +143,8 @@ class ConversationMemoryResponsesClientTest {
               return response;
             });
     ConversationMemoryResponsesClient client =
-        new ConversationMemoryResponsesClient(() -> openAIClient, "primary", "fallback", 0.4, 1.6);
+        new ConversationMemoryResponsesClient(
+            () -> openAIClient, "primary", "fallback", 0.4, 1.6, Clock.systemUTC());
 
     client.create("instructions", "input", 200, RawWindowDecision.class);
 
@@ -166,7 +174,12 @@ class ConversationMemoryResponsesClientTest {
             });
     ConversationMemoryResponsesClient client =
         new ConversationMemoryResponsesClient(
-            () -> openAIClient, "openrouter/z-ai/glm-5.2", "openai/gpt-4.1-mini", 0.4, 1.6);
+            () -> openAIClient,
+            "openrouter/z-ai/glm-5.2",
+            "openai/gpt-4.1-mini",
+            0.4,
+            1.6,
+            Clock.systemUTC());
 
     ConversationMemoryResponsesClient.RoutedResponse<TestOutput> result =
         client.create("instructions", "input", 200, TestOutput.class);
@@ -189,7 +202,12 @@ class ConversationMemoryResponsesClientTest {
         .thenReturn(primaryResponse, fallbackResponse);
     ConversationMemoryResponsesClient client =
         new ConversationMemoryResponsesClient(
-            () -> openAIClient, "openrouter/z-ai/glm-5.2", "openai/gpt-4.1-mini", 0.4, 1.6);
+            () -> openAIClient,
+            "openrouter/z-ai/glm-5.2",
+            "openai/gpt-4.1-mini",
+            0.4,
+            1.6,
+            Clock.systemUTC());
 
     ConversationMemoryResponsesClient.RoutedResponse<String> result =
         client.createValidated(
@@ -223,7 +241,12 @@ class ConversationMemoryResponsesClientTest {
         .thenReturn(primaryResponse, fallbackResponse);
     ConversationMemoryResponsesClient client =
         new ConversationMemoryResponsesClient(
-            () -> openAIClient, "openrouter/z-ai/glm-5.2", "openai/gpt-4.1-mini", 0.4, 1.6);
+            () -> openAIClient,
+            "openrouter/z-ai/glm-5.2",
+            "openai/gpt-4.1-mini",
+            0.4,
+            1.6,
+            Clock.systemUTC());
 
     assertThatIllegalStateException()
         .isThrownBy(

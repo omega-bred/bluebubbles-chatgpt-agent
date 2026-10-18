@@ -71,21 +71,6 @@ public class ConversationMemoryResponsesClient {
       String primaryModel,
       String fallbackModel,
       double maxPromptPrice,
-      double maxCompletionPrice) {
-    this(
-        openAiSupplier,
-        primaryModel,
-        fallbackModel,
-        maxPromptPrice,
-        maxCompletionPrice,
-        Clock.systemUTC());
-  }
-
-  ConversationMemoryResponsesClient(
-      Supplier<OpenAIClient> openAiSupplier,
-      String primaryModel,
-      String fallbackModel,
-      double maxPromptPrice,
       double maxCompletionPrice,
       Clock clock) {
     this.openAiSupplier = openAiSupplier;
