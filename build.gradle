@@ -8,11 +8,14 @@ plugins {
 	id 'org.springframework.boot' version '4.1.1'
 	id 'io.spring.dependency-management' version '1.1.7'
 	id 'org.openapi.generator' version '7.22.0'
-	id 'com.diffplug.spotless' version '8.4.0'
+	id 'com.diffplug.spotless' version '8.10.4'
     id "org.flywaydb.flyway" version "13.7.0"
 }
 
 var grp = 'io.breland.bbagent'
+
+// Keep HttpClient 5.6.5 paired with its upstream HttpCore release.
+ext['httpcore5.version'] = '5.4.4'
 
 // Provide secrets from 1Password to forked JVMs (tests, bootRun)
 // Strategy per secret:
@@ -220,7 +223,7 @@ dependencies {
     implementation 'dev.openfga:openfga-sdk:0.9.11'
 
 
-	implementation("org.apache.httpcomponents.client5:httpclient5:5.6.4")
+	implementation("org.apache.httpcomponents.client5:httpclient5:5.6.5")
 	implementation 'commons-codec:commons-codec'
 
 
@@ -230,7 +233,7 @@ dependencies {
     implementation platform('org.apache.logging.log4j:log4j-bom:2.26.1')
     implementation platform("org.springframework.ai:spring-ai-bom:2.0.0")
     implementation("org.springframework.ai:spring-ai-tool-search-tool")
-    implementation("org.apache.lucene:lucene-core:10.5.1")
+    implementation("org.apache.lucene:lucene-core:10.5.2")
 
     runtimeOnly 'org.apache.logging.log4j:log4j-slf4j2-impl'
 
@@ -250,7 +253,7 @@ dependencies {
     implementation 'com.spotify:completable-futures:0.3.6'
 
     // Google Calendar
-    implementation 'com.google.api-client:google-api-client:2.9.0'
+    implementation 'com.google.api-client:google-api-client:2.9.1'
     implementation 'com.google.oauth-client:google-oauth-client-jetty:1.39.0'
     implementation 'com.google.http-client:google-http-client-jackson2:2.2.0'
     implementation 'com.google.apis:google-api-services-calendar:v3-rev20251207-2.0.0'
@@ -281,7 +284,7 @@ dependencies {
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
 
     // generated java client
-    implementation 'joda-time:joda-time:2.14.4'
+    implementation 'joda-time:joda-time:2.15.0'
     implementation "com.fasterxml.jackson.datatype:jackson-datatype-jsr310"
 }
 
