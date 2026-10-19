@@ -3,6 +3,7 @@ package io.breland.bbagent.server.agent;
 import com.openai.models.responses.EasyInputMessage;
 import com.openai.models.responses.Response;
 import com.openai.models.responses.ResponseInputItem;
+import io.breland.bbagent.server.agent.decisions.DecisionResponseRouter;
 import io.breland.bbagent.server.agent.llm.LlmProvider;
 import io.breland.bbagent.server.agent.llm.LlmRequest;
 import io.breland.bbagent.server.agent.model_picker.ModelAccessService;
@@ -33,6 +34,9 @@ public final class AgentResponseCreator {
       List<ResponseInputItem> inputItems,
       IncomingMessage message,
       AgentWorkflowContext workflowContext) {
+    Response routed =
+        DecisionResponseRouter.route(inputItems, message, workflowContext, toolRegistry);
+    if (routed != null) return routed;
     ModelAccessService.ModelAccess modelAccess = modelPicker.resolveModelAccess(message);
     List<ResponseInputItem> withCapabilities = new java.util.ArrayList<>(inputItems);
     withCapabilities.add(
@@ -41,11 +45,27 @@ public final class AgentResponseCreator {
                 .role(EasyInputMessage.Role.DEVELOPER)
                 .content(modelCapabilityInstruction(modelAccess, message))
                 .build()));
+    if (workflowContext != null && workflowContext.decisionRouting().feedback()) {
+      withCapabilities.add(
+          ResponseInputItem.ofEasyInputMessage(
+              EasyInputMessage.builder()
+                  .role(EasyInputMessage.Role.DEVELOPER)
+                  .content(
+                      "The incoming message was classified as substantive product feedback. If it has"
+                          + " not already been recorded in this turn, use record_feedback with the user's exact"
+                          + " feedback, then continue helping. This hint does not authorize any other action.")
+                  .build()));
+    }
     List<ResponseInputItem> requestInputItems =
         modelPicker.shouldSquashDeveloperMessagesIntoSystem(message)
             ? ResponseInputMessages.squashDeveloperMessagesIntoSystem(withCapabilities)
             : withCapabilities;
-    List<AgentTool> tools = toolRegistry.toolsForModel(message, requestInputItems);
+    List<String> preloaded =
+        workflowContext == null ? List.of() : workflowContext.decisionRouting().toolNames();
+    List<AgentTool> tools =
+        preloaded.isEmpty()
+            ? toolRegistry.toolsForModel(message, requestInputItems)
+            : toolRegistry.toolsForModel(message, requestInputItems, preloaded);
     LlmRequest request =
         new LlmRequest(modelAccess, requestInputItems, tools, message, workflowContext);
     long startedNanos = 0L;

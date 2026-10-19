@@ -32,6 +32,48 @@ class CadenceLazyTypeAdapterTest {
           .getOptions()
           .getDataConverter();
 
+  @Test
+  void decisionRoutingSurvivesWorkflowSerializationAndOldPayloads() {
+    var routing =
+        new io.breland.bbagent.server.agent.decisions.DecisionRouting(
+            java.util.List.of("get_usage_limits"), true);
+    var original =
+        new io.breland.bbagent.server.agent.AgentWorkflowContext(
+            "workflow", "chat", "message", java.time.Instant.EPOCH, routing);
+    var type = io.breland.bbagent.server.agent.AgentWorkflowContext.class;
+    assertThat(converter.fromData(converter.toData(original), type, type)).isEqualTo(original);
+    var old =
+        converter.fromData(
+            "{\"workflowId\":\"workflow\",\"chatGuid\":\"chat\",\"messageGuid\":\"message\",\"startedAt\":\"1970-01-01T00:00:00Z\"}"
+                .getBytes(StandardCharsets.UTF_8),
+            type,
+            type);
+    assertThat(old.decisionRouting())
+        .isEqualTo(io.breland.bbagent.server.agent.decisions.DecisionRouting.EMPTY);
+  }
+
+  @Test
+  void reactionRoutingRoundTripsAndOlderRoutingDefaultsToFullResponse() {
+    var type = io.breland.bbagent.server.agent.decisions.DecisionRouting.class;
+    var routing =
+        new io.breland.bbagent.server.agent.decisions.DecisionRouting(
+            java.util.List.of(),
+            false,
+            io.breland.bbagent.server.agent.decisions.DecisionRouting.ResponseMode.REACTION,
+            "love");
+    assertThat(converter.fromData(converter.toData(routing), type, type)).isEqualTo(routing);
+    var old =
+        converter.fromData(
+            "{\"toolNames\":[\"get_usage_limits\"],\"feedback\":false}"
+                .getBytes(StandardCharsets.UTF_8),
+            type,
+            type);
+    assertThat(old.responseMode())
+        .isEqualTo(
+            io.breland.bbagent.server.agent.decisions.DecisionRouting.ResponseMode.FULL_RESPONSE);
+    assertThat(old.toolNames()).containsExactly("get_usage_limits");
+  }
+
   @ParameterizedTest
   @MethodSource("payloads")
   void decodedValuesAreInitializedAndKeepTheirWireFormat(String payload, String encoded) {

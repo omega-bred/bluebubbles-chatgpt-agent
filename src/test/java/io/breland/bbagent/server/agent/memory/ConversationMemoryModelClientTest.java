@@ -35,7 +35,8 @@ class ConversationMemoryModelClientTest {
               ConversationMemoryResponsesClient.DEFAULT_MAX_COMPLETION_PRICE,
               Clock.systemUTC()),
           new ObjectMapper().findAndRegisterModules(),
-          null);
+          null,
+          io.breland.bbagent.server.agent.decisions.DecisionFixtures.disabledBackground());
 
   @Test
   void parsesTheStrictExtractionShape() {
@@ -213,7 +214,8 @@ class ConversationMemoryModelClientTest {
                 ConversationMemoryResponsesClient.DEFAULT_MAX_COMPLETION_PRICE,
                 Clock.systemUTC()),
             new ObjectMapper().findAndRegisterModules(),
-            null);
+            null,
+            io.breland.bbagent.server.agent.decisions.DecisionFixtures.disabledBackground());
 
     var extraction = priceGuardedClient.extract(messages(), List.of());
 

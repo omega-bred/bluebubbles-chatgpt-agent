@@ -12,6 +12,8 @@ import io.breland.bbagent.server.agent.BBMessageAgent;
 import io.breland.bbagent.server.agent.ConversationState;
 import io.breland.bbagent.server.agent.ConversationStateStore;
 import io.breland.bbagent.server.agent.IncomingMessage;
+import io.breland.bbagent.server.agent.decisions.DecisionRouting;
+import io.breland.bbagent.server.agent.decisions.MessageDecisionService;
 import io.breland.bbagent.server.agent.llm.OpenAiClientProvider;
 import io.breland.bbagent.server.agent.memory.ConversationJournalService;
 import io.breland.bbagent.server.agent.profile.AgentProfileService;
@@ -45,6 +47,7 @@ class CadenceIncomingMessageHandlerTest {
     fixture.handler().handleIncomingMessage(message);
     fixture.handler().handleIncomingMessage(message);
     verify(fixture.workflowLauncher()).startWorkflow(any());
+    verify(fixture.decisions()).assess(any(), any(), any());
   }
 
   @Test
@@ -55,6 +58,7 @@ class CadenceIncomingMessageHandlerTest {
         .thenReturn(AssistantResponsiveness.SILENT);
     fixture.handler().handleIncomingMessage(message);
     verifyNoInteractions(fixture.workflowLauncher());
+    verifyNoInteractions(fixture.decisions());
   }
 
   @Test
@@ -80,6 +84,100 @@ class CadenceIncomingMessageHandlerTest {
 
     verify(fixture.journalService(), never()).recordEligibleMessage(any());
     verifyNoInteractions(fixture.workflowLauncher());
+    verifyNoInteractions(fixture.decisions());
+  }
+
+  @Test
+  void suppressedMessageIsJournaledAndRememberedWithoutReplacingActiveWorkflow() {
+    Fixture fixture = fixture();
+    IncomingMessage message = message("chatter", "thanks", false, false);
+    ConversationState state = new ConversationState();
+    state.setLatestWorkflowMessageGuid("active-request");
+    state.setLatestWorkflowRunId("active-run");
+    MessageTransport transport = Mockito.mock(MessageTransport.class);
+    when(fixture.transportRegistry().resolve(message)).thenReturn(transport);
+    when(transport.hydrateConversationState(message.chatGuid(), message)).thenReturn(state);
+    when(fixture.decisions().assess(any(), any(), any()))
+        .thenReturn(new MessageDecisionService.Assessment(true, DecisionRouting.EMPTY));
+
+    fixture.handler().handleIncomingMessage(message);
+    fixture.handler().handleIncomingMessage(message);
+
+    verifyNoInteractions(fixture.workflowLauncher());
+    verify(fixture.decisions()).assess(any(), any(), any());
+    org.assertj.core.api.Assertions.assertThat(state.getLatestWorkflowMessageGuid())
+        .isEqualTo("active-request");
+    org.assertj.core.api.Assertions.assertThat(state.getLatestWorkflowRunId())
+        .isEqualTo("active-run");
+    org.assertj.core.api.Assertions.assertThat(state.history()).hasSize(1);
+    org.assertj.core.api.Assertions.assertThat(state.history().getFirst().content())
+        .contains("thanks");
+    verify(fixture.journalService(), Mockito.atLeastOnce()).recordEligibleMessage(message);
+  }
+
+  @Test
+  void routingHintsTravelWithTheWorkflow() {
+    Fixture fixture = fixture();
+    IncomingMessage message = message("quota", "Chat, what is my quota?", false, false);
+    MessageTransport transport = Mockito.mock(MessageTransport.class);
+    when(fixture.transportRegistry().resolve(message)).thenReturn(transport);
+    when(transport.hydrateConversationState(message.chatGuid(), message))
+        .thenReturn(new ConversationState());
+    DecisionRouting routing = new DecisionRouting(List.of("get_usage_limits"), false);
+    when(fixture.decisions().assess(any(), any(), any()))
+        .thenReturn(new MessageDecisionService.Assessment(false, routing));
+    fixture.handler().handleIncomingMessage(message);
+    var request =
+        org.mockito.ArgumentCaptor.forClass(
+            io.breland.bbagent.server.agent.cadence.models.CadenceMessageWorkflowRequest.class);
+    verify(fixture.workflowLauncher()).startWorkflow(request.capture());
+    org.assertj.core.api.Assertions.assertThat(
+            request.getValue().workflowContext().decisionRouting())
+        .isEqualTo(routing);
+  }
+
+  @Test
+  void emojiResponseUsesReactionWorkflowWithoutReplacingActiveTask() {
+    Fixture fixture = fixture();
+    IncomingMessage message = message("celebration", "I passed!", false, false);
+    ConversationState state = new ConversationState();
+    state.setLatestWorkflowMessageGuid("active-request");
+    state.setLatestWorkflowRunId("active-run");
+    MessageTransport transport = Mockito.mock(MessageTransport.class);
+    when(fixture.transportRegistry().resolve(message)).thenReturn(transport);
+    when(transport.hydrateConversationState(message.chatGuid(), message)).thenReturn(state);
+    var routing =
+        new DecisionRouting(List.of(), false, DecisionRouting.ResponseMode.REACTION, "love");
+    when(fixture.decisions().assess(any(), any(), any()))
+        .thenReturn(new MessageDecisionService.Assessment(false, routing));
+    fixture.handler().handleIncomingMessage(message);
+    var request =
+        org.mockito.ArgumentCaptor.forClass(
+            io.breland.bbagent.server.agent.cadence.models.CadenceMessageWorkflowRequest.class);
+    verify(fixture.workflowLauncher()).startWorkflow(request.capture());
+    org.assertj.core.api.Assertions.assertThat(
+            request.getValue().workflowContext().isReactionWorkflow())
+        .isTrue();
+    org.assertj.core.api.Assertions.assertThat(state.getLatestWorkflowMessageGuid())
+        .isEqualTo("active-request");
+    org.assertj.core.api.Assertions.assertThat(state.getLatestWorkflowRunId())
+        .isEqualTo("active-run");
+    org.assertj.core.api.Assertions.assertThat(state.getLatestReactionMessageGuid())
+        .isEqualTo("celebration");
+  }
+
+  @Test
+  void classificationFailureFallsBackToNormalAgent() {
+    Fixture fixture = fixture();
+    IncomingMessage message = message("request", "Help me", false, false);
+    MessageTransport transport = Mockito.mock(MessageTransport.class);
+    when(fixture.transportRegistry().resolve(message)).thenReturn(transport);
+    when(transport.hydrateConversationState(message.chatGuid(), message))
+        .thenReturn(new ConversationState());
+    when(fixture.decisions().assess(any(), any(), any()))
+        .thenThrow(new IllegalStateException("unavailable"));
+    fixture.handler().handleIncomingMessage(message);
+    verify(fixture.workflowLauncher()).startWorkflow(any());
   }
 
   @Test
@@ -120,12 +218,14 @@ class CadenceIncomingMessageHandlerTest {
     BBHttpClientWrapper bbHttpClientWrapper = Mockito.mock(BBHttpClientWrapper.class);
     CadenceWorkflowLauncher workflowLauncher = Mockito.mock(CadenceWorkflowLauncher.class);
     ConversationJournalService journalService = Mockito.mock(ConversationJournalService.class);
+    MessageDecisionService decisions = Mockito.mock(MessageDecisionService.class);
     OpenAiClientProvider openAiClientProvider = Mockito.mock(OpenAiClientProvider.class);
     TermsAgreementValidator termsAgreementValidator =
         new TermsAgreementValidator(
             openAiClientProvider,
             new ObjectMapper(),
-            TermsAgreementValidator.DEFAULT_RESPONSES_MODEL);
+            TermsAgreementValidator.DEFAULT_RESPONSES_MODEL,
+            io.breland.bbagent.server.agent.decisions.DecisionFixtures.disabledBackground());
     TermsGate termsGate =
         new TermsGate(
             Mockito.mock(AgentOutboundService.class),
@@ -141,9 +241,10 @@ class CadenceIncomingMessageHandlerTest {
             Mockito.mock(io.breland.bbagent.server.metrics.AgentMetricsService.class),
             termsGate,
             new PollNotificationEnricher(bbHttpClientWrapper),
-            journalService);
+            journalService,
+            decisions);
     return new Fixture(
-        handler, profileService, transportRegistry, workflowLauncher, journalService);
+        handler, profileService, transportRegistry, workflowLauncher, journalService, decisions);
   }
 
   private IncomingMessage message(
@@ -168,5 +269,6 @@ class CadenceIncomingMessageHandlerTest {
       AgentProfileService profileService,
       MessageTransportRegistry transportRegistry,
       CadenceWorkflowLauncher workflowLauncher,
-      ConversationJournalService journalService) {}
+      ConversationJournalService journalService,
+      MessageDecisionService decisions) {}
 }

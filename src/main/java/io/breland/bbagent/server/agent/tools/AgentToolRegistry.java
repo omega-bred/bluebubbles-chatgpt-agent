@@ -191,10 +191,19 @@ public final class AgentToolRegistry {
 
   public List<AgentTool> toolsForModel(
       IncomingMessage message, List<ResponseInputItem> inputItems) {
+    return toolsForModel(message, inputItems, List.of());
+  }
+
+  public List<AgentTool> toolsForModel(
+      IncomingMessage message, List<ResponseInputItem> inputItems, List<String> preloadedNames) {
     Map<String, AgentTool> selectedTools = new LinkedHashMap<>();
     AgentTool toolSearchTool = tools.get(ToolSearchAgentTool.TOOL_NAME);
     if (toolSearchTool != null) {
       selectedTools.put(toolSearchTool.name(), toolSearchTool);
+    }
+    for (String toolName : preloadedNames) {
+      AgentTool tool = resolveTool(toolName, message);
+      if (tool != null) selectedTools.put(tool.name(), tool);
     }
     for (String toolName : toolSearchReferences(inputItems)) {
       AgentTool tool = resolveTool(toolName, message);

@@ -7,6 +7,7 @@ import com.openai.models.responses.Response;
 import com.openai.models.responses.ResponseCreateParams;
 import com.openai.models.responses.ResponseInputItem;
 import io.breland.bbagent.server.agent.AgentResponseHelper;
+import io.breland.bbagent.server.agent.decisions.BackgroundDecisionService;
 import io.breland.bbagent.server.agent.llm.OpenAiClientProvider;
 import java.util.List;
 import java.util.Locale;
@@ -47,6 +48,7 @@ public final class TermsAgreementValidator {
   private final OpenAiClientProvider openAiClientProvider;
   private final ObjectMapper objectMapper;
   private final String responsesModel;
+  private final BackgroundDecisionService decisions;
 
   public TermsAgreementValidator(
       OpenAiClientProvider openAiClientProvider,
@@ -55,10 +57,12 @@ public final class TermsAgreementValidator {
               "${bbagent.terms.acceptance.responses-model:"
                   + TermsAgreementValidator.DEFAULT_RESPONSES_MODEL
                   + "}")
-          String responsesModel) {
+          String responsesModel,
+      BackgroundDecisionService decisions) {
     this.openAiClientProvider = openAiClientProvider;
     this.objectMapper = objectMapper;
     this.responsesModel = responsesModel;
+    this.decisions = decisions;
   }
 
   public boolean isHighConfidenceAgreement(String text) {
@@ -68,6 +72,11 @@ public final class TermsAgreementValidator {
     if (DETERMINISTIC_AGREEMENTS.contains(normalizeAgreement(text))) {
       log.info("Terms agreement validator accepted deterministic affirmative reply");
       return true;
+    }
+    if (decisions.termsEnabled()) {
+      // Missing/refused/failed answers never imply consent. The legacy classifier is only used
+      // when Decisions is disabled, not as a second chance to accept an ambiguous response.
+      return decisions.termsAgreement(text.trim()).orElse(0.0) >= 0.98;
     }
     String cleanModel = StringUtils.defaultIfBlank(responsesModel, DEFAULT_RESPONSES_MODEL);
     ResponseCreateParams params =

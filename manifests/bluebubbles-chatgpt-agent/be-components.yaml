@@ -190,6 +190,14 @@ spec:
                 secretKeyRef:
                   key: "litellm-api-key"
                   name: openai-bluebubbles-chatgpt-agent-api-key
+            - name: BBAGENT_DECISIONS_ENABLED
+              value: "true"
+            - name: BBAGENT_DECISIONS_REACTIONS_ENABLED
+              value: "true"
+            - name: BBAGENT_DECISIONS_MODEL
+              value: "openai/gpt-6-luna"
+            - name: BBAGENT_DECISIONS_TIMEOUT
+              value: "PT3S"
             - name: BBAGENT_LOCAL_RESPONSES_MODEL
               value: "openrouter/z-ai/glm-5.2"
             - name: BBAGENT_CHATGPT_RESPONSES_MODEL

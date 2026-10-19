@@ -164,7 +164,8 @@ class ProactiveCatchupServiceTest {
         metrics,
         Clock.fixed(NOW, ZoneOffset.UTC),
         "proactive-worker",
-        globallyEnabled);
+        globallyEnabled,
+        io.breland.bbagent.server.agent.decisions.DecisionFixtures.disabledBackground());
   }
 
   private CatchupPreferenceClaim claim(String timezone, String quietStart, String quietEnd) {

@@ -137,7 +137,10 @@ final class BBMessageAgentFixture {
             profileService);
     TermsAgreementValidator termsAgreementValidator =
         new TermsAgreementValidator(
-            openAiClientProvider, objectMapper, TermsAgreementValidator.DEFAULT_RESPONSES_MODEL);
+            openAiClientProvider,
+            objectMapper,
+            TermsAgreementValidator.DEFAULT_RESPONSES_MODEL,
+            io.breland.bbagent.server.agent.decisions.DecisionFixtures.disabledBackground());
     ConversationStateStore conversationStateStore = new ConversationStateStore();
     WorkflowResponseGate workflowResponseGate = new WorkflowResponseGate(conversationStateStore);
     MessageResponseLimitNoticeFactory messageResponseLimitNoticeFactory =
@@ -168,7 +171,9 @@ final class BBMessageAgentFixture {
             agentMetricsService,
             termsGate,
             new PollNotificationEnricher(bbHttpClientWrapper),
-            mock(ConversationJournalService.class));
+            mock(ConversationJournalService.class),
+            org.mockito.Mockito.mock(
+                io.breland.bbagent.server.agent.decisions.MessageDecisionService.class));
     NativeAppSessionService nativeAppSessionService = mock(NativeAppSessionService.class);
     when(nativeAppSessionService.claimStartToken(any()))
         .thenAnswer(invocation -> invocation.getArgument(0));

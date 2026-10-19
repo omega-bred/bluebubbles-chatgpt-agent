@@ -183,6 +183,68 @@ Required:
 - `POSTGRES_JDBC_URL`, `POSTGRES_USER`, `POSTGRES_PASSWORD`
 - `MEM0_API_KEY` (TODO: Make optional)
 
+### Decisions API
+
+BlueChat uses OpenAI's `/v1/decisions` through the existing LiteLLM `OPENAI_BASE_URL`
+and `OPENAI_API_KEY`. The key must have access to `openai/gpt-6-luna`, and the proxy must
+support the OpenAI Decisions request format. Normal chat and memory extraction still use
+their existing Responses models. The small Decisions HTTP client is isolated from the
+Responses SDK so this beta endpoint does not require changing the chat SDK or public APIs.
+
+An incoming-message check batches response mode, likely tools, and substantive feedback.
+It chooses `NO_RESPONSE`, an emoji reaction, or the normal full response flow. Native reactions
+use the existing `send_reaction` tool (thumbs up, heart, laugh, emphasis, thumbs down, or question).
+Personal good news and lightweight acknowledgements can receive a reaction; bare thanks after
+a completed answer and unrelated chatter can remain silent. A successful reaction ends with
+`NO_RESPONSE` internally, without an additional text reply or a Responses model call. Failed or
+unsupported reactions return to the normal response flow. Reactions use the existing quota and
+workflow-validity checks and a separate reaction workflow, preserving an active substantive task.
+
+Only confidently unnecessary messages are suppressed; explicit `Chat` invocations, short
+task-control replies, attachments, and poll events continue to the agent. Suppressed turns
+remain in history and do not supersede an active workflow. Suggested tools are rechecked
+against current account and transport permissions, and tool search remains available.
+Feedback classification supplies a recording hint to the agent; it does not independently
+create an issue or duplicate the existing feedback tool.
+
+Background checks reject confidently unsuitable memory candidates and unhelpful catchups.
+Existing memory evidence validation, membership checks, opt-in, quiet hours, deduplication,
+and quotas remain authoritative. Terms acceptance keeps its deterministic affirmative fast
+path; other messages require a Decisions probability of at least 0.98. Unavailable or refused
+terms decisions are rejected, while other unavailable decisions preserve the existing flow.
+
+Configuration (mirrored in test properties, with Decisions disabled by default in tests):
+
+- `BBAGENT_DECISIONS_ENABLED` defaults to `true`; set `false` to restore the previous behavior.
+- `BBAGENT_DECISIONS_MODEL` defaults to `openai/gpt-6-luna` (the LiteLLM alias).
+- `BBAGENT_DECISIONS_TIMEOUT` defaults to `PT3S`; there are no immediate retries.
+- `BBAGENT_DECISIONS_FAILURE_BACKOFF` defaults to `PT30S` after provider or protocol failures.
+- `BBAGENT_DECISIONS_MAX_INPUT_CHARACTERS` defaults to `64000`; oversized evidence falls back
+  instead of being truncated into a potentially misleading classification.
+- Individual switches default to `true`: `BBAGENT_DECISIONS_PARTICIPATION_ENABLED`,
+  `BBAGENT_DECISIONS_REACTIONS_ENABLED`, `BBAGENT_DECISIONS_TOOL_PRELOADING_ENABLED`, `BBAGENT_DECISIONS_FEEDBACK_ENABLED`,
+  `BBAGENT_DECISIONS_MEMORY_REVIEW_ENABLED`, `BBAGENT_DECISIONS_CATCHUP_ENABLED`, and
+  `BBAGENT_DECISIONS_TERMS_ENABLED`.
+
+Requests are limited to four concurrent calls per process. Missing or refused answers are
+unknown, never implicitly false. Decision hints travel in the Cadence workflow payload, so
+tool-loop iterations do not repeat classification. Scheduled workflows bypass the incoming
+participation gate and retain the existing execution path.
+
+Run offline tests with `nix develop --command ./gradlew test --tests '*decisions.*'`.
+The opt-in live suite uses synthetic evidence and the actual tool catalog without sending
+messages, executing tools, creating issues, or writing memories:
+
+```bash
+BBAGENT_DECISIONS_LIVE_TEST=true nix develop --command ./gradlew test --tests '*DecisionsLiveIntegTest'
+```
+
+It uses the existing credential injection in `build.gradle`. The BlueBubbles Grafana dashboard
+includes request count, mean latency, and applied-outcome panels for the low-cardinality
+`bbagent.decisions.*` metrics, including `operation=response_mode` with `reaction`, `no_response`,
+and `full_response` outcomes. Synthetic tests help catch routing regressions but do not establish
+accuracy across all real conversations; review suppression and fallback rates after deployment.
+
 Optional (Google Calendar):
 - `GCAL_OAUTH_CLIENT_SECRET_PATH` (Google OAuth client JSON)
 - `GCAL_OAUTH_REDIRECT_URI` (e.g. `http://localhost:8080/api/v1/gcal/completeOauth.gcal`)

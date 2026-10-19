@@ -158,6 +158,21 @@ public class OperationalMetricsService {
     incrementCounter("bbagent.agent.llm.call.count", "Agent LLM call count", tags);
   }
 
+  public void recordDecisionsRequest(
+      String operation, String model, String outcome, Duration duration) {
+    Tags tags = Tags.of("operation", operation, "model", modelTagValue(model), "outcome", outcome);
+    incrementCounter("bbagent.decisions.request.count", "Decisions API requests", tags);
+    recordTimer(
+        "bbagent.decisions.request.duration", "Decisions API request duration", duration, tags);
+  }
+
+  public void recordDecisionOutcome(String operation, String outcome) {
+    incrementCounter(
+        "bbagent.decisions.action.count",
+        "Decisions application outcomes",
+        Tags.of("operation", operation, "outcome", outcome));
+  }
+
   public void recordBlueBubblesOperation(
       String operation, boolean success, @Nullable String failureType, Duration duration) {
     Tags tags =

@@ -91,7 +91,11 @@ class AuxiliaryPromptMatrixTest {
     when(client.responses()).thenReturn(responses);
     when(responses.create(any(ResponseCreateParams.class)))
         .thenReturn(mapper.readValue("{\"output\":[]}", Response.class));
-    new TermsAgreementValidator(provider, mapper, TermsAgreementValidator.DEFAULT_RESPONSES_MODEL)
+    new TermsAgreementValidator(
+            provider,
+            mapper,
+            TermsAgreementValidator.DEFAULT_RESPONSES_MODEL,
+            io.breland.bbagent.server.agent.decisions.DecisionFixtures.disabledBackground())
         .isHighConfidenceAgreement("Does a reaction to a message count as agreement?");
     var request = ArgumentCaptor.forClass(ResponseCreateParams.class);
     verify(responses).create(request.capture());

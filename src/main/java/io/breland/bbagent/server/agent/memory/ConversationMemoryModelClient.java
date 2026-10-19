@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import io.breland.bbagent.server.agent.decisions.BackgroundDecisionService;
 import io.breland.bbagent.server.agent.memory.ConversationMemoryModels.ArtifactKind;
 import io.breland.bbagent.server.agent.memory.ConversationMemoryModels.ArtifactSensitivity;
 import io.breland.bbagent.server.agent.memory.ConversationMemoryModels.ArtifactStatus;
@@ -73,15 +74,18 @@ public class ConversationMemoryModelClient {
   private final ConversationMemoryResponsesClient responsesClient;
   private final ObjectMapper objectMapper;
   private final @Nullable OperationalMetricsService metrics;
+  private final BackgroundDecisionService decisions;
 
   @Autowired
   public ConversationMemoryModelClient(
       ConversationMemoryResponsesClient responsesClient,
       ObjectMapper objectMapper,
-      @Nullable OperationalMetricsService metrics) {
+      @Nullable OperationalMetricsService metrics,
+      BackgroundDecisionService decisions) {
     this.responsesClient = responsesClient;
     this.objectMapper = objectMapper;
     this.metrics = metrics;
+    this.decisions = decisions;
   }
 
   public ModelExtraction extract(
@@ -95,7 +99,8 @@ public class ConversationMemoryModelClient {
                 1_200,
                 RawExtractionOutput.class)
             .value();
-    return parseNode(objectMapper.valueToTree(output), messages, activeArtifacts);
+    return decisions.reviewMemory(
+        quotedInput, parseNode(objectMapper.valueToTree(output), messages, activeArtifacts));
   }
 
   private String serializeExtractionInput(

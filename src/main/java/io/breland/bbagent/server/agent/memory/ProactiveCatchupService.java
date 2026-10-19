@@ -2,6 +2,7 @@ package io.breland.bbagent.server.agent.memory;
 
 import io.breland.bbagent.generated.bluebubblesclient.model.ApiV1MessageTextPostRequest;
 import io.breland.bbagent.server.agent.IncomingMessage;
+import io.breland.bbagent.server.agent.decisions.BackgroundDecisionService;
 import io.breland.bbagent.server.agent.memory.ConversationMemoryModels.AuthorizedGroup;
 import io.breland.bbagent.server.agent.memory.ConversationMemoryModels.CatchupGroup;
 import io.breland.bbagent.server.agent.memory.ConversationMemoryModels.CatchupPreference;
@@ -56,6 +57,7 @@ public class ProactiveCatchupService {
   private final Clock clock;
   private final String workerId;
   private final boolean globallyEnabled;
+  private final BackgroundDecisionService decisions;
 
   @Autowired
   public ProactiveCatchupService(
@@ -66,7 +68,8 @@ public class ProactiveCatchupService {
       @Nullable OperationalMetricsService operationalMetricsService,
       @Nullable Clock clock,
       @Value("${bbagent.memory.group.enabled:false}") boolean groupMemoryEnabled,
-      @Value("${bbagent.memory.group.proactive-enabled:false}") boolean proactiveEnabled) {
+      @Value("${bbagent.memory.group.proactive-enabled:false}") boolean proactiveEnabled,
+      BackgroundDecisionService decisions) {
     this(
         store,
         digestService,
@@ -75,7 +78,8 @@ public class ProactiveCatchupService {
         operationalMetricsService,
         clock == null ? Clock.systemUTC() : clock,
         UUID.randomUUID().toString(),
-        groupMemoryEnabled && proactiveEnabled);
+        groupMemoryEnabled && proactiveEnabled,
+        decisions);
   }
 
   ProactiveCatchupService(
@@ -86,7 +90,8 @@ public class ProactiveCatchupService {
       @Nullable OperationalMetricsService operationalMetricsService,
       Clock clock,
       String workerId,
-      boolean globallyEnabled) {
+      boolean globallyEnabled,
+      BackgroundDecisionService decisions) {
     this.store = store;
     this.digestService = digestService;
     this.blueBubbles = blueBubbles;
@@ -95,6 +100,7 @@ public class ProactiveCatchupService {
     this.clock = clock;
     this.workerId = workerId;
     this.globallyEnabled = globallyEnabled;
+    this.decisions = decisions;
   }
 
   public CatchupPreferenceSetting preferenceForChat(String accountId, String chatGuid) {
@@ -180,6 +186,10 @@ public class ProactiveCatchupService {
           store.findPreferredDirectConversation(claim.accountId(), now);
       if (directRoute.isEmpty()) {
         completeClaim(claim, now, Duration.ofHours(1));
+        return;
+      }
+      if (!decisions.shouldNotify(group)) {
+        completeClaim(claim, now, POLL_INTERVAL);
         return;
       }
       String message = deliveryText(group);
