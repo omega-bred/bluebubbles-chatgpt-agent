@@ -324,6 +324,42 @@
             javaToolchains = [ jdk ];
           };
 
+          # Keep the existing runtime packages and remove only the compromised CA.
+          runtimeCacert = pkgs.cacert.override {
+            blacklist = [
+              "emSign ECC Root CA - G3"
+              "Comodo AAA Services root"
+            ];
+          };
+          runtimeCaCertificates = (pkgs.dockerTools.override { cacert = runtimeCacert; }).caCertificates;
+          runtimeJavaCacerts = pkgs.runCommand "bluechat-runtime-java-cacerts" { } ''
+            cp -L ${jdk.home}/lib/security/cacerts cacerts
+            chmod u+w cacerts
+            ${jdk}/bin/keytool -J-Duser.language=en -list -v -keystore cacerts -storepass changeit > original-ca-public.txt
+            ${pkgs.gawk}/bin/awk '
+              /^Alias name: / { alias = substr($0, 13) }
+              /SHA256: 86:A1:EC:BA:08:9C:4A:8D:3B:BE:27:34:C6:12:BA:34:1D:81:3E:04:3C:F9:E8:A8:62:CD:5C:57:A3:6B:BE:6B/ ||
+              /SHA256: D7:A7:A0:FB:5D:7E:27:31:D7:71:E9:48:4E:BC:DE:F7:1D:5F:0C:3E:0A:29:48:78:2B:C8:3E:E0:EA:69:9E:F4/ { print alias }
+            ' original-ca-public.txt > compromised-aliases.txt
+            while IFS= read -r alias; do
+              ${jdk}/bin/keytool -delete -keystore cacerts -storepass changeit -alias "$alias"
+            done < compromised-aliases.txt
+            install -Dm644 cacerts "$out/share/java/cacerts"
+          '';
+
+          # Google API clients read java.home/lib/security/cacerts directly.
+          # Preserve the exact JDK binaries while replacing that default store too.
+          runtimeJdk = pkgs.runCommand "bluechat-runtime-jdk" { } ''
+            mkdir -p "$out"
+            cp -aL ${jdk.home}/. "$out/"
+            chmod u+w "$out/lib/security"
+            rm "$out/lib/security/cacerts"
+            cp ${runtimeJavaCacerts}/share/java/cacerts "$out/lib/security/cacerts"
+            "$out/bin/java" -XshowSettings:properties -version 2>&1 | grep -F "java.home = $out"
+            "$out/bin/keytool" -list -v -cacerts -storepass changeit > java-ca-public.txt
+            ! grep -E 'emSign ECC Root CA - G3|AAA Certificate Services' java-ca-public.txt
+          '';
+
           projectSource = projectSourceFor pkgs;
 
           frontendNodeModules = pkgs.importNpmLock.buildNodeModules {
@@ -407,8 +443,8 @@
             name = "bluebubbles-chatgpt-agent-image-root";
             paths = [
               app
-              jdk
-              pkgs.dockerTools.caCertificates
+              runtimeJdk
+              runtimeCaCertificates
               pkgs.findutils
             ]
             ++ nativeLibs;
@@ -432,16 +468,16 @@
             '';
             config = {
               Cmd = [
-                "${jdk}/bin/java"
+                "${runtimeJdk}/bin/java"
                 "--add-opens=java.base/java.lang=ALL-UNNAMED"
                 "--add-opens=java.base/java.nio.charset=ALL-UNNAMED"
                 "-jar"
                 "${app}/share/bluebubbles-chatgpt-agent/bluebubbles-chatgpt-agent.jar"
               ];
               Env = [
-                "JAVA_HOME=${jdk}"
+                "JAVA_HOME=${runtimeJdk}"
                 "LD_LIBRARY_PATH=${nativeLibraryPath}"
-                "PATH=${jdk}/bin:${pkgs.findutils}/bin"
+                "PATH=${runtimeJdk}/bin:${pkgs.findutils}/bin"
                 "SSL_CERT_FILE=/etc/ssl/certs/ca-bundle.crt"
               ];
               ExposedPorts = {
@@ -520,7 +556,7 @@
             paths = [
               lxmfBridge
               lxmfBridgePython
-              pkgs.dockerTools.caCertificates
+              runtimeCaCertificates
             ];
             pathsToLink = [
               "/bin"
@@ -565,6 +601,9 @@
             typescriptClientNodeModules
             ;
 
+          runtime-ca-bundle = runtimeCacert;
+          runtime-java-cacerts = runtimeJavaCacerts;
+          runtime-jdk = runtimeJdk;
           frontend-node-modules = frontendNodeModules;
           typescript-client-node-modules = typescriptClientNodeModules;
         }
