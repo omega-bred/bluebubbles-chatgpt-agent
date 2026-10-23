@@ -56,6 +56,7 @@ public final class DecisionFixtures {
         Mockito.mock(ModelAccessService.class),
         Mockito.mock(ConversationMemorySettingsService.class),
         Mockito.mock(MemoryScopeResolver.class),
+        null,
         null);
   }
 }

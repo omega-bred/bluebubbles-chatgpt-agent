@@ -1,0 +1,20 @@
+# Strategic merge patch for the CURRENT apps/gayodex source, AFTER the tested server image.
+# This is deliberately not included in BlueChat's kustomization or applied to live resources.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: gayodex
+  namespace: gayodex
+spec:
+  template:
+    spec:
+      containers:
+        - name: gayodex
+          env:
+            - name: GAYODEX_BLUECHAT_OWNER
+              value: "054e3513beb73cc8f738810c32a875660b764dc0cf761c30fdb58a95abfc9e9d"
+            - name: GAYODEX_BLUECHAT_TOKEN_SHA256
+              valueFrom:
+                secretKeyRef:
+                  name: gayodex-bluechat-server
+                  key: token-sha256

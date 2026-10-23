@@ -24,6 +24,7 @@ import io.breland.bbagent.server.agent.tools.bb.SendReactionAgentTool;
 import io.breland.bbagent.server.agent.tools.bb.SendTextAgentTool;
 import io.breland.bbagent.server.agent.tools.bb.SetGroupIconAgentTool;
 import io.breland.bbagent.server.agent.tools.feedback.FeedbackAgentTool;
+import io.breland.bbagent.server.agent.tools.gayodex.GayodexAgentTools;
 import io.breland.bbagent.server.agent.tools.gcal.CreateEventAgentTool;
 import io.breland.bbagent.server.agent.tools.gcal.DeleteEventAgentTool;
 import io.breland.bbagent.server.agent.tools.gcal.GcalClient;
@@ -144,6 +145,7 @@ public final class AgentToolRegistry {
   private final Function<IncomingMessage, Optional<String>> accountIdResolver;
   private final ObjectMapper objectMapper;
   private final @Nullable WallartMcpAgentTool wallartMcpAgentTool;
+  private final @Nullable GayodexAgentTools gayodexAgentTools;
 
   public AgentToolRegistry(
       BBHttpClientWrapper bbHttpClientWrapper,
@@ -162,11 +164,13 @@ public final class AgentToolRegistry {
       @Nullable ModelAccessService modelAccessService,
       @Nullable ConversationMemorySettingsService conversationMemorySettingsService,
       @Nullable MemoryScopeResolver memoryScopeResolver,
-      @Nullable WallartMcpAgentTool wallartMcpAgentTool) {
+      @Nullable WallartMcpAgentTool wallartMcpAgentTool,
+      @Nullable GayodexAgentTools gayodexAgentTools) {
     this.transportRegistry = transportRegistry;
     this.accountIdResolver = profileService::resolveOrCreateAccountId;
     this.objectMapper = objectMapper;
     this.wallartMcpAgentTool = wallartMcpAgentTool;
+    this.gayodexAgentTools = gayodexAgentTools;
     registerBuiltInTools(
         bbHttpClientWrapper,
         hindsightClient,
@@ -183,6 +187,7 @@ public final class AgentToolRegistry {
         conversationMemorySettingsService,
         memoryScopeResolver,
         wallartMcpAgentTool);
+    if (gayodexAgentTools != null) gayodexAgentTools.getTools().forEach(this::registerTool);
   }
 
   public List<AgentTool> availableTools(IncomingMessage message) {
@@ -260,6 +265,7 @@ public final class AgentToolRegistry {
     if (WALLART_TOOL_NAMES.contains(toolName)) {
       return "wallart";
     }
+    if (GayodexAgentTools.TOOL_NAMES.contains(toolName)) return "gayodex";
     if (toolName.startsWith("memory_")) {
       return "memory";
     }
@@ -279,6 +285,8 @@ public final class AgentToolRegistry {
 
   private boolean shouldIncludeTool(
       AgentTool tool, IncomingMessage message, @Nullable String accountId) {
+    if (GayodexAgentTools.TOOL_NAMES.contains(tool.name()))
+      return gayodexAgentTools != null && gayodexAgentTools.isAllowed(message);
     MessageTransport transport = transportRegistry.resolve(message);
     if (SendReactionAgentTool.TOOL_NAME.equals(tool.name())) {
       return transport.supportsReactions();

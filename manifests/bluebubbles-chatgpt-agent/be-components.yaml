@@ -24,6 +24,14 @@ spec:
 apiVersion: onepassword.com/v1
 kind: OnePasswordItem
 metadata:
+  name: gayodex-bluechat
+  namespace: bluebubbles-chatgpt-agent
+spec:
+  itemPath: "vaults/Kubernetes/items/gayodex-bluechat"
+---
+apiVersion: onepassword.com/v1
+kind: OnePasswordItem
+metadata:
   name: hindsight-secrets
   namespace: bluebubbles-chatgpt-agent
 spec:
@@ -163,6 +171,17 @@ spec:
       containers:
         - name: bluebubbles-chatgpt-agent
           env:
+            # Enable only after Gayodex PR #3, service credential and private ingress are ready.
+            - name: GAYODEX_BLUECHAT_ENABLED
+              value: "false"
+            - name: GAYODEX_BLUECHAT_BASE_URL
+              value: "http://gayodex-catalog.gayodex.svc.cluster.local:8767"
+            - name: GAYODEX_BLUECHAT_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: gayodex-bluechat
+                  key: token
+                  optional: true
             - name: POD_IP
               valueFrom:
                 fieldRef:

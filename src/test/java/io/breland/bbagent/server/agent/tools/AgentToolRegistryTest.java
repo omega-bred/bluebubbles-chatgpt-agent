@@ -434,7 +434,8 @@ class AgentToolRegistryTest {
         null,
         null,
         memoryScopeResolver,
-        wallartMcpAgentTool);
+        wallartMcpAgentTool,
+        null);
   }
 
   private static Set<String> toolNames(List<AgentTool> tools) {

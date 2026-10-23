@@ -13,6 +13,7 @@ import io.breland.bbagent.server.TimeSupport;
 import io.breland.bbagent.server.agent.BBMessageAgent;
 import io.breland.bbagent.server.agent.IncomingMessage;
 import io.breland.bbagent.server.agent.cadence.models.IncomingAttachment;
+import io.breland.bbagent.server.agent.tools.gayodex.GayodexInboundActor;
 import io.breland.bbagent.server.agent.transport.bb.BBHttpClientWrapper;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotNull;
@@ -35,14 +36,17 @@ public class BluebubblesWebhookController extends BluebubblesApiController {
 
   private final BBMessageAgent messageAgent;
   private final BBHttpClientWrapper bbHttpClientWrapper;
+  private final GayodexInboundActor gayodexInboundActor;
 
   public BluebubblesWebhookController(
       NativeWebRequest request,
       BBMessageAgent messageAgent,
-      BBHttpClientWrapper bbHttpClientWrapper) {
+      BBHttpClientWrapper bbHttpClientWrapper,
+      GayodexInboundActor gayodexInboundActor) {
     super(request);
     this.messageAgent = messageAgent;
     this.bbHttpClientWrapper = bbHttpClientWrapper;
+    this.gayodexInboundActor = gayodexInboundActor;
   }
 
   @Override
@@ -57,7 +61,7 @@ public class BluebubblesWebhookController extends BluebubblesApiController {
     }
     IncomingMessage message = parseWebhookMessage(requestBody.getData());
     if (message != null) {
-      messageAgent.handleIncomingMessage(message);
+      messageAgent.handleIncomingMessage(gayodexInboundActor.authenticate(message));
     }
     return ResponseEntity.ok(Map.of("status", "ok"));
   }

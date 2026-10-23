@@ -22,7 +22,65 @@ public record IncomingMessage(
     String balloonBundleId,
     String associatedMessageGuid,
     String replyToGuid,
-    boolean isSystemMessage) {
+    boolean isSystemMessage,
+    boolean verifiedBlueBubblesInbound) {
+
+  // Internal provenance only: constructors/history/scheduled messages default to unverified.
+  public IncomingMessage(
+      String transport,
+      String chatGuid,
+      String messageGuid,
+      String threadOriginatorGuid,
+      String text,
+      Boolean fromMe,
+      String service,
+      String sender,
+      boolean isGroup,
+      Instant timestamp,
+      List<IncomingAttachment> attachments,
+      String balloonBundleId,
+      String associatedMessageGuid,
+      String replyToGuid,
+      boolean isSystemMessage) {
+    this(
+        transport,
+        chatGuid,
+        messageGuid,
+        threadOriginatorGuid,
+        text,
+        fromMe,
+        service,
+        sender,
+        isGroup,
+        timestamp,
+        attachments,
+        balloonBundleId,
+        associatedMessageGuid,
+        replyToGuid,
+        isSystemMessage,
+        false);
+  }
+
+  public IncomingMessage withVerifiedBlueBubblesInbound(
+      List<IncomingAttachment> verifiedAttachments) {
+    return new IncomingMessage(
+        transport,
+        chatGuid,
+        messageGuid,
+        threadOriginatorGuid,
+        text,
+        fromMe,
+        service,
+        sender,
+        isGroup,
+        timestamp,
+        verifiedAttachments,
+        balloonBundleId,
+        associatedMessageGuid,
+        replyToGuid,
+        isSystemMessage,
+        true);
+  }
 
   public static final String TRANSPORT_BLUEBUBBLES = "bluebubbles";
   public static final String TRANSPORT_LXMF = "lxmf";
@@ -56,7 +114,8 @@ public record IncomingMessage(
         null,
         null,
         null,
-        isSystemMessage);
+        isSystemMessage,
+        false);
   }
 
   public IncomingMessage(
@@ -86,7 +145,8 @@ public record IncomingMessage(
         null,
         null,
         null,
-        isSystemMessage);
+        isSystemMessage,
+        false);
   }
 
   public static IncomingMessage create(ApiV1ChatChatGuidMessageGet200ResponseDataInner message) {
@@ -187,7 +247,8 @@ public record IncomingMessage(
         balloonBundleId,
         associatedMessageGuid,
         replyToGuid,
-        isSystemMessage);
+        isSystemMessage,
+        verifiedBlueBubblesInbound);
   }
 
   public IncomingMessage withThreadOriginatorGuid(String newThreadOriginatorGuid) {
@@ -206,7 +267,8 @@ public record IncomingMessage(
         balloonBundleId,
         associatedMessageGuid,
         replyToGuid,
-        isSystemMessage);
+        isSystemMessage,
+        verifiedBlueBubblesInbound);
   }
 
   public String computeMessageFingerprint() {
@@ -281,6 +343,7 @@ public record IncomingMessage(
         balloonBundleId,
         associatedMessageGuid,
         replyToGuid,
-        isSystemMessage);
+        isSystemMessage,
+        false);
   }
 }

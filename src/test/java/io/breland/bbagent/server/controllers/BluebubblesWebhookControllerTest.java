@@ -32,6 +32,38 @@ class BluebubblesWebhookControllerTest {
   private static final ObjectMapper MAPPER = new ObjectMapper();
 
   @Test
+  void webhookPassesAuthenticatedProvenanceToAgentOnlyAfterTransportVerification() {
+    BBMessageAgent agent = Mockito.mock(BBMessageAgent.class);
+    BBHttpClientWrapper bb = Mockito.mock(BBHttpClientWrapper.class);
+    var properties = new io.breland.bbagent.server.agent.tools.gayodex.GayodexProperties();
+    properties.setEnabled(true);
+    properties.setBaseUrl("http://localhost:8767");
+    properties.setToken("synthetic-token-" + "x".repeat(43));
+    var actors =
+        new io.breland.bbagent.server.agent.tools.gayodex.GayodexInboundActor(
+            properties, bb, MAPPER);
+    var controller = new BluebubblesWebhookController(null, agent, bb, actors);
+    String chat = "iMessage;+;group";
+    String guid = "56ca8540-2c1a-4198-b748-f14238f48783";
+    var request = webhookRequest(chat);
+    request.getData().setGuid(guid);
+    request.getData().setDateCreated(1_700_000_000_000L);
+    var stored =
+        new io.breland.bbagent.generated.bluebubblesclient.model.Message()
+            .guid(java.util.UUID.fromString(guid))
+            .text("hello")
+            .isFromMe(false)
+            .dateCreated(1_700_000_000_000L)
+            .handle(java.util.Map.of("address", "+15555550123", "service", "iMessage"))
+            .chats(List.of(new Chat().guid(chat)));
+    when(bb.getMessage(guid)).thenReturn(stored);
+    controller.bluebubblesMessageReceived(request);
+    var captor = ArgumentCaptor.forClass(IncomingMessage.class);
+    verify(agent).handleIncomingMessage(captor.capture());
+    assertTrue(captor.getValue().verifiedBlueBubblesInbound());
+  }
+
+  @Test
   void resolveIsGroupUsesConversationParticipants() {
     assertEquals(
         Boolean.TRUE,
@@ -47,7 +79,14 @@ class BluebubblesWebhookControllerTest {
     BBMessageAgent messageAgent = Mockito.mock(BBMessageAgent.class);
     BBHttpClientWrapper bbHttpClientWrapper = Mockito.mock(BBHttpClientWrapper.class);
     BluebubblesWebhookController controller =
-        new BluebubblesWebhookController(null, messageAgent, bbHttpClientWrapper);
+        new BluebubblesWebhookController(
+            null,
+            messageAgent,
+            bbHttpClientWrapper,
+            new io.breland.bbagent.server.agent.tools.gayodex.GayodexInboundActor(
+                new io.breland.bbagent.server.agent.tools.gayodex.GayodexProperties(),
+                bbHttpClientWrapper,
+                MAPPER));
     String chatGuid = "any;+;e962a8e9a5624efa87082757a97ac8c1";
     when(bbHttpClientWrapper.getConversationInfo(chatGuid)).thenReturn(chatWithParticipants(2));
 
@@ -65,7 +104,14 @@ class BluebubblesWebhookControllerTest {
     BBMessageAgent messageAgent = Mockito.mock(BBMessageAgent.class);
     BBHttpClientWrapper bbHttpClientWrapper = Mockito.mock(BBHttpClientWrapper.class);
     BluebubblesWebhookController controller =
-        new BluebubblesWebhookController(null, messageAgent, bbHttpClientWrapper);
+        new BluebubblesWebhookController(
+            null,
+            messageAgent,
+            bbHttpClientWrapper,
+            new io.breland.bbagent.server.agent.tools.gayodex.GayodexInboundActor(
+                new io.breland.bbagent.server.agent.tools.gayodex.GayodexProperties(),
+                bbHttpClientWrapper,
+                MAPPER));
     String chatGuid = "any;+;e962a8e9a5624efa87082757a97ac8c1";
     when(bbHttpClientWrapper.getConversationInfo(chatGuid)).thenReturn(chatWithParticipants(1));
 
@@ -81,7 +127,14 @@ class BluebubblesWebhookControllerTest {
     BBMessageAgent messageAgent = Mockito.mock(BBMessageAgent.class);
     BBHttpClientWrapper bbHttpClientWrapper = Mockito.mock(BBHttpClientWrapper.class);
     BluebubblesWebhookController controller =
-        new BluebubblesWebhookController(null, messageAgent, bbHttpClientWrapper);
+        new BluebubblesWebhookController(
+            null,
+            messageAgent,
+            bbHttpClientWrapper,
+            new io.breland.bbagent.server.agent.tools.gayodex.GayodexInboundActor(
+                new io.breland.bbagent.server.agent.tools.gayodex.GayodexProperties(),
+                bbHttpClientWrapper,
+                MAPPER));
     String chatGuid = "iMessage;+;chat293505621450166166";
     BlueBubblesMessageReceivedRequest request = webhookRequest(chatGuid);
     request.getData().setGroupTitle("Family");

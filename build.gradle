@@ -56,6 +56,10 @@ if (System.getenv('HINDSIGHT_ENABLED') == 'true') {
     opSecretMappings['op://Kubernetes/hindsight-secrets/HINDSIGHT_API_TENANT_API_KEY'] = 'HINDSIGHT_API_KEY'
 }
 
+if (System.getenv('GAYODEX_BLUECHAT_ENABLED') == 'true') {
+    opSecretMappings['op://Kubernetes/gayodex-bluechat/token'] = 'GAYODEX_BLUECHAT_TOKEN'
+}
+
 
 def resolveSecret = { String propName, String opRef ->
     def fromEnv = System.getenv(propName)
