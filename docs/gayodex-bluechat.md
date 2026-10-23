@@ -120,16 +120,17 @@ execution without changing catalog contents.
 ```sh
 nix develop --command env CI=true ./gradlew spotlessApply test \
   --tests '*Gayodex*' --tests '*AgentToolRegistryTest' \
-  --tests '*BluebubblesWebhookControllerTest' --tests '*IncomingMessageTest'
+  --tests '*BluebubblesWebhookControllerTest' --tests '*IncomingMessageTest' \
+  --tests '*BBHttpClientWrapperTest'
 ```
 
 Tests use synthetic identities, an authenticated-transport stub and a local HTTP
 server. No live catalog or message mutation is needed. This feature adds no
 BlueChat REST endpoint, so there are no new generated OpenAPI APIs/clients.
 
-Local validation on 2026-10-23: the final deterministic suite ran 1,178 tests
-(1,163 passed, 15 skipped), including all 67 focused feature/registry/webhook/
-incoming-message checks. That run excluded only `BBClientTest`, `GiphyClientTest`
+Local validation on 2026-10-23: the final deterministic suite ran 1,179 tests
+(1,164 passed, 15 skipped), including all 81 focused feature/registry/webhook/
+incoming-message/transport checks. That run excluded only `BBClientTest`, `GiphyClientTest`
 and `NominatimReverseLookupIntegTest`: an earlier unrestricted run had seven
 BlueBubbles failures without a configured host, one Giphy failure without
 credentials, and one Nominatim external-result failure. Formatting and manifest
