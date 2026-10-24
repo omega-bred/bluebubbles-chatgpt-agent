@@ -21,6 +21,7 @@ public class RootController {
         "/contact",
         "/help",
         "/oauth/callback",
+        "/auth/callback",
         "/terms",
         "/privacy"
       })

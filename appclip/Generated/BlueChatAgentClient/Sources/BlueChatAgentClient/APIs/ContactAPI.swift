@@ -27,6 +27,12 @@ open class ContactAPI {
      Creates a public contact message
      - POST /api/v1/contact/create.contactMessages
      - Verifies the Cap token and creates a Linear help/contact issue for admin review. If a valid bearer token is provided, the created issue includes the authenticated website account id.
+     - API Key:
+       - type: apiKey Authorization (HEADER)
+       - name: dpopAuth
+     - API Key:
+       - type: apiKey DPoP (HEADER)
+       - name: dpopProof
      - Bearer Token:
        - type: http
        - name: bearerAuth

@@ -27,6 +27,12 @@ open class AdminAPI {
      Blocks an account from agent processing
      - POST /api/v1/admin/block.account
      - Blocks a canonical account resolved by account id, website identity, or transport identity.
+     - API Key:
+       - type: apiKey Authorization (HEADER)
+       - name: dpopAuth
+     - API Key:
+       - type: apiKey DPoP (HEADER)
+       - name: dpopProof
      - Bearer Token:
        - type: http
        - name: bearerAuth
@@ -67,6 +73,12 @@ open class AdminAPI {
      Gets current rate-limit usage
      - GET /api/v1/admin/get.rate_limit_usage
      - Returns current usage for app rate limits, including monthly assistant response usage by account.
+     - API Key:
+       - type: apiKey Authorization (HEADER)
+       - name: dpopAuth
+     - API Key:
+       - type: apiKey DPoP (HEADER)
+       - name: dpopProof
      - Bearer Token:
        - type: http
        - name: bearerAuth
@@ -110,6 +122,12 @@ open class AdminAPI {
      Gets recent agent statistics
      - GET /api/v1/admin/get.statistics
      - Returns message, model, tool, and active-user statistics for an admin-selected time period.
+     - API Key:
+       - type: apiKey Authorization (HEADER)
+       - name: dpopAuth
+     - API Key:
+       - type: apiKey DPoP (HEADER)
+       - name: dpopProof
      - Bearer Token:
        - type: http
        - name: bearerAuth
@@ -151,6 +169,12 @@ open class AdminAPI {
     /**
      Grants manual premium access
      - POST /api/v1/admin/grantPremium.subscription
+     - API Key:
+       - type: apiKey Authorization (HEADER)
+       - name: dpopAuth
+     - API Key:
+       - type: apiKey DPoP (HEADER)
+       - name: dpopProof
      - Bearer Token:
        - type: http
        - name: bearerAuth
@@ -190,6 +214,12 @@ open class AdminAPI {
      Lists blocked agent accounts
      - GET /api/v1/admin/list.accountBlocks
      - Returns recently blocked canonical accounts and their linked identities.
+     - API Key:
+       - type: apiKey Authorization (HEADER)
+       - name: dpopAuth
+     - API Key:
+       - type: apiKey DPoP (HEADER)
+       - name: dpopProof
      - Bearer Token:
        - type: http
        - name: bearerAuth
@@ -240,6 +270,12 @@ open class AdminAPI {
      Lists agent feedback
      - GET /api/v1/admin/list.feedback
      - Legacy feedback inbox endpoint. New user feedback is created as Linear issues instead of Postgres rows.
+     - API Key:
+       - type: apiKey Authorization (HEADER)
+       - name: dpopAuth
+     - API Key:
+       - type: apiKey DPoP (HEADER)
+       - name: dpopProof
      - Bearer Token:
        - type: http
        - name: bearerAuth
@@ -282,6 +318,12 @@ open class AdminAPI {
      Lists subscription state for admins
      - GET /api/v1/admin/list.subscriptions
      - Returns payment subscription stats and recent subscription rows.
+     - API Key:
+       - type: apiKey Authorization (HEADER)
+       - name: dpopAuth
+     - API Key:
+       - type: apiKey DPoP (HEADER)
+       - name: dpopProof
      - Bearer Token:
        - type: http
        - name: bearerAuth
@@ -322,6 +364,12 @@ open class AdminAPI {
      Marks feedback as read
      - POST /api/v1/admin/markRead.feedback
      - Marks a feedback inbox item as read.
+     - API Key:
+       - type: apiKey Authorization (HEADER)
+       - name: dpopAuth
+     - API Key:
+       - type: apiKey DPoP (HEADER)
+       - name: dpopProof
      - Bearer Token:
        - type: http
        - name: bearerAuth
@@ -361,6 +409,12 @@ open class AdminAPI {
      Marks feedback as unread
      - POST /api/v1/admin/markUnread.feedback
      - Marks a feedback inbox item as unread.
+     - API Key:
+       - type: apiKey Authorization (HEADER)
+       - name: dpopAuth
+     - API Key:
+       - type: apiKey DPoP (HEADER)
+       - name: dpopProof
      - Bearer Token:
        - type: http
        - name: bearerAuth
@@ -399,6 +453,12 @@ open class AdminAPI {
     /**
      Revokes manual premium access
      - POST /api/v1/admin/revokePremium.subscription
+     - API Key:
+       - type: apiKey Authorization (HEADER)
+       - name: dpopAuth
+     - API Key:
+       - type: apiKey DPoP (HEADER)
+       - name: dpopProof
      - Bearer Token:
        - type: http
        - name: bearerAuth
@@ -437,6 +497,12 @@ open class AdminAPI {
     /**
      Suspends one provider subscription
      - POST /api/v1/admin/suspend.subscription
+     - API Key:
+       - type: apiKey Authorization (HEADER)
+       - name: dpopAuth
+     - API Key:
+       - type: apiKey DPoP (HEADER)
+       - name: dpopProof
      - Bearer Token:
        - type: http
        - name: bearerAuth
@@ -475,6 +541,12 @@ open class AdminAPI {
     /**
      Syncs one provider subscription
      - POST /api/v1/admin/sync.subscription
+     - API Key:
+       - type: apiKey Authorization (HEADER)
+       - name: dpopAuth
+     - API Key:
+       - type: apiKey DPoP (HEADER)
+       - name: dpopProof
      - Bearer Token:
        - type: http
        - name: bearerAuth
@@ -514,6 +586,12 @@ open class AdminAPI {
      Unblocks an account for agent processing
      - POST /api/v1/admin/unblock.account
      - Removes the processing block from a canonical account resolved by account id, website identity, or transport identity.
+     - API Key:
+       - type: apiKey Authorization (HEADER)
+       - name: dpopAuth
+     - API Key:
+       - type: apiKey DPoP (HEADER)
+       - name: dpopProof
      - Bearer Token:
        - type: http
        - name: bearerAuth
@@ -552,6 +630,12 @@ open class AdminAPI {
     /**
      Unsuspends one provider subscription
      - POST /api/v1/admin/unsuspend.subscription
+     - API Key:
+       - type: apiKey Authorization (HEADER)
+       - name: dpopAuth
+     - API Key:
+       - type: apiKey DPoP (HEADER)
+       - name: dpopProof
      - Bearer Token:
        - type: http
        - name: bearerAuth

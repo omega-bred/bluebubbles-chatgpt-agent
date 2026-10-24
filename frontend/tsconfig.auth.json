@@ -1,0 +1,5 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": { "types": ["vite/client"] },
+  "include": ["src/auth/**/*.ts", "src/services/api-client.ts", "src/services/api-client.test.ts"]
+}

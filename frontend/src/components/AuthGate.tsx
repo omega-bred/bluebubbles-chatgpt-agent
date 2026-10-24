@@ -5,7 +5,7 @@ import { SiteNav } from "./SiteNav";
 export function AuthGate({ title }: { title: string }) {
   return (
     <div className="account-shell">
-      <SiteNav auth={{ ready: true, authenticated: false }} />
+      <SiteNav auth={{ ready: true, authenticated: false, admin: false }} />
       <main className="account-main narrow">
         <section className="account-heading">
           <p className="eyebrow">Your BlueChat account</p>

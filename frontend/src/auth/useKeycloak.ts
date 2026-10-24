@@ -1,6 +1,6 @@
 import React from "react";
 
-import { hasAdminRole, initKeycloak, keycloak } from "./keycloak";
+import { hasAdminRole, initKeycloak, isAuthenticated, subscribeAuth, updateToken } from "./keycloak";
 
 export type AuthState = {
   ready: boolean;
@@ -17,6 +17,9 @@ export function useKeycloak(): AuthState {
 
   React.useEffect(() => {
     let active = true;
+    const unsubscribe = subscribeAuth(() => {
+      if (active) setState({ ready: true, authenticated: isAuthenticated(), admin: hasAdminRole() });
+    });
     initKeycloak()
       .then((authenticated) => {
         if (active) {
@@ -29,12 +32,11 @@ export function useKeycloak(): AuthState {
         }
       });
     const timer = window.setInterval(() => {
-      if (keycloak.authenticated) {
-        void keycloak
-          .updateToken(45)
+      if (isAuthenticated()) {
+        void updateToken(45)
           .then(() => {
             if (active) {
-              setState({ ready: true, authenticated: true, admin: hasAdminRole() });
+              setState({ ready: true, authenticated: isAuthenticated(), admin: hasAdminRole() });
             }
           })
           .catch(() => {
@@ -46,6 +48,7 @@ export function useKeycloak(): AuthState {
     }, 30_000);
     return () => {
       active = false;
+      unsubscribe();
       window.clearInterval(timer);
     };
   }, []);

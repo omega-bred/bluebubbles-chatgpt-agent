@@ -9,10 +9,12 @@ import java.util.LinkedHashSet;
 import java.util.Map;
 import java.util.Set;
 import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.convert.converter.Converter;
 import org.springframework.http.HttpMethod;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.authentication.AbstractAuthenticationToken;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
@@ -21,10 +23,19 @@ import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.oauth2.jwt.Jwt;
+import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationConverter;
 import org.springframework.security.oauth2.server.resource.authentication.JwtGrantedAuthoritiesConverter;
+import org.springframework.security.oauth2.server.resource.web.BearerTokenAuthenticationEntryPoint;
+import org.springframework.security.oauth2.server.resource.web.DPoPAuthenticationEntryPoint;
 import org.springframework.security.oauth2.server.resource.web.authentication.BearerTokenAuthenticationFilter;
+import org.springframework.security.web.AuthenticationEntryPoint;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.web.authentication.AuthenticationEntryPointFailureHandler;
+import org.springframework.security.web.authentication.AuthenticationFilter;
+import org.springframework.security.web.context.RequestAttributeSecurityContextRepository;
+import org.springframework.web.cors.CorsConfiguration;
+import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 
 @Configuration
 @EnableWebSecurity
@@ -36,8 +47,49 @@ public class SecurityConfig {
       HttpSecurity http,
       Converter<Jwt, AbstractAuthenticationToken> jwtAuthenticationConverter,
       ObjectProvider<AppClipSessionService> appClipSessionService,
-      ObjectProvider<NativeAppSessionService> nativeAppSessionService)
+      ObjectProvider<NativeAppSessionService> nativeAppSessionService,
+      JwtDecoder jwtDecoder,
+      DpopReplayStore replayStore,
+      @Value("${bluechat.security.dpop.public-origins:}") String publicOrigins,
+      @Value("${bluechat.security.cors.allowed-origins:}") String corsOrigins)
       throws Exception {
+    DpopAuthenticationSupport dpop =
+        new DpopAuthenticationSupport(
+            jwtDecoder, jwtAuthenticationConverter, replayStore, publicOrigins);
+    AuthenticationEntryPoint entryPoint =
+        (request, response, exception) -> {
+          String authorization = request.getHeader("Authorization");
+          if (authorization != null && authorization.regionMatches(true, 0, "DPoP", 0, 4)) {
+            new DPoPAuthenticationEntryPoint().commence(request, response, exception);
+          } else {
+            new BearerTokenAuthenticationEntryPoint().commence(request, response, exception);
+          }
+        };
+    // Spring's bearer-only filter intentionally rejects every cnf.jkt token. Use the
+    // framework's general AuthenticationFilter for the two explicit schemes, keeping
+    // the original JWT principal/authorities and our downgrade rejection intact.
+    AuthenticationFilter tokenFilter = new AuthenticationFilter(dpop::authenticate, dpop::convert);
+    tokenFilter.setSuccessHandler((request, response, authentication) -> {});
+    tokenFilter.setFailureHandler(new AuthenticationEntryPointFailureHandler(entryPoint));
+    tokenFilter.setSecurityContextRepository(new RequestAttributeSecurityContextRepository());
+    http.addFilterAt(tokenFilter, BearerTokenAuthenticationFilter.class);
+    CorsConfiguration cors = new CorsConfiguration();
+    cors.setAllowedOrigins(
+        java.util.Arrays.stream(corsOrigins.split(","))
+            .map(String::trim)
+            .filter(s -> !s.isEmpty())
+            .toList());
+    cors.setAllowedMethods(java.util.List.of("GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"));
+    cors.setAllowedHeaders(
+        java.util.List.of(
+            "Authorization",
+            "DPoP",
+            "Content-Type",
+            "X-App-Clip-Session",
+            "X-BlueChat-App-Session"));
+    cors.setExposedHeaders(java.util.List.of("WWW-Authenticate", "DPoP-Nonce"));
+    UrlBasedCorsConfigurationSource corsSource = new UrlBasedCorsConfigurationSource();
+    corsSource.registerCorsConfiguration("/api/**", cors);
     appClipSessionService.ifAvailable(
         service ->
             http.addFilterBefore(
@@ -49,6 +101,9 @@ public class SecurityConfig {
                 new NativeAppSessionAuthenticationFilter(service),
                 BearerTokenAuthenticationFilter.class));
     return http.csrf(AbstractHttpConfigurer::disable)
+        .cors(c -> c.configurationSource(corsSource))
+        .requestCache(AbstractHttpConfigurer::disable)
+        .exceptionHandling(exceptions -> exceptions.authenticationEntryPoint(entryPoint))
         .sessionManagement(
             session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
         .authorizeHttpRequests(
@@ -83,9 +138,12 @@ public class SecurityConfig {
                     .authenticated()
                     .anyRequest()
                     .permitAll())
-        .oauth2ResourceServer(
-            oauth -> oauth.jwt(jwt -> jwt.jwtAuthenticationConverter(jwtAuthenticationConverter)))
         .build();
+  }
+
+  @Bean
+  DpopReplayStore dpopReplayStore(ObjectProvider<JdbcTemplate> jdbc) {
+    return new DpopReplayStore(jdbc);
   }
 
   @Bean

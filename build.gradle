@@ -671,7 +671,19 @@ tasks.register('npmInstallFrontend', Exec) {
         commandLine npmPath, "install"
         onlyIf { !useNixNodeModules }
         inputs.file("${projectDir}/frontend/package.json")
+        inputs.file("${projectDir}/frontend/package-lock.json")
         outputs.dir("${projectDir}/frontend/node_modules")
+}
+
+tasks.register('testFrontend', Exec) {
+        dependsOn tasks.npmInstallFrontend
+        dependsOn tasks.copyClientToFrontend
+        workingDir "${projectDir}/frontend"
+        commandLine npmPath, "test"
+}
+
+tasks.named('test') {
+        dependsOn tasks.testFrontend
 }
 
 tasks.register('npmBuildFrontend', Exec) {

@@ -28,6 +28,12 @@ open class SubscriptionAPI {
      - POST /api/v1/subscription/createCheckout.subscriptionCheckouts
      - Creates a provider checkout session for the authenticated website account.
      - API Key:
+       - type: apiKey Authorization (HEADER)
+       - name: dpopAuth
+     - API Key:
+       - type: apiKey DPoP (HEADER)
+       - name: dpopProof
+     - API Key:
        - type: apiKey X-App-Clip-Session (HEADER)
        - name: appClipSessionAuth
      - Bearer Token:
@@ -69,6 +75,12 @@ open class SubscriptionAPI {
      - POST /api/v1/subscription/createPortal.subscriptionPortals
      - Creates a provider portal session for the authenticated website account.
      - API Key:
+       - type: apiKey Authorization (HEADER)
+       - name: dpopAuth
+     - API Key:
+       - type: apiKey DPoP (HEADER)
+       - name: dpopProof
+     - API Key:
        - type: apiKey X-App-Clip-Session (HEADER)
        - name: appClipSessionAuth
      - Bearer Token:
@@ -106,6 +118,12 @@ open class SubscriptionAPI {
      Gets current subscription status
      - GET /api/v1/subscription/get.subscription
      - Returns billing and entitlement state for the authenticated website account.
+     - API Key:
+       - type: apiKey Authorization (HEADER)
+       - name: dpopAuth
+     - API Key:
+       - type: apiKey DPoP (HEADER)
+       - name: dpopProof
      - API Key:
        - type: apiKey X-App-Clip-Session (HEADER)
        - name: appClipSessionAuth
@@ -221,6 +239,12 @@ open class SubscriptionAPI {
      - API Key:
        - type: apiKey X-BlueChat-App-Session (HEADER)
        - name: nativeAppSessionAuth
+     - API Key:
+       - type: apiKey Authorization (HEADER)
+       - name: dpopAuth
+     - API Key:
+       - type: apiKey DPoP (HEADER)
+       - name: dpopProof
      - Bearer Token:
        - type: http
        - name: bearerAuth
