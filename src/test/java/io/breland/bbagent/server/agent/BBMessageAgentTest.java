@@ -877,8 +877,11 @@ class BBMessageAgentTest {
     List<ResponseInputItem> requestInput =
         paramsCaptor.getValue().input().orElseThrow().asResponse();
     assertTrue(
-        extractText(requestInput.get(0))
-            .contains("Current location context for the current BlueChat sender"));
+        requestInput.stream()
+            .filter(this::isDeveloperInputMessage)
+            .map(this::extractText)
+            .anyMatch(
+                text -> text.contains("Current location context for the current BlueChat sender")));
     assertFalse(
         requestInput.subList(1, requestInput.size()).stream().anyMatch(this::isSystemInputMessage));
   }
@@ -975,7 +978,12 @@ class BBMessageAgentTest {
     when(openAIClient.responses()).thenReturn(responseService);
     when(responseService.create(any(ResponseCreateParams.class)))
         .thenReturn(responseWithNoToolCalls());
-    BBMessageAgent agent = newAgent(openAIClient, new StubBBHttpClientWrapper());
+    BBMessageAgent agent =
+        newAgent(
+            openAIClient,
+            new StubBBHttpClientWrapper(),
+            io.breland.bbagent.server.agent.model_picker.ModelPickerTestSupport.standard(
+                "openrouter/z-ai/glm-5.2"));
     IncomingMessage incoming = incomingMessage("iMessage;+;chat-qwen", "msg-qwen", "hello", 1_000L);
 
     agent.createResponse(
@@ -1042,7 +1050,12 @@ class BBMessageAgentTest {
     when(openAIClient.responses()).thenReturn(responseService);
     when(responseService.create(any(ResponseCreateParams.class)))
         .thenReturn(responseWithNoToolCalls());
-    BBMessageAgent agent = newAgent(openAIClient, new StubBBHttpClientWrapper());
+    BBMessageAgent agent =
+        newAgent(
+            openAIClient,
+            new StubBBHttpClientWrapper(),
+            io.breland.bbagent.server.agent.model_picker.ModelPickerTestSupport.standard(
+                "openrouter/z-ai/glm-5.2"));
     IncomingMessage incoming =
         incomingMessage("iMessage;+;chat-qwen-cadence", "msg-qwen-cadence", "hello", 1_000L);
     List<ResponseInputItem> originalInput =
@@ -1073,7 +1086,12 @@ class BBMessageAgentTest {
     when(openAIClient.responses()).thenReturn(responseService);
     when(responseService.create(any(ResponseCreateParams.class)))
         .thenReturn(responseWithNoToolCalls());
-    BBMessageAgent agent = newAgent(openAIClient, new StubBBHttpClientWrapper());
+    BBMessageAgent agent =
+        newAgent(
+            openAIClient,
+            new StubBBHttpClientWrapper(),
+            io.breland.bbagent.server.agent.model_picker.ModelPickerTestSupport.standard(
+                "openrouter/z-ai/glm-5.2"));
     IncomingMessage incoming =
         incomingMessage("iMessage;+;chat-qwen-history", "msg-qwen-history", "hello", 3_000L);
     List<ResponseInputItem> originalInput =
