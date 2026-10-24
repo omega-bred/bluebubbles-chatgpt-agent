@@ -226,6 +226,8 @@ spec:
               value: "gemini/gemini-3.5-flash"
             - name: BBAGENT_TERMS_ACCEPTANCE_RESPONSES_MODEL
               value: "openai/gpt-4.1-mini"
+            - name: BBAGENT_TERMS_REQUIRED
+              value: "false"
             - name: BBAGENT_GROUP_MEMORY_ENABLED
               value: "true"
             - name: BBAGENT_GROUP_MEMORY_PROACTIVE_ENABLED
@@ -655,7 +657,7 @@ spec:
               type: RuntimeDefault
           containers:
             - name: lxmf-free-tier-canary
-              image: ghcr.io/omega-bred/bluebubbles-chatgpt-agent-lxmf-bridge:latest
+              image: lxmf-free-tier-canary
               imagePullPolicy: Always
               securityContext:
                 allowPrivilegeEscalation: false
@@ -668,6 +670,8 @@ spec:
               env:
                 - name: CANARY_MARKER
                   value: "BBAGENT_LXMF_CANARY_V1"
+                - name: CANARY_TERMS_REQUIRED
+                  value: "false"
                 - name: CANARY_DISPLAY_NAME
                   value: "BlueChat Canary"
                 - name: LXMF_BRIDGE_BASE_URL

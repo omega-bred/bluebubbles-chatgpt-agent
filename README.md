@@ -183,6 +183,21 @@ Required:
 - `POSTGRES_JDBC_URL`, `POSTGRES_USER`, `POSTGRES_PASSWORD`
 - `MEM0_API_KEY` (TODO: Make optional)
 
+### Messaging Terms agreement
+
+`BBAGENT_TERMS_REQUIRED` defaults to `true`. Set it to `false` to let otherwise
+eligible inbound messages continue without the app's Terms prompt, including its
+18+ attestation, or agreement classification. This does not record acceptance: existing `terms_accepted_at`
+values remain unchanged, and accounts without acceptance will be prompted again
+when the flag is re-enabled. Authentication, sender/account identity, blocks,
+integration permissions, rate/spend limits, and model selection are unchanged.
+The current production manifest explicitly sets this flag to `false`.
+
+Keep the scheduled LXMF canary's `CANARY_TERMS_REQUIRED` setting aligned with
+the app flag; it defaults to `true` and fails if the observed mode differs.
+Its dedicated `lxmf-free-tier-canary` Kustomize image alias allows updating the
+canary artifact independently of the running bridge Deployment image.
+
 ### Decisions API
 
 BlueChat uses OpenAI's `/v1/decisions` through the existing LiteLLM `OPENAI_BASE_URL`

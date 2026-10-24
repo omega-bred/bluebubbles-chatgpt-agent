@@ -162,7 +162,11 @@ final class BBMessageAgentFixture {
             objectMapper, toolContextFactory, toolRegistry, agentMetricsService);
     TermsGate termsGate =
         new TermsGate(
-            outboundService, profileService, termsAgreementValidator, "http://localhost:8080");
+            outboundService,
+            profileService,
+            termsAgreementValidator,
+            "http://localhost:8080",
+            true);
     CadenceIncomingMessageHandler incomingMessageHandler =
         new CadenceIncomingMessageHandler(
             conversationStateStore,

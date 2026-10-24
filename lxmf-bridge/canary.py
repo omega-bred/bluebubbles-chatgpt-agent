@@ -46,6 +46,10 @@ STAGE_TIMEOUT_SECONDS = int(env("CANARY_STAGE_TIMEOUT_SECONDS", "90"))
 TOTAL_TIMEOUT_SECONDS = int(env("CANARY_TIMEOUT_SECONDS", "300"))
 ANNOUNCE_INTERVAL_SECONDS = int(env("CANARY_ANNOUNCE_INTERVAL_SECONDS", "10"))
 STRICT_INFERENCE_RESPONSE = env("CANARY_STRICT_INFERENCE_RESPONSE", "true").lower() == "true"
+_terms_required = env("CANARY_TERMS_REQUIRED", "true").lower()
+if _terms_required not in ("true", "false"):
+    raise ValueError("CANARY_TERMS_REQUIRED must be true or false")
+TERMS_REQUIRED = _terms_required == "true"
 INFLUX_ENABLED = env("CANARY_INFLUX_ENABLED", "true").lower() == "true"
 INFLUX_REQUIRED = env("CANARY_INFLUX_REQUIRED", "true").lower() == "true"
 INFLUX_URI = env("INFLUX_DB_URI", "").rstrip("/")
@@ -192,13 +196,17 @@ def run_canary(stage_durations):
         if time.time() >= deadline:
             raise CanaryFailure(stage, "total_timeout", "canary exceeded total timeout")
 
-    def terms_prompt():
-        ensure_time_remaining("terms_prompt")
-        send_lxmf(bridge_hash, f"{MARKER} run_id={RUN_ID}\n{INFERENCE_PROMPT}", "terms_prompt")
-        return wait_for_reply(
-            "terms_prompt",
-            lambda content: "Terms of Use" in content and "Reply YES" in content,
+    def opening():
+        stage = "terms_prompt" if TERMS_REQUIRED else "inference"
+        ensure_time_remaining(stage)
+        send_lxmf(bridge_hash, f"{MARKER} run_id={RUN_ID}\n{INFERENCE_PROMPT}", stage)
+        reply = wait_for_reply(
+            stage,
+            lambda content: terms_prompt_matches(content) or inference_reply_matches(content),
         )
+        if terms_prompt_matches(reply.get("content", "")) != TERMS_REQUIRED:
+            raise CanaryFailure(stage, "terms_mode_mismatch", "unexpected agreement gate mode")
+        return reply
 
     def terms_acceptance():
         ensure_time_remaining("terms_acceptance")
@@ -213,15 +221,22 @@ def run_canary(stage_durations):
         send_lxmf(bridge_hash, INFERENCE_PROMPT, "inference")
         return wait_for_reply("inference", inference_reply_matches)
 
-    run_stage("terms_prompt", terms_prompt, stage_durations)
-    terms_acceptance_reply = run_stage("terms_acceptance", terms_acceptance, stage_durations)
-    if inference_reply_matches(terms_acceptance_reply.get("content", "")):
-        inference_reply = terms_acceptance_reply
-        log("LXMF canary terms acceptance replay produced inference reply; skipping inference stage")
+    if TERMS_REQUIRED:
+        run_stage("terms_prompt", opening, stage_durations)
+        terms_acceptance_reply = run_stage("terms_acceptance", terms_acceptance, stage_durations)
+        if inference_reply_matches(terms_acceptance_reply.get("content", "")):
+            inference_reply = terms_acceptance_reply
+            log("LXMF canary terms acceptance replay produced inference reply; skipping inference stage")
+        else:
+            inference_reply = run_stage("inference", inference, stage_durations)
     else:
-        inference_reply = run_stage("inference", inference, stage_durations)
+        inference_reply = run_stage("inference", opening, stage_durations)
     log(f"LXMF canary succeeded run_id={RUN_ID} reply={inference_reply.get('content', '')!r}")
     return time.time() - started
+
+
+def terms_prompt_matches(content):
+    return "Terms of Use" in (content or "") and "Reply YES" in (content or "")
 
 
 def terms_acceptance_reply_matches(content):
