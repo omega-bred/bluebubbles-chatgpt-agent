@@ -74,9 +74,10 @@ class CadenceIncomingMessageHandlerTest {
     verifyNoInteractions(fixture.workflowLauncher());
   }
 
-  @Test
-  void blockedAccountIsNotJournaled() {
-    Fixture fixture = fixture();
+  @org.junit.jupiter.params.ParameterizedTest
+  @org.junit.jupiter.params.provider.ValueSource(booleans = {true, false})
+  void blockedAccountIsNotJournaledRegardlessOfAgreementRequirement(boolean termsRequired) {
+    Fixture fixture = fixture(termsRequired);
     IncomingMessage message = message("blocked-message", "hello", false, false);
     when(fixture.profileService().isProcessingBlocked(message)).thenReturn(true);
 
@@ -85,6 +86,26 @@ class CadenceIncomingMessageHandlerTest {
     verify(fixture.journalService(), never()).recordEligibleMessage(any());
     verifyNoInteractions(fixture.workflowLauncher());
     verifyNoInteractions(fixture.decisions());
+  }
+
+  @Test
+  void disabledAgreementRequirementProcessesCurrentMessageWithoutRecordingConsent() {
+    Fixture fixture = fixture(false);
+    IncomingMessage message = message("without-agreement", "What can you do?", false, false);
+    MessageTransport transport = Mockito.mock(MessageTransport.class);
+    when(fixture.transportRegistry().resolve(message)).thenReturn(transport);
+    when(transport.hydrateConversationState(message.chatGuid(), message))
+        .thenReturn(new ConversationState());
+
+    fixture.handler().handleIncomingMessage(message);
+
+    verify(fixture.profileService()).recordMessageIdentities(message);
+    verify(fixture.profileService()).isProcessingBlocked(message);
+    verify(fixture.profileService(), never()).acceptTerms(any());
+    verify(fixture.profileService()).resolveOrCreateAccount(message);
+    verify(fixture.journalService()).recordEligibleMessage(message);
+    verify(fixture.decisions()).assess(any(), any(), any());
+    verify(fixture.workflowLauncher()).startWorkflow(any());
   }
 
   @Test
@@ -213,6 +234,10 @@ class CadenceIncomingMessageHandlerTest {
   }
 
   private Fixture fixture() {
+    return fixture(true);
+  }
+
+  private Fixture fixture(boolean termsRequired) {
     AgentProfileService profileService = Mockito.mock(AgentProfileService.class);
     MessageTransportRegistry transportRegistry = Mockito.mock(MessageTransportRegistry.class);
     BBHttpClientWrapper bbHttpClientWrapper = Mockito.mock(BBHttpClientWrapper.class);
@@ -231,7 +256,8 @@ class CadenceIncomingMessageHandlerTest {
             Mockito.mock(AgentOutboundService.class),
             profileService,
             termsAgreementValidator,
-            "https://example.com");
+            "https://example.com",
+            termsRequired);
     CadenceIncomingMessageHandler handler =
         new CadenceIncomingMessageHandler(
             new ConversationStateStore(),

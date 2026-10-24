@@ -25,16 +25,19 @@ public final class TermsGate {
   private final AgentProfileService profileService;
   private final TermsAgreementValidator agreementValidator;
   private final String websiteBaseUrl;
+  private final boolean required;
 
   public TermsGate(
       AgentOutboundService outboundService,
       AgentProfileService profileService,
       TermsAgreementValidator agreementValidator,
-      @Value("${website.base-url:http://localhost:8080}") String websiteBaseUrl) {
+      @Value("${website.base-url:http://localhost:8080}") String websiteBaseUrl,
+      @Value("${bbagent.terms.required:true}") boolean required) {
     this.outboundService = outboundService;
     this.profileService = profileService;
     this.agreementValidator = agreementValidator;
     this.websiteBaseUrl = websiteBaseUrl;
+    this.required = required;
   }
 
   public boolean handle(
@@ -56,7 +59,8 @@ public final class TermsGate {
       log.warn("Failed to resolve account for terms gate {}", message, e);
       return false;
     }
-    if (resolved.account().getTermsAcceptedAt() != null) {
+    // Account resolution also maintains canary bookkeeping, independently of agreement enforcement.
+    if (!required || resolved.account().getTermsAcceptedAt() != null) {
       return false;
     }
     // A tapback is neither a request to start service nor explicit acceptance of the terms.

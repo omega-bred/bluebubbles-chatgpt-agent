@@ -5,6 +5,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
+import static org.mockito.Mockito.verifyNoMoreInteractions;
 import static org.mockito.Mockito.when;
 
 import io.breland.bbagent.server.agent.AgentOutboundService;
@@ -28,7 +29,38 @@ class TermsGateThreadRoutingTest {
   private final TermsAgreementValidator validator = mock(TermsAgreementValidator.class);
   private final TermsGate.AcceptedMessageProcessor processor =
       mock(TermsGate.AcceptedMessageProcessor.class);
-  private final TermsGate gate = new TermsGate(outbound, profile, validator, "https://example.com");
+  private final TermsGate gate =
+      new TermsGate(outbound, profile, validator, "https://example.com", true);
+
+  @ParameterizedTest
+  @org.junit.jupiter.params.provider.ValueSource(strings = {"What can you do?", "YES"})
+  void disabledGateDoesNotInterceptOrRecordConsent(String text) {
+    TermsGate disabled = new TermsGate(outbound, profile, validator, "https://example.com", false);
+    ConversationState state = spy(new ConversationState());
+    IncomingMessage message =
+        new IncomingMessage(
+            "chat",
+            "message",
+            null,
+            text,
+            false,
+            "iMessage",
+            "sender",
+            false,
+            Instant.EPOCH,
+            List.of(),
+            false);
+    AgentAccountEntity account = new AgentAccountEntity("account", Instant.EPOCH, Instant.EPOCH);
+    when(profile.resolveOrCreateAccount(message))
+        .thenReturn(Optional.of(new ResolvedAccount(account, List.of())));
+
+    assertThat(disabled.handle(state, message, processor)).isFalse();
+
+    assertThat(account.getTermsAcceptedAt()).isNull();
+    verify(profile).resolveOrCreateAccount(message);
+    verifyNoMoreInteractions(profile);
+    verifyNoInteractions(outbound, validator, processor, state);
+  }
 
   @ParameterizedTest
   @MethodSource("threadTargets")

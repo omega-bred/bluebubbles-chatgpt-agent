@@ -31,6 +31,9 @@ jobs:
       - name: Run tests
         run: CI=true BBAGENT_NIX_SHELL_QUIET=1 nix develop --command ./gradlew test
 
+      - name: Test LXMF canary agreement modes
+        run: CI=true BBAGENT_NIX_SHELL_QUIET=1 nix develop --command python -m unittest discover -s lxmf-bridge -p 'test_*.py'
+
       - name: Build app image with Nix
         if: ${{ github.event_name == 'pull_request' }}
         run: CI=true BBAGENT_NIX_SHELL_QUIET=1 nix build .#app-image --no-link
@@ -216,6 +219,7 @@ jobs:
           nix develop ../.. --command kustomize edit set image "${IMAGE_NAME}=${IMAGE_NAME}:${NEW_TAG}"
           echo "Setting image ${LXMF_BRIDGE_IMAGE_NAME} to tag ${NEW_TAG}"
           nix develop ../.. --command kustomize edit set image "${LXMF_BRIDGE_IMAGE_NAME}=${LXMF_BRIDGE_IMAGE_NAME}:${NEW_TAG}"
+          nix develop ../.. --command kustomize edit set image "lxmf-free-tier-canary=${LXMF_BRIDGE_IMAGE_NAME}:${NEW_TAG}"
 
       - name: Commit changes (if any)
         run: |

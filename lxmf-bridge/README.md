@@ -8,7 +8,7 @@ agent replies.
 
 The same image also includes `canary.py`, a one-shot LXMF free-tier canary. It
 creates a fresh identity, sends the configured canary marker with a nonce
-inference prompt, accepts Terms, handles either replayed or follow-up inference,
+inference prompt, checks the configured Terms requirement, handles either replayed or follow-up inference,
 and writes `bbagent_lxmf_canary_*` measurements directly to InfluxDB.
 
 Important environment variables:
@@ -27,6 +27,13 @@ Canary-specific environment variables:
 
 - `CANARY_MARKER`: marker prefix that causes the Spring app to flag the account
   as synthetic canary traffic.
+- `CANARY_TERMS_REQUIRED`: expected app agreement requirement, default `true`.
+  When enabled, the canary requires the Terms prompt and sends `YES`; when
+  disabled, it requires immediate nonce-matched inference and never sends `YES`.
+  A mismatched mode fails the canary. Match `BBAGENT_TERMS_REQUIRED` in the app.
 - `LXMF_BRIDGE_BASE_URL`: HTTP base URL for the production bridge.
 - `INFLUX_DB_URI`, `INFLUX_DB_TOKEN`, `INFLUX_DB_BUCKET`, `INFLUX_DB_ORG`:
   InfluxDB v2 write target for canary health metrics.
+
+Run the offline canary tests with
+`nix develop --command python -m unittest discover -s lxmf-bridge -p 'test_*.py'`.
