@@ -7,8 +7,10 @@ import io.breland.bbagent.server.agent.memory.MemoryScopeResolver;
 import io.breland.bbagent.server.agent.tools.AgentTool;
 import io.breland.bbagent.server.agent.tools.ToolProvider;
 import io.swagger.v3.oas.annotations.media.Schema;
+import lombok.RequiredArgsConstructor;
 import org.springframework.lang.Nullable;
 
+@RequiredArgsConstructor
 public class MemoryUpdateAgentTool implements ToolProvider {
   public static final String TOOL_NAME = "memory_update";
   private final HindsightClient hindsightClient;
@@ -23,12 +25,6 @@ public class MemoryUpdateAgentTool implements ToolProvider {
           String memoryId,
       @Schema(description = "Updated memory text.", requiredMode = Schema.RequiredMode.REQUIRED)
           String memory) {}
-
-  public MemoryUpdateAgentTool(
-      HindsightClient hindsightClient, @Nullable MemoryScopeResolver scopeResolver) {
-    this.hindsightClient = hindsightClient;
-    this.scopeResolver = scopeResolver;
-  }
 
   public AgentTool getTool() {
     return new AgentTool(

@@ -7,8 +7,10 @@ import io.breland.bbagent.server.agent.memory.MemoryScopeResolver;
 import io.breland.bbagent.server.agent.tools.AgentTool;
 import io.breland.bbagent.server.agent.tools.ToolProvider;
 import io.swagger.v3.oas.annotations.media.Schema;
+import lombok.RequiredArgsConstructor;
 import org.springframework.lang.Nullable;
 
+@RequiredArgsConstructor
 public class MemorySaveAgentTool implements ToolProvider {
 
   public static final String TOOL_NAME = "memory_save";
@@ -19,12 +21,6 @@ public class MemorySaveAgentTool implements ToolProvider {
   public record MemorySaveRequest(
       @Schema(description = "Memory text to store.", requiredMode = Schema.RequiredMode.REQUIRED)
           String memory) {}
-
-  public MemorySaveAgentTool(
-      HindsightClient hindsightClient, @Nullable MemoryScopeResolver scopeResolver) {
-    this.hindsightClient = hindsightClient;
-    this.scopeResolver = scopeResolver;
-  }
 
   public AgentTool getTool() {
     return new AgentTool(
