@@ -31,6 +31,7 @@ import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Path;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
@@ -253,6 +254,49 @@ class BBHttpClientWrapperTest {
         new com.fasterxml.jackson.databind.ObjectMapper().readValue(json, ApiResponseGetChat.class);
 
     assertEquals(groupPhotoGuid, response.getData().getProperties().getFirst().getGroupPhotoGuid());
+  }
+
+  @Test
+  void convertedImageDownloadsUseAFixedWidthWhileGenericFilesRemainUnresized() throws IOException {
+    var queries = new java.util.concurrent.CopyOnWriteArrayList<String>();
+    var server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+    server.createContext(
+        "/api/v1/attachment/fixture/download",
+        exchange -> {
+          queries.add(
+              java.net.URLDecoder.decode(
+                  exchange.getRequestURI().getRawQuery(), StandardCharsets.UTF_8));
+          byte[] body = new byte[] {1, 2, 3};
+          exchange.sendResponseHeaders(200, body.length);
+          try (var output = exchange.getResponseBody()) {
+            output.write(body);
+          }
+        });
+    server.start();
+    try {
+      var wrapper =
+          new BBHttpClientWrapper(
+              "http://127.0.0.1:" + server.getAddress().getPort(),
+              "pw",
+              5,
+              new ObjectMapper(),
+              null);
+      Path image = wrapper.getImageAttachment("fixture");
+      Path file = wrapper.getAttachment("fixture");
+      try {
+        assertThat(queries.get(0))
+            .contains("original=0", "width=1024", "quality=good")
+            .doesNotContain("height=");
+        assertThat(queries.get(1))
+            .contains("original=0")
+            .doesNotContain("width=", "height=", "quality=");
+      } finally {
+        java.nio.file.Files.deleteIfExists(image);
+        java.nio.file.Files.deleteIfExists(file);
+      }
+    } finally {
+      server.stop(0);
+    }
   }
 
   @Test

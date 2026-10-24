@@ -119,7 +119,14 @@ public final class AgentAttachmentInputBuilder {
     }
     Path path = null;
     try {
-      path = bbHttpClientWrapper.getAttachment(attachment.guid());
+      boolean resizePhoto =
+          isImageMime(attachment.mimeType())
+              && !"image/gif".equalsIgnoreCase(attachment.mimeType())
+              && !"image/webp".equalsIgnoreCase(attachment.mimeType());
+      path =
+          resizePhoto
+              ? bbHttpClientWrapper.getImageAttachment(attachment.guid())
+              : bbHttpClientWrapper.getAttachment(attachment.guid());
       if (path == null) {
         return Optional.empty();
       }
