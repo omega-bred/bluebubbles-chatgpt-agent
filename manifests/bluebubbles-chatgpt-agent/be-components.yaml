@@ -171,9 +171,9 @@ spec:
       containers:
         - name: bluebubbles-chatgpt-agent
           env:
-            # Enable only after Gayodex PR #3, service credential and private ingress are ready.
+            # The deployed Gayodex bridge uses a dedicated phone-bound service credential.
             - name: GAYODEX_BLUECHAT_ENABLED
-              value: "false"
+              value: "true"
             - name: GAYODEX_BLUECHAT_BASE_URL
               value: "http://gayodex-catalog.gayodex.svc.cluster.local:8767"
             - name: GAYODEX_BLUECHAT_TOKEN
@@ -181,7 +181,6 @@ spec:
                 secretKeyRef:
                   name: gayodex-bluechat
                   key: token
-                  optional: true
             - name: POD_IP
               valueFrom:
                 fieldRef:

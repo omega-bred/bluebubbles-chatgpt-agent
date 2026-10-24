@@ -60,14 +60,18 @@ are fixed messages, never upstream bodies, exception details or credentials.
 have saved a draft: read before another write. The public response allowlist
 excludes owner-private fields, media references and catalog/account metadata.
 
-## Staged deployment (not active)
+## Deployment and activation
 
 Server contract: [Gayodex PR #3](https://github.com/omega-bred/gayodex/pull/3),
-tested server commit `bbfb3185d8993c42ae7344f40b7256f319decac8`.
-Neither merge nor rollout is performed by this change.
+merged as `958d2136788403a1e58eaa1e46bdac57dd9464cd` and deployed through
+[Kubernetes PR #45](https://github.com/omega-bred/kube/pull/45). The exact
+linux/amd64 deployment image passed all 48 server tests before publication.
+Server credential and private-network configuration are tracked in
+[Kubernetes PR #46](https://github.com/omega-bred/kube/pull/46).
 
-The BlueChat manifest supplies the private URL and an optional `token` reference
-to `gayodex-bluechat`, with `GAYODEX_BLUECHAT_ENABLED=false`. Disabled or partial
+The BlueChat manifest enables `GAYODEX_BLUECHAT_ENABLED=true` and supplies the
+private URL and a required `token` reference to `gayodex-bluechat`. A missing
+Kubernetes Secret or token key prevents startup. Disabled or partial application
 configuration hides and blocks all five tools. Local tooling reads the optional
 1Password token only when explicitly enabled. Use the 1Password MCP server when
 setting up a 1Password developer environment; do not paste credentials into
@@ -79,8 +83,10 @@ After reviewing/merging and deploying the tested Gayodex server implementation:
    local process and write it directly to 1Password. Provision Kubernetes vault
    item `gayodex-bluechat`, field `token`, for BlueChat only. Compute its SHA-256
    without logging either value and put the digest in separate item
-   `gayodex-bluechat-server`, field `token-sha256`, for Gayodex. These items have
-   not been provisioned by this PR. Never use a generic owner/admin bearer token.
+   `gayodex-bluechat-server`, field `token-sha256`, for Gayodex. Both dedicated
+   items were provisioned on 2026-10-23 and their token/digest relationship was
+   verified without logging either value. Both operator-managed Kubernetes
+   Secrets were confirmed present before activation. Never use a generic owner/admin bearer token.
 2. Re-read the latest live/remote Gayodex GitOps source. The local kube checkout
    was older than the live workload when inspected on 2026-10-23. Add
    `manifests/gayodex-bluechat/network-policy.yaml` and `service-secret.yaml` to
@@ -114,6 +120,13 @@ Rotate raw token and digest together and restart both services. Back up Gayodex
 account state with its draft; its persistent phone-binding HMAC key must survive
 rotation/redeployment. Disable BlueChat's feature flag to stop discovery and
 execution without changing catalog contents.
+
+Activation prerequisites verified on 2026-10-23: both operator-managed Secrets
+were present, the server's configured bridge was Ready, and a read-only probe
+from the BlueChat namespace/workload network identity successfully read an
+unbound synthetic sender. The same probe confirmed that the backend token was
+denied owner catalog access and that invalid tokens and non-phone senders were
+rejected. It made no catalog mutations and sent no messages.
 
 ## Verification
 
