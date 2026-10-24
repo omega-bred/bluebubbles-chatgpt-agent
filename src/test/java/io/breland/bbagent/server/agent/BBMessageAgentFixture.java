@@ -127,6 +127,7 @@ final class BBMessageAgentFixture {
             modelAccessService,
             mock(ConversationMemorySettingsService.class),
             mock(MemoryScopeResolver.class),
+            null,
             null);
     AgentResponseCreator responseCreator =
         new AgentResponseCreator(

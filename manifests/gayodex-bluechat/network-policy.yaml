@@ -1,0 +1,23 @@
+# Stage in the current Gayodex GitOps source; do not apply an older Deployment snapshot.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: gayodex-bluechat
+  namespace: gayodex
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: gayodex
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: bluebubbles-chatgpt-agent
+          podSelector:
+            matchLabels:
+              app: bluebubbles-chatgpt-agent
+      ports:
+        - protocol: TCP
+          port: 8767

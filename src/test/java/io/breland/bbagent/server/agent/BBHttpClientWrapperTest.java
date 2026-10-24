@@ -256,6 +256,48 @@ class BBHttpClientWrapperTest {
   }
 
   @Test
+  void getMessageExplicitlyFetchesAuthenticatedSenderHandleAndAttachmentRelations()
+      throws IOException {
+    var query = new java.util.concurrent.atomic.AtomicReference<String>();
+    HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+    String guid = "304846bb-d158-48bd-9199-3530299fa5ae";
+    server.createContext(
+        "/api/v1/message/" + guid,
+        exchange -> {
+          query.set(
+              java.net.URLDecoder.decode(
+                  exchange.getRequestURI().getRawQuery(), StandardCharsets.UTF_8));
+          byte[] response =
+              ("{\"status\":200,\"message\":\"Successfully fetched message\",\"data\":{\"guid\":\""
+                      + guid
+                      + "\",\"handle\":{\"address\":\"+12025550101\",\"service\":\"iMessage\"},\"isFromMe\":false}}")
+                  .getBytes(StandardCharsets.UTF_8);
+          exchange.getResponseHeaders().set("Content-Type", "application/json");
+          exchange.sendResponseHeaders(200, response.length);
+          try (var output = exchange.getResponseBody()) {
+            output.write(response);
+          }
+        });
+    server.start();
+    try {
+      var wrapper =
+          new BBHttpClientWrapper(
+              "http://127.0.0.1:" + server.getAddress().getPort(),
+              "pw",
+              30,
+              new ObjectMapper(),
+              null);
+      var message = wrapper.getMessage(guid);
+      assertEquals(
+          "+12025550101",
+          new ObjectMapper().valueToTree(message.getHandle()).path("address").asText());
+      assertThat(query.get()).contains("with=chats,participants,attachment,handle");
+    } finally {
+      server.stop(0);
+    }
+  }
+
+  @Test
   void getMessagesInChatAllowsLargeBlueBubblesResponses() throws IOException {
     HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
     String largeText = "x".repeat(300 * 1024);

@@ -673,7 +673,7 @@ public class BBHttpClientWrapper {
           ApiResponseMessage response =
               this.messageApi
                   .apiV1MessageMessageGuidGet(
-                      messageGuid, password, "chats,participants,attachment")
+                      messageGuid, password, "chats,participants,attachment,handle")
                   .block(apiTimeout);
           response = requirePresent(response, "get message");
           requireSuccessfulResponse(response.getStatus(), response.getMessage(), "get message");
