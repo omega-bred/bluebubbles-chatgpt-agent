@@ -4,6 +4,7 @@ import com.openai.models.responses.ResponseInputContent;
 import com.openai.models.responses.ResponseInputFile;
 import com.openai.models.responses.ResponseInputImage;
 import io.breland.bbagent.server.agent.cadence.models.IncomingAttachment;
+import io.breland.bbagent.server.agent.tools.wallart.WallartImageInputs;
 import io.breland.bbagent.server.agent.transport.bb.BBHttpClientWrapper;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -21,6 +22,7 @@ import org.springframework.stereotype.Component;
 public final class AgentAttachmentInputBuilder {
   private static final int MAX_IMAGE_ATTACHMENTS = 4;
   private static final int MAX_FILE_ATTACHMENTS = 4;
+  private static final int MAX_DOWNLOADED_IMAGE_BYTES = 10 * 1024 * 1024;
 
   private final BBHttpClientWrapper bbHttpClientWrapper;
 
@@ -121,6 +123,28 @@ public final class AgentAttachmentInputBuilder {
       if (path == null) {
         return Optional.empty();
       }
+      if (isImageMime(attachment.mimeType())) {
+        // original=0 can return JPEG/PNG for an attachment still labelled HEIC in metadata.
+        // Inspect bounded bytes rather than relabelling converted content with that original MIME.
+        if (Files.size(path) > MAX_DOWNLOADED_IMAGE_BYTES) return Optional.empty();
+        byte[] bytes;
+        try (var input = Files.newInputStream(path)) {
+          bytes = input.readNBytes(MAX_DOWNLOADED_IMAGE_BYTES + 1);
+        }
+        if (bytes.length > MAX_DOWNLOADED_IMAGE_BYTES) return Optional.empty();
+        String preservedMime = preservedModelImageMime(bytes);
+        if (preservedMime != null)
+          return Optional.of(
+              new AttachmentData(
+                  Base64.getEncoder().encodeToString(bytes), preservedMime, attachment.filename()));
+        var image = WallartImageInputs.normalizePhoto(bytes);
+        if (image.bytes().length > MAX_DOWNLOADED_IMAGE_BYTES) return Optional.empty();
+        return Optional.of(
+            new AttachmentData(
+                Base64.getEncoder().encodeToString(image.bytes()),
+                image.mimeType(),
+                attachment.filename()));
+      }
       String mimeType = StringUtils.defaultIfBlank(attachment.mimeType(), probeContentType(path));
       String filename = path.getFileName() == null ? null : path.getFileName().toString();
       return Optional.of(
@@ -132,6 +156,20 @@ public final class AgentAttachmentInputBuilder {
     } finally {
       deleteIfExists(path);
     }
+  }
+
+  private static @Nullable String preservedModelImageMime(byte[] bytes) {
+    // Preserve existing model-supported GIF/WebP encoding; the photo normalizer would flatten
+    // animations or require a JVM WebP codec. Determine their MIME from the container signature.
+    if (bytes.length >= 10) {
+      String signature = new String(bytes, 0, 6, java.nio.charset.StandardCharsets.US_ASCII);
+      if (signature.equals("GIF87a") || signature.equals("GIF89a")) return "image/gif";
+    }
+    if (bytes.length >= 12
+        && new String(bytes, 0, 4, java.nio.charset.StandardCharsets.US_ASCII).equals("RIFF")
+        && new String(bytes, 8, 4, java.nio.charset.StandardCharsets.US_ASCII).equals("WEBP"))
+      return "image/webp";
+    return null;
   }
 
   private static boolean isImageMime(@Nullable String mimeType) {
