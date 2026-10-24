@@ -28,13 +28,41 @@ contexts. Phone normalization uses the existing account identifier normalizer,
 with a restrictive phone syntax and canonical E.164 validation. Each group
 sender retains their own identity; the group GUID never selects an entry.
 
-Photo tools accept an attachment GUID only from that current verified message.
-They download through the existing authenticated BlueBubbles client, apply the
+The upload tool defaults to the only downloadable image in that current
+verified message. For several images, `image_index` selects a one-based choice;
+`attachment_guid` remains an optional alternative. Supplying both selectors is
+rejected. Ambiguous selection returns `photo_selection_required` with current
+choices and performs no download or write. The model receives these choices
+in the current user prompt (`current_message_images`) and the profile-read
+response (`current_message_photos`). Filenames, MIME types and identifiers are
+JSON-encoded source data, not instructions. Texters never need to find a photo
+ID. If the original request does not identify a photo among several, ask for
+the chosen image attached to a new message.
+
+Photos download through the existing authenticated BlueBubbles client, apply the
 existing image decoder's dimension limits (20 million pixels), enforce a 6 MiB
 input/output limit, and delete the temporary download. The upstream API supports
 64 megapixels; BlueChat intentionally retains its stricter existing decoder
 limit. There is no arbitrary URL, history message, contact photo or model base64
 input. Gayodex normalizes uploads and strips metadata.
+
+BlueBubbles downloads use `original=0`, which can return JPEG/PNG for an iPhone
+HEIC attachment whose metadata still says `image/heic`. Both upload validation
+and current model image inputs inspect the actual downloaded bytes. Model
+inputs use the detected MIME, with a 10 MiB download/output limit and the same
+20-million-pixel limit for decoded photos. Existing GIF/WebP model images retain
+their encoding, and non-image file handling is unchanged.
+This does not require JVM-native HEIC decoding. If BlueBubbles returns
+unsupported/corrupt original bytes, the tool reports a decode error before any
+catalog upload and asks for a JPEG/PNG.
+
+An instruction in a later text-only message, such as "use the second photo",
+does not authorize an earlier message's attachments for Gayodex. History images
+remain usable for ordinary inspection/image generation, but not this upload
+path. A separately approved follow-up design could verify the original image
+message against the same current raw phone and conversation, require explicit
+selection and a bounded retention window, and recheck provenance before
+download. This change keeps the existing current-message boundary.
 
 ## Edits and responses
 
@@ -48,7 +76,10 @@ before a handheld receives them. Photo conversion defaults to 8-bit processing;
 poll queued/processing jobs in the current incoming-message turn. A later
 scheduled task has no sender authority; ask the sender to text again for a
 later status check. `fallback` keeps the original, `superseded` means newer
-changes took precedence, and `complete` confirms conversion only.
+changes took precedence, and `complete` confirms conversion only. Poll only
+`queued`/`processing` jobs with a returned ID. A terminal `fallback` upload can
+have no job ID: the original photo is already saved to the draft. Do not poll
+or ask the texter to find a job ID in that case.
 
 The HTTP client sends only dedicated self-service routes and injects the bearer
 credential and verified sender header internally. Redirects and retries are

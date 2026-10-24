@@ -6,6 +6,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import io.breland.bbagent.server.agent.IncomingMessage;
+import io.breland.bbagent.server.agent.cadence.models.IncomingAttachment;
 import io.breland.bbagent.server.agent.tools.AgentTool;
 import io.breland.bbagent.server.agent.tools.ToolContext;
 import io.breland.bbagent.server.agent.tools.ToolProvider;
@@ -91,7 +92,7 @@ public class GayodexAgentTools implements ToolProvider {
             List.of("expected_revision", "changes")),
         tool(
             PHOTO,
-            "Use an image attached to this incoming message as my Gayodex portrait. Defaults to asynchronous 8-bit conversion. Never use another participant's photo, remote URLs or generated base64."
+            "Use an image attached to this incoming message as my Gayodex portrait. Omit photo selectors when exactly one current image is attached. For multiple images use image_index from current_message_photos when the current request identifies which photo. If ambiguous, describe the choices and ask for the chosen photo attached to a new message. Never ask the sender for transport IDs. Defaults to asynchronous 8-bit conversion. Poll only queued/processing jobs with a returned ID. A terminal fallback can have no job ID: the original is already saved to the draft; do not poll or ask the sender for an ID. Never use another participant's photo, history images, remote URLs or generated base64."
                 + SCOPE
                 + WRITE_GUIDANCE,
             Operation.PHOTO,
@@ -103,10 +104,18 @@ public class GayodexAgentTools implements ToolProvider {
                     "type",
                     "string",
                     "description",
-                    "Image attachmentGuid from the current incoming message only."),
+                    "Optional alternative to image_index: attachment GUID from current_message_images/current_message_photos only. Omit for a single current image."),
+                "image_index",
+                Map.of(
+                    "type",
+                    "integer",
+                    "minimum",
+                    1,
+                    "description",
+                    "Optional one-based image_index from the current message's photo choices; do not combine with attachment_guid."),
                 "pixelify",
                 Map.of("type", "boolean", "default", true)),
-            List.of("expected_revision", "attachment_guid")),
+            List.of("expected_revision")),
         tool(
             JOB,
             "Check the status of my Gayodex portrait conversion. Poll queued/processing jobs using this tool in the current incoming-message turn. Returns the latest entry revision. Completion remains a draft requiring owner publishing."
@@ -173,7 +182,7 @@ public class GayodexAgentTools implements ToolProvider {
         if (operation == Operation.PHOTO) {
           if (args.has("pixelify") && !args.path("pixelify").isBoolean())
             invalid("pixelify must be true or false.");
-          body.put("image_base64", photo(context.message(), args.path("attachment_guid")));
+          body.put("image_base64", photo(context.message(), args));
           body.put("pixelify", args.path("pixelify").asBoolean(true));
         } else {
           String field = operation == Operation.CREATE ? "profile" : "changes";
@@ -183,7 +192,22 @@ public class GayodexAgentTools implements ToolProvider {
       }
       var result =
           client.request(context.message(), operation, body, args.path("job_id").asText(null));
-      return mapper.writeValueAsString(publicResponse(result, operation));
+      var output = publicResponse(result, operation);
+      if (operation == Operation.READ)
+        output.set(
+            "current_message_photos",
+            IncomingAttachment.imageChoices(context.message().attachments()));
+      return mapper.writeValueAsString(output);
+    } catch (PhotoSelectionRequired failure) {
+      var output =
+          mapper
+              .createObjectNode()
+              .put("error", "photo_selection_required")
+              .put(
+                  "user_facing_text",
+                  "Several photos are attached. Use the current request's position or description to select one; if ambiguous, ask for the chosen photo attached to a new message. Do not ask the sender for a transport ID.");
+      output.set("current_message_photos", failure.choices);
+      return output.toString();
     } catch (Failure failure) {
       return error(failure.code, failure.getMessage());
     } catch (Exception ignored) {
@@ -193,18 +217,41 @@ public class GayodexAgentTools implements ToolProvider {
     }
   }
 
-  private String photo(IncomingMessage message, JsonNode guid) throws java.io.IOException {
-    if (!guid.isTextual() || guid.asText().isBlank() || message.attachments() == null)
-      invalid("Select an image attached to the current message.");
-    var attachment =
-        message.attachments().stream()
-            .filter(item -> item != null && guid.asText().equals(item.guid()) && item.mayBeImage())
-            .findFirst()
-            .orElseThrow(
-                () ->
-                    new Failure(
-                        "invalid_attachment",
-                        "Select an image attached by you to the current message; send it again if necessary."));
+  private String photo(IncomingMessage message, JsonNode args) throws java.io.IOException {
+    var images = IncomingAttachment.downloadableImages(message.attachments());
+    if (args.has("image_index") && args.has("attachment_guid"))
+      invalid("Choose either image_index or attachment_guid, not both.");
+    IncomingAttachment attachment;
+    if (args.has("image_index")) {
+      var index = args.path("image_index");
+      if (!index.isIntegralNumber()
+          || !index.canConvertToInt()
+          || index.intValue() < 1
+          || index.intValue() > images.size())
+        invalid("Use an image_index from this incoming message's photo choices.");
+      attachment = images.get(index.intValue() - 1);
+    } else if (args.has("attachment_guid")) {
+      var guid = args.path("attachment_guid");
+      if (!guid.isTextual() || guid.asText().isBlank())
+        invalid("Use a current photo choice, or omit the selector for a single image.");
+      attachment =
+          images.stream()
+              .filter(image -> guid.asText().equals(image.guid()))
+              .findFirst()
+              .orElseThrow(
+                  () ->
+                      new Failure(
+                          "invalid_attachment",
+                          "That photo is not attached to this verified incoming message. Use its current photo choices."));
+    } else {
+      if (images.isEmpty())
+        throw new Failure(
+            "no_current_photo",
+            "This message has no downloadable photo attached. Attach the photo to a new message asking to use it for your Gayodex entry; earlier images are not authorized for this upload.");
+      if (images.size() != 1)
+        throw new PhotoSelectionRequired(IncomingAttachment.imageChoices(message.attachments()));
+      attachment = images.getFirst();
+    }
     Path path = null;
     try {
       path = blueBubbles.getAttachment(attachment.guid());
@@ -222,7 +269,8 @@ public class GayodexAgentTools implements ToolProvider {
       return Base64.getEncoder().encodeToString(image.bytes());
     } catch (IllegalArgumentException ignored) {
       throw new Failure(
-          "invalid_attachment", "Use a supported image with at most 20 million pixels and 6 MiB.");
+          "invalid_attachment",
+          "The downloaded photo could not be decoded within 20 million pixels and 6 MiB. BlueBubbles normally converts iPhone HEIC photos; if conversion failed, attach a JPEG or PNG. No photo save was attempted.");
     } finally {
       if (path != null)
         try {
@@ -384,5 +432,13 @@ public class GayodexAgentTools implements ToolProvider {
 
   private String error(String code, String message) {
     return mapper.createObjectNode().put("error", code).put("user_facing_text", message).toString();
+  }
+
+  private static final class PhotoSelectionRequired extends RuntimeException {
+    private final JsonNode choices;
+
+    private PhotoSelectionRequired(JsonNode choices) {
+      this.choices = choices;
+    }
   }
 }
