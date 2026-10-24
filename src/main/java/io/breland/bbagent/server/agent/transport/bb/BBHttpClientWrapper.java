@@ -635,6 +635,18 @@ public class BBHttpClientWrapper {
   }
 
   public Path getAttachment(String attachmentGuid) {
+    return downloadAttachment(attachmentGuid, null, null);
+  }
+
+  /**
+   * Bound converted camera photos before they reach model/upload decoders; original files stay
+   * untouched.
+   */
+  public Path getImageAttachment(String attachmentGuid) {
+    return downloadAttachment(attachmentGuid, 1024, "good");
+  }
+
+  private Path downloadAttachment(String attachmentGuid, Integer width, String quality) {
     long startedNanos = System.nanoTime();
     try {
       Path tempPath = Files.createTempFile("bb-attachment-", ".bin");
@@ -643,7 +655,7 @@ public class BBHttpClientWrapper {
               tempPath, StandardOpenOption.WRITE, StandardOpenOption.CREATE);
       this.attachmentApi
           .apiV1AttachmentAttachmentGuidDownloadGetWithResponseSpec(
-              attachmentGuid, password, null, null, null, 0)
+              attachmentGuid, password, width, null, quality, 0)
           .bodyToFlux(DataBuffer.class)
           .transform(
               data ->

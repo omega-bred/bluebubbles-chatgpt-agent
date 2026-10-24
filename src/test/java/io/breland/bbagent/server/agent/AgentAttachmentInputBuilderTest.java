@@ -39,7 +39,7 @@ class AgentAttachmentInputBuilderTest {
             new byte[10 * 1024 * 1024 + 1])) {
       Path path = Files.createTempFile("bluechat-bad-image-", ".bin");
       Files.write(path, bytes);
-      when(bb.getAttachment("own")).thenReturn(path);
+      when(bb.getImageAttachment("own")).thenReturn(path);
       assertEquals(0, builder.resolve(message("image/heic")).imageCount());
       assertFalse(Files.exists(path));
     }

@@ -298,8 +298,14 @@ class GayodexAgentToolsTest {
     var transport = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
     var downloadQuery = new java.util.concurrent.atomic.AtomicReference<String>();
     var messageQuery = new java.util.concurrent.atomic.AtomicReference<String>();
+    var original = new ByteArrayOutputStream();
+    ImageIO.write(new BufferedImage(4284, 5712, BufferedImage.TYPE_BYTE_GRAY), "jpeg", original);
+    assertTrue(
+        (long) ImageIO.read(new java.io.ByteArrayInputStream(original.toByteArray())).getWidth()
+                * 5712
+            > 20_000_000);
     var bytes = new ByteArrayOutputStream();
-    ImageIO.write(new BufferedImage(4, 3, BufferedImage.TYPE_INT_RGB), "jpeg", bytes);
+    ImageIO.write(new BufferedImage(1024, 1365, BufferedImage.TYPE_BYTE_GRAY), "png", bytes);
     transport.createContext(
         "/api/v1/message/" + GUID,
         exchange -> {
@@ -346,10 +352,14 @@ class GayodexAgentToolsTest {
         "/api/v1/attachment/authenticated-heic/download",
         exchange -> {
           downloadQuery.set(exchange.getRequestURI().getRawQuery());
-          exchange.getResponseHeaders().set("Content-Type", "image/jpeg");
-          exchange.sendResponseHeaders(200, bytes.size());
+          boolean bounded =
+              downloadQuery.get().contains("width=1024")
+                  && downloadQuery.get().contains("quality=good");
+          byte[] downloaded = bounded ? bytes.toByteArray() : original.toByteArray();
+          exchange.getResponseHeaders().set("Content-Type", bounded ? "image/png" : "image/jpeg");
+          exchange.sendResponseHeaders(200, downloaded.length);
           try (var output = exchange.getResponseBody()) {
-            output.write(bytes.toByteArray());
+            output.write(downloaded);
           }
         });
     transport.start();
@@ -386,6 +396,8 @@ class GayodexAgentToolsTest {
       assertEquals(PHONE, calls.getLast().phone());
       assertTrue(messageQuery.get().contains("with=chats,participants,attachment,handle"));
       assertTrue(downloadQuery.get().contains("original=0"));
+      assertTrue(downloadQuery.get().contains("width=1024"));
+      assertTrue(downloadQuery.get().contains("quality=good"));
       assertEquals(1, calls.size());
     } finally {
       transport.stop(0);
@@ -410,7 +422,7 @@ class GayodexAgentToolsTest {
     ImageIO.write(new BufferedImage(3, 2, BufferedImage.TYPE_INT_RGB), "jpeg", bytes);
     Path path = Files.createTempFile("gayodex-converted-heic-", ".bin");
     Files.write(path, bytes.toByteArray());
-    when(bb.getAttachment("own")).thenReturn(path);
+    when(bb.getImageAttachment("own")).thenReturn(path);
     var read = MAPPER.readTree(call(GayodexAgentTools.READ, incoming, "{}"));
     assertEquals(1, read.path("current_message_photos").size());
     assertEquals(1, read.path("current_message_photos").get(0).path("image_index").asInt());
@@ -428,8 +440,8 @@ class GayodexAgentToolsTest {
         calls.getLast().body().path("image_base64").asText());
     assertTrue(calls.getLast().body().path("pixelify").asBoolean());
     assertFalse(Files.exists(path));
-    verify(bb).getAttachment("own");
-    verify(bb, never()).getAttachment("pdf");
+    verify(bb).getImageAttachment("own");
+    verify(bb, never()).getImageAttachment("pdf");
     assertFalse(output.toString().contains("image_base64"));
     var schema =
         MAPPER.valueToTree(
@@ -488,7 +500,7 @@ class GayodexAgentToolsTest {
     ImageIO.write(new BufferedImage(2, 2, BufferedImage.TYPE_INT_RGB), "png", bytes);
     Path path = Files.createTempFile("gayodex-selected-photo-", ".bin");
     Files.write(path, bytes.toByteArray());
-    when(bb.getAttachment("second")).thenReturn(path);
+    when(bb.getImageAttachment("second")).thenReturn(path);
     var output =
         MAPPER.readTree(
             call(
@@ -497,8 +509,8 @@ class GayodexAgentToolsTest {
                 revision + ",\"image_index\":2,\"pixelify\":false}"));
     assertTrue(output.path("saved_to_draft").asBoolean());
     assertFalse(calls.getLast().body().path("pixelify").asBoolean());
-    verify(bb).getAttachment("second");
-    verify(bb, never()).getAttachment("first");
+    verify(bb).getImageAttachment("second");
+    verify(bb, never()).getImageAttachment("first");
   }
 
   @Test
@@ -537,7 +549,7 @@ class GayodexAgentToolsTest {
     ImageIO.write(new BufferedImage(2, 2, BufferedImage.TYPE_INT_RGB), "png", bytes);
     Path path = Files.createTempFile("gayodex-fallback-original-", ".bin");
     Files.write(path, bytes.toByteArray());
-    when(bb.getAttachment("own")).thenReturn(path);
+    when(bb.getImageAttachment("own")).thenReturn(path);
     var result =
         MAPPER.readTree(
             call(
@@ -594,7 +606,7 @@ class GayodexAgentToolsTest {
     ImageIO.write(new BufferedImage(2, 2, BufferedImage.TYPE_INT_RGB), "png", bytes);
     Path path = Files.createTempFile("gayodex-test-photo", ".png");
     Files.write(path, bytes.toByteArray());
-    when(bb.getAttachment("own")).thenReturn(path);
+    when(bb.getImageAttachment("own")).thenReturn(path);
     String output = call(GayodexAgentTools.PHOTO, incoming, arguments.formatted("own"));
     assertFalse(Files.exists(path));
     assertTrue(MAPPER.readTree(output).path("saved_to_draft").asBoolean());
@@ -604,7 +616,7 @@ class GayodexAgentToolsTest {
         calls.getLast().body().path("image_base64").asText());
     assertTrue(calls.getLast().body().path("pixelify").asBoolean());
     assertFalse(output.contains("image_base64"));
-    verify(bb).getAttachment("own");
+    verify(bb).getImageAttachment("own");
     var job = MAPPER.readTree(call(GayodexAgentTools.JOB, incoming, "{\"job_id\":\"job-123\"}"));
     assertEquals("queued", job.path("photo_job").path("status").asText());
     assertEquals(REVISION, job.path("revision").asText());
@@ -625,7 +637,7 @@ class GayodexAgentToolsTest {
     for (byte[] bytes : List.of(new byte[6 * 1024 * 1024 + 1], new byte[] {1, 2, 3})) {
       Path path = Files.createTempFile("gayodex-test-photo", ".png");
       Files.write(path, bytes);
-      when(bb.getAttachment("own")).thenReturn(path);
+      when(bb.getImageAttachment("own")).thenReturn(path);
       assertTrue(
           call(
                   GayodexAgentTools.PHOTO,

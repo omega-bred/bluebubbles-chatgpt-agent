@@ -46,7 +46,15 @@ input/output limit, and delete the temporary download. The upstream API supports
 limit. There is no arbitrary URL, history message, contact photo or model base64
 input. Gayodex normalizes uploads and strips metadata.
 
-BlueBubbles downloads use `original=0`, which can return JPEG/PNG for an iPhone
+Photo downloads for model input and Gayodex use `original=0`, fixed
+`width=1024`, and `quality=good`. The single width preserves aspect ratio and
+fits ordinary high-resolution phone photos inside the existing decoder and
+upload budgets without raising them. Generic files and model GIF/WebP inputs
+keep their existing unresized download path. The returned bytes are still
+validated against the pixel/byte limits; a server that ignores resizing does
+not bypass them.
+
+BlueBubbles conversion can return JPEG/PNG for an iPhone
 HEIC attachment whose metadata still says `image/heic`. Both upload validation
 and current model image inputs inspect the actual downloaded bytes. Model
 inputs use the detected MIME, with a 10 MiB download/output limit and the same

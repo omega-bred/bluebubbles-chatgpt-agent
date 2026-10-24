@@ -254,7 +254,7 @@ public class GayodexAgentTools implements ToolProvider {
     }
     Path path = null;
     try {
-      path = blueBubbles.getAttachment(attachment.guid());
+      path = blueBubbles.getImageAttachment(attachment.guid());
       if (path == null) invalid("The current attachment could not be downloaded.");
       if (Files.size(path) > MAX_PHOTO_BYTES) invalid("Photos must be at most 6 MiB.");
       byte[] bytes;
