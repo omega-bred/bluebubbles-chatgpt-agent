@@ -163,7 +163,7 @@ class AgentPromptMatrixTest {
             "ALWAYS REPLY",
             "Always ask the memory tool",
             "reply with a concise user-visible poll update instead of");
-    assertThat(text.contains("\"role\":\"developer\"")).isEqualTo(!key.equals("local"));
+    assertThat(text).contains("\"role\":\"developer\"");
     boolean nativeImages = key.equals("chatgpt") && !lxmf;
     boolean nativeWeb = key.equals("chatgpt");
     assertThat(text)

@@ -217,7 +217,7 @@ spec:
             - name: BBAGENT_DECISIONS_TIMEOUT
               value: "PT3S"
             - name: BBAGENT_LOCAL_RESPONSES_MODEL
-              value: "openrouter/z-ai/glm-5.2"
+              value: "openai/gpt-6-luna"
             - name: BBAGENT_CHATGPT_RESPONSES_MODEL
               value: "openai/gpt-5.6-terra"
             - name: BBAGENT_CLAUDE_RESPONSES_MODEL

@@ -23,7 +23,7 @@ import org.springframework.web.server.ResponseStatusException;
 public class ModelAccessService {
   public static final String STANDARD_MODEL_KEY = "local";
   public static final String STANDARD_MODEL_LABEL = "Free";
-  public static final String STANDARD_RESPONSES_MODEL = "openrouter/z-ai/glm-5.2";
+  public static final String STANDARD_RESPONSES_MODEL = "openai/gpt-6-luna";
   public static final String PREMIUM_MODEL_KEY = "chatgpt";
   public static final String PREMIUM_MODEL_LABEL = "ChatGPT";
   public static final String PREMIUM_RESPONSES_MODEL = "openai/gpt-5.6-terra";
@@ -34,7 +34,7 @@ public class ModelAccessService {
   public static final String GEMINI_MODEL_LABEL = "Gemini";
   public static final String GEMINI_RESPONSES_MODEL = "gemini/gemini-3.5-flash";
   public static final Set<String> DEVELOPER_MESSAGE_SYSTEM_SQUASH_MODELS =
-      Set.of(STANDARD_RESPONSES_MODEL);
+      Set.of("openrouter/z-ai/glm-5.2");
   private static final List<ModelOption> STANDARD_OPTIONS =
       List.of(new ModelOption(STANDARD_MODEL_KEY, STANDARD_MODEL_LABEL, "local", true));
   private static final List<ModelOption> PREMIUM_OPTIONS =
