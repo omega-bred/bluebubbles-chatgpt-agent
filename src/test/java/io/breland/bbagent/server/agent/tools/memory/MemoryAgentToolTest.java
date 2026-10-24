@@ -8,6 +8,7 @@ import io.breland.bbagent.server.agent.IncomingMessage;
 import io.breland.bbagent.server.agent.memory.*;
 import io.breland.bbagent.server.agent.memory.ConversationMemoryModels.AuthorizedMemory;
 import io.breland.bbagent.server.agent.tools.ToolContextFixture;
+import io.breland.bbagent.server.agent.tools.ToolProvider;
 import java.time.Instant;
 import java.util.*;
 import org.junit.jupiter.api.Test;
@@ -32,6 +33,22 @@ class MemoryAgentToolTest {
           false);
   private final io.breland.bbagent.server.agent.tools.ToolContext context =
       ToolContextFixture.with(message).build();
+
+  @Test
+  void missingScopeRemainsUnavailableForAllMemoryTools() {
+    when(client.isConfigured()).thenReturn(true);
+    for (ToolProvider provider :
+        List.of(
+            new MemorySaveAgentTool(client, null),
+            new MemoryUpdateAgentTool(client, null),
+            new MemoryDeleteAgentTool(client, null),
+            new MemoryGetAgentTool(client, null))) {
+      assertThat(provider.getTool().handler().apply(context, mapper.createObjectNode()))
+          .as(provider.getClass().getSimpleName())
+          .isEqualTo("memory scope unavailable");
+    }
+    verifyNoInteractions(scope);
+  }
 
   @Test
   void saveQueuesSourceAndDoesNotClaimImmediateRetention() throws Exception {

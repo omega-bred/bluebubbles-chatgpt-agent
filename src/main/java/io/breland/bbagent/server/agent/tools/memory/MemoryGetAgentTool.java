@@ -12,8 +12,10 @@ import io.swagger.v3.oas.annotations.media.Schema;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import lombok.RequiredArgsConstructor;
 import org.springframework.lang.Nullable;
 
+@RequiredArgsConstructor
 public class MemoryGetAgentTool implements ToolProvider {
   public static final String TOOL_NAME = "memory_get";
   private final HindsightClient hindsightClient;
@@ -22,12 +24,6 @@ public class MemoryGetAgentTool implements ToolProvider {
   @Schema(description = "Query memory for the current user or conversation.")
   public record MemoryGetRequest(
       @Schema(description = "Query text to search memories.") String query) {}
-
-  public MemoryGetAgentTool(
-      HindsightClient hindsightClient, @Nullable MemoryScopeResolver scopeResolver) {
-    this.hindsightClient = hindsightClient;
-    this.scopeResolver = scopeResolver;
-  }
 
   public AgentTool getTool() {
     return new AgentTool(

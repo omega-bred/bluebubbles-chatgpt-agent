@@ -7,8 +7,10 @@ import io.breland.bbagent.server.agent.memory.MemoryScopeResolver;
 import io.breland.bbagent.server.agent.tools.AgentTool;
 import io.breland.bbagent.server.agent.tools.ToolProvider;
 import io.swagger.v3.oas.annotations.media.Schema;
+import lombok.RequiredArgsConstructor;
 import org.springframework.lang.Nullable;
 
+@RequiredArgsConstructor
 public class MemoryDeleteAgentTool implements ToolProvider {
   public static final String TOOL_NAME = "memory_delete";
   private final HindsightClient hindsightClient;
@@ -21,12 +23,6 @@ public class MemoryDeleteAgentTool implements ToolProvider {
               requiredMode = Schema.RequiredMode.REQUIRED)
           @JsonProperty("memory_id")
           String memoryId) {}
-
-  public MemoryDeleteAgentTool(
-      HindsightClient hindsightClient, @Nullable MemoryScopeResolver scopeResolver) {
-    this.hindsightClient = hindsightClient;
-    this.scopeResolver = scopeResolver;
-  }
 
   public AgentTool getTool() {
     return new AgentTool(
