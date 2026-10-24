@@ -2,6 +2,7 @@ import React from "react";
 
 import { currentUserSubject } from "./auth/keycloak";
 import { useKeycloak } from "./auth/useKeycloak";
+import { AuthGate } from "./components/AuthGate";
 import { AdminPage } from "./pages/AdminPage";
 import { AdminFeedbackPage } from "./pages/AdminFeedbackPage";
 import { AccountLinkPage } from "./pages/AccountLinkPage";
@@ -51,6 +52,11 @@ export default function App() {
 }
 
 function pageForPath(path: string, auth: ReturnType<typeof useKeycloak>) {
+  if (path === "/auth/callback") {
+    return auth.ready
+      ? <AuthGate title="Sign in again to continue" />
+      : <main className="account-main narrow"><p>Completing sign in…</p></main>;
+  }
   if (path.startsWith("/oauth/callback")) {
     return <OauthCallbackPage auth={auth} />;
   }

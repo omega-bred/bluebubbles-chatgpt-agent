@@ -21,41 +21,47 @@ import {
   type WebsiteModelSelectionRequest,
 } from "../client";
 import type { WebsiteAccountRedeemLinkRequest } from "../client";
-import { getAccessToken, login } from "../auth/keycloak";
+import { getAuthenticationHeaders, login } from "../auth/keycloak";
+import { createDpopTransport } from "../auth/dpop-transport";
 import { trackEvent } from "./analytics";
 
 const axiosInstance = axios.create();
 const apiBasePath = import.meta.env.VITE_API_URL || "";
 const appClipSessionHeader = "X-App-Clip-Session";
-
-axiosInstance.interceptors.response.use(
-  (response) => response,
-  (error) => {
-    const status = error?.response?.status || 0;
-    trackEvent("web_api_request_failed", {
-      status_code: status,
-      path: apiPath(error?.config?.url),
-    });
-    if (status === 401 && !hasAppClipSessionHeader(error?.config?.headers)) {
-      void login();
-    }
-    return Promise.reject(error);
-  },
+const authenticatedAxios = createDpopTransport(
+  apiBasePath,
+  window.location.origin,
+  getAuthenticationHeaders,
+  () => { void login(); },
 );
+
+for (const transport of [axiosInstance, authenticatedAxios]) {
+  transport.interceptors.response.use(
+    (response) => response,
+    (error) => {
+      const status = error?.response?.status || 0;
+      trackEvent("web_api_request_failed", {
+        status_code: status,
+        path: apiPath(error?.config?.url),
+      });
+      return Promise.reject(error);
+    },
+  );
+}
 
 async function websiteAccountClient(): Promise<WebsiteAccountApi> {
   const config = await authenticatedConfiguration();
-  return new WebsiteAccountApi(config, config.basePath, axiosInstance);
+  return new WebsiteAccountApi(config, config.basePath, authenticatedAxios);
 }
 
 async function adminClient(): Promise<AdminApi> {
   const config = await authenticatedConfiguration();
-  return new AdminApi(config, config.basePath, axiosInstance);
+  return new AdminApi(config, config.basePath, authenticatedAxios);
 }
 
 async function subscriptionClient(): Promise<SubscriptionApi> {
   const config = await authenticatedConfiguration();
-  return new SubscriptionApi(config, config.basePath, axiosInstance);
+  return new SubscriptionApi(config, config.basePath, authenticatedAxios);
 }
 
 function appClipClient(sessionToken?: string): AppClipApi {
@@ -80,18 +86,12 @@ function textingClient(): TextingApi {
 
 async function authenticatedContactClient(): Promise<ContactApi> {
   const config = await authenticatedConfiguration();
-  return new ContactApi(config, config.basePath, axiosInstance);
+  return new ContactApi(config, config.basePath, authenticatedAxios);
 }
 
 async function authenticatedConfiguration(): Promise<Configuration> {
-  const token = await getAccessToken();
   return new Configuration({
     basePath: apiBasePath,
-    baseOptions: {
-      headers: {
-        Authorization: `Bearer ${token}`,
-      },
-    },
   });
 }
 
@@ -323,12 +323,4 @@ function apiPath(url: string | undefined): string {
   } catch {
     return "unknown";
   }
-}
-
-function hasAppClipSessionHeader(headers: unknown): boolean {
-  if (!headers || typeof headers !== "object") {
-    return false;
-  }
-  const record = headers as Record<string, unknown>;
-  return Boolean(record[appClipSessionHeader] || record[appClipSessionHeader.toLowerCase()]);
 }

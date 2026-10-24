@@ -239,6 +239,9 @@ spec:
     display.on.consent.screen: 'false'
     pkce.code.challenge.method: S256
     token.response.type.bearer.lower-case: 'false'
+    # Keep optional until the browser rollout, old-session migration, and all API
+    # consumers pass the gates in docs/dpop.md. Optional still issues bound tokens
+    # whenever a client supplies a proof; the resource server always checks binding.
     dpop.bound.access.tokens: 'false'
   directAccess: false
   frontChannelLogout: false
