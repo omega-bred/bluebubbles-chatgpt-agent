@@ -10,7 +10,7 @@ images:
   newTag: 47188ec57eafb4b73d908f9c233fb521f2bacdff-928
 - name: ghcr.io/omega-bred/bluebubbles-chatgpt-agent-lxmf-bridge
   newName: ghcr.io/omega-bred/bluebubbles-chatgpt-agent-lxmf-bridge
-  newTag: 47188ec57eafb4b73d908f9c233fb521f2bacdff-928
+  newTag: dafa3ab252a6213713edf473d49ecdfd89a4568c-921
 - name: lxmf-free-tier-canary
   newName: ghcr.io/omega-bred/bluebubbles-chatgpt-agent-lxmf-bridge
   newTag: 47188ec57eafb4b73d908f9c233fb521f2bacdff-928
