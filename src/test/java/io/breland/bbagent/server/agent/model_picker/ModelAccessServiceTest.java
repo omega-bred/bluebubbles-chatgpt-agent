@@ -35,8 +35,17 @@ class ModelAccessServiceTest {
     assertFalse(access.premium());
     assertEquals("local", access.currentModelKey());
     assertEquals("Free", access.currentModelLabel());
-    assertEquals("openrouter/z-ai/glm-5.2", ModelAccessService.STANDARD_RESPONSES_MODEL);
+    assertEquals("openai/gpt-6-luna", ModelAccessService.STANDARD_RESPONSES_MODEL);
     assertEquals(ModelAccessService.STANDARD_RESPONSES_MODEL, access.responsesModel());
+  }
+
+  @Test
+  void legacyGlmRoleCompatibilityDoesNotFollowTheStandardModelDefault() {
+    assertTrue(
+        ModelAccessService.DEVELOPER_MESSAGE_SYSTEM_SQUASH_MODELS.contains(
+            "openrouter/z-ai/glm-5.2"));
+    assertFalse(
+        ModelAccessService.DEVELOPER_MESSAGE_SYSTEM_SQUASH_MODELS.contains("openai/gpt-6-luna"));
   }
 
   @Test

@@ -10,7 +10,6 @@ import com.openai.core.JsonValue;
 import com.openai.models.responses.*;
 import io.breland.bbagent.server.agent.llm.OpenAiClientProvider;
 import io.breland.bbagent.server.agent.memory.*;
-import io.breland.bbagent.server.agent.model_picker.ModelAccessService;
 import io.breland.bbagent.server.agent.terms.TermsAgreementValidator;
 import io.breland.bbagent.server.agent.tools.ToolContextFixture;
 import io.breland.bbagent.server.agent.tools.giphy.*;
@@ -29,13 +28,10 @@ class AuxiliaryPromptMatrixTest {
   @Test
   void materializesMemoryExtractionWindowAndReductionForPrimaryAndFallbackModels()
       throws Exception {
+    String memoryPrimaryModel = "openrouter/z-ai/glm-5.2";
     var client =
         new ConversationMemoryResponsesClient(
-            mock(OpenAiClientProvider.class),
-            ModelAccessService.STANDARD_RESPONSES_MODEL,
-            "openai/gpt-4.1-mini",
-            0.4,
-            1.6);
+            mock(OpenAiClientProvider.class), memoryPrimaryModel, "openai/gpt-4.1-mini", 0.4, 1.6);
     Object[][] tasks = {
       {
         ConversationMemoryModelClient.class,
@@ -56,8 +52,7 @@ class AuxiliaryPromptMatrixTest {
     for (Object[] task : tasks) {
       String instructions =
           (String) ReflectionTestUtils.getField((Class<?>) task[0], (String) task[1]);
-      for (String model :
-          List.of(ModelAccessService.STANDARD_RESPONSES_MODEL, "openai/gpt-4.1-mini")) {
+      for (String model : List.of(memoryPrimaryModel, "openai/gpt-4.1-mini")) {
         StructuredResponseCreateParams<?> request =
             ReflectionTestUtils.invokeMethod(
                 client,
@@ -72,7 +67,7 @@ class AuxiliaryPromptMatrixTest {
         var role = params.input().orElseThrow().asResponse().getFirst().asEasyInputMessage().role();
         assertThat(role)
             .isEqualTo(
-                model.equals(ModelAccessService.STANDARD_RESPONSES_MODEL)
+                model.equals(memoryPrimaryModel)
                     ? EasyInputMessage.Role.SYSTEM
                     : EasyInputMessage.Role.DEVELOPER);
         assertThat(params.tools().orElseThrow()).isEmpty();

@@ -11,6 +11,10 @@ public final class ModelPickerTestSupport {
   private ModelPickerTestSupport() {}
 
   public static ModelPicker standard() {
+    return standard(ModelAccessService.STANDARD_RESPONSES_MODEL);
+  }
+
+  public static ModelPicker standard(String responsesModel) {
     ModelAccessService modelAccessService = mock(ModelAccessService.class);
     when(modelAccessService.resolve(any(IncomingMessage.class)))
         .thenReturn(
@@ -19,7 +23,7 @@ public final class ModelPickerTestSupport {
                 false,
                 ModelAccessService.STANDARD_MODEL_KEY,
                 ModelAccessService.STANDARD_MODEL_LABEL,
-                ModelAccessService.STANDARD_RESPONSES_MODEL,
+                responsesModel,
                 false,
                 List.of()));
     return new ModelPicker(modelAccessService);
