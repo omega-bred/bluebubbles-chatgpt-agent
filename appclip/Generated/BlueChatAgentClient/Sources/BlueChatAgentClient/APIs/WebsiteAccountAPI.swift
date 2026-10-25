@@ -36,6 +36,12 @@ open class WebsiteAccountAPI {
      - DELETE /api/v1/websiteAccount/deleteLinkedAccount.websiteAccountLinks
      - Unlinks an integration account derived from a linked BlueChat identity.
      - API Key:
+       - type: apiKey Authorization (HEADER)
+       - name: dpopAuth
+     - API Key:
+       - type: apiKey DPoP (HEADER)
+       - name: dpopProof
+     - API Key:
        - type: apiKey X-App-Clip-Session (HEADER)
        - name: appClipSessionAuth
      - Bearer Token:
@@ -80,6 +86,12 @@ open class WebsiteAccountAPI {
      - GET /api/v1/websiteAccount/get.websiteAccount
      - Returns the authenticated website account profile and linked BlueChat identities.
      - API Key:
+       - type: apiKey Authorization (HEADER)
+       - name: dpopAuth
+     - API Key:
+       - type: apiKey DPoP (HEADER)
+       - name: dpopProof
+     - API Key:
        - type: apiKey X-App-Clip-Session (HEADER)
        - name: appClipSessionAuth
      - Bearer Token:
@@ -117,6 +129,12 @@ open class WebsiteAccountAPI {
      Lists linked website account integrations
      - GET /api/v1/websiteAccount/listLinkedAccounts.websiteAccountLinks
      - Lists linked BlueChat identities and integration status derived from those identities.
+     - API Key:
+       - type: apiKey Authorization (HEADER)
+       - name: dpopAuth
+     - API Key:
+       - type: apiKey DPoP (HEADER)
+       - name: dpopProof
      - API Key:
        - type: apiKey X-App-Clip-Session (HEADER)
        - name: appClipSessionAuth
@@ -156,6 +174,12 @@ open class WebsiteAccountAPI {
      Redeems a BlueChat sender link token
      - POST /api/v1/websiteAccount/redeemLink.websiteAccountLinks
      - Links the authenticated website account to a BlueChat identity using a short-lived single-use token.
+     - API Key:
+       - type: apiKey Authorization (HEADER)
+       - name: dpopAuth
+     - API Key:
+       - type: apiKey DPoP (HEADER)
+       - name: dpopProof
      - Bearer Token:
        - type: http
        - name: bearerAuth
@@ -195,6 +219,12 @@ open class WebsiteAccountAPI {
      Updates assistant model preferences
      - POST /api/v1/websiteAccount/updateModel.websiteAccountModels
      - Lets premium accounts choose the assistant model used by linked chat identities.
+     - API Key:
+       - type: apiKey Authorization (HEADER)
+       - name: dpopAuth
+     - API Key:
+       - type: apiKey DPoP (HEADER)
+       - name: dpopProof
      - API Key:
        - type: apiKey X-App-Clip-Session (HEADER)
        - name: appClipSessionAuth

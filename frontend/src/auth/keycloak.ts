@@ -1,86 +1,37 @@
-import Keycloak from "keycloak-js";
+import { accessTokenClaims, DpopSession } from "./dpop-session";
 
 export const ADMIN_ROLE = "bbagent-admin-role";
-
-export const keycloak = new Keycloak({
-  url: import.meta.env.VITE_KEYCLOAK_URL || "https://keycloak.bre.land",
-  realm: import.meta.env.VITE_KEYCLOAK_REALM || "bbagent",
-  clientId: import.meta.env.VITE_KEYCLOAK_CLIENT_ID || "bbagent-web",
-});
-
+const authority = `${(import.meta.env.VITE_KEYCLOAK_URL || "https://keycloak.bre.land").replace(/\/$/, "")}/realms/${import.meta.env.VITE_KEYCLOAK_REALM || "bbagent"}`;
+let session: DpopSession | undefined;
+const listeners = new Set<() => void>();
 let initPromise: Promise<boolean> | null = null;
 
-export function initKeycloak(): Promise<boolean> {
-  if (!initPromise) {
-    initPromise = keycloak.init({
-      onLoad: "check-sso",
-      pkceMethod: "S256",
-      checkLoginIframe: false,
-    });
+function getSession() {
+  // Storage denial must disable sign-in without preventing public pages from loading.
+  if (!session) {
+    session = new DpopSession(authority, import.meta.env.VITE_KEYCLOAK_CLIENT_ID || "bbagent-web");
+    session.subscribe(() => listeners.forEach(listener => listener()));
   }
-  return initPromise;
+  return session;
 }
 
-export function login(): Promise<void> {
-  return keycloak.login({ redirectUri: window.location.href });
+export function initKeycloak() { return initPromise ??= Promise.resolve().then(() => getSession().init()); }
+export async function login() { return getSession().login(); }
+export async function register() { return getSession().login(true); }
+export async function logout() { return getSession().logout(); }
+export async function updateToken(minValidity = 45) { return getSession().updateToken(minValidity); }
+export function isAuthenticated() { return !!session?.user; }
+export function subscribeAuth(listener: () => void) {
+  listeners.add(listener);
+  return () => { listeners.delete(listener); };
 }
-
-export function register(): Promise<void> {
-  return keycloak.register({ redirectUri: window.location.href });
+export async function getAuthenticationHeaders(url: string, method: string, nonce?: string) {
+  return getSession().headers(url, method, nonce);
 }
-
-export function logout(): Promise<void> {
-  return keycloak.logout({ redirectUri: window.location.origin });
-}
-
-export async function getAccessToken(): Promise<string> {
-  if (!keycloak.authenticated) {
-    await login();
-    throw new Error("Not authenticated");
-  }
-  await keycloak.updateToken(30);
-  if (!keycloak.token) {
-    throw new Error("Missing access token");
-  }
-  return keycloak.token;
-}
-
-export function hasRole(role: string): boolean {
-  return tokenRoles().includes(role);
-}
-
-export function hasAdminRole(): boolean {
-  return hasRole(ADMIN_ROLE);
-}
-
-export function currentUserSubject(): string | null {
-  const parsed = keycloak.tokenParsed as Record<string, unknown> | undefined;
-  return typeof parsed?.sub === "string" && parsed.sub.trim() ? parsed.sub.trim() : null;
-}
-
-function tokenRoles(): string[] {
-  const parsed = keycloak.tokenParsed as Record<string, unknown> | undefined;
-  if (!parsed) {
-    return [];
-  }
-  const roles = new Set<string>();
-  addRoles((parsed.realm_access as Record<string, unknown> | undefined)?.roles, roles);
-  const resourceAccess = parsed.resource_access as Record<string, unknown> | undefined;
-  if (resourceAccess) {
-    Object.values(resourceAccess).forEach((value) => {
-      addRoles((value as Record<string, unknown> | undefined)?.roles, roles);
-    });
-  }
-  return Array.from(roles);
-}
-
-function addRoles(value: unknown, roles: Set<string>) {
-  if (!Array.isArray(value)) {
-    return;
-  }
-  value.forEach((role) => {
-    if (typeof role === "string" && role.trim()) {
-      roles.add(role.trim());
-    }
-  });
+export function currentUserSubject(): string | null { return session?.user?.profile.sub ?? null; }
+export function hasAdminRole() {
+  if (!session?.user) return false;
+  const claims = accessTokenClaims(session.user.access_token);
+  return [claims.realm_access, ...Object.values(claims.resource_access ?? {})]
+    .some(access => access?.roles?.includes(ADMIN_ROLE));
 }

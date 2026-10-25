@@ -158,6 +158,8 @@ paths:
       summary: Gets the current website account
       description: Returns the authenticated website account profile and linked BlueChat identities.
       security:
+        - dpopAuth: []
+          dpopProof: []
         - bearerAuth: []
         - appClipSessionAuth: []
       responses:
@@ -177,6 +179,8 @@ paths:
       summary: Lists linked website account integrations
       description: Lists linked BlueChat identities and integration status derived from those identities.
       security:
+        - dpopAuth: []
+          dpopProof: []
         - bearerAuth: []
         - appClipSessionAuth: []
       responses:
@@ -196,6 +200,8 @@ paths:
       summary: Redeems a BlueChat sender link token
       description: Links the authenticated website account to a BlueChat identity using a short-lived single-use token.
       security:
+        - dpopAuth: []
+          dpopProof: []
         - bearerAuth: []
       requestBody:
         required: true
@@ -228,6 +234,8 @@ paths:
       summary: Deletes a linked integration account
       description: Unlinks an integration account derived from a linked BlueChat identity.
       security:
+        - dpopAuth: []
+          dpopProof: []
         - bearerAuth: []
         - appClipSessionAuth: []
       parameters:
@@ -500,6 +508,8 @@ paths:
       summary: Updates assistant model preferences
       description: Lets premium accounts choose the assistant model used by linked chat identities.
       security:
+        - dpopAuth: []
+          dpopProof: []
         - bearerAuth: []
         - appClipSessionAuth: []
       requestBody:
@@ -545,6 +555,8 @@ paths:
       summary: Creates a public contact message
       description: Verifies the Cap token and creates a Linear help/contact issue for admin review. If a valid bearer token is provided, the created issue includes the authenticated website account id.
       security:
+        - dpopAuth: []
+          dpopProof: []
         - bearerAuth: []
         - {}
       requestBody:
@@ -586,6 +598,8 @@ paths:
       summary: Gets current subscription status
       description: Returns billing and entitlement state for the authenticated website account.
       security:
+        - dpopAuth: []
+          dpopProof: []
         - bearerAuth: []
         - appClipSessionAuth: []
       responses:
@@ -605,6 +619,8 @@ paths:
       summary: Creates a subscription checkout session
       description: Creates a provider checkout session for the authenticated website account.
       security:
+        - dpopAuth: []
+          dpopProof: []
         - bearerAuth: []
         - appClipSessionAuth: []
       requestBody:
@@ -632,6 +648,8 @@ paths:
       summary: Creates a subscription management portal session
       description: Creates a provider portal session for the authenticated website account.
       security:
+        - dpopAuth: []
+          dpopProof: []
         - bearerAuth: []
         - appClipSessionAuth: []
       responses:
@@ -653,6 +671,8 @@ paths:
       summary: Validates a StoreKit transaction
       description: Validates a StoreKit 2 signed transaction for the authenticated account and updates subscription entitlements.
       security:
+        - dpopAuth: []
+          dpopProof: []
         - bearerAuth: []
         - nativeAppSessionAuth: []
       requestBody:
@@ -714,6 +734,8 @@ paths:
       summary: Lists subscription state for admins
       description: Returns payment subscription stats and recent subscription rows.
       security:
+        - dpopAuth: []
+          dpopProof: []
         - bearerAuth: []
       parameters:
         - name: limit
@@ -742,6 +764,8 @@ paths:
         - admin
       summary: Syncs one provider subscription
       security:
+        - dpopAuth: []
+          dpopProof: []
         - bearerAuth: []
       requestBody:
         required: true
@@ -771,6 +795,8 @@ paths:
         - admin
       summary: Suspends one provider subscription
       security:
+        - dpopAuth: []
+          dpopProof: []
         - bearerAuth: []
       requestBody:
         required: true
@@ -800,6 +826,8 @@ paths:
         - admin
       summary: Unsuspends one provider subscription
       security:
+        - dpopAuth: []
+          dpopProof: []
         - bearerAuth: []
       requestBody:
         required: true
@@ -829,6 +857,8 @@ paths:
         - admin
       summary: Grants manual premium access
       security:
+        - dpopAuth: []
+          dpopProof: []
         - bearerAuth: []
       requestBody:
         required: true
@@ -858,6 +888,8 @@ paths:
         - admin
       summary: Revokes manual premium access
       security:
+        - dpopAuth: []
+          dpopProof: []
         - bearerAuth: []
       requestBody:
         required: true
@@ -888,6 +920,8 @@ paths:
       summary: Lists blocked agent accounts
       description: Returns recently blocked canonical accounts and their linked identities.
       security:
+        - dpopAuth: []
+          dpopProof: []
         - bearerAuth: []
       parameters:
         - name: limit
@@ -917,6 +951,8 @@ paths:
       summary: Blocks an account from agent processing
       description: Blocks a canonical account resolved by account id, website identity, or transport identity.
       security:
+        - dpopAuth: []
+          dpopProof: []
         - bearerAuth: []
       requestBody:
         required: true
@@ -947,6 +983,8 @@ paths:
       summary: Unblocks an account for agent processing
       description: Removes the processing block from a canonical account resolved by account id, website identity, or transport identity.
       security:
+        - dpopAuth: []
+          dpopProof: []
         - bearerAuth: []
       requestBody:
         required: true
@@ -977,6 +1015,8 @@ paths:
       summary: Gets recent agent statistics
       description: Returns message, model, tool, and active-user statistics for an admin-selected time period.
       security:
+        - dpopAuth: []
+          dpopProof: []
         - bearerAuth: []
       parameters:
         - name: from
@@ -1014,6 +1054,8 @@ paths:
       summary: Gets current rate-limit usage
       description: Returns current usage for app rate limits, including monthly assistant response usage by account.
       security:
+        - dpopAuth: []
+          dpopProof: []
         - bearerAuth: []
       parameters:
         - name: limit_key
@@ -1051,6 +1093,8 @@ paths:
       summary: Lists agent feedback
       description: Legacy feedback inbox endpoint. New user feedback is created as Linear issues instead of Postgres rows.
       security:
+        - dpopAuth: []
+          dpopProof: []
         - bearerAuth: []
       parameters:
         - name: status
@@ -1092,6 +1136,8 @@ paths:
       summary: Marks feedback as read
       description: Marks a feedback inbox item as read.
       security:
+        - dpopAuth: []
+          dpopProof: []
         - bearerAuth: []
       requestBody:
         required: true
@@ -1122,6 +1168,8 @@ paths:
       summary: Marks feedback as unread
       description: Marks a feedback inbox item as unread.
       security:
+        - dpopAuth: []
+          dpopProof: []
         - bearerAuth: []
       requestBody:
         required: true
@@ -1148,9 +1196,20 @@ paths:
 
 components:
   securitySchemes:
+    dpopAuth:
+      type: apiKey
+      in: header
+      name: Authorization
+      description: 'RFC 9449 authorization value: DPoP <bound-access-token>. Requires dpopProof as well.'
+    dpopProof:
+      type: apiKey
+      in: header
+      name: DPoP
+      description: Signed dpop+jwt proof with ath, htm, htu, iat and unique jti. Never reuse a proof.
     bearerAuth:
       type: http
       scheme: bearer
+      description: Transitional unbound JWTs only. Tokens containing cnf are rejected as Bearer.
       bearerFormat: JWT
     appClipSessionAuth:
       type: apiKey

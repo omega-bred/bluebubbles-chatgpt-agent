@@ -346,6 +346,10 @@ spec:
                   name: gcal-oauth-state-secret
             - name: WEBSITE_BASE_URL
               value: "https://bluechat.bre.land"
+            - name: BLUECHAT_DPOP_PUBLIC_ORIGINS
+              value: "https://bluechat.bre.land,https://chatagent.bre.land"
+            - name: BLUECHAT_CORS_ALLOWED_ORIGINS
+              value: "https://bluechat.bre.land,https://chatagent.bre.land"
             - name: UMAMI_ANALYTICS_ENABLED
               value: "true"
             - name: UMAMI_HOST_URL

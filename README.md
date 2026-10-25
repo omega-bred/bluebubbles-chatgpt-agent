@@ -3,6 +3,8 @@
 BlueChat is a chat-first AI agent that integrates with a BlueChat messaging relay and optional
 Google Calendar + other tools. Built with Spring Boot + OpenAPI.
 
+Website OAuth proof handling, migration, and rollback are described in [the DPoP guide](docs/dpop.md).
+
 ## Features
 - BlueChat webhook ingestion + reply tools
 - Optional Google Calendar integration (OAuth)
