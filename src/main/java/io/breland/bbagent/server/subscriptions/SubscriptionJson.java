@@ -12,12 +12,9 @@ final class SubscriptionJson {
       return null;
     }
     for (String fieldName : fieldNames) {
-      JsonNode value = node.get(fieldName);
-      if (value != null && !value.isNull()) {
-        String text = value.isTextual() ? value.asText() : value.asText(null);
-        if (StringUtils.isNotBlank(text)) {
-          return text;
-        }
+      String text = node.path(fieldName).asText(null);
+      if (StringUtils.isNotBlank(text)) {
+        return text;
       }
     }
     return null;
