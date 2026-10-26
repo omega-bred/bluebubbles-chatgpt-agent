@@ -51,10 +51,11 @@ open class WebsiteAccountAPI {
         let localVariableParameters: [String: Any]? = nil
 
         var localVariableUrlComponents = URLComponents(string: localVariableURLString)
-        localVariableUrlComponents?.queryItems = APIHelper.mapValuesToQueryItems([
+        let localVariableQueryParameters: [String: (wrappedValue: Any?, isExplode: Bool)] = [
             "type": (wrappedValue: type.encodeToJSON(), isExplode: true),
             "account_key": (wrappedValue: accountKey.encodeToJSON(), isExplode: true),
-        ])
+        ]
+        localVariableUrlComponents?.queryItems = APIHelper.mapValuesToQueryItems(localVariableQueryParameters)
 
         let localVariableNillableHeaders: [String: Any?] = [:]
 

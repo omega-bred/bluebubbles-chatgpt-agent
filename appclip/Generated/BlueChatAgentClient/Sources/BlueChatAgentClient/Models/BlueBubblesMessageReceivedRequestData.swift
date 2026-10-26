@@ -16,6 +16,7 @@ public struct BlueBubblesMessageReceivedRequestData: Codable, JSONEncodable, Has
     public var originalROWID: Int
     public var guid: String
     public var text: String?
+    /** Attributed message content may be a string, structured array, object, or null. Preserve the BlueBubbles wire value. */
     public var attributedBody: AnyCodable?
     public var handle: BlueBubblesMessageReceivedRequestDataHandle?
     public var handleId: Int?

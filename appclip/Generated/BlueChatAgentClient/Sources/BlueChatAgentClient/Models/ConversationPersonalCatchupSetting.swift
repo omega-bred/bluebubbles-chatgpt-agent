@@ -12,8 +12,8 @@ import AnyCodable
 
 public struct ConversationPersonalCatchupSetting: Codable, JSONEncodable, Hashable {
 
-    public static let quietStartRule = StringRule(minLength: nil, maxLength: nil, pattern: "/^(?:[01][0-9]|2[0-3]):[0-5][0-9]$/")
-    public static let quietEndRule = StringRule(minLength: nil, maxLength: nil, pattern: "/^(?:[01][0-9]|2[0-3]):[0-5][0-9]$/")
+    public static let quietStartRule = StringRule(minLength: nil, maxLength: nil, pattern: "^(?:[01][0-9]|2[0-3]):[0-5][0-9]$")
+    public static let quietEndRule = StringRule(minLength: nil, maxLength: nil, pattern: "^(?:[01][0-9]|2[0-3]):[0-5][0-9]$")
     public var available: Bool
     public var enabled: Bool
     public var timezone: String

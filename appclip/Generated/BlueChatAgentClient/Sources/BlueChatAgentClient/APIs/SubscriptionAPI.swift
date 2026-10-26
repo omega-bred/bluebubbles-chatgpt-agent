@@ -188,9 +188,10 @@ open class SubscriptionAPI {
         let localVariableParameters = JSONEncodingHelper.encodingParameters(forEncodableObject: requestBody)
 
         var localVariableUrlComponents = URLComponents(string: localVariableURLString)
-        localVariableUrlComponents?.queryItems = APIHelper.mapValuesToQueryItems([
+        let localVariableQueryParameters: [String: (wrappedValue: Any?, isExplode: Bool)] = [
             "provider": (wrappedValue: provider.encodeToJSON(), isExplode: true),
-        ])
+        ]
+        localVariableUrlComponents?.queryItems = APIHelper.mapValuesToQueryItems(localVariableQueryParameters)
 
         let localVariableNillableHeaders: [String: Any?] = [
             "Content-Type": "application/json",
