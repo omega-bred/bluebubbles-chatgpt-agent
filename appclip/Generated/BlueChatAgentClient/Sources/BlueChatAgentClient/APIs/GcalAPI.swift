@@ -40,11 +40,12 @@ open class GcalAPI {
         let localVariableParameters: [String: Any]? = nil
 
         var localVariableUrlComponents = URLComponents(string: localVariableURLString)
-        localVariableUrlComponents?.queryItems = APIHelper.mapValuesToQueryItems([
+        let localVariableQueryParameters: [String: (wrappedValue: Any?, isExplode: Bool)] = [
             "code": (wrappedValue: code?.encodeToJSON(), isExplode: true),
             "state": (wrappedValue: state?.encodeToJSON(), isExplode: true),
             "error": (wrappedValue: error?.encodeToJSON(), isExplode: true),
-        ])
+        ]
+        localVariableUrlComponents?.queryItems = APIHelper.mapValuesToQueryItems(localVariableQueryParameters)
 
         let localVariableNillableHeaders: [String: Any?] = [:]
 

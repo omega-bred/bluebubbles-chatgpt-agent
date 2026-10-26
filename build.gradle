@@ -7,7 +7,7 @@ plugins {
 	id 'java'
 	id 'org.springframework.boot' version '4.1.1'
 	id 'io.spring.dependency-management' version '1.1.7'
-	id 'org.openapi.generator' version '7.22.0'
+	id 'org.openapi.generator' version '7.26.0'
 	id 'com.diffplug.spotless' version '8.10.4'
     id "org.flywaydb.flyway" version "13.7.0"
 }
@@ -235,7 +235,7 @@ dependencies {
 	compileOnly 'org.projectlombok:lombok:1.18.46'
 	annotationProcessor 'org.projectlombok:lombok:1.18.46'
     implementation platform('org.apache.logging.log4j:log4j-bom:2.26.1')
-    implementation platform("org.springframework.ai:spring-ai-bom:2.0.0")
+    implementation platform("org.springframework.ai:spring-ai-bom:2.0.2")
     implementation("org.springframework.ai:spring-ai-tool-search-tool")
     implementation("org.apache.lucene:lucene-core:10.5.2")
 
@@ -263,7 +263,7 @@ dependencies {
     implementation 'com.google.apis:google-api-services-calendar:v3-rev20251207-2.0.0'
 
     implementation 'com.auth0:java-jwt:4.5.0'
-    implementation 'com.stripe:stripe-java:32.1.0'
+    implementation 'com.stripe:stripe-java:34.0.0'
     implementation 'com.apple.itunes.storekit:app-store-server-library:5.2.0'
 
     // MCP
@@ -271,8 +271,8 @@ dependencies {
     implementation 'io.modelcontextprotocol.sdk:mcp-json-jackson2:2.0.1'
 
     implementation("com.openai:openai-java-spring-boot-starter:4.45.0")
-    implementation("com.anthropic:anthropic-java:2.65.0")
-    implementation("com.google.genai:google-genai:1.75.0")
+    implementation("com.anthropic:anthropic-java:3.2.0")
+    implementation("com.google.genai:google-genai:1.79.0")
     implementation("com.uber.cadence:cadence-client:4.0.0")
 
     implementation 'io.micrometer:micrometer-core'
