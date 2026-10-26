@@ -13,7 +13,7 @@
     "axios": "^1.20.0",
     "cap-widget": "^0.1.58",
     "keycloak-js": "^26.2.4",
-    "react": "^19.3.0",
+    "react": "^19.3.1",
     "react-dom": "^19.3.0"
   },
   "devDependencies": {
