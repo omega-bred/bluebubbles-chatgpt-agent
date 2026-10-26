@@ -271,7 +271,7 @@ dependencies {
     implementation 'io.modelcontextprotocol.sdk:mcp-json-jackson2:2.0.1'
 
     implementation("com.openai:openai-java-spring-boot-starter:4.45.0")
-    implementation("com.anthropic:anthropic-java:2.65.0")
+    implementation("com.anthropic:anthropic-java:3.2.0")
     implementation("com.google.genai:google-genai:1.75.0")
     implementation("com.uber.cadence:cadence-client:4.0.0")
 
