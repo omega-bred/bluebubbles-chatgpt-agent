@@ -22,6 +22,7 @@ import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import lombok.RequiredArgsConstructor;
 import org.apache.commons.codec.digest.DigestUtils;
 import org.apache.commons.lang3.ObjectUtils;
 import org.apache.commons.lang3.StringUtils;
@@ -30,17 +31,13 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClientException;
 
 @Component
+@RequiredArgsConstructor
 public class StripeSubscriptionProvider implements SubscriptionProvider {
   public static final String PROVIDER_KEY = "stripe";
   private static final String SIGNATURE_HEADER = "Stripe-Signature";
 
   private final ObjectMapper objectMapper;
   private final SubscriptionProperties properties;
-
-  public StripeSubscriptionProvider(ObjectMapper objectMapper, SubscriptionProperties properties) {
-    this.objectMapper = objectMapper;
-    this.properties = properties;
-  }
 
   @Override
   public String providerKey() {
