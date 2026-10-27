@@ -636,7 +636,7 @@ spec:
   schedule: "*/15 * * * *"
   concurrencyPolicy: Forbid
   successfulJobsHistoryLimit: 2
-  failedJobsHistoryLimit: 0
+  failedJobsHistoryLimit: 3
   jobTemplate:
     spec:
       activeDeadlineSeconds: 420
@@ -671,6 +671,8 @@ spec:
                 - name: CANARY_MARKER
                   value: "BBAGENT_LXMF_CANARY_V1"
                 - name: CANARY_TERMS_REQUIRED
+                  value: "false"
+                - name: CANARY_STRICT_INFERENCE_RESPONSE
                   value: "false"
                 - name: CANARY_DISPLAY_NAME
                   value: "BlueChat Canary"

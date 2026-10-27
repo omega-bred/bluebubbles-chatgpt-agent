@@ -25,15 +25,29 @@ Important environment variables:
 
 Canary-specific environment variables:
 
+- `CANARY_RUN_ID`: optional nonce override; defaults to eight random hexadecimal
+  characters, which the prompt asks the model to echo after `CANARY_OK`.
 - `CANARY_MARKER`: marker prefix that causes the Spring app to flag the account
   as synthetic canary traffic.
 - `CANARY_TERMS_REQUIRED`: expected app agreement requirement, default `true`.
   When enabled, the canary requires the Terms prompt and sends `YES`; when
-  disabled, it requires immediate nonce-matched inference and never sends `YES`.
+  disabled, it requires an immediate inference reply and never sends `YES`.
   A mismatched mode fails the canary. Match `BBAGENT_TERMS_REQUIRED` in the app.
+- `CANARY_STRICT_INFERENCE_RESPONSE`: defaults to `false`. A nonempty reply from
+  the expected bridge proves a healthy round trip even if the model copies the
+  nonce incorrectly or replies with other text. Logs and the existing run-count
+  and duration measurements report `response_match=matched` or `mismatched`;
+  both count as success and keep `bbagent_lxmf_canary_up=1`. Set to `true` to fail
+  immediately with `failure_type=response_mismatch` on unexpected reply text.
+  A missing reply (including only empty or unrelated-source messages) still
+  fails with `failure_type=reply_timeout`. Failures before inference is checked
+  use `response_match=not_checked`. The agreement-mode check remains enforced.
 - `LXMF_BRIDGE_BASE_URL`: HTTP base URL for the production bridge.
 - `INFLUX_DB_URI`, `INFLUX_DB_TOKEN`, `INFLUX_DB_BUCKET`, `INFLUX_DB_ORG`:
   InfluxDB v2 write target for canary health metrics.
 
 Run the offline canary tests with
 `nix develop --command python -m unittest discover -s lxmf-bridge -p 'test_*.py'`.
+
+The production CronJob keeps the latest three failed jobs for diagnosis, subject
+to the existing 24-hour job TTL.

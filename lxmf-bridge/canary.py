@@ -25,7 +25,7 @@ from lxmf_common import (
 )
 
 
-RUN_ID = env("CANARY_RUN_ID", str(uuid.uuid4()))
+RUN_ID = env("CANARY_RUN_ID", uuid.uuid4().hex[:8])
 MARKER = env("CANARY_MARKER", "BBAGENT_LXMF_CANARY_V1")
 INFERENCE_PROMPT = f"Reply exactly with: CANARY_OK {RUN_ID}"
 DISPLAY_NAME = env("CANARY_DISPLAY_NAME", "BlueChat Canary")
@@ -45,7 +45,7 @@ SEND_PATH_TIMEOUT_SECONDS = int(env("LXMF_SEND_PATH_TIMEOUT_SECONDS", "45"))
 STAGE_TIMEOUT_SECONDS = int(env("CANARY_STAGE_TIMEOUT_SECONDS", "90"))
 TOTAL_TIMEOUT_SECONDS = int(env("CANARY_TIMEOUT_SECONDS", "300"))
 ANNOUNCE_INTERVAL_SECONDS = int(env("CANARY_ANNOUNCE_INTERVAL_SECONDS", "10"))
-STRICT_INFERENCE_RESPONSE = env("CANARY_STRICT_INFERENCE_RESPONSE", "true").lower() == "true"
+STRICT_INFERENCE_RESPONSE = env("CANARY_STRICT_INFERENCE_RESPONSE", "false").lower() == "true"
 _terms_required = env("CANARY_TERMS_REQUIRED", "true").lower()
 if _terms_required not in ("true", "false"):
     raise ValueError("CANARY_TERMS_REQUIRED must be true or false")
@@ -139,16 +139,32 @@ def fetch_bridge_destination_hash():
     return destination_hash
 
 
-def wait_for_reply(stage, predicate, timeout=STAGE_TIMEOUT_SECONDS):
+def wait_for_reply(
+    stage,
+    predicate,
+    source_hash,
+    timeout=STAGE_TIMEOUT_SECONDS,
+    allow_mismatch=False,
+):
     deadline = time.time() + timeout
     while time.time() < deadline and not stop_event.is_set():
         try:
             message = inbound_messages.get(timeout=min(1, max(0.1, deadline - time.time())))
         except queue.Empty:
             continue
+        if message.get("source_hash") != source_hash:
+            continue
         content = message.get("content", "")
+        if not content.strip():
+            continue
         if predicate(content):
+            message["response_match"] = "matched"
             return message
+        log(f"LXMF canary response mismatch stage={stage} content={content!r}")
+        if allow_mismatch and not STRICT_INFERENCE_RESPONSE:
+            message["response_match"] = "mismatched"
+            return message
+        raise CanaryFailure(stage, "response_mismatch", f"unexpected {stage} reply")
     raise CanaryFailure(stage, "reply_timeout", f"timed out waiting for {stage} reply")
 
 
@@ -203,6 +219,8 @@ def run_canary(stage_durations):
         reply = wait_for_reply(
             stage,
             lambda content: terms_prompt_matches(content) or inference_reply_matches(content),
+            bridge_hash,
+            allow_mismatch=not TERMS_REQUIRED,
         )
         if terms_prompt_matches(reply.get("content", "")) != TERMS_REQUIRED:
             raise CanaryFailure(stage, "terms_mode_mismatch", "unexpected agreement gate mode")
@@ -214,25 +232,36 @@ def run_canary(stage_durations):
         return wait_for_reply(
             "terms_acceptance",
             terms_acceptance_reply_matches,
+            bridge_hash,
+            allow_mismatch=True,
         )
 
     def inference():
         ensure_time_remaining("inference")
         send_lxmf(bridge_hash, INFERENCE_PROMPT, "inference")
-        return wait_for_reply("inference", inference_reply_matches)
+        return wait_for_reply(
+            "inference", inference_reply_matches, bridge_hash, allow_mismatch=True
+        )
 
     if TERMS_REQUIRED:
         run_stage("terms_prompt", opening, stage_durations)
         terms_acceptance_reply = run_stage("terms_acceptance", terms_acceptance, stage_durations)
-        if inference_reply_matches(terms_acceptance_reply.get("content", "")):
+        if (
+            inference_reply_matches(terms_acceptance_reply.get("content", ""))
+            or terms_acceptance_reply["response_match"] == "mismatched"
+        ):
             inference_reply = terms_acceptance_reply
             log("LXMF canary terms acceptance replay produced inference reply; skipping inference stage")
         else:
             inference_reply = run_stage("inference", inference, stage_durations)
     else:
         inference_reply = run_stage("inference", opening, stage_durations)
-    log(f"LXMF canary succeeded run_id={RUN_ID} reply={inference_reply.get('content', '')!r}")
-    return time.time() - started
+    response_match = inference_reply["response_match"]
+    log(
+        f"LXMF canary succeeded run_id={RUN_ID} response_match={response_match} "
+        f"reply={inference_reply.get('content', '')!r}"
+    )
+    return time.time() - started, response_match
 
 
 def terms_prompt_matches(content):
@@ -248,9 +277,7 @@ def inference_reply_matches(content):
     text = (content or "").strip()
     if not text:
         return False
-    if STRICT_INFERENCE_RESPONSE:
-        return "CANARY_OK" in text.upper() and RUN_ID.lower() in text.lower()
-    return "Terms of Use" not in text and "Reply YES" not in text
+    return "CANARY_OK" in text.upper() and RUN_ID.lower() in text.lower()
 
 
 def escape_key(value):
@@ -279,7 +306,9 @@ def line_protocol(measurement, tags, fields, timestamp):
     return f"{escape_key(measurement)}{tag_text} {field_text} {timestamp}"
 
 
-def emit_metrics(success, duration_seconds, stage, failure_type, stage_durations):
+def emit_metrics(
+    success, duration_seconds, stage, failure_type, stage_durations, response_match
+):
     if not INFLUX_ENABLED:
         return
     if not INFLUX_URI or not INFLUX_TOKEN:
@@ -290,6 +319,12 @@ def emit_metrics(success, duration_seconds, stage, failure_type, stage_durations
         return
     timestamp = int(time.time())
     outcome = "success" if success else "failure"
+    result_tags = {
+        "outcome": outcome,
+        "failure_type": failure_type,
+        "stage": stage,
+        "response_match": response_match,
+    }
     lines = [
         line_protocol(
             "bbagent_lxmf_canary_up",
@@ -299,13 +334,13 @@ def emit_metrics(success, duration_seconds, stage, failure_type, stage_durations
         ),
         line_protocol(
             "bbagent_lxmf_canary_run_count",
-            {"outcome": outcome, "failure_type": failure_type, "stage": stage},
+            result_tags,
             {"value": 1},
             timestamp,
         ),
         line_protocol(
             "bbagent_lxmf_canary_duration_seconds",
-            {"outcome": outcome, "failure_type": failure_type, "stage": stage},
+            result_tags,
             {"value": max(0.0, duration_seconds)},
             timestamp,
         ),
@@ -361,9 +396,13 @@ def shutdown(signum, frame):
     stop_event.set()
 
 
-def emit_metrics_safely(success, duration_seconds, stage, failure_type, stage_durations):
+def emit_metrics_safely(
+    success, duration_seconds, stage, failure_type, stage_durations, response_match
+):
     try:
-        emit_metrics(success, duration_seconds, stage, failure_type, stage_durations)
+        emit_metrics(
+            success, duration_seconds, stage, failure_type, stage_durations, response_match
+        )
         return True
     except CanaryFailure as error:
         log(f"LXMF canary metrics failed failure_type={error.failure_type}: {error}")
@@ -382,13 +421,16 @@ def main():
         success = False
         stage = "full_e2e"
         failure_type = "none"
+        response_match = "not_checked"
         try:
-            duration = run_canary(stage_durations)
+            duration, response_match = run_canary(stage_durations)
             success = True
         except CanaryFailure as error:
             duration = time.time() - started
             stage = error.stage
             failure_type = error.failure_type
+            if failure_type == "response_mismatch":
+                response_match = "mismatched"
             log(
                 f"LXMF canary failed stage={error.stage} "
                 f"failure_type={error.failure_type}: {error}"
@@ -398,7 +440,9 @@ def main():
             stage = "unexpected"
             failure_type = "exception"
             log(f"LXMF canary failed with unexpected error: {error}")
-        metrics_ok = emit_metrics_safely(success, duration, stage, failure_type, stage_durations)
+        metrics_ok = emit_metrics_safely(
+            success, duration, stage, failure_type, stage_durations, response_match
+        )
         return 0 if success and metrics_ok else 1
     finally:
         stop_event.set()
