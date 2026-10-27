@@ -17,22 +17,18 @@ import java.util.LinkedHashSet;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import lombok.RequiredArgsConstructor;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.lang.Nullable;
 import org.springframework.stereotype.Component;
 
 @Component
+@RequiredArgsConstructor
 public class SignedDataAppleStoreKitVerification implements AppleStoreKitVerification {
   private static final TypeReference<Map<String, Object>> MAP_TYPE = new TypeReference<>() {};
 
   private final SubscriptionProperties properties;
   private final ObjectMapper objectMapper;
-
-  public SignedDataAppleStoreKitVerification(
-      SubscriptionProperties properties, ObjectMapper objectMapper) {
-    this.properties = properties;
-    this.objectMapper = objectMapper;
-  }
 
   @Override
   public VerifiedTransaction verifyTransaction(

@@ -9,22 +9,18 @@ import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.Map;
 import java.util.UUID;
+import lombok.RequiredArgsConstructor;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.http.HttpHeaders;
 import org.springframework.stereotype.Component;
 
 @Component
+@RequiredArgsConstructor
 public class AppleStoreKitSubscriptionProvider implements SubscriptionProvider {
   static final String PROVIDER_KEY = "apple";
 
   private final AppleStoreKitVerification verification;
   private final ObjectMapper objectMapper;
-
-  public AppleStoreKitSubscriptionProvider(
-      AppleStoreKitVerification verification, ObjectMapper objectMapper) {
-    this.verification = verification;
-    this.objectMapper = objectMapper;
-  }
 
   @Override
   public String providerKey() {
