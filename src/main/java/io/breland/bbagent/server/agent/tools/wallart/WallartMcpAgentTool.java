@@ -2,6 +2,7 @@ package io.breland.bbagent.server.agent.tools.wallart;
 
 import static io.breland.bbagent.server.agent.tools.JsonSchemaUtilities.functionParameters;
 import static io.breland.bbagent.server.agent.tools.JsonSchemaUtilities.jsonSchema;
+import static io.breland.bbagent.server.agent.tools.JsonSchemaUtilities.objectSchema;
 
 import io.breland.bbagent.server.agent.IncomingMessage;
 import io.breland.bbagent.server.agent.tools.AgentTool;
@@ -244,18 +245,5 @@ public class WallartMcpAgentTool implements ToolProvider {
                     "description",
                     "Optional role, e.g. base scene, person on left.")),
         List.of("source"));
-  }
-
-  private static Map<String, Object> objectSchema(
-      Map<String, Object> properties, List<String> required) {
-    return Map.of(
-        "type",
-        "object",
-        "properties",
-        properties,
-        "required",
-        required,
-        "additionalProperties",
-        false);
   }
 }
