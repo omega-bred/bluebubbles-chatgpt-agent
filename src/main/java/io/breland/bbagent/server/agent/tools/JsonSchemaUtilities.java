@@ -39,6 +39,18 @@ public class JsonSchemaUtilities {
     return functionParameters(normalized);
   }
 
+  public static Map<String, Object> objectSchema(Map<String, ?> properties, List<String> required) {
+    return Map.of(
+        "type",
+        "object",
+        "properties",
+        properties,
+        "required",
+        required,
+        "additionalProperties",
+        false);
+  }
+
   public static FunctionTool.Parameters functionParameters(Map<String, Object> schema) {
     FunctionTool.Parameters.Builder builder = FunctionTool.Parameters.builder();
     for (Map.Entry<String, Object> entry : schema.entrySet()) {

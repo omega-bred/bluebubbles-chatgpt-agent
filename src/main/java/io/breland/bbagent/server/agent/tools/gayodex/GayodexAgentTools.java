@@ -1,6 +1,7 @@
 package io.breland.bbagent.server.agent.tools.gayodex;
 
 import static io.breland.bbagent.server.agent.tools.JsonSchemaUtilities.functionParameters;
+import static io.breland.bbagent.server.agent.tools.JsonSchemaUtilities.objectSchema;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -411,19 +412,6 @@ public class GayodexAgentTools implements ToolProvider {
     if (patch)
       properties.put("photo", Map.of("type", "null", "description", "Clear your existing photo."));
     return objectSchema(properties, patch ? List.of() : List.of("name", "age"));
-  }
-
-  private static Map<String, Object> objectSchema(
-      Map<String, ?> properties, List<String> required) {
-    return Map.of(
-        "type",
-        "object",
-        "properties",
-        properties,
-        "required",
-        required,
-        "additionalProperties",
-        false);
   }
 
   private static void invalid(String message) {
