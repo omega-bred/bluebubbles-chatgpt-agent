@@ -21,13 +21,14 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import lombok.RequiredArgsConstructor;
 import org.apache.commons.codec.digest.DigestUtils;
 import org.apache.commons.lang3.StringUtils;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.lang.Nullable;
 import org.springframework.stereotype.Service;
 
 @Service
+@RequiredArgsConstructor
 public class ConversationMemoryModelClient {
   private static final int MAX_ITEMS = 20;
   private static final int MAX_ARTIFACT_LENGTH = 500;
@@ -75,18 +76,6 @@ public class ConversationMemoryModelClient {
   private final ObjectMapper objectMapper;
   private final @Nullable OperationalMetricsService metrics;
   private final BackgroundDecisionService decisions;
-
-  @Autowired
-  public ConversationMemoryModelClient(
-      ConversationMemoryResponsesClient responsesClient,
-      ObjectMapper objectMapper,
-      @Nullable OperationalMetricsService metrics,
-      BackgroundDecisionService decisions) {
-    this.responsesClient = responsesClient;
-    this.objectMapper = objectMapper;
-    this.metrics = metrics;
-    this.decisions = decisions;
-  }
 
   public ModelExtraction extract(
       List<JournalMessage> messages, List<ExistingArtifact> activeArtifacts) {
