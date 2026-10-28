@@ -42,6 +42,8 @@ IDENTITY_PATH = Path(env("LXMF_IDENTITY_PATH", str(LXMF_STORAGE_DIR / "identity"
 STAMP_COST = int(env("LXMF_STAMP_COST", "8"))
 OUTBOUND_METHOD = env("LXMF_OUTBOUND_METHOD", "direct").lower()
 SEND_PATH_TIMEOUT_SECONDS = int(env("LXMF_SEND_PATH_TIMEOUT_SECONDS", "45"))
+# Match Reticulum's minimum interval for automatic path requests.
+SEND_PATH_RETRY_SECONDS = 20
 STAGE_TIMEOUT_SECONDS = int(env("CANARY_STAGE_TIMEOUT_SECONDS", "90"))
 TOTAL_TIMEOUT_SECONDS = int(env("CANARY_TIMEOUT_SECONDS", "300"))
 ANNOUNCE_INTERVAL_SECONDS = int(env("CANARY_ANNOUNCE_INTERVAL_SECONDS", "10"))
@@ -90,16 +92,52 @@ def delivery_callback(message):
     )
 
 
+def path_interface_state():
+    return json.dumps(
+        [
+            {
+                "type": type(interface).__name__,
+                "online": getattr(interface, "online", None),
+                "outbound": getattr(interface, "OUT", None),
+                "rx_bytes": getattr(interface, "rxb", None),
+                "tx_bytes": getattr(interface, "txb", None),
+            }
+            for interface in list(RNS.Transport.interfaces)
+        ]
+    )
+
+
 def wait_for_path(destination_hash, stage):
     if RNS.Transport.has_path(destination_hash):
         return
-    RNS.Transport.request_path(destination_hash)
-    deadline = time.time() + SEND_PATH_TIMEOUT_SECONDS
-    while time.time() < deadline and not stop_event.is_set():
+    started = time.monotonic()
+    deadline = started + SEND_PATH_TIMEOUT_SECONDS
+    next_request = started
+    requests = 0
+    while not stop_event.is_set():
+        now = time.monotonic()
+        if now >= deadline:
+            break
         if RNS.Transport.has_path(destination_hash):
+            log(
+                f"LXMF canary path discovered stage={stage} requests={requests} "
+                f"elapsed_seconds={now - started:.3f}"
+            )
             return
-        time.sleep(0.25)
-    raise CanaryFailure(stage, "path_timeout", "no path to destination")
+        if now >= next_request:
+            requests += 1
+            RNS.Transport.request_path(destination_hash)
+            next_request = now + SEND_PATH_RETRY_SECONDS
+            log(
+                f"Requested LXMF canary path stage={stage} attempt={requests} "
+                f"interfaces={path_interface_state()}"
+            )
+        time.sleep(min(0.25, max(0, deadline - time.monotonic())))
+    raise CanaryFailure(
+        stage,
+        "path_timeout",
+        f"no path to destination after {requests} requests; interfaces={path_interface_state()}",
+    )
 
 
 def send_lxmf(destination_hash_hex, content, stage, title=""):

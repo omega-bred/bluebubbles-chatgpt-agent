@@ -51,3 +51,10 @@ Run the offline canary tests with
 
 The production CronJob keeps the latest three failed jobs for diagnosis, subject
 to the existing 24-hour job TTL.
+
+Path discovery retries every 20 seconds within the existing
+`LXMF_SEND_PATH_TIMEOUT_SECONDS` budget (default 45 seconds). This retries only
+route requests, before sending the inference message. A missing route still
+fails with `failure_type=path_timeout` at the same deadline. Each request and any
+timeout log the interface connection state and byte counters to distinguish a
+disconnected backbone from an unanswered discovery request.

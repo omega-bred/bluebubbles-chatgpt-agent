@@ -134,6 +134,78 @@ class AgreementModeTest(unittest.TestCase):
         self.assertTrue(self.messages.empty())
 
 
+class PathDiscoveryTest(unittest.TestCase):
+    def setUp(self):
+        self.elapsed = 0.0
+        self.stop = threading.Event()
+        self.patches = [
+            patch.object(canary, "stop_event", self.stop),
+            patch.object(canary.time, "monotonic", side_effect=lambda: self.elapsed),
+            patch.object(canary.time, "sleep", side_effect=self.advance),
+            patch.object(canary, "SEND_PATH_TIMEOUT_SECONDS", 45),
+            patch.object(canary.RNS.Transport, "has_path", return_value=False),
+            patch.object(canary.RNS.Transport, "request_path"),
+            patch.object(canary.RNS.Transport, "interfaces", []),
+            patch.object(canary, "log"),
+        ]
+        for item in self.patches:
+            item.start()
+            self.addCleanup(item.stop)
+
+    def advance(self, seconds):
+        self.elapsed += seconds
+
+    def test_cached_route_does_not_request_a_path(self):
+        canary.RNS.Transport.has_path.return_value = True
+        canary.wait_for_path(b"fixture", "inference")
+        canary.RNS.Transport.request_path.assert_not_called()
+        self.assertEqual(self.elapsed, 0)
+
+    def test_lost_initial_request_recovers_on_retry_and_sends_only_once(self):
+        def resolve_on_retry(destination):
+            if canary.RNS.Transport.request_path.call_count == 2:
+                canary.RNS.Transport.has_path.return_value = True
+
+        canary.RNS.Transport.request_path.side_effect = resolve_on_retry
+        with patch.object(canary, "router") as router:
+            canary.send_lxmf("00" * 16, "fixture", "inference")
+        self.assertEqual(canary.RNS.Transport.request_path.call_count, 2)
+        self.assertGreaterEqual(self.elapsed, 20)
+        self.assertLess(self.elapsed, 21)
+        router.handle_outbound.assert_called_once()
+
+    def test_outage_still_fails_at_original_deadline_with_connection_diagnostics(self):
+        interface = Mock(online=False, OUT=True, rxb=0, txb=202)
+        with patch.object(canary.RNS.Transport, "interfaces", [interface]):
+            with self.assertRaises(canary.CanaryFailure) as caught:
+                canary.wait_for_path(b"fixture", "inference")
+        self.assertEqual(caught.exception.stage, "inference")
+        self.assertEqual(caught.exception.failure_type, "path_timeout")
+        self.assertIn("after 3 requests", str(caught.exception))
+        self.assertIn('"online": false', str(caught.exception))
+        self.assertEqual(self.elapsed, 45)
+        self.assertEqual(canary.RNS.Transport.request_path.call_count, 3)
+
+    def test_path_arriving_after_budget_cannot_turn_timeout_into_success(self):
+        canary.RNS.Transport.has_path.side_effect = lambda target: self.elapsed >= 45
+        with self.assertRaises(canary.CanaryFailure) as caught:
+            canary.wait_for_path(b"fixture", "inference")
+        self.assertEqual(caught.exception.failure_type, "path_timeout")
+        self.assertEqual(self.elapsed, 45)
+
+    def test_shutdown_stops_discovery_without_another_request(self):
+        def stop_after_two_seconds(seconds):
+            self.advance(seconds)
+            if self.elapsed >= 2:
+                self.stop.set()
+
+        canary.time.sleep.side_effect = stop_after_two_seconds
+        with self.assertRaises(canary.CanaryFailure):
+            canary.wait_for_path(b"fixture", "inference")
+        self.assertEqual(self.elapsed, 2)
+        self.assertEqual(canary.RNS.Transport.request_path.call_count, 1)
+
+
 class CanaryReportingTest(unittest.TestCase):
     def run_main(self, result=None, error=None, metrics_ok=True):
         with (
