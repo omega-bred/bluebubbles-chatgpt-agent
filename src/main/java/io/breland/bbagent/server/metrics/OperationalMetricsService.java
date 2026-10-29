@@ -378,17 +378,8 @@ public class OperationalMetricsService {
       boolean success,
       @Nullable String failureType,
       Duration duration) {
-    Tags tags =
-        Tags.of(
-            "operation",
-            tagValue(operation, "unknown"),
-            "outcome",
-            outcome(success),
-            "failure_type",
-            failureTag(success, failureType));
-    recordTimer(
-        "bbagent.memory.cleanup.duration", "Conversation memory cleanup duration", duration, tags);
-    incrementCounter("bbagent.memory.cleanup.count", "Conversation memory cleanup count", tags);
+    recordMemoryOperation(
+        "cleanup", "Conversation memory cleanup", operation, success, failureType, duration);
     incrementCounter(
         "bbagent.memory.cleanup.item.count",
         "Conversation memory cleanup item count",
