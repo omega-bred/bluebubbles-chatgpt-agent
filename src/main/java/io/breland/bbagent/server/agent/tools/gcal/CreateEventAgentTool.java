@@ -46,7 +46,7 @@ public class CreateEventAgentTool extends GcalToolSupport implements ToolProvide
           return withCalendar(
               context,
               request.accountKey(),
-              (client, accountKey) -> {
+              client -> {
                 String calendarId = resolveCalendarId(request.calendarId());
                 ZoneId zone = resolveZone(request.timezone());
                 if (isBlank(request.start())) {

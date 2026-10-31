@@ -46,7 +46,7 @@ public class GetFreebusyAgentTool extends GcalToolSupport implements ToolProvide
           return withCalendar(
               context,
               request.accountKey(),
-              (client, accountKey) -> {
+              client -> {
                 ZoneId zone = resolveZone(request.timezone());
                 if (isBlank(request.timeMin())) {
                   return "missing time_min";
