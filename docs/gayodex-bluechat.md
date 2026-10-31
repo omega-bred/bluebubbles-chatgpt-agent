@@ -79,8 +79,16 @@ adult integer `age` (18–120), `archetype` (12), `subtitle` (27), `bio` (135), 
 up to three `interests` (25 each) are accepted. Text uses Gayodex's handheld
 ASCII alphabet. An update may clear the photo with `photo: null`.
 
-Successful edits are drafts and responses explicitly require owner publishing
-before a handheld receives them. Photo conversion defaults to 8-bit processing;
+Ask the sender only for their name, photo and bio, and only when missing. On
+creation, fill the other public fields from the bio; use a supplied age or
+default to 30 without asking. The create tool also supplies age 30 when omitted.
+Preserve existing values on updates unless the sender requests a change.
+
+Successful edits still require owner publishing before a handheld receives them,
+but replies simply confirm the save without mentioning drafts or publishing.
+The tool checks the upstream `saved_to_draft` flag internally and returns `saved`
+to the model, excluding publishing flags. Never claim handheld delivery.
+Photo conversion defaults to 8-bit processing;
 poll queued/processing jobs in the current incoming-message turn. A later
 scheduled task has no sender authority; ask the sender to text again for a
 later status check. `fallback` keeps the original, `superseded` means newer

@@ -134,8 +134,7 @@ class GayodexAgentToolsTest {
   }
 
   @Test
-  void writesPreserveExplicitRevisionAndRequestedFieldsAndExplainDraftPublishing()
-      throws Exception {
+  void writesPreserveExplicitRevisionAndRequestedFieldsWithoutPublishingDetails() throws Exception {
     String create =
         call(
             GayodexAgentTools.CREATE,
@@ -154,9 +153,10 @@ class GayodexAgentToolsTest {
                 .formatted(REVISION));
     for (String result : List.of(create, update)) {
       var json = MAPPER.readTree(result);
-      assertTrue(json.path("saved_to_draft").asBoolean());
-      assertTrue(json.path("requires_owner_publish").asBoolean());
-      assertTrue(json.path("user_facing_text").asText().contains("owner must publish"));
+      assertTrue(json.path("saved").asBoolean());
+      assertFalse(json.has("requires_owner_publish"));
+      assertFalse(json.has("saved_to_draft"));
+      assertEquals("Saved your Gayodex entry.", json.path("user_facing_text").asText());
     }
     assertEquals(List.of("POST", "PATCH"), calls.stream().map(Call::method).toList());
     assertEquals(REVISION, calls.getFirst().body().path("expected_revision").asText());
@@ -164,6 +164,50 @@ class GayodexAgentToolsTest {
         MAPPER.readTree("{\"bio\":\"New bio\",\"photo\":null}"),
         calls.getLast().body().get("changes"));
     assertFalse(calls.getLast().body().toString().contains("phone"));
+  }
+
+  @Test
+  void creationDefaultsAgeWithoutChangingSuppliedFieldsOrExplicitAge() throws Exception {
+    for (String profile :
+        List.of(
+            "{\"name\":\"Alex\",\"bio\":\"Coffee enthusiast\"}",
+            "{\"name\":\"Alex\",\"bio\":\"Coffee enthusiast\",\"age\":42}")) {
+      var result =
+          MAPPER.readTree(
+              call(
+                  GayodexAgentTools.CREATE,
+                  verified(PHONE),
+                  "{\"expected_revision\":\"" + REVISION + "\",\"profile\":" + profile + "}"));
+      assertTrue(result.path("saved").asBoolean());
+      var expected = (com.fasterxml.jackson.databind.node.ObjectNode) MAPPER.readTree(profile);
+      if (!expected.has("age")) expected.put("age", 30);
+      assertEquals(expected, calls.getLast().body().path("profile"));
+    }
+    var schema =
+        MAPPER.valueToTree(
+            tools.getTools().stream()
+                .filter(t -> t.name().equals(GayodexAgentTools.CREATE))
+                .findFirst()
+                .orElseThrow()
+                .parameters());
+    var profileSchema = schema.path("properties").path("profile");
+    assertEquals(MAPPER.readTree("[\"name\"]"), profileSchema.path("required"));
+    assertEquals(30, profileSchema.path("properties").path("age").path("default").asInt());
+  }
+
+  @Test
+  void unboundEntryRequestsOnlyNamePhotoAndBio() throws Exception {
+    responseOverride = "{\"profile\":null,\"revision\":\"" + REVISION + "\"}";
+    var result = MAPPER.readTree(call(GayodexAgentTools.READ, verified(PHONE), "{}"));
+    assertEquals(
+        "Send me your name, a photo, and a short bio for your Gayodex entry.",
+        result.path("user_facing_text").asText());
+    assertFalse(result.toString().contains("draft"));
+    assertFalse(result.toString().contains("publish"));
+    for (var tool : tools.getTools()) {
+      assertTrue(tool.description().contains("Ask only for the sender's name, photo and bio"));
+      assertTrue(tool.description().contains("Fill in the other profile values automatically"));
+    }
   }
 
   @Test
@@ -389,7 +433,7 @@ class GayodexAgentToolsTest {
                   .apply(
                       ToolContextFixture.with(authenticated).objectMapper(MAPPER).build(),
                       MAPPER.readTree("{\"expected_revision\":\"" + REVISION + "\"}")));
-      assertTrue(output.path("saved_to_draft").asBoolean());
+      assertTrue(output.path("saved").asBoolean());
       assertEquals(
           java.util.Base64.getEncoder().encodeToString(bytes.toByteArray()),
           calls.getLast().body().path("image_base64").asText());
@@ -432,8 +476,8 @@ class GayodexAgentToolsTest {
                 GayodexAgentTools.PHOTO,
                 incoming,
                 "{\"expected_revision\":\"" + read.path("revision").asText() + "\"}"));
-    assertTrue(output.path("saved_to_draft").asBoolean());
-    assertTrue(output.path("requires_owner_publish").asBoolean());
+    assertTrue(output.path("saved").asBoolean());
+    assertFalse(output.has("requires_owner_publish"));
     assertEquals("/api/v1/bluechat/photos", calls.getLast().path());
     assertEquals(
         java.util.Base64.getEncoder().encodeToString(bytes.toByteArray()),
@@ -507,7 +551,7 @@ class GayodexAgentToolsTest {
                 GayodexAgentTools.PHOTO,
                 incoming,
                 revision + ",\"image_index\":2,\"pixelify\":false}"));
-    assertTrue(output.path("saved_to_draft").asBoolean());
+    assertTrue(output.path("saved").asBoolean());
     assertFalse(calls.getLast().body().path("pixelify").asBoolean());
     verify(bb).getImageAttachment("second");
     verify(bb, never()).getImageAttachment("first");
@@ -554,8 +598,10 @@ class GayodexAgentToolsTest {
         MAPPER.readTree(
             call(
                 GayodexAgentTools.PHOTO, incoming, "{\"expected_revision\":\"" + REVISION + "\"}"));
-    assertTrue(result.path("saved_to_draft").asBoolean());
-    assertTrue(result.path("requires_owner_publish").asBoolean());
+    assertTrue(result.path("saved").asBoolean());
+    assertFalse(result.has("requires_owner_publish"));
+    assertFalse(result.toString().contains("draft"));
+    assertFalse(result.toString().contains("publish"));
     assertEquals("fallback", result.path("photo_job").path("status").asText());
     assertFalse(result.path("photo_job").has("id"));
     assertTrue(
@@ -578,11 +624,13 @@ class GayodexAgentToolsTest {
           MAPPER.readTree(call(GayodexAgentTools.JOB, verified(PHONE), "{\"job_id\":\"job-123\"}"));
       assertEquals(state, result.path("photo_job").path("status").asText());
       assertEquals("b".repeat(64), result.path("revision").asText());
-      assertTrue(result.path("requires_owner_publish").asBoolean());
+      assertFalse(result.has("requires_owner_publish"));
+      assertFalse(result.toString().contains("draft"));
+      assertFalse(result.toString().contains("publish"));
       assertFalse(result.toString().contains("PRIVATE"));
       if (state.equals("complete"))
         assertTrue(
-            result.path("photo_job").path("message").asText().contains("owner must publish"));
+            result.path("photo_job").path("message").asText().contains("conversion is complete"));
       if (state.equals("fallback"))
         assertTrue(
             result.path("photo_job").path("message").asText().contains("original photo was kept"));
@@ -609,7 +657,7 @@ class GayodexAgentToolsTest {
     when(bb.getImageAttachment("own")).thenReturn(path);
     String output = call(GayodexAgentTools.PHOTO, incoming, arguments.formatted("own"));
     assertFalse(Files.exists(path));
-    assertTrue(MAPPER.readTree(output).path("saved_to_draft").asBoolean());
+    assertTrue(MAPPER.readTree(output).path("saved").asBoolean());
     assertEquals("/api/v1/bluechat/photos", calls.getLast().path());
     assertEquals(
         java.util.Base64.getEncoder().encodeToString(bytes.toByteArray()),

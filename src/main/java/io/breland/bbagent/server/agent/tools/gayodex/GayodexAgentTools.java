@@ -35,6 +35,7 @@ public class GayodexAgentTools implements ToolProvider {
   public static final String JOB = "get_my_gayodex_photo_job";
   public static final Set<String> TOOL_NAMES = Set.of(READ, CREATE, UPDATE, PHOTO, JOB);
   private static final int MAX_PHOTO_BYTES = 6 * 1024 * 1024;
+  private static final int DEFAULT_AGE = 30;
   private static final String TEXT_CHARS =
       "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 .,!?-:/+()'&%#=<>_";
   private static final Map<String, Integer> TEXT_LIMITS =
@@ -43,8 +44,10 @@ public class GayodexAgentTools implements ToolProvider {
       Set.of("name", "age", "archetype", "subtitle", "bio", "interests");
   private static final String SCOPE =
       " Only the current verified phone sender's entry in the shared Gayodex; no login or account linking needed. Never edit another person or choose a catalog. ";
+  private static final String REPLY_GUIDANCE =
+      " Ask only for the sender's name, photo and bio, and only when missing. Fill in the other profile values automatically: use a supplied age or default to 30, and derive archetype, subtitle and interests from their bio. Preserve existing values on updates unless the sender asks to change them. Never mention drafts or owner publishing in replies, and never claim an entry is already on a handheld.";
   private static final String WRITE_GUIDANCE =
-      "Read get_my_gayodex_profile before every write and use its revision. Save only changes the sender requested. On conflict, read and reconsider; never blindly retry. All changes are drafts: tell the sender the owner must publish before they reach a handheld.";
+      "Read get_my_gayodex_profile before every write and use its revision. On creation, fill in the other profile values automatically. On updates, save only changes the sender requested. On conflict, read and reconsider; never blindly retry.";
   private final GayodexClient client;
   private final BBHttpClientWrapper blueBubbles;
   private final ObjectMapper mapper;
@@ -93,7 +96,7 @@ public class GayodexAgentTools implements ToolProvider {
             List.of("expected_revision", "changes")),
         tool(
             PHOTO,
-            "Use an image attached to this incoming message as my Gayodex portrait. Omit photo selectors when exactly one current image is attached. For multiple images use image_index from current_message_photos when the current request identifies which photo. If ambiguous, describe the choices and ask for the chosen photo attached to a new message. Never ask the sender for transport IDs. Defaults to asynchronous 8-bit conversion. Poll only queued/processing jobs with a returned ID. A terminal fallback can have no job ID: the original is already saved to the draft; do not poll or ask the sender for an ID. Never use another participant's photo, history images, remote URLs or generated base64."
+            "Use an image attached to this incoming message as my Gayodex portrait. Omit photo selectors when exactly one current image is attached. For multiple images use image_index from current_message_photos when the current request identifies which photo. If ambiguous, describe the choices and ask for the chosen photo attached to a new message. Never ask the sender for transport IDs. Defaults to asynchronous 8-bit conversion. Poll only queued/processing jobs with a returned ID. A terminal fallback can have no job ID: the original photo is already saved; do not poll or ask the sender for an ID. Never use another participant's photo, history images, remote URLs or generated base64."
                 + SCOPE
                 + WRITE_GUIDANCE,
             Operation.PHOTO,
@@ -119,7 +122,7 @@ public class GayodexAgentTools implements ToolProvider {
             List.of("expected_revision")),
         tool(
             JOB,
-            "Check the status of my Gayodex portrait conversion. Poll queued/processing jobs using this tool in the current incoming-message turn. Returns the latest entry revision. Completion remains a draft requiring owner publishing."
+            "Check the status of my Gayodex portrait conversion. Poll queued/processing jobs using this tool in the current incoming-message turn. Returns the latest entry revision."
                 + SCOPE,
             Operation.JOB,
             Map.of(
@@ -142,7 +145,7 @@ public class GayodexAgentTools implements ToolProvider {
       List<String> required) {
     return new AgentTool(
         name,
-        description,
+        description + REPLY_GUIDANCE,
         functionParameters(objectSchema(properties, required)),
         false,
         (context, args) -> execute(context, args, operation, properties.keySet(), required));
@@ -187,8 +190,11 @@ public class GayodexAgentTools implements ToolProvider {
           body.put("pixelify", args.path("pixelify").asBoolean(true));
         } else {
           String field = operation == Operation.CREATE ? "profile" : "changes";
-          validateProfile(args.path(field), operation == Operation.UPDATE);
-          body.set(field, args.get(field));
+          JsonNode profile = args.path(field).deepCopy();
+          if (operation == Operation.CREATE && profile.isObject() && !profile.has("age"))
+            ((ObjectNode) profile).put("age", DEFAULT_AGE);
+          validateProfile(profile, operation == Operation.UPDATE);
+          body.set(field, profile);
         }
       }
       var result =
@@ -304,7 +310,6 @@ public class GayodexAgentTools implements ToolProvider {
       output.set("profile", profile);
     }
     output.put("revision", result.path("revision").asText());
-    output.put("requires_owner_publish", true);
     boolean write =
         operation == Operation.CREATE
             || operation == Operation.UPDATE
@@ -312,9 +317,8 @@ public class GayodexAgentTools implements ToolProvider {
     if (write
         && (result.path("profile").isNull() || !result.path("saved_to_draft").asBoolean(false)))
       throw new Failure(
-          "unavailable",
-          "Gayodex did not confirm a draft save. Read your entry before another write.");
-    if (write) output.put("saved_to_draft", true);
+          "unavailable", "Gayodex did not confirm the save. Read your entry before another write.");
+    if (write) output.put("saved", true);
     if (operation == Operation.CREATE && result.path("created").asBoolean(false))
       output.put("created", true);
     if (result.path("photo_job").isObject()) {
@@ -330,12 +334,10 @@ public class GayodexAgentTools implements ToolProvider {
             switch (status) {
               case "queued", "processing" ->
                   "8-bit portrait conversion is pending. Poll this job in the current turn, or ask the sender to text again later.";
-              case "complete" ->
-                  "8-bit portrait conversion is complete in the draft. The owner must publish it.";
-              case "fallback" ->
-                  "Conversion was unavailable; the original photo was kept in the draft.";
+              case "complete" -> "8-bit portrait conversion is complete.";
+              case "fallback" -> "Conversion was unavailable; the original photo was kept.";
               case "superseded" -> "Newer edits took precedence and were preserved.";
-              default -> "Using the original photo in the draft.";
+              default -> "Using the original photo.";
             });
       }
       output.set(
@@ -344,8 +346,10 @@ public class GayodexAgentTools implements ToolProvider {
     output.put(
         "user_facing_text",
         write
-            ? "Saved your entry to the Gayodex draft. The owner must publish it before it reaches a handheld."
-            : "This is your Gayodex draft entry. Changes, including completed photo conversions, need the owner's publish before reaching a handheld.");
+            ? "Saved your Gayodex entry."
+            : result.path("profile").isNull()
+                ? "Send me your name, a photo, and a short bio for your Gayodex entry."
+                : "Here is your Gayodex entry.");
     return output;
   }
 
@@ -405,13 +409,19 @@ public class GayodexAgentTools implements ToolProvider {
                     max,
                     "description",
                     "Supported handheld ASCII text only.")));
-    properties.put("age", Map.of("type", "integer", "minimum", 18, "maximum", 120));
+    Map<String, Object> age =
+        new LinkedHashMap<>(Map.of("type", "integer", "minimum", 18, "maximum", 120));
+    if (!patch) {
+      age.put("default", DEFAULT_AGE);
+      age.put("description", "Use a supplied age; otherwise defaults to 30. Do not ask for age.");
+    }
+    properties.put("age", age);
     properties.put(
         "interests",
         Map.of("type", "array", "maxItems", 3, "items", Map.of("type", "string", "maxLength", 25)));
     if (patch)
       properties.put("photo", Map.of("type", "null", "description", "Clear your existing photo."));
-    return objectSchema(properties, patch ? List.of() : List.of("name", "age"));
+    return objectSchema(properties, patch ? List.of() : List.of("name"));
   }
 
   private static void invalid(String message) {
