@@ -9,6 +9,7 @@ import com.openai.models.responses.ResponseOutputItem;
 import com.openai.models.responses.ResponseOutputMessage;
 import io.breland.bbagent.server.agent.reactions.MessageReactionSupport;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
@@ -17,6 +18,7 @@ import java.util.Optional;
 import java.util.UUID;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import java.util.stream.Collectors;
 
 public final class AgentResponseHelper {
   private static final ObjectMapper TOOL_ARGUMENT_MAPPER = new ObjectMapper();
@@ -140,18 +142,10 @@ public final class AgentResponseHelper {
     if (text == null || text.isBlank()) {
       return "";
     }
-    StringBuilder builder = new StringBuilder();
-    String[] lines = text.split("\\R", -1);
-    for (String line : lines) {
-      if (TEXT_TOOL_CALL_PATTERN.matcher(line).matches()) {
-        continue;
-      }
-      if (!builder.isEmpty()) {
-        builder.append(System.lineSeparator());
-      }
-      builder.append(line);
-    }
-    return builder.toString().trim();
+    return Arrays.stream(text.split("\\R", -1))
+        .filter(line -> !TEXT_TOOL_CALL_PATTERN.matcher(line).matches())
+        .collect(Collectors.joining(System.lineSeparator()))
+        .trim();
   }
 
   public static Optional<String> parseReactionText(String text) {
