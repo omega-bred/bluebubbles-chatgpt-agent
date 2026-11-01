@@ -56,6 +56,7 @@ public class ScheduledEventTool implements ToolProvider {
             + "For recurring tasks, include repeatInterval only when recurrence is explicitly needed; "
             + "repeatInterval must be representable as Unix cron, such as PT1M, PT5M, PT1H, or PT24H. "
             + "Use this for reminders, follow-ups, and watching long-running work. "
+            + "Never schedule Gayodex status checks: scheduled messages lack the verified incoming sender context required by Gayodex tools. Use the Gayodex upload/job-status tool's bounded wait in the current turn; if still pending, ask the sender to text again later. "
             + "For long-running work checks, write the task so that if the work is still pending or running, the assistant must call schedule_event again for another one-time check before ending the turn, unless the work is complete, failed, canceled, expired, or the task's max attempts/deadline has been reached. "
             + "Use the task to describe what should happen, include any IDs needed to continue, attempt count, deadline or callback expiration, and say how the user should be notified.",
         jsonSchema(ScheduledEventRequest.class),

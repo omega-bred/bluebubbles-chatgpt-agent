@@ -27,11 +27,14 @@ import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Queue;
+import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicInteger;
 import javax.imageio.ImageIO;
@@ -42,6 +45,7 @@ import org.junit.jupiter.api.Test;
 class GayodexAgentToolsTest {
   final BBHttpClientWrapper bb = mock(BBHttpClientWrapper.class);
   final List<Call> calls = new CopyOnWriteArrayList<>();
+  final Queue<String> jobResponses = new ConcurrentLinkedQueue<>();
   final AtomicInteger status = new AtomicInteger(200);
   HttpServer server;
   GayodexProperties properties;
@@ -76,6 +80,10 @@ class GayodexAgentToolsTest {
           if (status.get() == 302)
             exchange.getResponseHeaders().set("Location", "/must-not-follow");
           String response = responseOverride != null ? responseOverride : response(phone);
+          if (exchange.getRequestURI().getPath().startsWith("/api/v1/bluechat/photo-jobs/")) {
+            String next = jobResponses.poll();
+            if (next != null) response = next;
+          }
           exchange.getResponseHeaders().set("Content-Type", "application/json");
           byte[] bytes = response.getBytes(StandardCharsets.UTF_8);
           exchange.sendResponseHeaders(status.get(), bytes.length);
@@ -85,7 +93,9 @@ class GayodexAgentToolsTest {
         });
     server.start();
     properties = configured("http://127.0.0.1:" + server.getAddress().getPort());
-    client = new GayodexClient(properties, MAPPER);
+    client = spy(new GayodexClient(properties, MAPPER));
+    // Ordinary validation tests do not need to wait on their permanently queued fixture.
+    doAnswer(invocation -> invocation.getArgument(1)).when(client).awaitPhotoJob(any(), any());
     tools = new GayodexAgentTools(client, bb, MAPPER);
   }
 
@@ -609,6 +619,135 @@ class GayodexAgentToolsTest {
     assertEquals(1, calls.size());
     assertEquals("/api/v1/bluechat/photos", calls.getFirst().path());
     assertFalse(Files.exists(path));
+  }
+
+  private void enablePhotoWait() {
+    doAnswer(
+            invocation ->
+                client.awaitPhotoJob(
+                    invocation.getArgument(0),
+                    invocation.getArgument(1),
+                    Duration.ofSeconds(2),
+                    Duration.ofMillis(1)))
+        .when(client)
+        .awaitPhotoJob(any(), any());
+  }
+
+  private IncomingMessage photoMessage() throws Exception {
+    var incoming =
+        verified(PHONE)
+            .withVerifiedBlueBubblesInbound(
+                List.of(new IncomingAttachment("own", "image/png", "photo.png", null, null, null)));
+    var bytes = new ByteArrayOutputStream();
+    ImageIO.write(new BufferedImage(2, 2, BufferedImage.TYPE_INT_RGB), "png", bytes);
+    Path path = Files.createTempFile("gayodex-wait-photo-", ".png");
+    Files.write(path, bytes.toByteArray());
+    when(bb.getImageAttachment("own")).thenReturn(path);
+    return incoming;
+  }
+
+  @Test
+  void uploadWaitsForConversionUsingOnlySenderScopedReadsAndReturnsLatestRevision()
+      throws Exception {
+    enablePhotoWait();
+    jobResponses.add(response(PHONE).replace("\"queued\"", "\"processing\""));
+    jobResponses.add(
+        response(PHONE).replace("\"queued\"", "\"complete\"").replace(REVISION, "b".repeat(64)));
+    var output =
+        MAPPER.readTree(
+            call(
+                GayodexAgentTools.PHOTO,
+                photoMessage(),
+                "{\"expected_revision\":\"" + REVISION + "\"}"));
+    assertTrue(output.path("saved").asBoolean());
+    assertEquals("complete", output.path("photo_job").path("status").asText());
+    assertEquals("b".repeat(64), output.path("revision").asText());
+    assertEquals(List.of("POST", "GET", "GET"), calls.stream().map(Call::method).toList());
+    for (var poll : calls.subList(1, calls.size())) {
+      assertEquals("/api/v1/bluechat/photo-jobs/job-123", poll.path());
+      assertEquals(PHONE, poll.phone());
+      assertEquals("Bearer " + properties.getToken(), poll.bearer());
+      assertNull(poll.body());
+    }
+    assertFalse(output.toString().contains("PRIVATE"));
+    assertFalse(output.has("saved_to_draft"));
+    verify(bb, times(1)).getImageAttachment("own");
+  }
+
+  @Test
+  void jobStatusWaitStopsAtEveryTerminalStateWithoutFurtherPolling() throws Exception {
+    enablePhotoWait();
+    for (String state : List.of("complete", "fallback", "original", "superseded")) {
+      int before = calls.size();
+      jobResponses.add(response(PHONE).replace("\"queued\"", "\"processing\""));
+      jobResponses.add(response(PHONE).replace("\"queued\"", "\"" + state + "\""));
+      var output =
+          MAPPER.readTree(call(GayodexAgentTools.JOB, verified(PHONE), "{\"job_id\":\"job-123\"}"));
+      assertEquals(state, output.path("photo_job").path("status").asText());
+      assertEquals(2, calls.size() - before);
+    }
+  }
+
+  @Test
+  void terminalOrMissingJobIdDoesNotPollAndExhaustedWaitKeepsPendingResult() throws Exception {
+    for (String state : List.of("complete", "fallback", "original", "superseded")) {
+      var result = MAPPER.readTree(response(PHONE).replace("\"queued\"", "\"" + state + "\""));
+      assertSame(
+          result,
+          client.awaitPhotoJob(verified(PHONE), result, Duration.ofSeconds(1), Duration.ZERO));
+    }
+    var missingId =
+        (com.fasterxml.jackson.databind.node.ObjectNode) MAPPER.readTree(response(PHONE));
+    ((com.fasterxml.jackson.databind.node.ObjectNode) missingId.path("photo_job")).remove("id");
+    assertSame(
+        missingId,
+        client.awaitPhotoJob(verified(PHONE), missingId, Duration.ofSeconds(1), Duration.ZERO));
+    var pending = MAPPER.readTree(response(PHONE));
+    assertSame(
+        pending,
+        client.awaitPhotoJob(verified(PHONE), pending, Duration.ZERO, Duration.ofMillis(1)));
+    assertTrue(calls.isEmpty());
+  }
+
+  @Test
+  void failedStatusReadPreservesConfirmedUploadAndDoesNotRepeatWrite() throws Exception {
+    doAnswer(
+            invocation -> {
+              status.set(503);
+              return client.awaitPhotoJob(
+                  invocation.getArgument(0),
+                  invocation.getArgument(1),
+                  Duration.ofSeconds(2),
+                  Duration.ofMillis(1));
+            })
+        .when(client)
+        .awaitPhotoJob(any(), any());
+    var output =
+        MAPPER.readTree(
+            call(
+                GayodexAgentTools.PHOTO,
+                photoMessage(),
+                "{\"expected_revision\":\"" + REVISION + "\"}"));
+    assertTrue(output.path("saved").asBoolean());
+    assertEquals("queued", output.path("photo_job").path("status").asText());
+    assertTrue(output.path("photo_job").path("message").asText().contains("Never schedule"));
+    assertEquals(List.of("POST", "GET"), calls.stream().map(Call::method).toList());
+  }
+
+  @Test
+  void invalidStatusResponsePreservesConfirmedUpload() throws Exception {
+    enablePhotoWait();
+    jobResponses.add("{\"profile\":null,\"photo_job\":{\"status\":\"complete\"}}");
+    var output =
+        MAPPER.readTree(
+            call(
+                GayodexAgentTools.PHOTO,
+                photoMessage(),
+                "{\"expected_revision\":\"" + REVISION + "\"}"));
+    assertTrue(output.path("saved").asBoolean());
+    assertEquals("queued", output.path("photo_job").path("status").asText());
+    assertEquals(REVISION, output.path("revision").asText());
+    assertEquals(List.of("POST", "GET"), calls.stream().map(Call::method).toList());
   }
 
   @Test

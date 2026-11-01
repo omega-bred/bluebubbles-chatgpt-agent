@@ -159,6 +159,11 @@ class AgentPromptMatrixTest {
             "Built-in capabilities for this request",
             "create another one-time follow-up");
     assertThat(text)
+        .contains(
+            "Gayodex is an exception to the scheduling instructions",
+            "Never use schedule_event for Gayodex status checks",
+            "if still pending, ask the sender to text again later");
+    assertThat(text)
         .doesNotContain(
             "ALWAYS REPLY",
             "Always ask the memory tool",

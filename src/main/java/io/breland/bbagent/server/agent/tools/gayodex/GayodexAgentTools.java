@@ -48,6 +48,8 @@ public class GayodexAgentTools implements ToolProvider {
       " Ask only for the sender's name, photo and bio, and only when missing. Fill in the other profile values automatically: use a supplied age or default to 30, and derive archetype, subtitle and interests from their bio. Preserve existing values on updates unless the sender asks to change them. Never mention drafts or owner publishing in replies, and never claim an entry is already on a handheld.";
   private static final String WRITE_GUIDANCE =
       "Read get_my_gayodex_profile before every write and use its revision. On creation, fill in the other profile values automatically. On updates, save only changes the sender requested. On conflict, read and reconsider; never blindly retry.";
+  private static final String PHOTO_WAIT_GUIDANCE =
+      " Upload and job-status calls wait up to three minutes for conversion within the verified incoming-message turn. Never use schedule_event for Gayodex status checks: scheduled messages have no verified sender authority and cannot access these tools. If still pending, say the entry is saved and ask the sender to text again later for status; do not promise an automatic follow-up.";
   private final GayodexClient client;
   private final BBHttpClientWrapper blueBubbles;
   private final ObjectMapper mapper;
@@ -96,9 +98,10 @@ public class GayodexAgentTools implements ToolProvider {
             List.of("expected_revision", "changes")),
         tool(
             PHOTO,
-            "Use an image attached to this incoming message as my Gayodex portrait. Omit photo selectors when exactly one current image is attached. For multiple images use image_index from current_message_photos when the current request identifies which photo. If ambiguous, describe the choices and ask for the chosen photo attached to a new message. Never ask the sender for transport IDs. Defaults to asynchronous 8-bit conversion. Poll only queued/processing jobs with a returned ID. A terminal fallback can have no job ID: the original photo is already saved; do not poll or ask the sender for an ID. Never use another participant's photo, history images, remote URLs or generated base64."
+            "Use an image attached to this incoming message as my Gayodex portrait. Omit photo selectors when exactly one current image is attached. For multiple images use image_index from current_message_photos when the current request identifies which photo. If ambiguous, describe the choices and ask for the chosen photo attached to a new message. Never ask the sender for transport IDs. Defaults to 8-bit conversion. A terminal fallback can have no job ID: the original photo is already saved; do not poll or ask the sender for an ID. Never use another participant's photo, history images, remote URLs or generated base64."
                 + SCOPE
-                + WRITE_GUIDANCE,
+                + WRITE_GUIDANCE
+                + PHOTO_WAIT_GUIDANCE,
             Operation.PHOTO,
             Map.of(
                 "expected_revision",
@@ -122,8 +125,9 @@ public class GayodexAgentTools implements ToolProvider {
             List.of("expected_revision")),
         tool(
             JOB,
-            "Check the status of my Gayodex portrait conversion. Poll queued/processing jobs using this tool in the current incoming-message turn. Returns the latest entry revision."
-                + SCOPE,
+            "Check the status of my Gayodex portrait conversion. Returns the latest entry revision."
+                + SCOPE
+                + PHOTO_WAIT_GUIDANCE,
             Operation.JOB,
             Map.of(
                 "job_id",
@@ -200,6 +204,17 @@ public class GayodexAgentTools implements ToolProvider {
       var result =
           client.request(context.message(), operation, body, args.path("job_id").asText(null));
       var output = publicResponse(result, operation);
+      if (operation == Operation.PHOTO || operation == Operation.JOB) {
+        try {
+          var latest =
+              publicResponse(client.awaitPhotoJob(context.message(), result), Operation.JOB);
+          for (String field : List.of("profile", "revision", "photo_job")) {
+            if (latest.has(field)) output.set(field, latest.get(field));
+          }
+        } catch (Failure unavailable) {
+          // A failed status read must not erase an already confirmed upload/save.
+        }
+      }
       if (operation == Operation.READ)
         output.set(
             "current_message_photos",
@@ -333,7 +348,7 @@ public class GayodexAgentTools implements ToolProvider {
             "message",
             switch (status) {
               case "queued", "processing" ->
-                  "8-bit portrait conversion is pending. Poll this job in the current turn, or ask the sender to text again later.";
+                  "8-bit portrait conversion was still pending at the last check. The entry is saved. Ask the sender to text again later for status. Never schedule a Gayodex follow-up; scheduled messages cannot access the sender-scoped tools.";
               case "complete" -> "8-bit portrait conversion is complete.";
               case "fallback" -> "Conversion was unavailable; the original photo was kept.";
               case "superseded" -> "Newer edits took precedence and were preserved.";

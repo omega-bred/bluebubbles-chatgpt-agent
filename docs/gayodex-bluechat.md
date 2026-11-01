@@ -88,10 +88,15 @@ Successful edits still require owner publishing before a handheld receives them,
 but replies simply confirm the save without mentioning drafts or publishing.
 The tool checks the upstream `saved_to_draft` flag internally and returns `saved`
 to the model, excluding publishing flags. Never claim handheld delivery.
-Photo conversion defaults to 8-bit processing;
-poll queued/processing jobs in the current incoming-message turn. A later
-scheduled task has no sender authority; ask the sender to text again for a
-later status check. `fallback` keeps the original, `superseded` means newer
+Photo conversion defaults to 8-bit processing. Upload and job-status calls wait
+up to three minutes for queued/processing jobs, reading status every five seconds
+within the verified incoming-message tool activity. They never repeat the upload.
+The latest valid status response supplies the entry revision; a failed status
+read preserves the confirmed save and last known status. This wait fits within
+the five-minute Cadence activity timeout (individual HTTP requests remain bounded).
+Never schedule a Gayodex status check: a scheduled task has no sender authority.
+If still pending, confirm the save and ask the sender to text again for a later
+status check, without promising an automatic follow-up. `fallback` keeps the original, `superseded` means newer
 changes took precedence, and `complete` confirms conversion only. Poll only
 `queued`/`processing` jobs with a returned ID. A terminal `fallback` upload can
 have no job ID: the original photo is already saved to the draft. Do not poll

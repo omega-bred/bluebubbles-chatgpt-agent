@@ -6,6 +6,7 @@ import io.breland.bbagent.server.agent.IncomingMessage;
 import io.breland.bbagent.server.config.Jackson2WebClientConfigurer;
 import io.netty.channel.ChannelOption;
 import java.time.Duration;
+import java.util.Set;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.client.reactive.ReactorClientHttpConnector;
 import org.springframework.stereotype.Component;
@@ -87,6 +88,37 @@ public class GayodexClient {
           "unavailable",
           "Gayodex could not confirm the result. Read your entry before attempting another write; do not assume it failed or retry blindly.");
     }
+  }
+
+  JsonNode awaitPhotoJob(IncomingMessage message, JsonNode result) {
+    return awaitPhotoJob(message, result, Duration.ofMinutes(3), Duration.ofSeconds(5));
+  }
+
+  // Stay inside the verified inbound tool activity (which has a five-minute Cadence timeout).
+  // Only read the returned job; never retry the upload or create a scheduled sender context.
+  JsonNode awaitPhotoJob(
+      IncomingMessage message, JsonNode result, Duration budget, Duration interval) {
+    String id = result.path("photo_job").path("id").asText("");
+    if (!id.matches("[A-Za-z0-9_-]{1,128}")) return result;
+    long started = System.nanoTime();
+    while (Set.of("queued", "processing")
+        .contains(result.path("photo_job").path("status").asText(""))) {
+      long remaining = budget.toNanos() - (System.nanoTime() - started);
+      if (remaining <= interval.toNanos()) break;
+      try {
+        Thread.sleep(interval);
+        var latest = request(message, Operation.JOB, null, id);
+        if (latest == null) break;
+        result = latest;
+      } catch (InterruptedException interrupted) {
+        Thread.currentThread().interrupt();
+        break;
+      } catch (Failure unavailable) {
+        // The upload is already confirmed. Preserve its save and last known status.
+        break;
+      }
+    }
+    return result;
   }
 
   private static Failure statusFailure(int status) {
