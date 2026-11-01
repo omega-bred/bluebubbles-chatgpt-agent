@@ -85,6 +85,7 @@ public class ScheduledEventTool implements ToolProvider {
           String text = buildScheduledText(request.task(), scheduledAt, repeatInterval);
           IncomingMessage scheduledMessage =
               new IncomingMessage(
+                  source.transportOrDefault(),
                   chatGuid,
                   messageGuid,
                   source.threadOriginatorGuid(),

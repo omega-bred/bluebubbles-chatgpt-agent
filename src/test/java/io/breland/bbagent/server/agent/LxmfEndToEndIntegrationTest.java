@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -19,8 +20,11 @@ import com.openai.models.responses.ResponseInputItem;
 import com.openai.models.responses.ResponseOutputItem;
 import com.openai.models.responses.Tool;
 import com.openai.models.responses.ToolChoiceOptions;
+import com.uber.cadence.WorkflowExecution;
 import io.breland.bbagent.generated.bluebubblesclient.api.V1ContactApi;
 import io.breland.bbagent.generated.bluebubblesclient.api.V1MessageApi;
+import io.breland.bbagent.server.agent.cadence.CadenceWorkflowLauncher;
+import io.breland.bbagent.server.agent.cadence.models.CadenceMessageWorkflowRequest;
 import io.breland.bbagent.server.agent.location.ReverseLocationLookup;
 import io.breland.bbagent.server.agent.profile.AgentProfileService;
 import io.breland.bbagent.server.agent.profile.AgentSettingsStore;
@@ -34,9 +38,11 @@ import io.breland.bbagent.server.agent.tools.bb.SendPollAgentTool;
 import io.breland.bbagent.server.agent.tools.bb.SendReactionAgentTool;
 import io.breland.bbagent.server.agent.tools.bb.SendTextAgentTool;
 import io.breland.bbagent.server.agent.tools.giphy.SendGiphyAgentTool;
+import io.breland.bbagent.server.agent.tools.scheduled.ScheduledEventTool;
 import io.breland.bbagent.server.agent.tools.search.ToolSearchAgentTool;
 import io.breland.bbagent.server.agent.transport.MessageTransportRegistry;
 import io.breland.bbagent.server.agent.transport.bb.BBHttpClientWrapper;
+import io.breland.bbagent.server.agent.transport.bb.BlueBubblesMessageTransport;
 import io.breland.bbagent.server.agent.transport.lxmf.LxmfBridgeClient;
 import io.breland.bbagent.server.agent.transport.lxmf.LxmfMessageTransport;
 import java.time.Instant;
@@ -48,6 +54,9 @@ import java.util.Optional;
 import java.util.Queue;
 import java.util.concurrent.ConcurrentHashMap;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mockito;
 
 class LxmfEndToEndIntegrationTest {
@@ -78,6 +87,45 @@ class LxmfEndToEndIntegrationTest {
     assertTrue(inputContains(firstInput, "one-on-one plain text only"));
     assertTrue(inputContains(firstInput, "All outgoing LXMF text must be plain text only"));
     assertTrue(inputContains(firstInput, "Incoming message from aabbccdd"));
+  }
+
+  @ParameterizedTest
+  @ValueSource(booleans = {false, true})
+  void lxmfScheduledTaskKeepsLxmfPromptAndDeliversCallbackThroughBridge(boolean recurring) {
+    LxmfE2eHarness harness = new LxmfE2eHarness();
+    harness.enqueueModelResponse(
+        responseWithFunctionCall(
+            ToolSearchAgentTool.TOOL_NAME,
+            "{\"query\":\"schedule a future reminder task\",\"maxResults\":5}",
+            "call-search-schedule"));
+    harness.enqueueModelResponse(
+        responseWithFunctionCall(
+            ScheduledEventTool.TOOL_NAME,
+            "{\"task\":\"say moon\",\"delaySeconds\":30"
+                + (recurring ? ",\"repeatInterval\":\"PT5M\"" : "")
+                + "}",
+            "call-schedule"));
+    harness.enqueueModelResponse(responseWithText(BBMessageAgent.NO_RESPONSE_TEXT));
+
+    LxmfTurnResult initial = harness.runTurn("00112233", "Remind me to say moon in 30 seconds");
+
+    assertTrue(
+        initial.toolOutputs().contains(recurring ? "scheduled recurring task" : "scheduled"));
+    ArgumentCaptor<CadenceMessageWorkflowRequest> request =
+        ArgumentCaptor.forClass(CadenceMessageWorkflowRequest.class);
+    verify(harness.cadenceWorkflowLauncher)
+        .startScheduledWorkflow(request.capture(), any(), any(), any());
+    CadenceMessageWorkflowRequest scheduled = request.getValue();
+    assertEquals(IncomingMessage.TRANSPORT_LXMF, scheduled.message().transportOrDefault());
+
+    harness.enqueueModelResponse(responseWithText("moon"));
+    harness.runTurn(scheduled.message(), scheduled.workflowContext());
+
+    assertEquals(List.of(new BridgeSend("00112233", "moon")), harness.sent());
+    assertTrue(
+        inputContains(
+            inputItems(harness.request(3)), "You are a chat assistant over LXMF on Reticulum"));
+    assertEquals(List.of(ToolSearchAgentTool.TOOL_NAME), toolNames(harness.request(3)));
   }
 
   @Test
@@ -235,6 +283,8 @@ class LxmfEndToEndIntegrationTest {
     private final com.openai.services.blocking.ResponseService responseService =
         Mockito.mock(com.openai.services.blocking.ResponseService.class);
     private final LxmfBridgeClient bridgeClient = Mockito.mock(LxmfBridgeClient.class);
+    private final CadenceWorkflowLauncher cadenceWorkflowLauncher =
+        Mockito.mock(CadenceWorkflowLauncher.class);
     private final StubBBHttpClientWrapper bbHttpClientWrapper = new StubBBHttpClientWrapper();
     private final AgentProfileService profileService =
         new AgentProfileService(new InMemoryAgentSettingsStore(), null);
@@ -260,10 +310,15 @@ class LxmfEndToEndIntegrationTest {
                 sent.add(new BridgeSend(invocation.getArgument(0), invocation.getArgument(1)));
                 return true;
               });
+      when(cadenceWorkflowLauncher.startScheduledWorkflow(any(), any(), any(), any()))
+          .thenReturn(new WorkflowExecution());
       AgentAttachmentInputBuilder attachmentInputBuilder =
           new AgentAttachmentInputBuilder(bbHttpClientWrapper);
       MessageTransportRegistry transportRegistry =
-          new MessageTransportRegistry(List.of(new LxmfMessageTransport(bridgeClient)));
+          new MessageTransportRegistry(
+              List.of(
+                  new BlueBubblesMessageTransport(bbHttpClientWrapper),
+                  new LxmfMessageTransport(bridgeClient)));
       this.promptBuilder =
           new AgentPromptBuilder(
               bbHttpClientWrapper,
@@ -277,6 +332,7 @@ class LxmfEndToEndIntegrationTest {
               .openAiClient(openAIClient)
               .profileService(profileService)
               .transportRegistry(transportRegistry)
+              .cadenceWorkflowLauncher(cadenceWorkflowLauncher)
               .build();
     }
 
@@ -289,6 +345,10 @@ class LxmfEndToEndIntegrationTest {
       AgentWorkflowContext workflowContext =
           new AgentWorkflowContext(
               message.chatGuid(), message.chatGuid(), message.messageGuid(), Instant.now());
+      return runTurn(message, workflowContext);
+    }
+
+    private LxmfTurnResult runTurn(IncomingMessage message, AgentWorkflowContext workflowContext) {
       ConversationState state =
           agent
               .getConversations()
