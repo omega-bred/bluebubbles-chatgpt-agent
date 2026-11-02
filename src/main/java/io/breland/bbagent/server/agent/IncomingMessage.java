@@ -63,23 +63,7 @@ public record IncomingMessage(
 
   public IncomingMessage withVerifiedBlueBubblesInbound(
       List<IncomingAttachment> verifiedAttachments) {
-    return new IncomingMessage(
-        transport,
-        chatGuid,
-        messageGuid,
-        threadOriginatorGuid,
-        text,
-        fromMe,
-        service,
-        sender,
-        isGroup,
-        timestamp,
-        verifiedAttachments,
-        balloonBundleId,
-        associatedMessageGuid,
-        replyToGuid,
-        isSystemMessage,
-        true);
+    return copyWith(threadOriginatorGuid, text, verifiedAttachments, true);
   }
 
   public static final String TRANSPORT_BLUEBUBBLES = "bluebubbles";
@@ -232,43 +216,11 @@ public record IncomingMessage(
   }
 
   public IncomingMessage withText(String newText) {
-    return new IncomingMessage(
-        transport,
-        chatGuid,
-        messageGuid,
-        threadOriginatorGuid,
-        newText,
-        fromMe,
-        service,
-        sender,
-        isGroup,
-        timestamp,
-        attachments,
-        balloonBundleId,
-        associatedMessageGuid,
-        replyToGuid,
-        isSystemMessage,
-        verifiedBlueBubblesInbound);
+    return copyWith(threadOriginatorGuid, newText, attachments, verifiedBlueBubblesInbound);
   }
 
   public IncomingMessage withThreadOriginatorGuid(String newThreadOriginatorGuid) {
-    return new IncomingMessage(
-        transport,
-        chatGuid,
-        messageGuid,
-        newThreadOriginatorGuid,
-        text,
-        fromMe,
-        service,
-        sender,
-        isGroup,
-        timestamp,
-        attachments,
-        balloonBundleId,
-        associatedMessageGuid,
-        replyToGuid,
-        isSystemMessage,
-        verifiedBlueBubblesInbound);
+    return copyWith(newThreadOriginatorGuid, text, attachments, verifiedBlueBubblesInbound);
   }
 
   public String computeMessageFingerprint() {
@@ -328,6 +280,14 @@ public record IncomingMessage(
   }
 
   public IncomingMessage withAttachments(List<IncomingAttachment> newAttachments) {
+    return copyWith(threadOriginatorGuid, text, newAttachments, false);
+  }
+
+  private IncomingMessage copyWith(
+      String threadOriginatorGuid,
+      String text,
+      List<IncomingAttachment> attachments,
+      boolean verifiedBlueBubblesInbound) {
     return new IncomingMessage(
         transport,
         chatGuid,
@@ -339,11 +299,11 @@ public record IncomingMessage(
         sender,
         isGroup,
         timestamp,
-        newAttachments,
+        attachments,
         balloonBundleId,
         associatedMessageGuid,
         replyToGuid,
         isSystemMessage,
-        false);
+        verifiedBlueBubblesInbound);
   }
 }
