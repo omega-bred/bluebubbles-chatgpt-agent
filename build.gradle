@@ -216,7 +216,7 @@ dependencies {
     runtimeOnly 'org.postgresql:postgresql'
 
 
-    implementation 'de.codecentric:spring-boot-admin-starter-client:4.1.2'
+    implementation 'de.codecentric:spring-boot-admin-starter-client:4.1.4'
 
 	implementation("org.springframework.boot:spring-boot-starter-security")
 	implementation("org.springframework.boot:spring-boot-starter-oauth2-resource-server")
