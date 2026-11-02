@@ -1,17 +1,23 @@
 package io.breland.bbagent.server.agent.tools;
 
-import com.fasterxml.jackson.core.type.TypeReference;
 import com.openai.core.JsonValue;
 import com.openai.models.responses.FunctionTool;
 import io.swagger.v3.core.converter.ModelConverters;
 import io.swagger.v3.core.converter.ResolvedSchema;
 import io.swagger.v3.core.util.Json;
+import io.swagger.v3.core.util.ObjectMapperFactory;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import tools.jackson.core.type.TypeReference;
 
 public class JsonSchemaUtilities {
+  static {
+    // Tool request objects deserialize with Jackson 2; keep Swagger's schema defaults aligned.
+    ObjectMapperFactory.setJackson2Compatibility(true);
+  }
+
   public static FunctionTool.Parameters jsonSchema(Map<String, Object> schema) {
     Map<String, Object> normalized = new LinkedHashMap<>(schema);
     normalized.putIfAbsent("additionalProperties", false);
