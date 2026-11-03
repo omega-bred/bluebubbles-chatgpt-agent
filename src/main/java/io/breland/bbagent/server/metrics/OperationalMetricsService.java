@@ -107,9 +107,8 @@ public class OperationalMetricsService {
             outcome(success),
             "failure_type",
             failureTag(success, failureType));
-    recordTimer(
-        "bbagent.agent.tool.invocation.duration", "Agent tool invocation duration", duration, tags);
-    incrementCounter("bbagent.agent.tool.invocation.count", "Agent tool invocation count", tags);
+    recordDurationAndCount(
+        "bbagent.agent.tool.invocation", "Agent tool invocation", duration, tags);
   }
 
   public void recordLlmCall(
@@ -154,8 +153,7 @@ public class OperationalMetricsService {
             outcome(success),
             "failure_type",
             failureTag(success, failureType));
-    recordTimer("bbagent.agent.llm.call.duration", "Agent LLM call duration", duration, tags);
-    incrementCounter("bbagent.agent.llm.call.count", "Agent LLM call count", tags);
+    recordDurationAndCount("bbagent.agent.llm.call", "Agent LLM call", duration, tags);
   }
 
   public void recordDecisionsRequest(
@@ -183,13 +181,8 @@ public class OperationalMetricsService {
             outcome(success),
             "failure_type",
             failureTag(success, failureType));
-    recordTimer(
-        "bbagent.bluebubbles.operation.duration",
-        "BlueBubbles API operation duration",
-        duration,
-        tags);
-    incrementCounter(
-        "bbagent.bluebubbles.operation.count", "BlueBubbles API operation count", tags);
+    recordDurationAndCount(
+        "bbagent.bluebubbles.operation", "BlueBubbles API operation", duration, tags);
   }
 
   public void recordBlueBubblesHealthCheck(
@@ -213,13 +206,8 @@ public class OperationalMetricsService {
             Boolean.toString(iCloudConnected),
             "failure_type",
             failureTag(healthy, failureType));
-    recordTimer(
-        "bbagent.bluebubbles.health.check.duration",
-        "BlueBubbles scheduled health check duration",
-        duration,
-        tags);
-    incrementCounter(
-        "bbagent.bluebubbles.health.check.count", "BlueBubbles scheduled health check count", tags);
+    recordDurationAndCount(
+        "bbagent.bluebubbles.health.check", "BlueBubbles scheduled health check", duration, tags);
   }
 
   public static String failureType(Throwable throwable) {
@@ -248,13 +236,8 @@ public class OperationalMetricsService {
       boolean success, @Nullable String failureType, Duration duration) {
     Tags tags =
         Tags.of("outcome", outcome(success), "failure_type", failureTag(success, failureType));
-    recordTimer(
-        "bbagent.memory.extraction.duration",
-        "Conversation memory extraction duration",
-        duration,
-        tags);
-    incrementCounter(
-        "bbagent.memory.extraction.count", "Conversation memory extraction count", tags);
+    recordDurationAndCount(
+        "bbagent.memory.extraction", "Conversation memory extraction", duration, tags);
   }
 
   public void recordMemoryExtractionCandidate(String kind, String status, boolean accepted) {
@@ -292,9 +275,8 @@ public class OperationalMetricsService {
       boolean success, @Nullable String failureType, Duration duration) {
     Tags tags =
         Tags.of("outcome", outcome(success), "failure_type", failureTag(success, failureType));
-    recordTimer(
-        "bbagent.memory.catchup.duration", "Conversation memory catch-up duration", duration, tags);
-    incrementCounter("bbagent.memory.catchup.count", "Conversation memory catch-up count", tags);
+    recordDurationAndCount(
+        "bbagent.memory.catchup", "Conversation memory catch-up", duration, tags);
   }
 
   public void recordMemoryQuestionAnswer(
@@ -318,12 +300,8 @@ public class OperationalMetricsService {
             outcome(success),
             "failure_type",
             failureTag(success, failureType));
-    recordTimer(
-        "bbagent.memory.question.answer.duration",
-        "Group question answer duration",
-        duration,
-        tags);
-    incrementCounter("bbagent.memory.question.answer.count", "Group question answer count", tags);
+    recordDurationAndCount(
+        "bbagent.memory.question.answer", "Group question answer", duration, tags);
     incrementCounter(
         "bbagent.memory.question.answer.message.count",
         "Group question messages",
@@ -361,14 +339,10 @@ public class OperationalMetricsService {
             outcome(success),
             "failure_type",
             failureTag(success, failureType));
-    recordTimer(
-        "bbagent.memory.proactive.delivery.duration",
-        "Proactive conversation memory delivery duration",
+    recordDurationAndCount(
+        "bbagent.memory.proactive.delivery",
+        "Proactive conversation memory delivery",
         duration,
-        tags);
-    incrementCounter(
-        "bbagent.memory.proactive.delivery.count",
-        "Proactive conversation memory delivery count",
         tags);
   }
 
@@ -409,12 +383,13 @@ public class OperationalMetricsService {
             outcome(success),
             "failure_type",
             failureTag(success, failureType));
-    recordTimer(
-        "bbagent.memory." + metricComponent + ".duration",
-        description + " duration",
-        duration,
-        tags);
-    incrementCounter("bbagent.memory." + metricComponent + ".count", description + " count", tags);
+    recordDurationAndCount("bbagent.memory." + metricComponent, description, duration, tags);
+  }
+
+  private void recordDurationAndCount(
+      String name, String description, Duration duration, Tags tags) {
+    recordTimer(name + ".duration", description + " duration", duration, tags);
+    incrementCounter(name + ".count", description + " count", tags);
   }
 
   private void registerGauge(String name, String description, Number value) {
