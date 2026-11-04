@@ -6,7 +6,6 @@ import com.openai.models.responses.Response;
 import com.openai.models.responses.ResponseFunctionToolCall;
 import com.openai.models.responses.ResponseInputItem;
 import com.openai.models.responses.ResponseOutputItem;
-import com.openai.models.responses.ResponseOutputMessage;
 import io.breland.bbagent.server.agent.reactions.MessageReactionSupport;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -98,22 +97,13 @@ public final class AgentResponseHelper {
     if (response == null) {
       return "";
     }
-    StringBuilder builder = new StringBuilder();
-    for (ResponseOutputItem item : response.output()) {
-      if (item.message().isEmpty()) {
-        continue;
-      }
-      ResponseOutputMessage message = item.message().get();
-      for (ResponseOutputMessage.Content content : message.content()) {
-        if (content.isOutputText() && content.asOutputText().isValid()) {
-          if (!builder.isEmpty()) {
-            builder.append(' ');
-          }
-          builder.append(content.asOutputText().text());
-        }
-      }
-    }
-    return builder.toString().trim();
+    return response.output().stream()
+        .flatMap(item -> item.message().stream())
+        .flatMap(message -> message.content().stream())
+        .filter(content -> content.isOutputText() && content.asOutputText().isValid())
+        .map(content -> content.asOutputText().text())
+        .collect(Collectors.joining(" "))
+        .trim();
   }
 
   public static String normalizeAssistantText(ObjectMapper objectMapper, String text) {
