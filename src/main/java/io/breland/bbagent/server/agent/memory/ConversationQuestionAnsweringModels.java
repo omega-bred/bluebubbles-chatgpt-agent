@@ -8,6 +8,7 @@ import java.util.Locale;
 import java.util.Objects;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.lang.Nullable;
+import org.springframework.util.Assert;
 
 public final class ConversationQuestionAnsweringModels {
   private ConversationQuestionAnsweringModels() {}
@@ -207,18 +208,14 @@ public final class ConversationQuestionAnsweringModels {
     public QuestionMessage {
       requireNotBlank(messageGuid, "message guid");
       requireNotBlank(participant, "participant");
-      if (timestamp == null) {
-        throw new IllegalArgumentException("timestamp must not be null");
-      }
+      Assert.notNull(timestamp, "timestamp must not be null");
       requireNotBlank(text, "text");
     }
   }
 
   public record MembershipInterval(Instant startedAt, @Nullable Instant endedAt) {
     public MembershipInterval {
-      if (startedAt == null) {
-        throw new IllegalArgumentException("membership start must not be null");
-      }
+      Assert.notNull(startedAt, "membership start must not be null");
     }
 
     public boolean contains(Instant timestamp) {
@@ -255,19 +252,13 @@ public final class ConversationQuestionAnsweringModels {
 
     public RetrievalRequest {
       requireNotBlank(accountId, "account id");
-      if (conversation == null) {
-        throw new IllegalArgumentException("conversation must not be null");
-      }
+      Assert.notNull(conversation, "conversation must not be null");
       memberships = List.copyOf(memberships);
       if (from == null || to == null || !from.isBefore(to)) {
         throw new IllegalArgumentException("retrieval range must be ordered");
       }
-      if (deadline == null) {
-        throw new IllegalArgumentException("retrieval deadline must not be null");
-      }
-      if (mappingSession == null) {
-        throw new IllegalArgumentException("mapping session must not be null");
-      }
+      Assert.notNull(deadline, "retrieval deadline must not be null");
+      Assert.notNull(mappingSession, "mapping session must not be null");
     }
   }
 
@@ -279,9 +270,7 @@ public final class ConversationQuestionAnsweringModels {
       @Nullable String model,
       boolean fallbackUsed) {
     public GroupQuestionAnswer {
-      if (status == null) {
-        throw new IllegalArgumentException("answer status must not be null");
-      }
+      Assert.notNull(status, "answer status must not be null");
       answer = StringUtils.trimToNull(answer);
       clarificationQuestion = StringUtils.trimToNull(clarificationQuestion);
       if (status == AnswerStatus.CLARIFICATION_REQUIRED) {
@@ -328,12 +317,8 @@ public final class ConversationQuestionAnsweringModels {
         Instant coverageThrough,
         List<String> referencedParticipants) {
       requireNotBlank(answer, "answer");
-      if (confidence == null) {
-        throw new IllegalArgumentException("confidence must not be null");
-      }
-      if (coverageThrough == null) {
-        throw new IllegalArgumentException("coverage through must not be null");
-      }
+      Assert.notNull(confidence, "confidence must not be null");
+      Assert.notNull(coverageThrough, "coverage through must not be null");
       this.answer = answer;
       this.confidence = confidence;
       this.evidenceMessageGuids = List.copyOf(evidenceMessageGuids);
