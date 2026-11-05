@@ -5,7 +5,6 @@ import static io.breland.bbagent.server.agent.tools.JsonSchemaUtilities.jsonSche
 import com.openai.client.OpenAIClient;
 import com.openai.models.images.Image;
 import com.openai.models.images.ImageGenerateParams;
-import com.openai.models.images.ImageModel;
 import com.openai.models.images.ImagesResponse;
 import io.breland.bbagent.server.agent.IncomingMessage;
 import io.breland.bbagent.server.agent.tools.AgentTool;
@@ -92,10 +91,9 @@ public class SetGroupIconAgentTool implements ToolProvider {
       ImageGenerateParams params =
           ImageGenerateParams.builder()
               .prompt(prompt)
-              .model(ImageModel.GPT_IMAGE_1)
+              .model("gpt-image-2.6-sunburst")
               .size(ImageGenerateParams.Size._1024X1024)
               .outputFormat(ImageGenerateParams.OutputFormat.PNG)
-              .responseFormat(ImageGenerateParams.ResponseFormat.B64_JSON)
               .build();
       ImagesResponse response = openAiSupplier.get().images().generate(params);
       List<Image> images = response.data().orElse(List.of());

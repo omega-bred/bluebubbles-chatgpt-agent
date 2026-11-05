@@ -33,7 +33,8 @@ public class ModelPicker {
       if (modelAccess.supportsImageGeneration() && incomingMessage.isBlueBubblesTransport()) {
         builder.addTool(
             Tool.ImageGeneration.builder()
-                .model(Tool.ImageGeneration.Model.GPT_IMAGE_1_5)
+                // Newest documented model for the Responses image-generation tool.
+                .model(Tool.ImageGeneration.Model.of("gpt-image-2.5-sunburst"))
                 .size(Tool.ImageGeneration.Size._1536X1024)
                 .moderation(Tool.ImageGeneration.Moderation.LOW)
                 .background(Tool.ImageGeneration.Background.AUTO)
