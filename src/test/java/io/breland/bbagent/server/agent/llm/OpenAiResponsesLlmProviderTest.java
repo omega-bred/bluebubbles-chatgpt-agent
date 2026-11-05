@@ -204,7 +204,7 @@ class OpenAiResponsesLlmProviderTest {
         assertEquals(functions.size(), countTools(request, "function"));
         for (JsonNode tool : request.path("tools")) {
           if ("image_generation".equals(tool.path("type").asText())) {
-            assertEquals("gpt-image-1.5", tool.path("model").asText());
+            assertEquals("gpt-image-2.5-sunburst", tool.path("model").asText());
           }
         }
       }
