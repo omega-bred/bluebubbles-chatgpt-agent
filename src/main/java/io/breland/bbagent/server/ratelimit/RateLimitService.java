@@ -9,6 +9,7 @@ import org.apache.commons.lang3.StringUtils;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.util.Assert;
 
 @Service
 public class RateLimitService {
@@ -33,9 +34,7 @@ public class RateLimitService {
   @Transactional
   public RateLimitDecision tryConsume(RateLimitPolicy policy, long amount) {
     validatePolicy(policy);
-    if (amount <= 0) {
-      throw new IllegalArgumentException("rate limit amount must be positive");
-    }
+    Assert.isTrue(amount > 0, "rate limit amount must be positive");
     AppRateLimitUsageEntity usage =
         repository
             .findForUpdate(
@@ -86,23 +85,13 @@ public class RateLimitService {
   }
 
   private void validatePolicy(RateLimitPolicy policy) {
-    if (policy == null) {
-      throw new IllegalArgumentException("rate limit policy is required");
-    }
-    if (StringUtils.isBlank(policy.limitKey())) {
-      throw new IllegalArgumentException("rate limit key is required");
-    }
-    if (StringUtils.isBlank(policy.scopeType())) {
-      throw new IllegalArgumentException("rate limit scope type is required");
-    }
-    if (StringUtils.isBlank(policy.scopeKey())) {
-      throw new IllegalArgumentException("rate limit scope key is required");
-    }
-    if (policy.limit() < 0) {
-      throw new IllegalArgumentException("rate limit must be non-negative");
-    }
-    if (policy.windowStart() == null || policy.windowEnd() == null) {
-      throw new IllegalArgumentException("rate limit window is required");
-    }
+    Assert.notNull(policy, "rate limit policy is required");
+    Assert.isTrue(StringUtils.isNotBlank(policy.limitKey()), "rate limit key is required");
+    Assert.isTrue(StringUtils.isNotBlank(policy.scopeType()), "rate limit scope type is required");
+    Assert.isTrue(StringUtils.isNotBlank(policy.scopeKey()), "rate limit scope key is required");
+    Assert.isTrue(policy.limit() >= 0, "rate limit must be non-negative");
+    Assert.isTrue(
+        policy.windowStart() != null && policy.windowEnd() != null,
+        "rate limit window is required");
   }
 }
