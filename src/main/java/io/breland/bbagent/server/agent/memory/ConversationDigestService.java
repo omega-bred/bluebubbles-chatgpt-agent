@@ -31,6 +31,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.function.Supplier;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
@@ -98,15 +99,7 @@ public class ConversationDigestService {
 
   public CatchupResult catchUp(
       String accountId, @Nullable String groupHint, Instant requestedFrom, Instant requestedTo) {
-    Instant startedAt = clock.instant();
-    try {
-      CatchupResult result = catchUpInternal(accountId, groupHint, requestedFrom, requestedTo);
-      recordCatchup(true, null, startedAt);
-      return result;
-    } catch (RuntimeException e) {
-      recordCatchup(false, OperationalMetricsService.failureType(e), startedAt);
-      throw e;
-    }
+    return measuredCatchup(() -> catchUpInternal(accountId, groupHint, requestedFrom, requestedTo));
   }
 
   private CatchupResult catchUpInternal(
@@ -145,16 +138,8 @@ public class ConversationDigestService {
       String chatGuid,
       Instant requestedFrom,
       Instant requestedTo) {
-    Instant startedAt = clock.instant();
-    try {
-      CatchupResult result =
-          catchUpForChatInternal(accountId, transport, chatGuid, requestedFrom, requestedTo);
-      recordCatchup(true, null, startedAt);
-      return result;
-    } catch (RuntimeException e) {
-      recordCatchup(false, OperationalMetricsService.failureType(e), startedAt);
-      throw e;
-    }
+    return measuredCatchup(
+        () -> catchUpForChatInternal(accountId, transport, chatGuid, requestedFrom, requestedTo));
   }
 
   private CatchupResult catchUpForChatInternal(
@@ -267,16 +252,9 @@ public class ConversationDigestService {
 
   public CatchupResult catchUpForConversation(
       String accountId, String conversationId, Instant requestedFrom, Instant requestedTo) {
-    Instant startedAt = clock.instant();
-    try {
-      CatchupResult result =
-          catchUpForConversationInternal(accountId, conversationId, requestedFrom, requestedTo);
-      recordCatchup(true, null, startedAt);
-      return result;
-    } catch (RuntimeException e) {
-      recordCatchup(false, OperationalMetricsService.failureType(e), startedAt);
-      throw e;
-    }
+    return measuredCatchup(
+        () ->
+            catchUpForConversationInternal(accountId, conversationId, requestedFrom, requestedTo));
   }
 
   private CatchupResult catchUpForConversationInternal(
@@ -547,6 +525,18 @@ public class ConversationDigestService {
     } catch (RuntimeException e) {
       store.failDigestWork(claim, now, OperationalMetricsService.failureType(e));
       return false;
+    }
+  }
+
+  private CatchupResult measuredCatchup(Supplier<CatchupResult> operation) {
+    Instant startedAt = clock.instant();
+    try {
+      CatchupResult result = operation.get();
+      recordCatchup(true, null, startedAt);
+      return result;
+    } catch (RuntimeException e) {
+      recordCatchup(false, OperationalMetricsService.failureType(e), startedAt);
+      throw e;
     }
   }
 
