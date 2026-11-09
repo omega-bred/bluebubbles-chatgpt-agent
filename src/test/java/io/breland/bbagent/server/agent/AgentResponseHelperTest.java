@@ -1,5 +1,6 @@
 package io.breland.bbagent.server.agent;
 
+import static io.breland.bbagent.server.agent.ResponseFixtures.responseWithText;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -123,42 +124,6 @@ call:send_text{message:Clone repos, cherry-pick commit, and push to GitHub.,thre
 
     assertTrue(outputJson.contains("prevent repeated loops"));
     assertTrue(outputJson.contains("without calling this tool again"));
-  }
-
-  private static Response responseWithText(String text) {
-    try {
-      String responseJson =
-          """
-          {
-            "id": "resp-1",
-            "created_at": 0,
-            "model": "gpt-5-chat-latest",
-            "output": [
-              {
-                "type": "message",
-                "id": "msg-1",
-                "role": "assistant",
-                "status": "completed",
-                "content": [
-                  {
-                    "type": "output_text",
-                    "text": %s,
-                    "annotations": []
-                  }
-                ]
-              }
-            ],
-            "parallel_tool_calls": false,
-            "temperature": 0.2,
-            "tools": [],
-            "top_p": 1.0
-          }
-          """
-              .formatted(new ObjectMapper().writeValueAsString(text));
-      return new ObjectMapper().readValue(responseJson, Response.class);
-    } catch (Exception e) {
-      throw new RuntimeException("Failed to build test response payload", e);
-    }
   }
 
   private static Response responseWithFunctionCallNamespaceNull() throws Exception {
