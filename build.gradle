@@ -238,7 +238,7 @@ dependencies {
     implementation platform('org.apache.logging.log4j:log4j-bom:2.26.1')
     implementation platform("org.springframework.ai:spring-ai-bom:2.0.2")
     implementation("org.springframework.ai:spring-ai-tool-search-tool")
-    implementation("org.apache.lucene:lucene-core:10.5.2")
+    implementation("org.apache.lucene:lucene-core:10.6.0")
 
     runtimeOnly 'org.apache.logging.log4j:log4j-slf4j2-impl'
 
