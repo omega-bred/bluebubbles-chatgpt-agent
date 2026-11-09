@@ -1,5 +1,8 @@
 package io.breland.bbagent.server.agent;
 
+import static io.breland.bbagent.server.agent.ResponseFixtures.baseResponse;
+import static io.breland.bbagent.server.agent.ResponseFixtures.extractText;
+import static io.breland.bbagent.server.agent.ResponseFixtures.responseWithText;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -16,17 +19,14 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.openai.client.OpenAIClient;
 import com.openai.core.JsonValue;
-import com.openai.models.ChatModel;
 import com.openai.models.responses.EasyInputMessage;
 import com.openai.models.responses.FunctionTool;
 import com.openai.models.responses.Response;
 import com.openai.models.responses.ResponseCreateParams;
-import com.openai.models.responses.ResponseError;
 import com.openai.models.responses.ResponseFunctionToolCall;
 import com.openai.models.responses.ResponseInputItem;
 import com.openai.models.responses.ResponseOutputItem;
 import com.openai.models.responses.Tool;
-import com.openai.models.responses.ToolChoiceOptions;
 import com.uber.cadence.WorkflowExecution;
 import io.breland.bbagent.generated.bluebubblesclient.api.V1ContactApi;
 import io.breland.bbagent.generated.bluebubblesclient.api.V1MessageApi;
@@ -879,7 +879,7 @@ class BBMessageAgentTest {
     assertTrue(
         requestInput.stream()
             .filter(this::isDeveloperInputMessage)
-            .map(this::extractText)
+            .map(ResponseFixtures::extractText)
             .anyMatch(
                 text -> text.contains("Current location context for the current BlueChat sender")));
     assertFalse(
@@ -967,7 +967,10 @@ class BBMessageAgentTest {
     List<ResponseInputItem> input =
         promptBuilder.buildConversationInput(List.of(), List.of(), groupMessage);
 
-    assertFalse(input.stream().map(this::extractText).anyMatch(text -> text.contains("Find My")));
+    assertFalse(
+        input.stream()
+            .map(ResponseFixtures::extractText)
+            .anyMatch(text -> text.contains("Find My")));
     assertEquals(0, bbHttpClientWrapper.findMyLookupCalls);
   }
 
@@ -1267,7 +1270,7 @@ class BBMessageAgentTest {
     List<ResponseInputItem> input =
         promptBuilder(new StubBBHttpClientWrapper())
             .buildConversationInput(state.history(), state.pendingIncomingTurns(), second);
-    List<String> texts = input.stream().map(this::extractText).toList();
+    List<String> texts = input.stream().map(ResponseFixtures::extractText).toList();
 
     assertTrue(texts.stream().anyMatch(text -> text.contains("Alice: first request")));
     assertEquals(1L, texts.stream().filter(text -> text.contains("second request")).count());
@@ -1425,7 +1428,7 @@ class BBMessageAgentTest {
             "filename=standings.png",
             "mimeType=image/png")
         .doesNotContain("older user text", "1,907 standings so far", "The literal example");
-    assertThat(input.stream().map(this::extractText))
+    assertThat(input.stream().map(ResponseFixtures::extractText))
         .contains("[messageGuid=msg-user] Alice: older user text");
   }
 
@@ -1792,22 +1795,6 @@ class BBMessageAgentTest {
     return false;
   }
 
-  private String extractText(ResponseInputItem item) {
-    if (item.isEasyInputMessage()) {
-      EasyInputMessage.Content content = item.asEasyInputMessage().content();
-      if (content.isTextInput()) {
-        return content.asTextInput();
-      }
-      if (content.isResponseInputMessageContentList()) {
-        return content.asResponseInputMessageContentList().toString();
-      }
-    }
-    if (item.isMessage()) {
-      return item.asMessage().content().toString();
-    }
-    return item.toString();
-  }
-
   private static List<String> toolNames(ResponseCreateParams params) {
     return params.tools().orElse(List.of()).stream()
         .filter(Tool::isFunction)
@@ -2155,60 +2142,6 @@ class BBMessageAgentTest {
 
   private static Response responseWithNoToolCalls() {
     return baseResponse(List.of());
-  }
-
-  private static Response responseWithText(String text) {
-    try {
-      String responseJson =
-          """
-          {
-            "id": "resp-1",
-            "created_at": 0,
-            "model": "gpt-5-chat-latest",
-            "output": [
-              {
-                "type": "message",
-                "id": "msg-1",
-                "role": "assistant",
-                "status": "completed",
-                "content": [
-                  {
-                    "type": "output_text",
-                    "text": %s,
-                    "annotations": []
-                  }
-                ]
-              }
-            ],
-            "parallel_tool_calls": false,
-            "temperature": 0.2,
-            "tools": [],
-            "top_p": 1.0
-          }
-          """
-              .formatted(new ObjectMapper().writeValueAsString(text));
-      return new ObjectMapper().readValue(responseJson, Response.class);
-    } catch (Exception e) {
-      throw new RuntimeException("Failed to build test response payload", e);
-    }
-  }
-
-  private static Response baseResponse(List<ResponseOutputItem> outputItems) {
-    return Response.builder()
-        .id("resp-1")
-        .createdAt(0.0)
-        .error((ResponseError) null)
-        .incompleteDetails((Response.IncompleteDetails) null)
-        .instructions((Response.Instructions) null)
-        .metadata((Response.Metadata) null)
-        .model(ChatModel.GPT_5_CHAT_LATEST)
-        .output(outputItems)
-        .parallelToolCalls(false)
-        .temperature(0.2)
-        .toolChoice(ToolChoiceOptions.AUTO)
-        .tools(List.of())
-        .topP(1.0)
-        .build();
   }
 
   private static class InMemoryAgentSettingsStore implements AgentSettingsStore {

@@ -1,5 +1,7 @@
 package io.breland.bbagent.server.agent;
 
+import static io.breland.bbagent.server.agent.ResponseFixtures.baseResponse;
+import static io.breland.bbagent.server.agent.ResponseFixtures.responseWithText;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -10,16 +12,12 @@ import static org.mockito.Mockito.when;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.openai.client.OpenAIClient;
-import com.openai.models.ChatModel;
-import com.openai.models.responses.EasyInputMessage;
 import com.openai.models.responses.Response;
 import com.openai.models.responses.ResponseCreateParams;
-import com.openai.models.responses.ResponseError;
 import com.openai.models.responses.ResponseFunctionToolCall;
 import com.openai.models.responses.ResponseInputItem;
 import com.openai.models.responses.ResponseOutputItem;
 import com.openai.models.responses.Tool;
-import com.openai.models.responses.ToolChoiceOptions;
 import com.uber.cadence.WorkflowExecution;
 import io.breland.bbagent.generated.bluebubblesclient.api.V1ContactApi;
 import io.breland.bbagent.generated.bluebubblesclient.api.V1MessageApi;
@@ -181,24 +179,8 @@ class LxmfEndToEndIntegrationTest {
 
   private static boolean inputContains(List<ResponseInputItem> inputItems, String text) {
     return inputItems.stream()
-        .map(LxmfEndToEndIntegrationTest::extractText)
+        .map(ResponseFixtures::extractText)
         .anyMatch(value -> value.contains(text));
-  }
-
-  private static String extractText(ResponseInputItem item) {
-    if (item.isEasyInputMessage()) {
-      EasyInputMessage.Content content = item.asEasyInputMessage().content();
-      if (content.isTextInput()) {
-        return content.asTextInput();
-      }
-      if (content.isResponseInputMessageContentList()) {
-        return content.asResponseInputMessageContentList().toString();
-      }
-    }
-    if (item.isMessage()) {
-      return item.asMessage().content().toString();
-    }
-    return item.toString();
   }
 
   private static List<String> toolNames(ResponseCreateParams params) {
@@ -212,60 +194,6 @@ class LxmfEndToEndIntegrationTest {
     ResponseFunctionToolCall call =
         ResponseFunctionToolCall.builder().name(name).arguments(argsJson).callId(callId).build();
     return baseResponse(List.of(ResponseOutputItem.ofFunctionCall(call)));
-  }
-
-  private static Response responseWithText(String text) {
-    try {
-      String responseJson =
-          """
-          {
-            "id": "resp-1",
-            "created_at": 0,
-            "model": "gpt-5-chat-latest",
-            "output": [
-              {
-                "type": "message",
-                "id": "msg-1",
-                "role": "assistant",
-                "status": "completed",
-                "content": [
-                  {
-                    "type": "output_text",
-                    "text": %s,
-                    "annotations": []
-                  }
-                ]
-              }
-            ],
-            "parallel_tool_calls": false,
-            "temperature": 0.2,
-            "tools": [],
-            "top_p": 1.0
-          }
-          """
-              .formatted(OBJECT_MAPPER.writeValueAsString(text));
-      return OBJECT_MAPPER.readValue(responseJson, Response.class);
-    } catch (Exception e) {
-      throw new RuntimeException("Failed to build test response payload", e);
-    }
-  }
-
-  private static Response baseResponse(List<ResponseOutputItem> outputItems) {
-    return Response.builder()
-        .id("resp-1")
-        .createdAt(0.0)
-        .error((ResponseError) null)
-        .incompleteDetails((Response.IncompleteDetails) null)
-        .instructions((Response.Instructions) null)
-        .metadata((Response.Metadata) null)
-        .model(ChatModel.GPT_5_CHAT_LATEST)
-        .output(outputItems)
-        .parallelToolCalls(false)
-        .temperature(0.2)
-        .toolChoice(ToolChoiceOptions.AUTO)
-        .tools(List.of())
-        .topP(1.0)
-        .build();
   }
 
   private record BridgeSend(String destinationHash, String text) {}
