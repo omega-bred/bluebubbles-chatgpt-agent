@@ -12,7 +12,7 @@
   "dependencies": {
     "axios": "^1.21.0",
     "cap-widget": "^0.1.58",
-    "keycloak-js": "^26.2.4",
+    "keycloak-js": "^26.2.5",
     "react": "^19.3.1",
     "react-dom": "^19.3.1"
   },
