@@ -273,12 +273,17 @@ Optional (help/contact form):
 - `CAP_CONTACT_SITE_KEY`
 - `CAP_CONTACT_SECRET_KEY`
 - `CAP_CONTACT_REQUIRED` (defaults to `true`)
+- `LINEAR_API_KEY`
+- `LINEAR_TEAM_ID` (optional explicit team id; otherwise matches `LINEAR_TEAM_KEY` or
+  `LINEAR_TEAM_NAME`, default `bluechat`, then falls back to the only available team)
+- `LINEAR_CONTACT_LABEL` (defaults to `Contact/Help`; must exist unless
+  `LINEAR_CREATE_MISSING_LABELS=true`)
 
 The contact form is served at `/help` and `/contact`. It loads public CAPTCHA config from
-`/api/v1/contact/get.contactConfig`, verifies Cap tokens server-side, and stores submissions in the
-`website_contact_messages` table. The production 1Password item is `cap-bbagent-contact` with
-`site-key` and `secret-key` fields; `build.gradle` pulls these into `bootRun` and test JVMs when
-available.
+`/api/v1/contact/get.contactConfig`, verifies Cap tokens server-side, and creates Linear help/contact
+issues for admin review. The response's `message_id` is the Linear issue identifier or ID. The
+production Cap 1Password item is `cap-bbagent-contact` with `site-key` and `secret-key` fields;
+`build.gradle` pulls these into `bootRun` and test JVMs when available.
 
 Optional (subscription billing):
 - `SUBSCRIPTIONS_ENABLED`

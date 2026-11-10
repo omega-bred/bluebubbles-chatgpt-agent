@@ -92,8 +92,10 @@ Live BlueChat end-to-end validation:
 
 Help/contact and Cap:
 - The public help/contact form lives at `/help` and `/contact`, uses generated OpenAPI client calls
-  to `/api/v1/contact/get.contactConfig` and `/api/v1/contact/create.contactMessages`, and stores
-  rows in `website_contact_messages`.
+  to `/api/v1/contact/get.contactConfig` and `/api/v1/contact/create.contactMessages`, and creates
+  Linear help/contact issues through `LinearIssueService.createContactIssue`.
+  The response's `message_id` is the Linear issue identifier or ID. Migration V20 dropped the
+  legacy `website_contact_messages` table.
 - Contact abuse prevention is Cap-backed. Frontend uses `cap-widget`; backend verifies the emitted
   token by POSTing to `${CAP_BASE_URL}/${CAP_CONTACT_SITE_KEY}/siteverify`.
 - Production Cap is hosted at `https://cap.bre.land`. The Kubernetes/1Password item is
