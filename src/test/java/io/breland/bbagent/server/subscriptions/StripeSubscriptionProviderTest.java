@@ -7,6 +7,7 @@ import static org.mockito.Mockito.mockConstruction;
 import static org.mockito.Mockito.withSettings;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.stripe.Stripe;
 import com.stripe.StripeClient;
 import com.sun.net.httpserver.HttpServer;
 import java.net.InetSocketAddress;
@@ -26,7 +27,7 @@ class StripeSubscriptionProviderTest {
   private static final String WEBHOOK_SECRET = "whsec_test";
 
   @ParameterizedTest
-  @ValueSource(strings = {"2026-04-22.dahlia", "2026-09-30.endive"})
+  @ValueSource(strings = {"2026-04-22.dahlia", "2026-09-30.endive", "2026-10-28.endive"})
   void verifyAndParseWebhookAcceptsCheckoutSessionCompletedEvent(String apiVersion) {
     StripeSubscriptionProvider provider = provider();
     byte[] payload =
@@ -68,7 +69,7 @@ class StripeSubscriptionProviderTest {
   }
 
   @ParameterizedTest
-  @ValueSource(strings = {"2026-04-22.dahlia", "2026-09-30.endive"})
+  @ValueSource(strings = {"2026-04-22.dahlia", "2026-09-30.endive", "2026-10-28.endive"})
   void verifyAndParseWebhookAcceptsSubscriptionUpdatedEvent(String apiVersion) {
     StripeSubscriptionProvider provider = provider();
     byte[] payload =
@@ -168,7 +169,7 @@ class StripeSubscriptionProviderTest {
                       7));
 
       assertThat(clients.constructed()).hasSize(1);
-      assertThat(version.get()).isEqualTo("2026-09-30.endive");
+      assertThat(version.get()).isEqualTo(Stripe.API_VERSION);
       assertThat(idempotencyKey.get()).isEqualTo("bbagent-checkout-checkout-1");
       assertThat(body.get())
           .containsEntry("mode", "subscription")
