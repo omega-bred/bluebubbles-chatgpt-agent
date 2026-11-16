@@ -263,7 +263,7 @@ dependencies {
     implementation 'com.google.http-client:google-http-client-jackson2:2.2.0'
     implementation 'com.google.apis:google-api-services-calendar:v3-rev20251207-2.0.0'
 
-    implementation 'com.auth0:java-jwt:4.5.0'
+    implementation 'com.auth0:java-jwt:4.6.2'
     implementation 'com.stripe:stripe-java:34.0.0'
     implementation 'com.apple.itunes.storekit:app-store-server-library:5.2.0'
 
