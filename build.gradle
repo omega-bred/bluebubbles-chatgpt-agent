@@ -9,7 +9,7 @@ plugins {
 	id 'io.spring.dependency-management' version '1.1.7'
 	id 'org.openapi.generator' version '7.27.0'
 	id 'com.diffplug.spotless' version '8.10.4'
-    id "org.flywaydb.flyway" version "13.7.0"
+    id "org.flywaydb.flyway" version "13.12.2"
 }
 
 var grp = 'io.breland.bbagent'
@@ -263,8 +263,8 @@ dependencies {
     implementation 'com.google.http-client:google-http-client-jackson2:2.2.0'
     implementation 'com.google.apis:google-api-services-calendar:v3-rev20251207-2.0.0'
 
-    implementation 'com.auth0:java-jwt:4.5.0'
-    implementation 'com.stripe:stripe-java:34.0.0'
+    implementation 'com.auth0:java-jwt:4.6.2'
+    implementation 'com.stripe:stripe-java:34.1.0'
     implementation 'com.apple.itunes.storekit:app-store-server-library:5.2.0'
 
     // MCP
@@ -272,8 +272,8 @@ dependencies {
     implementation 'io.modelcontextprotocol.sdk:mcp-json-jackson2:2.1.0'
 
     implementation("com.openai:openai-java-spring-boot-starter:4.45.0")
-    implementation("com.anthropic:anthropic-java:3.6.0")
-    implementation("com.google.genai:google-genai:2.0.0")
+    implementation("com.anthropic:anthropic-java:3.8.0")
+    implementation("com.google.genai:google-genai:2.3.0")
     implementation("com.uber.cadence:cadence-client:4.0.0")
 
     implementation 'io.micrometer:micrometer-core'
