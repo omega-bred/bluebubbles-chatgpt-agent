@@ -822,21 +822,6 @@
   "ch/qos/logback#logback-parent/1.5.38": {
    "pom": "sha256-K846YaZEmtuaByLhwMHjkVM4gLoCkW09+DIImZrqbGY="
   },
-  "com/anthropic#anthropic-java-client-okhttp/3.6.0": {
-   "jar": "sha256-azeiWFvXaDwy6uNOIeOONdKV6gPTHVyM9/Q03egtpb8=",
-   "module": "sha256-TXLiuFcSVGK/DtN6lb+neR35U7LC7uP2GYDf8EGBwmM=",
-   "pom": "sha256-vdGVDm1FOQV4h3936IxNaFfH3dToR5/cuA8dko2Y7ZE="
-  },
-  "com/anthropic#anthropic-java-core/3.6.0": {
-   "jar": "sha256-WCiN/lFBcc/6Cwuypl4lw1Zlb/TjIloNl1Q6N79wWzI=",
-   "module": "sha256-UWNIzJSLjUC1+byuB/nb4n9OulwFXzh7Rh5VE8SEmSw=",
-   "pom": "sha256-ksVI+uvqkz+lpB+4OUJzh585sIlG+rgW+b/bTT9Qf0w="
-  },
-  "com/anthropic#anthropic-java/3.6.0": {
-   "jar": "sha256-hQ3nUVlkVfEn7slFRgTl8nGGwbeLsdkDZETyekAXayw=",
-   "module": "sha256-/fGCtiUkyhtTVYMVQmKNthwx/mhtIGlm5eG2zKm+L0Y=",
-   "pom": "sha256-gmg5VCt18FM+R3wveXPMzwF81kIdVv6/e+ynIlxW2JA="
-  },
   "com/apple/itunes/storekit#app-store-server-library/5.2.0": {
    "jar": "sha256-pkk3wcvAB0LY9TAdVHfMyNQCrfGnohDEMQrQrNPS0Mg=",
    "module": "sha256-KDOVmKXqiHDHs+/HxL7L0XBwEnDW948K25PsEPq2ZP0=",
@@ -1089,6 +1074,7 @@
    "pom": "sha256-15z9N8hfdta3VMdQHuHchEe3smQsI4LXeCUhZr0zHpw="
   },
   "com/google/errorprone#error_prone_annotations/2.41.0": {
+   "jar": "sha256-pW54K1tQgRrCBAc6NVoh2RWiEH/OE+xxEzGtA29mD8w=",
    "pom": "sha256-oVHfHi4LSGGNiwahgHSKKbOrs5sbI5b2och5pydIjG4="
   },
   "com/google/errorprone#error_prone_annotations/2.50.0": {
@@ -1311,10 +1297,6 @@
   "com/squareup/okio#okio/3.6.0": {
    "module": "sha256-akesUDZOZZhFlAH7hvm2z832N7mzowRbHMM8v0xAghg=",
    "pom": "sha256-rrO3CiTBA+0MVFQfNfXFEdJ85gyuN2pZbX1lNpf4zJU="
-  },
-  "com/standardwebhooks#standardwebhooks/1.2.0": {
-   "jar": "sha256-umO8ZP61hmdQynJ3AQj7y77SiGK8HMV323vT750tAHs=",
-   "pom": "sha256-WRmAd0Ba6NkGgrlgnIJi0uARtJD25lcIfET9ucKK6Ig="
   },
   "com/stripe#stripe-java/34.0.0": {
    "jar": "sha256-Zj5RF0ek3VU0Gl5LFJfU0jBXyawd2wXwC1MJrUTCpLo=",
