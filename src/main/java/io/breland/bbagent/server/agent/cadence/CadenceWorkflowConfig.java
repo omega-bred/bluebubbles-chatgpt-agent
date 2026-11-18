@@ -23,6 +23,8 @@ import java.lang.reflect.Type;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.format.DateTimeParseException;
+import java.util.function.Function;
+import java.util.function.LongFunction;
 import kotlin.Lazy;
 import kotlin.LazyKt;
 import org.springframework.context.annotation.Bean;
@@ -49,8 +51,14 @@ public class CadenceWorkflowConfig {
         new JsonDataConverter(
             builder ->
                 builder
-                    .registerTypeAdapter(Instant.class, new InstantTypeAdapter())
-                    .registerTypeAdapter(Duration.class, new DurationTypeAdapter())
+                    .registerTypeAdapter(
+                        Instant.class,
+                        new TemporalTypeAdapter<>(
+                            Instant.class, Instant::parse, Instant::ofEpochMilli))
+                    .registerTypeAdapter(
+                        Duration.class,
+                        new TemporalTypeAdapter<>(
+                            Duration.class, Duration::parse, Duration::ofMillis))
                     .registerTypeHierarchyAdapter(JsonField.class, new JsonFieldTypeAdapter())
                     .registerTypeHierarchyAdapter(JsonValue.class, new JsonValueTypeAdapter())
                     .registerTypeHierarchyAdapter(Lazy.class, new LazyTypeAdapter()));
@@ -76,43 +84,41 @@ public class CadenceWorkflowConfig {
     return factory;
   }
 
-  static final class InstantTypeAdapter
-      implements JsonSerializer<Instant>, JsonDeserializer<Instant> {
+  private record TemporalTypeAdapter<T>(
+      Class<T> valueType, Function<String, T> parseIso, LongFunction<T> fromMillis)
+      implements JsonSerializer<T>, JsonDeserializer<T> {
     @Override
-    public JsonElement serialize(Instant src, Type typeOfSrc, JsonSerializationContext context) {
-      if (src == null) {
-        return JsonNull.INSTANCE;
-      }
-      return new JsonPrimitive(src.toString());
+    public JsonElement serialize(T src, Type typeOfSrc, JsonSerializationContext context) {
+      return src == null ? JsonNull.INSTANCE : new JsonPrimitive(src.toString());
     }
 
     @Override
-    public Instant deserialize(JsonElement json, Type typeOfT, JsonDeserializationContext context)
-        throws JsonParseException {
+    public T deserialize(JsonElement json, Type typeOfT, JsonDeserializationContext context) {
       if (json == null || json.isJsonNull()) {
         return null;
       }
-      if (json.isJsonPrimitive()) {
-        JsonPrimitive primitive = json.getAsJsonPrimitive();
-        if (primitive.isNumber()) {
-          return Instant.ofEpochMilli(primitive.getAsLong());
-        }
-        String text = primitive.getAsString();
-        if (text == null || text.isBlank()) {
-          return null;
-        }
-        try {
-          return Instant.parse(text);
-        } catch (DateTimeParseException ignored) {
-          try {
-            long millis = Long.parseLong(text);
-            return Instant.ofEpochMilli(millis);
-          } catch (NumberFormatException ignoredNumber) {
-            return null;
-          }
-        }
+      if (!json.isJsonPrimitive()) {
+        throw new JsonParseException(
+            "Unsupported " + valueType.getSimpleName() + " value: " + json);
       }
-      throw new JsonParseException("Unsupported Instant value: " + json);
+      JsonPrimitive primitive = json.getAsJsonPrimitive();
+      if (primitive.isNumber()) {
+        return fromMillis.apply(primitive.getAsLong());
+      }
+      String text = primitive.getAsString();
+      if (text == null || text.isBlank()) {
+        return null;
+      }
+      try {
+        return parseIso.apply(text);
+      } catch (DateTimeParseException ignored) {
+        // Older workflow payloads can contain millisecond strings.
+      }
+      try {
+        return fromMillis.apply(Long.parseLong(text));
+      } catch (NumberFormatException ignored) {
+        return null;
+      }
     }
   }
 
@@ -164,45 +170,6 @@ public class CadenceWorkflowConfig {
       }
       Object value = context.deserialize(json, Object.class);
       return JsonValue.from(value);
-    }
-  }
-
-  static final class DurationTypeAdapter
-      implements JsonSerializer<Duration>, JsonDeserializer<Duration> {
-    @Override
-    public JsonElement serialize(Duration src, Type typeOfSrc, JsonSerializationContext context) {
-      if (src == null) {
-        return JsonNull.INSTANCE;
-      }
-      return new JsonPrimitive(src.toString());
-    }
-
-    @Override
-    public Duration deserialize(JsonElement json, Type typeOfT, JsonDeserializationContext context)
-        throws JsonParseException {
-      if (json == null || json.isJsonNull()) {
-        return null;
-      }
-      if (json.isJsonPrimitive()) {
-        JsonPrimitive primitive = json.getAsJsonPrimitive();
-        if (primitive.isNumber()) {
-          return Duration.ofMillis(primitive.getAsLong());
-        }
-        String text = primitive.getAsString();
-        if (text == null || text.isBlank()) {
-          return null;
-        }
-        try {
-          return Duration.parse(text);
-        } catch (Exception ignored) {
-          try {
-            return Duration.ofMillis(Long.parseLong(text));
-          } catch (NumberFormatException ignoredNumber) {
-            return null;
-          }
-        }
-      }
-      throw new JsonParseException("Unsupported Duration value: " + json);
     }
   }
 
