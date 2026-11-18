@@ -32,6 +32,7 @@ import java.util.Locale;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.function.Supplier;
+import java.util.function.UnaryOperator;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
@@ -407,23 +408,30 @@ public class ConversationDigestService {
   private GroupSelection selectGroups(
       List<AuthorizedGroup> authorizedGroups, @Nullable String groupHint) {
     String normalizedHint = normalizeGroupHint(groupHint);
-    if (normalizedHint == null) {
-      return new GroupSelection(authorizedGroups, List.of());
-    }
-    List<AuthorizedGroup> exact =
-        authorizedGroups.stream()
-            .filter(group -> normalizedName(group.displayName()).equals(normalizedHint))
-            .toList();
     List<AuthorizedGroup> matches =
-        exact.isEmpty()
-            ? authorizedGroups.stream()
-                .filter(group -> normalizedName(group.displayName()).contains(normalizedHint))
-                .toList()
-            : exact;
-    if (matches.size() > 1) {
+        matchGroupNames(authorizedGroups, normalizedHint, this::normalizedName);
+    if (normalizedHint != null && matches.size() > 1) {
       return new GroupSelection(List.of(), disambiguationOptions(matches));
     }
     return new GroupSelection(matches, List.of());
+  }
+
+  static List<AuthorizedGroup> matchGroupNames(
+      List<AuthorizedGroup> authorizedGroups,
+      @Nullable String normalizedHint,
+      UnaryOperator<String> normalizeName) {
+    if (normalizedHint == null) {
+      return authorizedGroups;
+    }
+    List<AuthorizedGroup> exact =
+        authorizedGroups.stream()
+            .filter(group -> normalizeName.apply(group.displayName()).equals(normalizedHint))
+            .toList();
+    return exact.isEmpty()
+        ? authorizedGroups.stream()
+            .filter(group -> normalizeName.apply(group.displayName()).contains(normalizedHint))
+            .toList()
+        : exact;
   }
 
   private List<String> disambiguationOptions(List<AuthorizedGroup> groups) {
@@ -437,7 +445,7 @@ public class ConversationDigestService {
         .toList();
   }
 
-  private String normalizeGroupHint(@Nullable String hint) {
+  static @Nullable String normalizeGroupHint(@Nullable String hint) {
     String normalized = StringUtils.trimToNull(hint);
     if (normalized == null) {
       return null;
