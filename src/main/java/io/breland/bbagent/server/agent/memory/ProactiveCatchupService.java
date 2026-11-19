@@ -1,5 +1,8 @@
 package io.breland.bbagent.server.agent.memory;
 
+import static io.breland.bbagent.server.agent.memory.ConversationDigestService.matchGroupNames;
+import static io.breland.bbagent.server.agent.memory.ConversationDigestService.normalizeGroupHint;
+
 import io.breland.bbagent.generated.bluebubblesclient.model.ApiV1MessageTextPostRequest;
 import io.breland.bbagent.server.agent.IncomingMessage;
 import io.breland.bbagent.server.agent.decisions.BackgroundDecisionService;
@@ -139,7 +142,10 @@ public class ProactiveCatchupService {
       @Nullable String quietEnd) {
     Instant now = clock.instant();
     List<AuthorizedGroup> groups =
-        selectGroups(store.findCurrentlyAuthorizedGroups(accountId, now), groupHint);
+        matchGroupNames(
+            store.findCurrentlyAuthorizedGroups(accountId, now),
+            normalizeGroupHint(groupHint),
+            this::normalizedName);
     if (groups.size() != 1) {
       List<String> options = groups.stream().map(this::disambiguationLabel).toList();
       return new CatchupPreferenceUpdate(unavailableSetting(), options);
@@ -313,28 +319,6 @@ public class ProactiveCatchupService {
   private CatchupPreferenceSetting unavailableSetting() {
     return new CatchupPreferenceSetting(
         false, false, DEFAULT_TIMEZONE, DEFAULT_QUIET_START, DEFAULT_QUIET_END, null, null);
-  }
-
-  private List<AuthorizedGroup> selectGroups(
-      List<AuthorizedGroup> authorizedGroups, @Nullable String groupHint) {
-    String hint = StringUtils.trimToNull(groupHint);
-    if (hint == null) {
-      return authorizedGroups;
-    }
-    int suffix = hint.indexOf(" (last active ");
-    if (suffix > 0) {
-      hint = hint.substring(0, suffix);
-    }
-    String normalized = hint.toLowerCase(Locale.ROOT);
-    List<AuthorizedGroup> exact =
-        authorizedGroups.stream()
-            .filter(group -> normalizedName(group.displayName()).equals(normalized))
-            .toList();
-    return exact.isEmpty()
-        ? authorizedGroups.stream()
-            .filter(group -> normalizedName(group.displayName()).contains(normalized))
-            .toList()
-        : exact;
   }
 
   private String normalizedName(@Nullable String value) {
