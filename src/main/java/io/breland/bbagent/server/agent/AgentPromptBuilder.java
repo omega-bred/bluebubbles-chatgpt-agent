@@ -70,6 +70,15 @@ public final class AgentPromptBuilder {
           + " strikethrough. Bold is delimited with **, underline with __, strikethrough with ~~, and"
           + " italic with *. Constrain output to those formatting markers, plain text, and emojis."
           + " Do not use unsupported markdown such as backticks, headings, tables, or lists. Links should just be the URL. ";
+  private static final String USAGE_AND_MODEL_INSTRUCTIONS =
+      "When the user asks about quota, usage limits, monthly messages, or remaining messages, call "
+          + GetUsageLimitsAgentTool.TOOL_NAME
+          + " before answering. "
+          + "When the user explicitly asks to switch, change, use, or set the assistant model to ChatGPT, Claude, or Gemini, call "
+          + SetPreferredModelAgentTool.TOOL_NAME
+          + " and send the returned user_facing_text. This is only available to premium users. ";
+  private static final String NO_REPLY_INSTRUCTION =
+      "If no reply is needed, output exactly " + BBMessageAgent.NO_RESPONSE_TEXT + ".";
 
   private final BBHttpClientWrapper bbHttpClientWrapper;
   private final ReverseLocationLookup reverseLocationLookup;
@@ -299,9 +308,7 @@ public final class AgentPromptBuilder {
                 + " tool, when available, early in substantive replies: planning, advice, recommendations, follow-ups, references to people or projects, and questions whose answer could benefit from prior context. Do not wait for an explicit request to remember. A focused lookup is encouraged even when relevance is uncertain; use a different query when it could resolve a specific gap. Skip greetings, simple acknowledgements, self-contained transformations, and messages needing no reply. "
                 + "Before asking for missing factual context, check relevant memory or conversation tools when they could already contain the answer. Do not search memory to infer consent or authorization, and do not repeat an identical lookup that already returned insufficient information. "
                 + "Send a natural language query to the tool describing what information may help you answer. "
-                + "If no reply is needed, output exactly "
-                + BBMessageAgent.NO_RESPONSE_TEXT
-                + ".")
+                + NO_REPLY_INSTRUCTION)
         .build();
   }
 
@@ -322,12 +329,7 @@ public final class AgentPromptBuilder {
                   + actionAndFollowupInstruction()
                   + websiteAccountInstruction()
                   + directGroupCatchupInstruction("Use ")
-                  + "When the user asks about quota, usage limits, monthly messages, or remaining messages, call "
-                  + GetUsageLimitsAgentTool.TOOL_NAME
-                  + " before answering. "
-                  + "When the user explicitly asks to switch, change, use, or set the assistant model to ChatGPT, Claude, or Gemini, call "
-                  + SetPreferredModelAgentTool.TOOL_NAME
-                  + " and send the returned user_facing_text. This is only available to premium users. "
+                  + USAGE_AND_MODEL_INSTRUCTIONS
                   + "If the user asks the assistant to respond more or less often, or to be silent unless called by name, call "
                   + AssistantResponsivenessAgentTool.TOOL_NAME
                   + " to update the setting. The silent mode will only invoke responses when the message starts with 'Chat' (case-insensitive). "
@@ -347,9 +349,7 @@ public final class AgentPromptBuilder {
                   + "For prior interactions, use visible context or memory when it can help. LXMF cannot retrieve chat photos. If memory could help answer a question, call "
                   + MemoryGetAgentTool.TOOL_NAME
                   + " before responding. "
-                  + "If no reply is needed, output exactly "
-                  + BBMessageAgent.NO_RESPONSE_TEXT
-                  + ".")
+                  + NO_REPLY_INSTRUCTION)
           .build();
     }
     return EasyInputMessage.builder()
@@ -378,12 +378,7 @@ public final class AgentPromptBuilder {
                         + " once only to resolve unresolved_participants; do not change group-derived facts. If no supported name is found, keep the returned safe label. Keep internal retrieval machinery out of the answer. Explain relevant limits naturally, including missing history or unverified access; do not overstate the completeness of a summary. "
                     : directGroupCatchupInstruction("In a one-to-one chat, use "))
                 + "Use built-in web_search for current info or external lookups when relevant and available in this request. If unavailable, discover an appropriate lookup tool; explain any remaining limitation without inventing current facts. "
-                + "When the user asks about quota, usage limits, monthly messages, or remaining messages, call "
-                + GetUsageLimitsAgentTool.TOOL_NAME
-                + " before answering. "
-                + "When the user explicitly asks to switch, change, use, or set the assistant model to ChatGPT, Claude, or Gemini, call "
-                + SetPreferredModelAgentTool.TOOL_NAME
-                + " and send the returned user_facing_text. This is only available to premium users. "
+                + USAGE_AND_MODEL_INSTRUCTIONS
                 + "For an ordinary request to draw, generate, or edit an image in this chat, call the built-in image_generation tool directly when available; do not search for it with toolSearchTool. The generated image is sent back to this chat automatically. Use attached images as starting references for edits. Only call wallart display or composition tools when the user explicitly requests the dining room LED wall or wall display. If image_generation is unavailable for the selected model, explain that ChatGPT mode supports it; do not substitute a wall display or group-icon change. "
                 + "For dining room LED wall or wallart requests, search for the wallart tools: getCurrentArt sends the current artwork as a chat photo, showImage displays an attached photo unchanged, composeArt edits or combines image references with a prompt, and showNewArt generates new art. For a composite of everyone's faces or contact/profile photos, first use listWallartContactPhotos and then composeArt with source=all_contact_photos or selected contact_photo references. Report missing photos and ask for attachments or permission to omit those people. Use source=current_art to edit the current wall image and source=attachment for chat photos; never put image bytes in tool arguments. Art submissions are asynchronous: use getArtStatus before claiming deployment finished. "
                 + "If the user asks the assistant to respond more or less often, or to be silent unless called by name (especially in group chats), call "
@@ -461,9 +456,7 @@ public final class AgentPromptBuilder {
                 + " or "
                 + MemoryDeleteAgentTool.TOOL_NAME
                 + ". "
-                + "If no reply is needed, output exactly "
-                + BBMessageAgent.NO_RESPONSE_TEXT
-                + ".")
+                + NO_REPLY_INSTRUCTION)
         .build();
   }
 
