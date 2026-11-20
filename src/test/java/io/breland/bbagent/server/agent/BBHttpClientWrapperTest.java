@@ -13,6 +13,7 @@ import static org.mockito.Mockito.when;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sun.net.httpserver.HttpServer;
+import io.breland.bbagent.generated.bluebubblesclient.api.V1AttachmentApi;
 import io.breland.bbagent.generated.bluebubblesclient.api.V1ContactApi;
 import io.breland.bbagent.generated.bluebubblesclient.api.V1ICloudApi;
 import io.breland.bbagent.generated.bluebubblesclient.api.V1MessageApi;
@@ -28,9 +29,11 @@ import io.breland.bbagent.server.agent.transport.bb.BBHttpClientWrapper;
 import io.breland.bbagent.server.agent.transport.bb.BlueBubblesContactIdentity;
 import io.breland.bbagent.server.metrics.OperationalMetricsService;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
+import io.netty.buffer.PooledByteBufAllocator;
 import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.time.Instant;
@@ -38,6 +41,11 @@ import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mockito;
+import org.springframework.core.io.buffer.DataBuffer;
+import org.springframework.core.io.buffer.DataBufferUtils;
+import org.springframework.core.io.buffer.NettyDataBufferFactory;
+import org.springframework.web.reactive.function.client.WebClient;
+import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 class BBHttpClientWrapperTest {
@@ -296,6 +304,37 @@ class BBHttpClientWrapperTest {
       }
     } finally {
       server.stop(0);
+    }
+  }
+
+  @Test
+  void attachmentDownloadReleasesWrittenBuffers() throws IOException {
+    var buffers = new NettyDataBufferFactory(PooledByteBufAllocator.DEFAULT);
+    var first = buffers.allocateBuffer(2).write(new byte[] {1, 2});
+    var second = buffers.allocateBuffer(1).write((byte) 3);
+    var response = Mockito.mock(WebClient.ResponseSpec.class);
+    when(response.bodyToFlux(DataBuffer.class)).thenReturn(Flux.just(first, second));
+
+    try (var ignored =
+        Mockito.mockConstruction(
+            V1AttachmentApi.class,
+            (api, context) ->
+                when(api.apiV1AttachmentAttachmentGuidDownloadGetWithResponseSpec(
+                        "fixture", "pw", null, null, null, 0))
+                    .thenReturn(response))) {
+      var wrapper =
+          new BBHttpClientWrapper("http://127.0.0.1:1", "pw", 5, new ObjectMapper(), null);
+      Path downloaded = wrapper.getAttachment("fixture");
+      try {
+        assertThat(Files.readAllBytes(downloaded)).containsExactly((byte) 1, (byte) 2, (byte) 3);
+        assertThat(first.isAllocated()).as("first response buffer").isFalse();
+        assertThat(second.isAllocated()).as("second response buffer").isFalse();
+      } finally {
+        Files.deleteIfExists(downloaded);
+      }
+    } finally {
+      DataBufferUtils.release(first);
+      DataBufferUtils.release(second);
     }
   }
 

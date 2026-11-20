@@ -666,21 +666,22 @@ public class BBHttpClientWrapper {
       AsynchronousFileChannel channel =
           AsynchronousFileChannel.open(
               tempPath, StandardOpenOption.WRITE, StandardOpenOption.CREATE);
-      this.attachmentApi
-          .apiV1AttachmentAttachmentGuidDownloadGetWithResponseSpec(
-              attachmentGuid, password, width, null, quality, 0)
-          .bodyToFlux(DataBuffer.class)
-          .transform(
-              data ->
-                  DataBufferUtils.write(data, channel)
-                      .doFinally(
-                          signal -> {
-                            try {
-                              channel.close();
-                            } catch (IOException ignored) {
-                              // best effort cleanup
-                            }
-                          }))
+      var body =
+          attachmentApi
+              .apiV1AttachmentAttachmentGuidDownloadGetWithResponseSpec(
+                  attachmentGuid, password, width, null, quality, 0)
+              .bodyToFlux(DataBuffer.class);
+      DataBufferUtils.write(body, channel)
+          .doOnNext(DataBufferUtils.releaseConsumer())
+          .doOnDiscard(DataBuffer.class, DataBufferUtils.releaseConsumer())
+          .doFinally(
+              signal -> {
+                try {
+                  channel.close();
+                } catch (IOException ignored) {
+                  // best effort cleanup
+                }
+              })
           .blockLast(Duration.of(30, ChronoUnit.SECONDS));
       recordOperationMetric("download_attachment", true, null, startedNanos);
       return tempPath;
