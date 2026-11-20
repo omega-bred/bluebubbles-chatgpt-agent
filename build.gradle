@@ -215,6 +215,13 @@ dependencies {
     implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
     runtimeOnly 'org.postgresql:postgresql'
 
+    // S3-compatible image blob storage
+    implementation('software.amazon.awssdk:s3:2.59.5') {
+        exclude group: 'software.amazon.awssdk', module: 'apache-client'
+        exclude group: 'software.amazon.awssdk', module: 'netty-nio-client'
+    }
+    implementation 'software.amazon.awssdk:url-connection-client:2.59.5'
+
 
     implementation 'de.codecentric:spring-boot-admin-starter-client:4.1.4'
     implementation 'org.apache.commons:commons-lang3'

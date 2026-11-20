@@ -1,0 +1,12 @@
+apiVersion: builtin
+kind: PatchTransformer
+metadata:
+  name: rustfs-ingress-namespace
+# Apply after Kustomize's default application namespace transformer.
+patch: |-
+  - op: replace
+    path: /metadata/namespace
+    value: rustfs
+target:
+  kind: NetworkPolicy
+  name: rustfs-allow-bluechat-blobs

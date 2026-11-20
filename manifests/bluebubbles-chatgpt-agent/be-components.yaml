@@ -191,6 +191,8 @@ spec:
                   fieldPath: metadata.namespace
             - name: SPRING_PROFILES_ACTIVE
               value: "prod"
+            - name: BBAGENT_BLOB_STORE_BUCKET_INFO_PATH
+              value: /var/run/secrets/bluechat-blobs/BucketInfo
             - name: INFLUX_DB_TOKEN
               valueFrom:
                 secretKeyRef:
@@ -508,6 +510,9 @@ spec:
           terminationMessagePath: /dev/termination-log
           terminationMessagePolicy: File
           volumeMounts:
+            - name: blob-store
+              mountPath: /var/run/secrets/bluechat-blobs
+              readOnly: true
             - name: gcal-client-secret
               mountPath: /var/run/secrets/gcal
               readOnly: true
@@ -517,6 +522,13 @@ spec:
       securityContext: {}
       terminationGracePeriodSeconds: 30
       volumes:
+        - name: blob-store
+          secret:
+            secretName: bluechat-blobs-bucketinfo
+            defaultMode: 0400
+            items:
+              - key: BucketInfo
+                path: BucketInfo
         - name: gcal-client-secret
           secret:
             secretName: gcal-mcp-server
