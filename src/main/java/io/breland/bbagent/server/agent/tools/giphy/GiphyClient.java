@@ -66,7 +66,7 @@ public class GiphyClient {
               .block(API_TIMEOUT);
       return parseGifs(response);
     } catch (Exception e) {
-      log.warn("Failed to search giphy for {}", query, e);
+      log.warn("Failed to search giphy ({})", e.getClass().getSimpleName());
       return Collections.emptyList();
     }
   }
@@ -89,7 +89,11 @@ public class GiphyClient {
       }
       return Optional.of(bytes);
     } catch (Exception e) {
-      log.warn("Failed to download giphy {}", url, e);
+      log.warn(
+          "Failed to download giphy ({})",
+          e instanceof WebClientResponseException response
+              ? response.getStatusCode().value()
+              : e.getClass().getSimpleName());
       return Optional.empty();
     }
   }
