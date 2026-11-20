@@ -144,7 +144,7 @@ metadata:
   name: bluebubbles-chatgpt-agent
 spec:
   progressDeadlineSeconds: 600
-  replicas: 1
+  replicas: 2
   revisionHistoryLimit: 5
   selector:
     matchLabels:
