@@ -69,7 +69,11 @@ class WebsiteAccountControllerTest {
         .thenReturn(
             Optional.of(
                 new AppClipSessionService.AuthenticatedAppClipSession(
-                    "account-1", "account_link", null, Instant.now().plusSeconds(300))));
+                    "account-1",
+                    "account_link",
+                    null,
+                    Instant.now().plusSeconds(300),
+                    "next-clip-session")));
     when(accountService.updatePreferredModel(any(Jwt.class), eq("claude")))
         .thenReturn(
             new WebsiteModelSelectionResponse()

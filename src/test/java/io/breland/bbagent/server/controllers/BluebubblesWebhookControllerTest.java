@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import com.fasterxml.jackson.databind.JsonNode;
@@ -12,10 +13,10 @@ import io.breland.bbagent.generated.bluebubblesclient.model.ApiV1ChatChatGuidMes
 import io.breland.bbagent.generated.bluebubblesclient.model.ApiV1ChatChatGuidMessageGet200ResponseDataInnerChatsInner;
 import io.breland.bbagent.generated.bluebubblesclient.model.Chat;
 import io.breland.bbagent.generated.bluebubblesclient.model.ChatParticipant;
+import io.breland.bbagent.generated.bluebubblesclient.model.Message;
 import io.breland.bbagent.generated.model.BlueBubblesMessageReceivedRequest;
 import io.breland.bbagent.generated.model.BlueBubblesMessageReceivedRequestData;
 import io.breland.bbagent.generated.model.BlueBubblesMessageReceivedRequestDataChatsInner;
-import io.breland.bbagent.generated.model.BlueBubblesMessageReceivedRequestDataHandle;
 import io.breland.bbagent.server.agent.BBMessageAgent;
 import io.breland.bbagent.server.agent.IncomingMessage;
 import io.breland.bbagent.server.agent.transport.bb.BBHttpClientWrapper;
@@ -23,6 +24,8 @@ import io.breland.bbagent.server.agent.transport.bb.BlueBubblesPollSupport;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
+import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mockito;
@@ -31,120 +34,81 @@ class BluebubblesWebhookControllerTest {
 
   private static final ObjectMapper MAPPER = new ObjectMapper();
 
+  private static final String CHAT_GUID = "any;+;e962a8e9a5624efa87082757a97ac8c1";
+  private static final String MESSAGE_GUID = "56CA8540-2C1A-4198-B748-F14238F48783";
+  private final BBMessageAgent agent = Mockito.mock(BBMessageAgent.class);
+  private final BBHttpClientWrapper blueBubbles = Mockito.mock(BBHttpClientWrapper.class);
+  private final BluebubblesWebhookController controller =
+      new BluebubblesWebhookController(null, agent, blueBubbles, MAPPER);
+
   @Test
-  void webhookPassesAuthenticatedProvenanceToAgentOnlyAfterTransportVerification() {
-    BBMessageAgent agent = Mockito.mock(BBMessageAgent.class);
-    BBHttpClientWrapper bb = Mockito.mock(BBHttpClientWrapper.class);
-    var properties = new io.breland.bbagent.server.agent.tools.gayodex.GayodexProperties();
-    properties.setEnabled(true);
-    properties.setBaseUrl("http://localhost:8767");
-    properties.setToken("synthetic-token-" + "x".repeat(43));
-    var actors =
-        new io.breland.bbagent.server.agent.tools.gayodex.GayodexInboundActor(
-            properties, bb, MAPPER);
-    var controller = new BluebubblesWebhookController(null, agent, bb, actors);
-    String chat = "iMessage;+;group";
-    String guid = "56ca8540-2c1a-4198-b748-f14238f48783";
-    var request = webhookRequest(chat);
-    request.getData().setGuid(guid);
-    request.getData().setDateCreated(1_700_000_000_000L);
+  void forwardsOnlyAuthenticatedMessageContentsAndParticipants() {
+    var notification = webhookRequest(CHAT_GUID);
+    notification.getData().setText("Webhook text");
+    notification.getData().setGroupTitle("Webhook group title");
+    notification.getData().setDateCreated(1000L);
     var stored =
-        new io.breland.bbagent.generated.bluebubblesclient.model.Message()
-            .guid(java.util.UUID.fromString(guid))
-            .text("hello")
-            .isFromMe(false)
-            .dateCreated(1_700_000_000_000L)
-            .handle(java.util.Map.of("address", "+15555550123", "service", "iMessage"))
-            .chats(List.of(new Chat().guid(chat)));
-    when(bb.getMessage(guid)).thenReturn(stored);
-    controller.bluebubblesMessageReceived(request);
-    var captor = ArgumentCaptor.forClass(IncomingMessage.class);
-    verify(agent).handleIncomingMessage(captor.capture());
-    assertTrue(captor.getValue().verifiedBlueBubblesInbound());
+        storedMessage(CHAT_GUID)
+            .handle(Map.of("address", "sender@example.test", "service", "iMessage"))
+            .attachments(List.of(Map.of("guid", "verified-attachment", "mimeType", "image/png")))
+            .threadOriginatorGuid("verified-thread")
+            .replyToGuid("verified-reply");
+    when(blueBubbles.getMessage(MESSAGE_GUID)).thenReturn(stored);
+
+    assertEquals(200, controller.bluebubblesMessageReceived(notification).getStatusCode().value());
+
+    var capture = ArgumentCaptor.forClass(IncomingMessage.class);
+    verify(agent).handleIncomingMessage(capture.capture());
+    IncomingMessage forwarded = capture.getValue();
+    assertTrue(forwarded.verifiedBlueBubblesInbound());
+    assertFalse(forwarded.isGroup());
+    assertEquals("sender@example.test", forwarded.sender());
+    assertEquals("hello", forwarded.text());
+    assertEquals(MESSAGE_GUID, forwarded.messageGuid());
+    assertEquals("verified-thread", forwarded.threadOriginatorGuid());
+    assertEquals("verified-reply", forwarded.replyToGuid());
+    assertEquals("verified-attachment", forwarded.attachments().getFirst().guid());
+    assertEquals(Instant.ofEpochMilli(1_700_000_000_000L), forwarded.timestamp());
   }
 
   @Test
-  void resolveIsGroupUsesConversationParticipants() {
+  void usesAuthenticatedParticipantLookupWhenMessageDoesNotIncludeParticipants() {
+    when(blueBubbles.getMessage(MESSAGE_GUID))
+        .thenReturn(storedMessage(CHAT_GUID).chats(List.of(new Chat().guid(CHAT_GUID))));
+    when(blueBubbles.getConversationInfo(CHAT_GUID)).thenReturn(chatWithParticipants(2));
+    var notification = webhookRequest(CHAT_GUID);
+    notification.setType(BlueBubblesMessageReceivedRequest.TypeEnum.UPDATED_MESSAGE);
+
+    controller.bluebubblesMessageReceived(notification);
+
+    var capture = ArgumentCaptor.forClass(IncomingMessage.class);
+    verify(agent).handleIncomingMessage(capture.capture());
+    assertTrue(capture.getValue().isGroup());
+  }
+
+  @Test
+  void rejectsMessagesWithoutAnAuthoritativeChatOrIncomingSender() {
+    for (Message stored :
+        List.of(
+            storedMessage("different-chat"),
+            storedMessage(CHAT_GUID).guid(UUID.randomUUID()),
+            storedMessage(CHAT_GUID).isFromMe(true),
+            storedMessage(CHAT_GUID).isSystemMessage(true),
+            storedMessage(CHAT_GUID).handle(Map.of()))) {
+      when(blueBubbles.getMessage(MESSAGE_GUID)).thenReturn(stored);
+      controller.bluebubblesMessageReceived(webhookRequest(CHAT_GUID));
+    }
+    verifyNoInteractions(agent);
+  }
+
+  @Test
+  void doesNotProcessMessageDuringBlueBubblesFailures() {
+    when(blueBubbles.getMessage(MESSAGE_GUID))
+        .thenThrow(new IllegalStateException("Transport unavailable"));
     assertEquals(
-        Boolean.TRUE,
-        BluebubblesWebhookController.resolveIsGroup(chatWithParticipants(2)).orElseThrow());
-    assertEquals(
-        Boolean.FALSE,
-        BluebubblesWebhookController.resolveIsGroup(chatWithParticipants(1)).orElseThrow());
-    assertTrue(BluebubblesWebhookController.resolveIsGroup(chatWithParticipants(0)).isEmpty());
-  }
-
-  @Test
-  void webhookUsesConversationParticipantsForGroupFlag() {
-    BBMessageAgent messageAgent = Mockito.mock(BBMessageAgent.class);
-    BBHttpClientWrapper bbHttpClientWrapper = Mockito.mock(BBHttpClientWrapper.class);
-    BluebubblesWebhookController controller =
-        new BluebubblesWebhookController(
-            null,
-            messageAgent,
-            bbHttpClientWrapper,
-            new io.breland.bbagent.server.agent.tools.gayodex.GayodexInboundActor(
-                new io.breland.bbagent.server.agent.tools.gayodex.GayodexProperties(),
-                bbHttpClientWrapper,
-                MAPPER));
-    String chatGuid = "any;+;e962a8e9a5624efa87082757a97ac8c1";
-    when(bbHttpClientWrapper.getConversationInfo(chatGuid)).thenReturn(chatWithParticipants(2));
-
-    var response = controller.bluebubblesMessageReceived(webhookRequest(chatGuid));
-
-    assertEquals(200, response.getStatusCode().value());
-    ArgumentCaptor<IncomingMessage> captor = ArgumentCaptor.forClass(IncomingMessage.class);
-    verify(messageAgent).handleIncomingMessage(captor.capture());
-    verify(bbHttpClientWrapper).getConversationInfo(chatGuid);
-    assertTrue(captor.getValue().isGroup());
-  }
-
-  @Test
-  void webhookTrustsParticipantLookupOverOpaqueGuid() {
-    BBMessageAgent messageAgent = Mockito.mock(BBMessageAgent.class);
-    BBHttpClientWrapper bbHttpClientWrapper = Mockito.mock(BBHttpClientWrapper.class);
-    BluebubblesWebhookController controller =
-        new BluebubblesWebhookController(
-            null,
-            messageAgent,
-            bbHttpClientWrapper,
-            new io.breland.bbagent.server.agent.tools.gayodex.GayodexInboundActor(
-                new io.breland.bbagent.server.agent.tools.gayodex.GayodexProperties(),
-                bbHttpClientWrapper,
-                MAPPER));
-    String chatGuid = "any;+;e962a8e9a5624efa87082757a97ac8c1";
-    when(bbHttpClientWrapper.getConversationInfo(chatGuid)).thenReturn(chatWithParticipants(1));
-
-    controller.bluebubblesMessageReceived(webhookRequest(chatGuid));
-
-    ArgumentCaptor<IncomingMessage> captor = ArgumentCaptor.forClass(IncomingMessage.class);
-    verify(messageAgent).handleIncomingMessage(captor.capture());
-    assertFalse(captor.getValue().isGroup());
-  }
-
-  @Test
-  void webhookFallsBackToWebhookMetadataWhenParticipantLookupFails() {
-    BBMessageAgent messageAgent = Mockito.mock(BBMessageAgent.class);
-    BBHttpClientWrapper bbHttpClientWrapper = Mockito.mock(BBHttpClientWrapper.class);
-    BluebubblesWebhookController controller =
-        new BluebubblesWebhookController(
-            null,
-            messageAgent,
-            bbHttpClientWrapper,
-            new io.breland.bbagent.server.agent.tools.gayodex.GayodexInboundActor(
-                new io.breland.bbagent.server.agent.tools.gayodex.GayodexProperties(),
-                bbHttpClientWrapper,
-                MAPPER));
-    String chatGuid = "iMessage;+;chat293505621450166166";
-    BlueBubblesMessageReceivedRequest request = webhookRequest(chatGuid);
-    request.getData().setGroupTitle("Family");
-    when(bbHttpClientWrapper.getConversationInfo(chatGuid)).thenThrow(new RuntimeException("down"));
-
-    controller.bluebubblesMessageReceived(request);
-
-    ArgumentCaptor<IncomingMessage> captor = ArgumentCaptor.forClass(IncomingMessage.class);
-    verify(messageAgent).handleIncomingMessage(captor.capture());
-    assertTrue(captor.getValue().isGroup());
+        503,
+        controller.bluebubblesMessageReceived(webhookRequest(CHAT_GUID)).getStatusCode().value());
+    verifyNoInteractions(agent);
   }
 
   @Test
@@ -156,22 +120,6 @@ class BluebubblesWebhookControllerTest {
 
     assertTrue(BluebubblesWebhookController.resolveIsGroup(group));
     assertFalse(BluebubblesWebhookController.resolveIsGroup(direct));
-  }
-
-  @Test
-  void resolveIsGroupNoLongerTreatsOpaqueGuidAsGroupWithoutParticipants() {
-    BlueBubblesMessageReceivedRequestData data =
-        webhookData("any;+;e962a8e9a5624efa87082757a97ac8c1");
-
-    assertFalse(BluebubblesWebhookController.resolveIsGroup(data));
-  }
-
-  @Test
-  void resolveIsGroupFallsBackToWebhookGroupMetadata() {
-    BlueBubblesMessageReceivedRequestData data = webhookData("any;-;+18035551212");
-    data.setGroupTitle("Family");
-
-    assertTrue(BluebubblesWebhookController.resolveIsGroup(data));
   }
 
   @Test
@@ -238,15 +186,19 @@ class BluebubblesWebhookControllerTest {
   private static BlueBubblesMessageReceivedRequest webhookRequest(String chatGuid) {
     BlueBubblesMessageReceivedRequestData data = webhookData(chatGuid);
     data.setOriginalROWID(1);
-    data.setGuid("message-guid");
-    data.setText("hello");
-    data.setIsFromMe(false);
-    data.setDateCreated(1_700_000_000L);
-    data.setHandle(
-        new BlueBubblesMessageReceivedRequestDataHandle("+15555550123")
-            .service(BBMessageAgent.IMESSAGE_SERVICE));
+    data.setGuid(MESSAGE_GUID);
     return new BlueBubblesMessageReceivedRequest(
         BlueBubblesMessageReceivedRequest.TypeEnum.NEW_MESSAGE, data);
+  }
+
+  private static Message storedMessage(String chatGuid) {
+    return new Message()
+        .guid(UUID.fromString(MESSAGE_GUID))
+        .text("hello")
+        .dateCreated(1_700_000_000_000L)
+        .isFromMe(false)
+        .handle(Map.of("address", "+15555550123", "service", "iMessage"))
+        .chats(List.of(chatWithParticipants(1).guid(chatGuid)));
   }
 
   private static BlueBubblesMessageReceivedRequestData webhookData(String chatGuid) {

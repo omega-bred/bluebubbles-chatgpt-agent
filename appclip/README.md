@@ -14,9 +14,12 @@ This subproject contains a minimal SwiftUI container app and App Clip target for
 - StoreKit subscription group ID: `22126189`
 - StoreKit subscription ID: `6775352293`
 
-The App Clip expects an invocation URL containing `token=...`, exchanges it with the backend at
-`/api/v1/appClip/createSession.appClipSessions`, then authenticates existing website/subscription
-APIs using the returned `X-App-Clip-Session` token.
+The App Clip exchanges a single-use invocation link at
+`/api/v1/appClip/createSession.appClipSessions`. It authenticates each subsequent request with
+`X-App-Clip-Session` and saves the replacement token from the response header. The replacement
+retains the original session expiry. If a response is lost after a token is consumed, the user
+can request a fresh link. Release a Clip version that saves replacement tokens before deploying
+backend enforcement.
 
 The App Clip uses the generated OpenAPI Swift client as a local SwiftPM package at
 `appclip/Generated/BlueChatAgentClient`. The shared Xcode schemes build the

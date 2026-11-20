@@ -24,6 +24,8 @@ import io.breland.bbagent.server.agent.persistence.website.WebsiteAccountLinkTok
 import io.breland.bbagent.server.agent.tools.gcal.AccountKeyParts;
 import io.breland.bbagent.server.agent.tools.gcal.GcalClient;
 import io.breland.bbagent.server.analytics.UmamiAnalyticsService;
+import io.breland.bbagent.server.appclip.AppClipSessionService;
+import io.breland.bbagent.server.nativeapp.NativeAppSessionService;
 import io.breland.bbagent.server.ratelimit.MessageResponseRateLimitService;
 import io.breland.bbagent.server.sessions.SessionTokens;
 import java.net.URI;
@@ -202,25 +204,42 @@ public class WebsiteAccountService {
     if (StringUtils.isBlank(token)) {
       throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Missing link token");
     }
-    AgentAccountEntity websiteAccount = accountResolver.upsertWebsiteAccount(jwt);
+    if (jwt == null
+        || jwt.hasClaim(AppClipSessionService.APP_CLIP_ACCOUNT_ID_CLAIM)
+        || jwt.hasClaim(NativeAppSessionService.NATIVE_APP_ACCOUNT_ID_CLAIM)) {
+      throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Website login required");
+    }
     WebsiteAccountLinkTokenEntity tokenEntity =
         tokenRepository
-            .findById(SessionTokens.sha256Hash(token))
+            .findForRedemption(SessionTokens.sha256Hash(token))
             .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Link not found"));
     Instant now = Instant.now();
     if (!LINK_PURPOSE_ACCOUNT_LINK.equals(tokenEntity.getPurpose())) {
       throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Link is not an account link");
     }
-    validateToken(tokenEntity, websiteAccount, now);
-    boolean alreadyLinked = tokenEntity.getRedeemedAt() != null;
+    if (!tokenEntity.getExpiresAt().isAfter(now)) {
+      throw new ResponseStatusException(HttpStatus.GONE, "Link expired");
+    }
+    if (tokenEntity.getRedeemedAt() != null || tokenEntity.getRedeemedAccountId() != null) {
+      // The authenticated owner can confirm the result of an earlier redemption.
+      return accountResolver
+          .resolveById(tokenEntity.getAccountId())
+          .map(AgentAccountResolver.ResolvedAccount::account)
+          .filter(account -> account.getAccountId().equals(tokenEntity.getRedeemedAccountId()))
+          .filter(account -> StringUtils.equals(jwt.getSubject(), account.getWebsiteSubject()))
+          .map(
+              account ->
+                  new WebsiteAccountRedeemLinkResponse()
+                      .status("already_linked")
+                      .link(toLink(account)))
+          .orElseThrow(() -> new ResponseStatusException(HttpStatus.CONFLICT, "Link already used"));
+    }
     AgentAccountEntity linkedAccount =
         accountResolver.linkWebsiteAccount(tokenEntity.getAccountId(), jwt);
     markTokenRedeemed(tokenEntity, linkedAccount, now);
-    trackLinkTokenRedeemed(linkedAccount.getAccountId(), alreadyLinked);
+    trackLinkTokenRedeemed(linkedAccount.getAccountId());
 
-    return new WebsiteAccountRedeemLinkResponse()
-        .status(alreadyLinked ? "already_linked" : "linked")
-        .link(toLink(linkedAccount));
+    return new WebsiteAccountRedeemLinkResponse().status("linked").link(toLink(linkedAccount));
   }
 
   @Transactional
@@ -269,15 +288,12 @@ public class WebsiteAccountService {
             "ttl_minutes", linkTokenTtl.toMinutes()));
   }
 
-  private void trackLinkTokenRedeemed(String accountId, boolean alreadyLinked) {
+  private void trackLinkTokenRedeemed(String accountId) {
     if (umamiAnalyticsService == null) {
       return;
     }
     umamiAnalyticsService.track(
-        "website_account_linked",
-        "/server/account/link",
-        accountId,
-        Map.of("status", alreadyLinked ? "already_linked" : "linked"));
+        "website_account_linked", "/server/account/link", accountId, Map.of("status", "linked"));
   }
 
   private void trackLinkedIntegrationDeleted(String accountId, String type) {
@@ -395,22 +411,9 @@ public class WebsiteAccountService {
         .toUriString();
   }
 
-  private void validateToken(
-      WebsiteAccountLinkTokenEntity tokenEntity, AgentAccountEntity account, Instant now) {
-    if (tokenEntity.getExpiresAt().isBefore(now)) {
-      throw new ResponseStatusException(HttpStatus.GONE, "Link expired");
-    }
-    if (tokenEntity.getRedeemedAccountId() != null
-        && !tokenEntity.getRedeemedAccountId().equals(account.getAccountId())) {
-      throw new ResponseStatusException(
-          HttpStatus.CONFLICT, "Link already redeemed by another account");
-    }
-  }
-
   private void markTokenRedeemed(
       WebsiteAccountLinkTokenEntity tokenEntity, AgentAccountEntity account, Instant now) {
-    tokenEntity.setRedeemedAt(
-        tokenEntity.getRedeemedAt() == null ? now : tokenEntity.getRedeemedAt());
+    tokenEntity.setRedeemedAt(now);
     tokenEntity.setRedeemedAccountId(account.getAccountId());
     tokenEntity.setUpdatedAt(now);
     tokenRepository.save(tokenEntity);

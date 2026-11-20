@@ -4,6 +4,7 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -45,7 +46,8 @@ class ConversationSettingsControllerTest {
                     "account-1",
                     WebsiteAccountService.LINK_PURPOSE_CONVERSATION_SETTINGS,
                     "chat-guid",
-                    Instant.now().plusSeconds(300))));
+                    Instant.now().plusSeconds(300),
+                    "next-clip-session")));
     when(settingsService.getSettings("account-1", "chat-guid"))
         .thenReturn(settingsResponse("default", "Balanced"));
 
@@ -54,6 +56,9 @@ class ConversationSettingsControllerTest {
             get("/api/v1/conversationSettings/get.conversationSettings")
                 .header(AppClipSessionAuthenticationFilter.SESSION_HEADER, "clip-session"))
         .andExpect(status().isOk())
+        .andExpect(
+            header().string(AppClipSessionAuthenticationFilter.SESSION_HEADER, "next-clip-session"))
+        .andExpect(header().string("Cache-Control", "no-store"))
         .andExpect(jsonPath("$.conversation.display_name").value("Project Chat"))
         .andExpect(jsonPath("$.current_responsiveness").value("default"));
   }
@@ -67,13 +72,17 @@ class ConversationSettingsControllerTest {
                     "account-1",
                     WebsiteAccountService.LINK_PURPOSE_ACCOUNT_LINK,
                     null,
-                    Instant.now().plusSeconds(300))));
+                    Instant.now().plusSeconds(300),
+                    "next-clip-session")));
 
     mockMvc
         .perform(
             get("/api/v1/conversationSettings/get.conversationSettings")
                 .header(AppClipSessionAuthenticationFilter.SESSION_HEADER, "clip-session"))
-        .andExpect(status().isForbidden());
+        .andExpect(status().isForbidden())
+        .andExpect(
+            header()
+                .string(AppClipSessionAuthenticationFilter.SESSION_HEADER, "next-clip-session"));
   }
 
   @Test
@@ -85,7 +94,8 @@ class ConversationSettingsControllerTest {
                     "account-1",
                     WebsiteAccountService.LINK_PURPOSE_CONVERSATION_SETTINGS,
                     "chat-guid",
-                    Instant.now().plusSeconds(300))));
+                    Instant.now().plusSeconds(300),
+                    "next-clip-session")));
     when(settingsService.updateResponsiveness(
             eq("account-1"), eq("chat-guid"), eq("more_responsive")))
         .thenReturn(
@@ -112,7 +122,8 @@ class ConversationSettingsControllerTest {
                     "account-1",
                     WebsiteAccountService.LINK_PURPOSE_CONVERSATION_SETTINGS,
                     "chat-guid",
-                    Instant.now().plusSeconds(300))));
+                    Instant.now().plusSeconds(300),
+                    "next-clip-session")));
     when(settingsService.updateGroupMemory("account-1", "chat-guid", true))
         .thenReturn(
             new ConversationSettingsUpdateResponse()
@@ -138,7 +149,8 @@ class ConversationSettingsControllerTest {
                     "account-1",
                     WebsiteAccountService.LINK_PURPOSE_CONVERSATION_SETTINGS,
                     "chat-guid",
-                    Instant.now().plusSeconds(300))));
+                    Instant.now().plusSeconds(300),
+                    "next-clip-session")));
     when(settingsService.updateCatchups(
             "account-1", "chat-guid", true, "America/Los_Angeles", "22:00", "08:00"))
         .thenReturn(

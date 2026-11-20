@@ -66,6 +66,7 @@ open class AppClipAPI {
      - API Key:
        - type: apiKey X-App-Clip-Session (HEADER)
        - name: appClipSessionAuth
+     - responseHeaders: [X-App-Clip-Session(String)]
      - parameter appClipEventRequest: (body)
      - returns: RequestBuilder<AppClipEventResponse>
      */
@@ -101,7 +102,7 @@ open class AppClipAPI {
     /**
      Creates an App Clip session from a texted link token
      - POST /api/v1/appClip/createSession.appClipSessions
-     - Exchanges a short-lived account-link or conversation-settings token for an App Clip session token scoped to the linked BlueChat account.
+     - Consumes a short-lived account-link or conversation-settings token and returns an initial single-use App Clip session token.
      - parameter appClipCreateSessionRequest: (body)
      - returns: RequestBuilder<AppClipSessionResponse>
      */
@@ -140,6 +141,7 @@ open class AppClipAPI {
      - API Key:
        - type: apiKey X-App-Clip-Session (HEADER)
        - name: appClipSessionAuth
+     - responseHeaders: [X-App-Clip-Session(String)]
      - returns: RequestBuilder<AppClipSessionResponse>
      */
     open class func appClipGetSessionWithRequestBuilder() -> RequestBuilder<AppClipSessionResponse> {

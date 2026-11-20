@@ -68,11 +68,14 @@ public class AppClipSessionService {
     String linkTokenHash = SessionTokens.sha256Hash(linkToken);
     WebsiteAccountLinkTokenEntity linkTokenEntity =
         linkTokenRepository
-            .findById(linkTokenHash)
+            .findForRedemption(linkTokenHash)
             .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Link not found"));
     Instant now = Instant.now();
-    if (linkTokenEntity.getExpiresAt().isBefore(now)) {
+    if (!linkTokenEntity.getExpiresAt().isAfter(now)) {
       throw new ResponseStatusException(HttpStatus.GONE, "Link expired");
+    }
+    if (linkTokenEntity.getRedeemedAt() != null || linkTokenEntity.getRedeemedAccountId() != null) {
+      throw new ResponseStatusException(HttpStatus.GONE, "Link already used");
     }
     AgentAccountEntity account =
         accountRepository
@@ -102,44 +105,39 @@ public class AppClipSessionService {
       return Optional.empty();
     }
     Instant now = Instant.now();
-    return sessionRepository
-        .findById(SessionTokens.sha256Hash(sessionToken))
-        .filter(session -> session.getRevokedAt() == null)
-        .filter(session -> session.getExpiresAt().isAfter(now))
-        .flatMap(
-            session ->
-                accountRepository
-                    .findById(session.getAccountId())
-                    .map(
-                        account -> {
-                          session.setLastUsedAt(now);
-                          sessionRepository.save(session);
-                          return new AuthenticatedAppClipSession(
-                              account.getAccountId(),
-                              normalizedPurpose(session.getPurpose()),
-                              session.getChatGuid(),
-                              session.getExpiresAt());
-                        }));
+    String tokenHash = SessionTokens.sha256Hash(sessionToken);
+    AppClipSessionEntity session =
+        sessionRepository
+            .findById(tokenHash)
+            .filter(candidate -> candidate.getRevokedAt() == null)
+            .filter(candidate -> candidate.getExpiresAt().isAfter(now))
+            .orElse(null);
+    if (session == null) {
+      return Optional.empty();
+    }
+    String nextToken = SessionTokens.randomUrlToken(secureRandom, SESSION_TOKEN_BYTES);
+    if (sessionRepository.rotateToken(
+            tokenHash, SessionTokens.sha256Hash(nextToken), session.getAccountId(), now)
+        != 1) {
+      return Optional.empty();
+    }
+    return Optional.of(
+        new AuthenticatedAppClipSession(
+            session.getAccountId(),
+            normalizedPurpose(session.getPurpose()),
+            session.getChatGuid(),
+            session.getExpiresAt(),
+            nextToken));
   }
 
   @Transactional(readOnly = true)
-  public AppClipSessionResponse getSession(String sessionToken, String accountId) {
-    AppClipSessionEntity session =
-        sessionRepository
-            .findById(SessionTokens.sha256Hash(sessionToken))
-            .filter(candidate -> candidate.getAccountId().equals(accountId))
-            .filter(candidate -> candidate.getRevokedAt() == null)
-            .filter(candidate -> candidate.getExpiresAt().isAfter(Instant.now()))
-            .orElseThrow(
-                () ->
-                    new ResponseStatusException(
-                        HttpStatus.UNAUTHORIZED, "Invalid App Clip session"));
+  public AppClipSessionResponse getSession(AuthenticatedAppClipSession session) {
     return response(
-        sessionToken,
-        accountId,
-        normalizedPurpose(session.getPurpose()),
-        session.getChatGuid(),
-        session.getExpiresAt());
+        session.nextToken(),
+        session.accountId(),
+        session.purpose(),
+        session.chatGuid(),
+        session.expiresAt());
   }
 
   private AppClipSessionResponse response(
@@ -165,12 +163,8 @@ public class AppClipSessionService {
 
   private void markLinkTokenClaimed(
       WebsiteAccountLinkTokenEntity linkTokenEntity, AgentAccountEntity account, Instant now) {
-    if (linkTokenEntity.getRedeemedAt() == null) {
-      linkTokenEntity.setRedeemedAt(now);
-    }
-    if (StringUtils.isBlank(linkTokenEntity.getRedeemedAccountId())) {
-      linkTokenEntity.setRedeemedAccountId(account.getAccountId());
-    }
+    linkTokenEntity.setRedeemedAt(now);
+    linkTokenEntity.setRedeemedAccountId(account.getAccountId());
     linkTokenEntity.setUpdatedAt(now);
     linkTokenRepository.save(linkTokenEntity);
   }
@@ -183,5 +177,5 @@ public class AppClipSessionService {
   }
 
   public record AuthenticatedAppClipSession(
-      String accountId, String purpose, String chatGuid, Instant expiresAt) {}
+      String accountId, String purpose, String chatGuid, Instant expiresAt, String nextToken) {}
 }

@@ -29,6 +29,7 @@ open class ConversationSettingsAPI {
      - API Key:
        - type: apiKey X-App-Clip-Session (HEADER)
        - name: appClipSessionAuth
+     - responseHeaders: [X-App-Clip-Session(String)]
      - returns: RequestBuilder<ConversationSettingsResponse>
      */
     open class func conversationSettingsGetWithRequestBuilder() -> RequestBuilder<ConversationSettingsResponse> {
@@ -65,6 +66,7 @@ open class ConversationSettingsAPI {
      - API Key:
        - type: apiKey X-App-Clip-Session (HEADER)
        - name: appClipSessionAuth
+     - responseHeaders: [X-App-Clip-Session(String)]
      - parameter conversationCatchupPreferencesUpdateRequest: (body)
      - returns: RequestBuilder<ConversationSettingsUpdateResponse>
      */
@@ -104,6 +106,7 @@ open class ConversationSettingsAPI {
      - API Key:
        - type: apiKey X-App-Clip-Session (HEADER)
        - name: appClipSessionAuth
+     - responseHeaders: [X-App-Clip-Session(String)]
      - parameter conversationGroupMemoryUpdateRequest: (body)
      - returns: RequestBuilder<ConversationSettingsUpdateResponse>
      */
@@ -143,6 +146,7 @@ open class ConversationSettingsAPI {
      - API Key:
        - type: apiKey X-App-Clip-Session (HEADER)
        - name: appClipSessionAuth
+     - responseHeaders: [X-App-Clip-Session(String)]
      - parameter conversationSettingsUpdateRequest: (body)
      - returns: RequestBuilder<ConversationSettingsUpdateResponse>
      */
