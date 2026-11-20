@@ -359,7 +359,7 @@ public class CadenceAgentActivitiesImpl implements CadenceAgentActivities {
               image.put("type", "input_text");
               image.put(
                   "text",
-                  "This previously loaded image input expired or the server restarted. "
+                  "This previously loaded image input is no longer available. "
                       + "Reload it with load_conversation_images using its messageGuid from this conversation before inspecting or editing it. Do not assume a photo description is the image.");
             }
           }

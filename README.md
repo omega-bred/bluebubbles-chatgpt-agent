@@ -183,6 +183,16 @@ Required:
 - `POSTGRES_JDBC_URL`, `POSTGRES_USER`, `POSTGRES_PASSWORD`
 - `MEM0_API_KEY` (TODO: Make optional)
 
+### Image blob storage
+
+The production Deployment mounts `BucketInfo` from the BlueChat COSI
+`BucketAccess` Secret. Spring uses RustFS when the `prod` profile is active and
+`BBAGENT_BLOB_STORE_BUCKET_INFO_PATH` points to that file. Other runs use the
+in-memory cache. The Kubernetes Deployment waits for the Secret to be provisioned.
+
+RustFS keeps image blobs readable for one hour across worker restarts. Its bucket
+lifecycle rule expires those objects after one day on the server's lifecycle schedule.
+
 ### Messaging Terms agreement
 
 `BBAGENT_TERMS_REQUIRED` defaults to `true`. Set it to `false` to let otherwise

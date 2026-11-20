@@ -11,6 +11,7 @@ import io.breland.bbagent.server.agent.transport.MessageTransport;
 import io.breland.bbagent.server.agent.transport.MessageTransportRegistry;
 import io.breland.bbagent.server.agent.transport.bb.BBHttpClientWrapper;
 import io.breland.bbagent.server.blobstore.BlobStore;
+import io.breland.bbagent.server.blobstore.InMemoryBlobStore;
 import java.time.Instant;
 import java.util.List;
 import org.junit.jupiter.api.Test;
@@ -24,7 +25,7 @@ class CadenceGeneratedImageDeliveryTest {
     AgentResponseCreator creator = mock(AgentResponseCreator.class);
     MessageTransportRegistry transports = mock(MessageTransportRegistry.class);
     MessageTransport transport = mock(MessageTransport.class);
-    BlobStore blobs = new BlobStore();
+    BlobStore blobs = new InMemoryBlobStore();
     IncomingMessage message =
         new IncomingMessage(
             "any;+;test-chat",

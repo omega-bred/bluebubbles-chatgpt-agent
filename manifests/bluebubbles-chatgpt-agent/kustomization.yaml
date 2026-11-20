@@ -3,7 +3,10 @@ kind: Kustomization
 namespace: bluebubbles-chatgpt-agent
 resources:
 - be-components.yaml
+- blob-store.yaml
 - keycloak-bbagent/keycloak-bbagent.yaml
+transformers:
+- rustfs-ingress-namespace.yaml
 images:
 - name: ghcr.io/omega-bred/bluebubbles-chatgpt-agent
   newName: ghcr.io/omega-bred/bluebubbles-chatgpt-agent

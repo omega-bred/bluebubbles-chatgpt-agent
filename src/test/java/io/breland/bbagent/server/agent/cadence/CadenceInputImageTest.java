@@ -11,6 +11,7 @@ import io.breland.bbagent.server.agent.*;
 import io.breland.bbagent.server.agent.cadence.models.CadenceToolCall;
 import io.breland.bbagent.server.agent.transport.MessageTransportRegistry;
 import io.breland.bbagent.server.blobstore.BlobStore;
+import io.breland.bbagent.server.blobstore.InMemoryBlobStore;
 import java.time.Instant;
 import java.util.List;
 import org.junit.jupiter.api.Test;
@@ -20,7 +21,7 @@ class CadenceInputImageTest {
   private final ObjectMapper mapper = new ObjectMapper();
   private final AgentResponseCreator creator = mock(AgentResponseCreator.class);
   private final AgentToolActivityRunner runner = mock(AgentToolActivityRunner.class);
-  private final BlobStore blobs = new BlobStore();
+  private final BlobStore blobs = new InMemoryBlobStore();
   private final IncomingMessage message =
       new IncomingMessage(
           "chat",
@@ -71,7 +72,7 @@ class CadenceInputImageTest {
 
     // A worker restart or expired cache gives the model a recoverable retrieval instruction.
     clearInvocations(creator);
-    activities(new BlobStore()).createResponseBundle(persisted, message, null);
+    activities(new InMemoryBlobStore()).createResponseBundle(persisted, message, null);
     verify(creator).createResponse(input.capture(), eq(message), isNull());
     assertThat(
             JsonValue.from(input.getValue())

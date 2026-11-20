@@ -2094,6 +2094,10 @@
    "module": "sha256-aDXWrHYqmchebDumyUK+LGmXquyY8H3t/pkX2uIr2pY=",
    "pom": "sha256-VbOL8aex2OpRjPL0866aqiNuYbvwtr0x/7SXU6BZ3V4="
   },
+  "org/junit#junit-bom/5.10.3": {
+   "module": "sha256-qnlAydaDEuOdiaZShaqa9F8U2PQ02FDujZPbalbRZ7s=",
+   "pom": "sha256-EJN9RMQlmEy4c5Il00cS4aMUVkHKk6w/fvGG+iX2urw="
+  },
   "org/junit#junit-bom/5.13.2": {
    "module": "sha256-7WfhUiFASsQrXlmBAu33Yt1qlS3JUAHpwMTudKBOgoM=",
    "pom": "sha256-Q7EQT7P9TvS3KpdR1B4Jwp8AHIvgD/OXIjjcFppzS0k="
@@ -2595,6 +2599,151 @@
   "org/yaml#snakeyaml/2.6": {
    "jar": "sha256-yPepjnOUrdoC9jFySXEOTRtMeiWqjH6s4MLupS64v4U=",
    "pom": "sha256-J3Ow6UiWTSHjew4dzzkCXmJ7hz4M5qoqR+I8N0MD4MQ="
+  },
+  "software/amazon/awssdk#annotations/2.59.5": {
+   "jar": "sha256-+zLGrgiU3QbrUxiKbyMhhsOzFN64VtmNDcRdMtL90rY=",
+   "pom": "sha256-kzuQu4G7USxp2syfzxjoVeoEQd/dw3OF0hwJJjTcz5o="
+  },
+  "software/amazon/awssdk#apache5-client/2.59.5": {
+   "jar": "sha256-Be9I8xXsuUJLEqPz6Nkw+ElDvcyThpsZchdMScdWu/8=",
+   "pom": "sha256-mJQ8nwfAtRkSwy5aT1lfy7EZWFq0OzA//XXFP1Q3nE0="
+  },
+  "software/amazon/awssdk#arns/2.59.5": {
+   "jar": "sha256-k5GpNBjnMEyeVyv3AO6t1OdCKZlZ1yHqXCxizsmSxPw=",
+   "pom": "sha256-CacsE81pQcE+tUFB5k2Iqxh+wgC95wFThDHlQtmP8Ww="
+  },
+  "software/amazon/awssdk#auth/2.59.5": {
+   "jar": "sha256-VYv0zSNGo61leR8KaxEW/3DS9vYhCoot2YAz9TGN7w0=",
+   "pom": "sha256-5hq+bg5e6C8fKX/2baevV2bohD+9LFkeXDhdZbbnp3c="
+  },
+  "software/amazon/awssdk#aws-core/2.59.5": {
+   "jar": "sha256-V4uDVt1um84SA9mypKkbOvmV7IJPLwJIbfmbUeCAYA0=",
+   "pom": "sha256-lgd1nbG9A8JynFlw0rrI9tYjSwJKt1nP9yKzkZybL+0="
+  },
+  "software/amazon/awssdk#aws-query-protocol/2.59.5": {
+   "jar": "sha256-J9qamOlLMRxsZ2SV003LNmu8T2u9titgCb5QhyTXjRw=",
+   "pom": "sha256-HnGuqHNPbEuBztnuFyIossz4/eYwHnutiGBxykAkf0M="
+  },
+  "software/amazon/awssdk#aws-sdk-java-pom/2.59.5": {
+   "pom": "sha256-mg3HQRUTteCnr1x58Dl9/vPabJiTdpYzhlbpsBnGM+4="
+  },
+  "software/amazon/awssdk#aws-xml-protocol/2.59.5": {
+   "jar": "sha256-d5i44pMNSiZI8X6qlWJBEuSrDCIPEYkXRK8PHTb/HDM=",
+   "pom": "sha256-j1G3X0wW1u80Q3Nik2caSiomCBslyRVWpUvTdebsS/s="
+  },
+  "software/amazon/awssdk#bom-internal/2.59.5": {
+   "pom": "sha256-bAxDRkqap9ETk4v+VcSB3qTEFqMLsy9unZX2SliuKg4="
+  },
+  "software/amazon/awssdk#checksums-spi/2.59.5": {
+   "jar": "sha256-ETE8IIZKsQo1y/Jlc9Mo39T7Awhxn5YmPHYXcfz7hOM=",
+   "pom": "sha256-WduM8KjNRFECrY5Pjz+TIAwYnGnQCiV39OLjV/qB4ag="
+  },
+  "software/amazon/awssdk#checksums/2.59.5": {
+   "jar": "sha256-zch/03l97z9D5bBDg+wwQ53chk5+p/lIH3hP0HNkjA0=",
+   "pom": "sha256-zdevwW6dIr6OTZepAQjfLxgeVO4F1qaMjxfXM+eDans="
+  },
+  "software/amazon/awssdk#core/2.59.5": {
+   "pom": "sha256-kcrEpATESGORTSkBAwDEGjlphGg3OcM5lCYA7t0rKZ0="
+  },
+  "software/amazon/awssdk#crt-core/2.59.5": {
+   "jar": "sha256-oHojh0DdexbTMc2k8bZuUslIvrY1y9rEBGd6d7Y8cmQ=",
+   "pom": "sha256-1cccRn01Y2zqQ65TxyiIk7LCcmkbaMo25FAGA5F19U4="
+  },
+  "software/amazon/awssdk#endpoints-spi/2.59.5": {
+   "jar": "sha256-xGn6Kc0R/pjfMqUDq9wSdlTfEfsallGU3QoPFZ9p9RE=",
+   "pom": "sha256-sRleX0rK1xi8Fm+PEGEALcIvgqDuFitqSdDmuEW8SgA="
+  },
+  "software/amazon/awssdk#eventstream/2.59.5": {
+   "jar": "sha256-zLi1HAAs/ZBMjCDT6X0TnT8z0iXOxip6Emh1cgc+yRw=",
+   "pom": "sha256-rXYBypck09SaI46w9vKc4veURpz2v00Y2Uhpv6n3x/o="
+  },
+  "software/amazon/awssdk#http-auth-aws-eventstream/2.59.5": {
+   "jar": "sha256-jsDJsAZqRuUG7N140kFQU+rdhh0OFHOfcbmQd3OjQLQ=",
+   "pom": "sha256-Ei2YImZgVfrKt/I4BjTwgqTQtJ4i/wfhYK+XHiGdnzo="
+  },
+  "software/amazon/awssdk#http-auth-aws/2.59.5": {
+   "jar": "sha256-kfsbV30EfAL8d7ZaMcV1/xnvrgMa5OU0P2Ep/YJW7lk=",
+   "pom": "sha256-ixvkrnSZcJ9gW4T5Jeg2zpYYC8ySmQDc7Rey0bYMReQ="
+  },
+  "software/amazon/awssdk#http-auth-spi/2.59.5": {
+   "jar": "sha256-xUAvlniZsM60xPTQfDt94E+6/R9EDffRBanmi1GFxhM=",
+   "pom": "sha256-Nc4YvOry1brrPmjEZBAwmjZRquqjr0JDIyHU2J5PUQk="
+  },
+  "software/amazon/awssdk#http-auth/2.59.5": {
+   "jar": "sha256-/vvkALYxuxyKChXtgiZvDl7S1ghpSJpQQWvoEs0zwq4=",
+   "pom": "sha256-443ucJ1t2kJ/xKKM763EN6kXcL0/bpHwhxFhVxjRh9I="
+  },
+  "software/amazon/awssdk#http-client-spi/2.59.5": {
+   "jar": "sha256-JNEyerflCSm/L6o7NjxRlSw61fOH3vU8dW2yzyeZ3PU=",
+   "pom": "sha256-7LKWmIeM2fIFzv0fzAlSrnbv90NkRxGIANgmfM4x9Tg="
+  },
+  "software/amazon/awssdk#http-clients/2.59.5": {
+   "pom": "sha256-aAxD/h8k8zbq8kAT8V9vLqfYvWzHUWhxgDbYs7GweHY="
+  },
+  "software/amazon/awssdk#identity-spi/2.59.5": {
+   "jar": "sha256-QcwrfD3jLgHVeiJ28lnp0ERSIR9axjnc8iN0qt1uOic=",
+   "pom": "sha256-QiZb/n77VP0rR/tnRvZI9o3KlfekfTUDt+sq4I8pBc8="
+  },
+  "software/amazon/awssdk#json-utils/2.59.5": {
+   "jar": "sha256-lB5f9r15qg1rko3GbX1ztirDZUJI9leuWKEPlwFO7Ys=",
+   "pom": "sha256-LZ9GyZ7OmB9YwGjipdTpMy29spjYZpJsmU5H1CYNC3c="
+  },
+  "software/amazon/awssdk#metrics-spi/2.59.5": {
+   "jar": "sha256-QbHN3WRY/T12/OWddMsDL9iJw4b+6XPulm8zlAfeuh4=",
+   "pom": "sha256-oKJPDs9Lds/BjYcNgUdndE1N25RplTonELQfedxBYbE="
+  },
+  "software/amazon/awssdk#profiles/2.59.5": {
+   "jar": "sha256-9FebOTJhMIvW1j18bxAdBrWKi1qVCGkJ1J8O2m7Z8RM=",
+   "pom": "sha256-1T7nRLnVrPCu2fVD/mGOCzs5Ycis3L79XEb7bsMwZ68="
+  },
+  "software/amazon/awssdk#protocol-core/2.59.5": {
+   "jar": "sha256-3U75pt1V5aHxk7K0sv6oOB6eChVIzTw1Iup5nPKWQIE=",
+   "pom": "sha256-vBMLqB8ZXjufZoiiPWnr2Qx6gCi2A7UjdctU7nVL58o="
+  },
+  "software/amazon/awssdk#protocols/2.59.5": {
+   "pom": "sha256-HT9tITi8Nh5jlwTS2qG21dn6KN7QIpqlLoSihESkA9o="
+  },
+  "software/amazon/awssdk#regions/2.59.5": {
+   "jar": "sha256-ooNjBFqARXVmJfgXLVO0YVpWeil5HLdQiDs7scP2ozk=",
+   "pom": "sha256-OYh0ppC06XO/3fhXJj4IKuGg/ifhrKIn9pxBThsnU08="
+  },
+  "software/amazon/awssdk#retries-spi/2.59.5": {
+   "jar": "sha256-aN1YPHsvVJHsfcXAQ1XzeV6iCrXCu8ikBWzIa4fR+7c=",
+   "pom": "sha256-IyqeZXTds8I0ghf1Ep0T/tkKwt00/nX/FdB9qIg17uY="
+  },
+  "software/amazon/awssdk#retries/2.59.5": {
+   "jar": "sha256-cTpNY5juRxKvAwzK9Bj9IWWVJiN/rpNipiEGrlVTCfU=",
+   "pom": "sha256-QNwl49ZJ9tBsDvfRYCmBuHUiaCOXr1xrCmNdluL35/A="
+  },
+  "software/amazon/awssdk#s3/2.59.5": {
+   "jar": "sha256-153UtMZsIFYaOY7IT6b07VBBa0nbOteqMFODSXFCsPU=",
+   "pom": "sha256-J6wd99s9oiPlBqN2wGyJ4Bpqn0W1s2vnBZ0iadGS8Bo="
+  },
+  "software/amazon/awssdk#sdk-core/2.59.5": {
+   "jar": "sha256-eKCEjGH/kWxXP7v0k0A7sjXgtZqr5CKlgpV0K7RERd0=",
+   "pom": "sha256-9a4Y3dFWdy25WcU5ztK264i88S8shJ5OqI7leKylvOk="
+  },
+  "software/amazon/awssdk#services/2.59.5": {
+   "pom": "sha256-JjrQUk8fzRufuiD30nGIh74G+XJsWoWAbCsHZm1AP4g="
+  },
+  "software/amazon/awssdk#third-party-jackson-core/2.59.5": {
+   "jar": "sha256-zQOmsc6Hs4yD1i8WXvW8iyfHmlAYOfGMfcNxae+VM4o=",
+   "pom": "sha256-CaGEfPOiEPpONLNUy55uB3EERlnPlHZs+GMnl6HoTxw="
+  },
+  "software/amazon/awssdk#third-party/2.59.5": {
+   "pom": "sha256-eBpx7UXbGEzEP0ZOXGH9575lJR5Crk4n/fXVuc+2GWE="
+  },
+  "software/amazon/awssdk#url-connection-client/2.59.5": {
+   "jar": "sha256-pirqr6LIDGRWLx77UdXA7VYLlBMk5gQ+7iUio5Ur65Y=",
+   "pom": "sha256-KZZp+A9tLlap4wK5OTRn4Eb+PD0IeqwKysgrYVpvaNM="
+  },
+  "software/amazon/awssdk#utils-lite/2.59.5": {
+   "jar": "sha256-PM9Q+5oZY1wLqUUHJ1trV7qNJfw+JWPtRJ7NpJ3oo/M=",
+   "pom": "sha256-Wxq6Q6erbhvjTLDgq005BDYQ6A7WKobMn9HNjB7IMsA="
+  },
+  "software/amazon/awssdk#utils/2.59.5": {
+   "jar": "sha256-plIa5pr5B2lHJ2dYaCXN1u8D/xSJi5+6WR9xWC5Ft1Q=",
+   "pom": "sha256-kHTuA2KSbGSYYSHv1RtGmQaEI2J/Ej7wURB4trFymDU="
   },
   "tools/jackson#jackson-base/3.1.7": {
    "pom": "sha256-coWvdilyDiTbEQhLxaict69NTTUznnFjkClYpc39EP4="

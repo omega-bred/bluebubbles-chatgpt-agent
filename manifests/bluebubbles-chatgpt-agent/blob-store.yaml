@@ -1,0 +1,69 @@
+apiVersion: objectstorage.k8s.io/v1alpha1
+kind: BucketClaim
+metadata:
+  name: bluechat-blobs
+  annotations:
+    kustomize.toolkit.fluxcd.io/prune: disabled
+spec:
+  bucketClassName: rustfs-retained-data
+  protocols: [S3]
+---
+apiVersion: objectstorage.k8s.io/v1alpha1
+kind: BucketAccess
+metadata:
+  name: bluechat-blobs
+  annotations:
+    kustomize.toolkit.fluxcd.io/prune: disabled
+spec:
+  bucketClaimName: bluechat-blobs
+  bucketAccessClassName: rustfs-retained-data
+  protocol: S3
+  credentialsSecretName: bluechat-blobs-bucketinfo
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: bluechat-blobs-credentials
+rules:
+  - apiGroups: [""]
+    resources: [secrets]
+    verbs: [create]
+  - apiGroups: [""]
+    resources: [secrets]
+    resourceNames: [bluechat-blobs-bucketinfo]
+    verbs: [get, update, delete]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: bluechat-blobs-credentials
+subjects:
+  - kind: ServiceAccount
+    name: rustfs-cosi-driver
+    namespace: rustfs-cosi-system
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: bluechat-blobs-credentials
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: rustfs-allow-bluechat-blobs
+  namespace: rustfs
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: rustfs
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: bluebubbles-chatgpt-agent
+          podSelector:
+            matchLabels:
+              app: bluebubbles-chatgpt-agent
+      ports:
+        - protocol: TCP
+          port: 9000
