@@ -47,7 +47,7 @@ public class SearchEventsAgentTool extends GcalToolSupport implements ToolProvid
           return withCalendar(
               context,
               request.accountKey(),
-              (client, accountKey) -> {
+              client -> {
                 String calendarId = resolveCalendarId(request.calendarId());
                 String query = request.query();
                 if (isBlank(query)) {
