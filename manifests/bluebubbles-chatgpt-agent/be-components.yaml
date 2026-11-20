@@ -830,7 +830,7 @@ spec:
   volume:
     size: 50Gi
     storageClass: freenas-iscsi-csi-3646
-  numberOfInstances: 1
+  numberOfInstances: 2
   enableLogicalBackup: true
   logicalBackupSchedule: "5 9 * * *"
   users:
