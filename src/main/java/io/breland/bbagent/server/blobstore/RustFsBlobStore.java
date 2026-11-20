@@ -16,6 +16,8 @@ import software.amazon.awssdk.services.s3.model.NoSuchKeyException;
 
 final class RustFsBlobStore implements BlobStore, AutoCloseable {
   private static final String PREFIX = "blobs/v1/";
+  private static final String CADENCE_PAYLOADS = "cadence/v1/turns/";
+  private static final String SCHEDULED_PAYLOADS = "cadence/v1/scheduled/";
 
   private final S3Client client;
   private final String bucket;
@@ -27,15 +29,24 @@ final class RustFsBlobStore implements BlobStore, AutoCloseable {
 
   void configureExpiry() {
     // S3 lifecycle expiration uses whole days. Reads still use the shorter blob window.
-    LifecycleRule rule =
-        LifecycleRule.builder()
-            .id("expire-bluechat-blobs")
-            .filter(LifecycleRuleFilter.builder().prefix(PREFIX).build())
-            .status(ExpirationStatus.ENABLED)
-            .expiration(LifecycleExpiration.builder().days(1).build())
-            .build();
     client.putBucketLifecycleConfiguration(
-        request -> request.bucket(bucket).lifecycleConfiguration(config -> config.rules(rule)));
+        request ->
+            request
+                .bucket(bucket)
+                .lifecycleConfiguration(
+                    config ->
+                        config.rules(
+                            expiry("expire-bluechat-blobs", PREFIX, 1),
+                            expiry("expire-bluechat-cadence-turns", CADENCE_PAYLOADS, 7))));
+  }
+
+  private static LifecycleRule expiry(String id, String prefix, int days) {
+    return LifecycleRule.builder()
+        .id(id)
+        .filter(LifecycleRuleFilter.builder().prefix(prefix).build())
+        .status(ExpirationStatus.ENABLED)
+        .expiration(LifecycleExpiration.builder().days(days).build())
+        .build();
   }
 
   @Override
@@ -69,6 +80,32 @@ final class RustFsBlobStore implements BlobStore, AutoCloseable {
     } catch (IOException e) {
       throw new UncheckedIOException("Unable to read image blob from RustFS", e);
     }
+  }
+
+  @Override
+  public void storeCadencePayload(String digest, boolean scheduled, byte[] payload) {
+    client.putObject(
+        request ->
+            request
+                .bucket(bucket)
+                .key(cadenceKey(digest, scheduled))
+                .contentType("application/octet-stream"),
+        RequestBody.fromBytes(payload));
+  }
+
+  @Override
+  public byte[] getCadencePayload(String digest, boolean scheduled) {
+    try {
+      return client
+          .getObjectAsBytes(request -> request.bucket(bucket).key(cadenceKey(digest, scheduled)))
+          .asByteArray();
+    } catch (NoSuchKeyException e) {
+      return null;
+    }
+  }
+
+  private static String cadenceKey(String digest, boolean scheduled) {
+    return (scheduled ? SCHEDULED_PAYLOADS : CADENCE_PAYLOADS) + digest;
   }
 
   @Override

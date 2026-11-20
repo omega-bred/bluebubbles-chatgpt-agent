@@ -17,7 +17,10 @@ class CadenceTimePayloadTest {
 
   private final DataConverter converter =
       new CadenceWorkflowConfig()
-          .cadenceWorkflowClient(mock(WorkflowServiceGrpc.class), new AgentWorkflowProperties())
+          .cadenceWorkflowClient(
+              mock(WorkflowServiceGrpc.class),
+              new AgentWorkflowProperties(),
+              new io.breland.bbagent.server.blobstore.InMemoryBlobStore())
           .getOptions()
           .getDataConverter();
 

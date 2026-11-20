@@ -8,7 +8,17 @@ public record AgentWorkflowContext(
     String chatGuid,
     String messageGuid,
     Instant startedAt,
-    DecisionRouting decisionRouting) {
+    DecisionRouting decisionRouting,
+    Long responseVersion) {
+  public AgentWorkflowContext(
+      String workflowId,
+      String chatGuid,
+      String messageGuid,
+      Instant startedAt,
+      DecisionRouting decisionRouting) {
+    this(workflowId, chatGuid, messageGuid, startedAt, decisionRouting, null);
+  }
+
   public AgentWorkflowContext(
       String workflowId, String chatGuid, String messageGuid, Instant startedAt) {
     this(workflowId, chatGuid, messageGuid, startedAt, DecisionRouting.EMPTY);
@@ -23,6 +33,11 @@ public record AgentWorkflowContext(
   }
 
   public boolean isReactionWorkflow() {
-    return chatGuid != null && reactionWorkflowId(chatGuid).equals(workflowId);
+    return chatGuid != null
+        && (responseVersion == null
+            ? reactionWorkflowId(chatGuid).equals(workflowId)
+            : (reactionWorkflowId(chatGuid) + ":")
+                .concat(responseVersion.toString())
+                .equals(workflowId));
   }
 }

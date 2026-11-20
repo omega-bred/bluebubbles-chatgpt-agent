@@ -3,6 +3,7 @@ package io.breland.bbagent.server.agent.transport.lxmf;
 import io.breland.bbagent.server.agent.IncomingMessage;
 import io.breland.bbagent.server.agent.transport.MessageTransport;
 import io.breland.bbagent.server.agent.transport.OutgoingTextMessage;
+import java.time.Instant;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.stereotype.Component;
 
@@ -34,6 +35,15 @@ public class LxmfMessageTransport implements MessageTransport {
     if (destinationHash == null || destinationHash.isBlank()) {
       destinationHash = IncomingMessage.stripTransportPrefix(message.chatGuid());
     }
-    return lxmfBridgeClient.sendText(destinationHash, outgoingMessage.text());
+    return outgoingMessage.deliveryId() == null
+        ? lxmfBridgeClient.sendText(destinationHash, outgoingMessage.text())
+        : lxmfBridgeClient.sendText(
+            destinationHash, outgoingMessage.text(), outgoingMessage.deliveryId());
+  }
+
+  @Override
+  public boolean confirmText(
+      IncomingMessage message, OutgoingTextMessage outgoingMessage, Instant startedAt) {
+    return lxmfBridgeClient.confirmText(outgoingMessage.deliveryId());
   }
 }

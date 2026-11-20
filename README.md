@@ -193,6 +193,29 @@ in-memory cache. The Kubernetes Deployment waits for the Secret to be provisione
 RustFS keeps image blobs readable for one hour across worker restarts. Its bucket
 lifecycle rule expires those objects after one day on the server's lifecycle schedule.
 
+### Shared agent workers
+
+Both inbound transports commit verified messages to a Postgres inbox before
+acknowledging them. Workers process the head of each conversation, persist the
+prepared Cadence start, and retry that same workflow ID after an interruption.
+Pending turns and response versions live in Postgres. Outbound attempts reserve a
+stable delivery ID before calling a transport. A receipt can confirm an ambiguous
+attempt on a different worker. An unresolved attempt stays uncertain so a retry
+cannot send it again. The LXMF bridge keeps its receipts on its existing volume.
+
+Cadence measures the complete serialized payload. Above 128 KiB it stores the
+bytes in RustFS and passes a versioned, content-addressed OpenAPI reference.
+Ordinary workflow payloads expire after seven days, which covers the production
+domain's three-day history retention. Scheduled workflow inputs and metadata can
+outlive that window and use a retained prefix. Inline payloads already in history
+remain readable.
+
+New inbox and scheduled workflows use the versioned shared task list. Workers
+also poll the old task list using its inline format, so an older worker can
+finish an existing execution during rollout. Validate duplicate ingress,
+workflow handoff, and ambiguous delivery on two workers before raising the
+production replica count.
+
 ### Messaging Terms agreement
 
 `BBAGENT_TERMS_REQUIRED` defaults to `true`. Set it to `false` to let otherwise

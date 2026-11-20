@@ -1,6 +1,5 @@
 package io.breland.bbagent.server.agent.cadence;
 
-import com.uber.cadence.WorkflowExecution;
 import io.breland.bbagent.server.agent.AgentWorkflowContext;
 import io.breland.bbagent.server.agent.BBMessageAgent;
 import io.breland.bbagent.server.agent.ConversationState;
@@ -20,7 +19,7 @@ import io.breland.bbagent.server.agent.transport.MessageTransportRegistry;
 import io.breland.bbagent.server.agent.transport.bb.BlueBubblesPollSupport;
 import io.breland.bbagent.server.metrics.AgentMetricsService;
 import java.time.Instant;
-import java.util.Objects;
+import java.util.ArrayList;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -42,11 +41,12 @@ public final class CadenceIncomingMessageHandler {
   private final MessageDecisionService messageDecisionService;
 
   public void handleIncomingMessage(IncomingMessage rawMessage) {
-    PreparedIncomingMessage prepared = prepare(rawMessage);
-    if (prepared == null) {
-      return;
-    }
-    startCadenceWorkflow(prepared.state(), prepared.message(), prepared.routing());
+    CadenceMessageWorkflowRequest request = prepareForDispatch(rawMessage, null);
+    if (request != null) cadenceWorkflowLauncher.startWorkflow(request);
+  }
+
+  public boolean canEnqueue(IncomingMessage message) {
+    return isEligibleTransportMessage(message) && !profileService.isProcessingBlocked(message);
   }
 
   public ConversationState computeConversationState(String chatId, IncomingMessage message) {
@@ -67,7 +67,8 @@ public final class CadenceIncomingMessageHandler {
     return stateToHydrate;
   }
 
-  private @Nullable PreparedIncomingMessage prepare(IncomingMessage rawMessage) {
+  public @Nullable CadenceMessageWorkflowRequest prepareForDispatch(
+      IncomingMessage rawMessage, @Nullable Long responseVersion) {
     if (!isEligibleTransportMessage(rawMessage)) {
       log.debug("Dropping message {}", rawMessage);
       return null;
@@ -82,48 +83,55 @@ public final class CadenceIncomingMessageHandler {
       return null;
     }
     IncomingMessage message = pollNotificationEnricher.enrich(rawMessage);
-    ConversationState state =
-        conversationStateStore.computeIfAbsent(
-            message.chatGuid(), key -> this.computeConversationState(key, message));
+    return conversationStateStore.update(
+        message.chatGuid(),
+        key -> computeConversationState(key, message),
+        state -> prepare(state, message, responseVersion));
+  }
 
-    synchronized (state) {
-      if (state.hasSeenIncomingMessage(message)) {
-        log.info(
-            "Dropping already-seen incoming message chat={} guid={} fingerprint={} ts={} lastSeenGuid={} latestSeenTs={}",
-            message.chatGuid(),
-            message.messageGuid(),
-            message.computeMessageFingerprint(),
-            message.timestamp(),
-            state.getLastProcessedMessageGuid(),
-            state.getLatestProcessedMessageTimestamp());
-        return null;
-      }
-      if (state.isStaleIncomingMessage(message)) {
-        log.info(
-            "Dropping stale incoming message chat={} guid={} ts={} latestSeenTs={} lastSeenGuid={}",
-            message.chatGuid(),
-            message.messageGuid(),
-            message.timestamp(),
-            state.getLatestProcessedMessageTimestamp(),
-            state.getLastProcessedMessageGuid());
-        return null;
-      }
-      state.markIncomingMessageSeen(message);
-      if (termsGate.handle(state, message, this::processAcceptedMessage)) {
-        return null;
-      }
-      // Serialize bounded preflight with incoming turns: a later casual reaction must not replace
-      // the workflow marker of an earlier substantive request while its classification is pending.
-      Assessment assessment = assess(message, state);
-      if (assessment.suppress()) {
-        state.recordIncomingTurnIfAbsent(message);
-        return null;
-      }
-      state.recordPendingIncomingTurn(message);
-      markLatestWorkflow(state, message, assessment.routing());
-      recordAcceptedMessageMetric(message);
-      return new PreparedIncomingMessage(state, message, assessment.routing());
+  private @Nullable CadenceMessageWorkflowRequest prepare(
+      ConversationState state, IncomingMessage message, @Nullable Long responseVersion) {
+    if (state.hasSeenIncomingMessage(message)) {
+      log.info(
+          "Dropping already-seen incoming message chat={} guid={} fingerprint={} ts={} lastSeenGuid={} latestSeenTs={}",
+          message.chatGuid(),
+          message.messageGuid(),
+          message.computeMessageFingerprint(),
+          message.timestamp(),
+          state.getLastProcessedMessageGuid(),
+          state.getLatestProcessedMessageTimestamp());
+      return null;
     }
+    if (state.isStaleIncomingMessage(message)) {
+      log.info(
+          "Dropping stale incoming message chat={} guid={} ts={} latestSeenTs={} lastSeenGuid={}",
+          message.chatGuid(),
+          message.messageGuid(),
+          message.timestamp(),
+          state.getLatestProcessedMessageTimestamp(),
+          state.getLastProcessedMessageGuid());
+      return null;
+    }
+    state.markIncomingMessageSeen(message);
+    var accepted = new ArrayList<CadenceMessageWorkflowRequest>(1);
+    if (termsGate.handle(
+        state,
+        message,
+        (acceptedState, original) -> {
+          DecisionRouting assessed = assess(original, acceptedState).routing();
+          DecisionRouting routing = new DecisionRouting(assessed.toolNames(), assessed.feedback());
+          accepted.add(prepareResponse(acceptedState, original, routing, responseVersion));
+        })) {
+      return accepted.isEmpty() ? null : accepted.getFirst();
+    }
+    // Serialize bounded preflight with incoming turns: a later casual reaction must not replace
+    // the workflow marker of an earlier substantive request while its classification is pending.
+    Assessment assessment = assess(message, state);
+    if (assessment.suppress()) {
+      state.recordIncomingTurnIfAbsent(message);
+      return null;
+    }
+    return prepareResponse(state, message, assessment.routing(), responseVersion);
   }
 
   private Assessment assess(IncomingMessage message, ConversationState state) {
@@ -138,33 +146,29 @@ public final class CadenceIncomingMessageHandler {
     }
   }
 
-  private void startCadenceWorkflow(
-      ConversationState state, IncomingMessage message, DecisionRouting routing) {
-    synchronized (state) {
-      String latestGuid =
-          isReactionWorkflow(message, routing)
-              ? state.getLatestReactionMessageGuid()
-              : state.getLatestWorkflowMessageGuid();
-      if (!Objects.equals(latestGuid, message.messageGuid())) return;
-      AgentWorkflowContext workflowContext =
-          new AgentWorkflowContext(
-              resolveWorkflowId(message, routing),
-              message.chatGuid(),
-              message.messageGuid(),
-              Instant.now(),
-              routing);
-      log.info("Responding via cadence workflow");
-      WorkflowExecution execution =
-          cadenceWorkflowLauncher.startWorkflow(
-              new CadenceMessageWorkflowRequest(workflowContext, message, null));
-      if (execution != null) {
-        synchronized (state) {
-          if (Objects.equals(state.getLatestWorkflowMessageGuid(), message.messageGuid())) {
-            state.setLatestWorkflowRunId(execution.getRunId());
-          }
-        }
-      }
+  private CadenceMessageWorkflowRequest prepareResponse(
+      ConversationState state,
+      IncomingMessage message,
+      DecisionRouting routing,
+      @Nullable Long responseVersion) {
+    state.recordPendingIncomingTurn(message);
+    markLatestWorkflow(state, message, routing, responseVersion);
+    recordAcceptedMessageMetric(message);
+    String workflowId = resolveWorkflowId(message, routing);
+    if (responseVersion != null) {
+      workflowId +=
+          isReactionWorkflow(message, routing) ? ":" + responseVersion : ":turn:" + responseVersion;
     }
+    return new CadenceMessageWorkflowRequest(
+        new AgentWorkflowContext(
+            workflowId,
+            message.chatGuid(),
+            message.messageGuid(),
+            Instant.now(),
+            routing,
+            responseVersion),
+        message,
+        null);
   }
 
   private void recordAcceptedMessageMetric(IncomingMessage message) {
@@ -221,22 +225,6 @@ public final class CadenceIncomingMessageHandler {
     }
   }
 
-  private void processAcceptedMessage(ConversationState state, IncomingMessage message) {
-    if (state == null || message == null) {
-      return;
-    }
-    DecisionRouting routing;
-    synchronized (state) {
-      // Accepting terms resumes the user's original request regardless of the participation score.
-      DecisionRouting assessed = assess(message, state).routing();
-      routing = new DecisionRouting(assessed.toolNames(), assessed.feedback());
-      state.recordPendingIncomingTurn(message);
-      markLatestWorkflow(state, message, routing);
-    }
-    recordAcceptedMessageMetric(message);
-    startCadenceWorkflow(state, message, routing);
-  }
-
   private static boolean isSilentInvocation(String text) {
     if (text == null) {
       return false;
@@ -259,23 +247,26 @@ public final class CadenceIncomingMessageHandler {
     return UUID.randomUUID().toString();
   }
 
-  private record PreparedIncomingMessage(
-      ConversationState state, IncomingMessage message, DecisionRouting routing) {}
-
   private static boolean isReactionWorkflow(IncomingMessage message, DecisionRouting routing) {
     return routing.responseMode() == DecisionRouting.ResponseMode.REACTION
         || MessageReactionSupport.isTapbackNotification(message.text());
   }
 
   private static void markLatestWorkflow(
-      ConversationState state, IncomingMessage message, DecisionRouting routing) {
+      ConversationState state,
+      IncomingMessage message,
+      DecisionRouting routing,
+      @Nullable Long responseVersion) {
     if (isReactionWorkflow(message, routing)) {
       state.setLatestReactionMessageGuid(message.messageGuid());
+      state.setLatestReactionVersion(responseVersion);
     } else {
       state.setLatestWorkflowMessageGuid(message.messageGuid());
+      state.setLatestResponseVersion(responseVersion);
       state.setLatestWorkflowRunId(null);
       // A newer substantive message supersedes a reaction response as well as the prior request.
       state.setLatestReactionMessageGuid(null);
+      state.setLatestReactionVersion(null);
     }
   }
 }

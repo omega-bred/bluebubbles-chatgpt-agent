@@ -6,6 +6,7 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.google.common.cache.Cache;
 import com.google.common.cache.CacheBuilder;
+import io.breland.bbagent.server.agent.OutboundDeliveryStore.Outcome;
 import io.breland.bbagent.server.agent.tools.AgentTool;
 import io.breland.bbagent.server.agent.tools.ToolProvider;
 import io.breland.bbagent.server.agent.transport.bb.BBHttpClientWrapper;
@@ -21,6 +22,9 @@ import org.apache.commons.lang3.StringUtils;
 public class SendPollAgentTool implements ToolProvider {
 
   public static final String TOOL_NAME = "send_poll";
+  private static final String DECLINED = "skipped: quota exceeded or outdated workflow";
+  private static final String UNCERTAIN =
+      "failed: poll delivery could not be confirmed. The poll may already have been sent. Do not retry or claim it failed to send; check the existing poll instead.";
 
   private final BBHttpClientWrapper bbHttpClientWrapper;
 
@@ -71,13 +75,37 @@ public class SendPollAgentTool implements ToolProvider {
             return "missing options";
           }
           String chatGuid = context.message().chatGuid();
+          if (context.usesSharedDeliveryStore()) {
+            var delivery =
+                context.sendPoll(
+                    id -> {
+                      String receipt;
+                      try {
+                        receipt =
+                            bbHttpClientWrapper
+                                .sendPollJson(chatGuid, request.title(), options)
+                                .toString();
+                      } catch (RuntimeException error) {
+                        log.warn(
+                            "Poll send outcome could not be confirmed; suppressing repeat sends",
+                            error);
+                        return null;
+                      }
+                      context.recordAssistantTurn("Sent poll: " + request.title());
+                      return receipt;
+                    });
+            if (delivery.delivered()) {
+              return delivery.receipt();
+            }
+            return delivery.outcome() == Outcome.DECLINED ? DECLINED : UNCERTAIN;
+          }
           return outcomes
               .asMap()
               .computeIfAbsent(
                   new PollRequestKey(chatGuid, context.message().messageGuid()),
                   key -> {
                     if (!context.consumeMessageResponseQuota()) {
-                      return "skipped: quota exceeded or outdated workflow";
+                      return DECLINED;
                     }
                     try {
                       JsonNode data =
@@ -87,7 +115,7 @@ public class SendPollAgentTool implements ToolProvider {
                     } catch (RuntimeException e) {
                       log.warn(
                           "Poll send outcome could not be confirmed; suppressing repeat sends", e);
-                      return "failed: poll delivery could not be confirmed. The poll may already have been sent. Do not retry or claim it failed to send; check the existing poll instead.";
+                      return UNCERTAIN;
                     }
                   });
         });

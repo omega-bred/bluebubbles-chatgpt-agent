@@ -123,10 +123,18 @@ public class CadenceWorkflowLauncher {
     }
     WorkflowOptions.Builder optionsBuilder =
         new WorkflowOptions.Builder()
-            .setTaskList(workflowProperties.getCadenceTaskList())
+            .setTaskList(
+                request.workflowContext().responseVersion() != null
+                        || request.scheduledFor() != null
+                    ? workflowProperties.getSharedCadenceTaskList()
+                    : workflowProperties.getCadenceTaskList())
             .setWorkflowId(request.workflowContext().workflowId())
-            .setWorkflowIdReusePolicy(WorkflowIdReusePolicy.TerminateIfRunning)
-            .setExecutionStartToCloseTimeout(Duration.ofMinutes(5))
+            .setWorkflowIdReusePolicy(
+                request.workflowContext().responseVersion() == null
+                    ? WorkflowIdReusePolicy.TerminateIfRunning
+                    : WorkflowIdReusePolicy.RejectDuplicate)
+            .setExecutionStartToCloseTimeout(
+                Duration.ofMinutes(request.workflowContext().responseVersion() == null ? 5 : 15))
             .setTaskStartToCloseTimeout(Duration.ofMinutes(1));
     if (delayStart != null && !delayStart.isNegative() && !delayStart.isZero()) {
       optionsBuilder.setDelayStart(delayStart);
@@ -135,7 +143,11 @@ public class CadenceWorkflowLauncher {
       optionsBuilder.setCronSchedule(cronSchedule);
     }
     if (memo != null && !memo.isEmpty()) {
-      optionsBuilder.setMemo(memo);
+      Map<String, Object> scheduledMemo = new LinkedHashMap<>();
+      memo.forEach(
+          (key, value) ->
+              scheduledMemo.put(key, new CadenceBlobDataConverter.ScheduledMemoValue(value)));
+      optionsBuilder.setMemo(scheduledMemo);
     }
     WorkflowOptions options = optionsBuilder.build();
     CadenceMessageWorkflow workflow =

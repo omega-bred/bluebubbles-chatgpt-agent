@@ -100,7 +100,9 @@ public class CadenceAgentActivitiesImpl implements CadenceAgentActivities {
     }
     try {
       MessageTransport transport = transportRegistry.resolve(message);
-      if (typing) {
+      if (workflowContext.responseVersion() != null) {
+        updateSharedTyping(message, workflowContext, typing, transport);
+      } else if (typing) {
         transport.startTyping(message, workflowContext.messageGuid());
       } else {
         transport.stopTyping(message, workflowContext.messageGuid());
@@ -110,6 +112,37 @@ public class CadenceAgentActivitiesImpl implements CadenceAgentActivities {
           "Typing activity failed transport={} failureType={}",
           message.transportOrDefault(),
           error.getClass().getSimpleName());
+    }
+  }
+
+  private void updateSharedTyping(
+      IncomingMessage message,
+      AgentWorkflowContext context,
+      boolean typing,
+      MessageTransport transport) {
+    String chatGuid = message.chatGuid();
+    String token = context.workflowId();
+    boolean changed =
+        conversationStateStore.update(
+            chatGuid,
+            ignored -> new ConversationState(),
+            state -> {
+              if (typing
+                  ? !outboundService.canSendResponses(context)
+                  : !token.equals(state.getActiveTypingToken())) return false;
+              state.setActiveTypingToken(typing ? token : null);
+              return true;
+            });
+    if (!changed) return;
+    if (typing) {
+      transport.startSharedTyping(message);
+    } else {
+      transport.stopSharedTyping(
+          message,
+          () -> {
+            ConversationState current = conversationStateStore.get(chatGuid);
+            return current == null || current.getActiveTypingToken() == null;
+          });
     }
   }
 
@@ -183,7 +216,31 @@ public class CadenceAgentActivitiesImpl implements CadenceAgentActivities {
                 .name(toolCall.name())
                 .arguments(toolCall.arguments())
                 .build();
-        outputs.add(toolActivityRunner.run(call, message, workflowContext));
+        if (workflowContext != null && workflowContext.responseVersion() != null) {
+          var outcome =
+              outboundService.runToolOnce(
+                  message,
+                  workflowContext,
+                  call.callId(),
+                  () ->
+                      serializeToolOutput(
+                          toolActivityRunner.run(call, message, workflowContext), message));
+          if (outcome.delivered()) {
+            outputs.add(
+                JsonValue.fromJsonNode(objectMapper.readTree(outcome.receipt()))
+                    .convert(ResponseInputItem.class));
+          } else {
+            outputs.add(
+                ResponseInputItem.ofFunctionCallOutput(
+                    ResponseInputItem.FunctionCallOutput.builder()
+                        .callId(call.callId())
+                        .output(
+                            "Tool execution was interrupted or superseded. Verify the status of a prior action before issuing it again.")
+                        .build()));
+          }
+        } else {
+          outputs.add(toolActivityRunner.run(call, message, workflowContext));
+        }
       }
       return externalizeInputImages(toJson(outputs), message.chatGuid());
     } catch (Exception e) {
@@ -243,10 +300,12 @@ public class CadenceAgentActivitiesImpl implements CadenceAgentActivities {
     if (!outboundService.canSendResponses(workflowContext)) {
       return new ImageSendResult(false, false);
     }
-    if (!outboundService.consumeMessageResponseQuota(message, workflowContext)) {
+    var delivery = outboundService.sendImages(message, workflowContext, caption, attachments);
+    if (delivery.outcome()
+        == io.breland.bbagent.server.agent.OutboundDeliveryStore.Outcome.DECLINED) {
       return new ImageSendResult(false, false, true);
     }
-    boolean sent = transport.sendMultipartMessage(message.chatGuid(), caption, attachments);
+    boolean sent = delivery.delivered();
     boolean captionSent = sent && caption != null && !caption.isBlank();
     return new ImageSendResult(sent, captionSent);
   }
@@ -257,14 +316,7 @@ public class CadenceAgentActivitiesImpl implements CadenceAgentActivities {
     if (!outboundService.canSendResponses(workflowContext)) {
       return false;
     }
-    MessageTransport transport = transportRegistry.resolve(message);
-    if (!transport.supportsReactions()) {
-      return false;
-    }
-    if (!outboundService.consumeMessageResponseQuota(message, workflowContext)) {
-      return false;
-    }
-    boolean sent = transport.sendReaction(message, reaction);
+    boolean sent = outboundService.sendReaction(message, reaction, workflowContext);
     if (sent) {
       recordAssistantTurn(message, "[reaction: " + reaction + "]", workflowContext);
     }
@@ -293,17 +345,16 @@ public class CadenceAgentActivitiesImpl implements CadenceAgentActivities {
   @Override
   public void finalizeWorkflow(
       IncomingMessage message, AgentWorkflowContext workflowContext, boolean responded) {
-    ConversationState state = conversationStateStore.get(message.chatGuid());
-    if (state == null) {
-      return;
-    }
-    synchronized (state) {
-      if (responded) {
-        outboundService.recordIncomingTurnsForResponse(state, message);
-      }
-      state.markIncomingMessageSeen(message);
-      threadContextRecorder.updateThreadContext(state, message);
-    }
+    conversationStateStore.updateIfPresent(
+        message.chatGuid(),
+        state -> {
+          if (!outboundService.canSendResponses(workflowContext)) return;
+          if (responded) {
+            outboundService.recordIncomingTurnsForResponse(state, message);
+          }
+          state.markIncomingMessageSeen(message);
+          threadContextRecorder.updateThreadContext(state, message);
+        });
   }
 
   private List<ConversationState.PendingIncomingTurn> pendingIncomingTurns(
@@ -324,6 +375,14 @@ public class CadenceAgentActivitiesImpl implements CadenceAgentActivities {
   private String toJson(Object value) throws Exception {
     JsonNode node = JsonValue.from(value).convert(JsonNode.class);
     return objectMapper.writeValueAsString(node);
+  }
+
+  private String serializeToolOutput(ResponseInputItem output, IncomingMessage message) {
+    try {
+      return externalizeInputImages(toJson(output), message.chatGuid());
+    } catch (Exception error) {
+      throw new IllegalStateException("Unable to persist the tool output", error);
+    }
   }
 
   /**

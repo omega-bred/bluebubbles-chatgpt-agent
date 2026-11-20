@@ -153,7 +153,8 @@ final class BBMessageAgentFixture {
             profileService,
             workflowResponseGate,
             messageResponseRateLimitService,
-            messageResponseLimitNoticeFactory);
+            messageResponseLimitNoticeFactory,
+            null);
     ToolContextFactory toolContextFactory =
         new ToolContextFactory(
             outboundService, conversationStateStore, objectMapper, profileService);
@@ -189,7 +190,8 @@ final class BBMessageAgentFixture {
         toolActivityRunner,
         outboundService,
         responseCreator,
-        nativeAppSessionService);
+        nativeAppSessionService,
+        null);
   }
 
   private static MessageResponseRateLimitService defaultRateLimitService() {

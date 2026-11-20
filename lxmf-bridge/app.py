@@ -7,9 +7,13 @@ import urllib.error
 import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from urllib.parse import parse_qs, urlsplit
+from uuid import UUID
 
 import LXMF
 import RNS
+
+from outbound_delivery import DeliveryConflict, OutboundDeliveries, OutboundRequest
 
 from lxmf_common import (
     desired_lxmf_method,
@@ -41,6 +45,7 @@ RNS_BACKBONE_REMOTE = env("RNS_BACKBONE_REMOTE", "rnode-public.rnode.svc.cluster
 RNS_BACKBONE_PORT = int(env("RNS_BACKBONE_PORT", "4242"))
 
 router = None
+outbound_deliveries = None
 local_destination = None
 stop_event = threading.Event()
 
@@ -124,7 +129,7 @@ def wait_for_path(destination_hash):
     return RNS.Transport.has_path(destination_hash)
 
 
-def send_lxmf(destination_hash_hex, content, title=""):
+def prepare_lxmf(destination_hash_hex, content, title=""):
     destination_hash = bytes.fromhex(destination_hash_hex)
     if not wait_for_path(destination_hash):
         raise RuntimeError("no path to destination")
@@ -142,8 +147,16 @@ def send_lxmf(destination_hash_hex, content, title=""):
         desired_method=desired_lxmf_method(OUTBOUND_METHOD),
         include_ticket=True,
     )
-    router.handle_outbound(lxm)
-    return message_id(lxm)
+    return lxm
+
+
+def enqueue_lxmf(message):
+    router.handle_outbound(message)
+    return message_id(message)
+
+
+def send_lxmf(destination_hash_hex, content, title=""):
+    return enqueue_lxmf(prepare_lxmf(destination_hash_hex, content, title))
 
 
 def authorize(headers):
@@ -191,6 +204,19 @@ class Handler(BaseHTTPRequestHandler):
         return json.loads(raw_body.decode("utf-8"))
 
     def do_GET(self):
+        target = urlsplit(self.path)
+        if target.path == "/api/v1/lxmfBridge/get.delivery":
+            if not authorize(self.headers):
+                self.write_json(401, {"error": "unauthorized"})
+                return
+            try:
+                request_id = str(UUID(parse_qs(target.query).get("request_id", [""])[0]))
+            except ValueError:
+                self.write_json(400, {"error": "invalid_request_id"})
+                return
+            receipt = outbound_deliveries.lookup(request_id)
+            self.write_json(200 if receipt is not None else 404, receipt or {"error": "not_found"})
+            return
         if self.path == "/health":
             self.write_json(200, {"status": "ok"})
             return
@@ -213,13 +239,15 @@ class Handler(BaseHTTPRequestHandler):
             self.write_json(401, {"error": "unauthorized"})
             return
         try:
-            body = self.read_json_body()
-            destination_hash = body["destination_hash"].strip().lower()
-            content = body["content"]
-            title = body.get("title", "")
-            outbound_id = send_lxmf(destination_hash, content, title)
-            self.write_json(200, {"status": "queued", "message_id": outbound_id})
-        except (json.JSONDecodeError, KeyError, ValueError) as error:
+            request = OutboundRequest(**self.read_json_body())
+            if request.request_id is None:
+                outbound_id = send_lxmf(request.destination_hash, request.content, request.title)
+                self.write_json(200, {"status": "queued", "message_id": outbound_id})
+            else:
+                self.write_json(200, outbound_deliveries.send(request, prepare_lxmf, enqueue_lxmf))
+        except DeliveryConflict as error:
+            self.write_json(409, {"error": str(error)})
+        except (TypeError, AttributeError, ValueError) as error:
             log(f"Bad outbound LXMF send request: {error}")
             self.write_json(400, {"error": str(error)})
         except Exception as error:
@@ -249,11 +277,12 @@ def announce_loop():
 
 
 def start_bridge():
-    global router, local_destination
+    global router, local_destination, outbound_deliveries
     if not BRIDGE_SECRET:
         raise RuntimeError("LXMF_BRIDGE_WEBHOOK_SECRET must be set")
     write_default_rns_config(RNS_CONFIG_DIR, RNS_BACKBONE_REMOTE, RNS_BACKBONE_PORT)
     LXMF_STORAGE_DIR.mkdir(parents=True, exist_ok=True)
+    outbound_deliveries = OutboundDeliveries(LXMF_STORAGE_DIR / "outbound-requests.sqlite")
     RNS.Reticulum(configdir=str(RNS_CONFIG_DIR))
     router = LXMF.LXMRouter(storagepath=str(LXMF_STORAGE_DIR))
     identity = load_or_create_identity(IDENTITY_PATH)

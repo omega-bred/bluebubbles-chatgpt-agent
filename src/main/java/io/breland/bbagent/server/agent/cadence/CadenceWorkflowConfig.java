@@ -19,6 +19,7 @@ import com.uber.cadence.serviceclient.WorkflowServiceGrpc;
 import com.uber.cadence.worker.Worker;
 import com.uber.cadence.worker.WorkerFactory;
 import io.breland.bbagent.server.agent.AgentWorkflowProperties;
+import io.breland.bbagent.server.blobstore.BlobStore;
 import java.lang.reflect.Type;
 import java.time.Duration;
 import java.time.Instant;
@@ -46,26 +47,34 @@ public class CadenceWorkflowConfig {
 
   @Bean
   public WorkflowClient cadenceWorkflowClient(
-      WorkflowServiceGrpc cadenceService, AgentWorkflowProperties properties) {
-    DataConverter dataConverter =
-        new JsonDataConverter(
-            builder ->
-                builder
-                    .registerTypeAdapter(
-                        Instant.class,
-                        new TemporalTypeAdapter<>(
-                            Instant.class, Instant::parse, Instant::ofEpochMilli))
-                    .registerTypeAdapter(
-                        Duration.class,
-                        new TemporalTypeAdapter<>(
-                            Duration.class, Duration::parse, Duration::ofMillis))
-                    .registerTypeHierarchyAdapter(JsonField.class, new JsonFieldTypeAdapter())
-                    .registerTypeHierarchyAdapter(JsonValue.class, new JsonValueTypeAdapter())
-                    .registerTypeHierarchyAdapter(Lazy.class, new LazyTypeAdapter()));
+      WorkflowServiceGrpc cadenceService, AgentWorkflowProperties properties, BlobStore blobs) {
+    return workflowClient(
+        cadenceService, properties, new CadenceBlobDataConverter(inlineConverter(), blobs));
+  }
+
+  private static DataConverter inlineConverter() {
+    return new JsonDataConverter(
+        builder ->
+            builder
+                .registerTypeAdapter(
+                    Instant.class,
+                    new TemporalTypeAdapter<>(Instant.class, Instant::parse, Instant::ofEpochMilli))
+                .registerTypeAdapter(
+                    Duration.class,
+                    new TemporalTypeAdapter<>(Duration.class, Duration::parse, Duration::ofMillis))
+                .registerTypeHierarchyAdapter(JsonField.class, new JsonFieldTypeAdapter())
+                .registerTypeHierarchyAdapter(JsonValue.class, new JsonValueTypeAdapter())
+                .registerTypeHierarchyAdapter(Lazy.class, new LazyTypeAdapter()));
+  }
+
+  private static WorkflowClient workflowClient(
+      WorkflowServiceGrpc cadenceService,
+      AgentWorkflowProperties properties,
+      DataConverter converter) {
     WorkflowClientOptions options =
         WorkflowClientOptions.newBuilder()
             .setDomain(properties.getCadenceDomain())
-            .setDataConverter(dataConverter)
+            .setDataConverter(converter)
             .build();
     return WorkflowClient.newInstance(cadenceService, options);
   }
@@ -76,8 +85,26 @@ public class CadenceWorkflowConfig {
       WorkflowClient cadenceWorkflowClient,
       AgentWorkflowProperties properties,
       CadenceAgentActivities activities) {
-    WorkerFactory factory = WorkerFactory.newInstance(cadenceWorkflowClient);
-    Worker worker = factory.newWorker(properties.getCadenceTaskList());
+    return startWorker(cadenceWorkflowClient, properties.getSharedCadenceTaskList(), activities);
+  }
+
+  @Bean
+  @Profile("!test")
+  public WorkerFactory legacyCadenceWorkerFactory(
+      WorkflowServiceGrpc cadenceService,
+      AgentWorkflowProperties properties,
+      CadenceAgentActivities activities) {
+    // Old workers can still poll this list during a rolling update and expect inline JSON.
+    return startWorker(
+        workflowClient(cadenceService, properties, inlineConverter()),
+        properties.getCadenceTaskList(),
+        activities);
+  }
+
+  private static WorkerFactory startWorker(
+      WorkflowClient client, String taskList, CadenceAgentActivities activities) {
+    WorkerFactory factory = WorkerFactory.newInstance(client);
+    Worker worker = factory.newWorker(taskList);
     worker.registerWorkflowImplementationTypes(CadenceMessageWorkflowImpl.class);
     worker.registerActivitiesImplementations(activities);
     factory.start();

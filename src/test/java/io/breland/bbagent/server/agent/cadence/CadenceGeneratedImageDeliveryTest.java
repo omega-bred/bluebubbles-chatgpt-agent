@@ -56,11 +56,11 @@ class CadenceGeneratedImageDeliveryTest {
             blobs,
             new GeneratedImageExtractor());
     when(outbound.canSendResponses(context)).thenReturn(true);
-    when(outbound.consumeMessageResponseQuota(message, context)).thenReturn(true);
     when(transports.resolve(message)).thenReturn(transport);
     when(transport.supportsGeneratedImages()).thenReturn(true);
-    when(transport.sendMultipartMessage(eq(message.chatGuid()), eq("Your images"), anyList()))
-        .thenReturn(true);
+    when(outbound.sendImages(eq(message), eq(context), eq("Your images"), anyList()))
+        .thenReturn(
+            new OutboundDeliveryStore.Result(OutboundDeliveryStore.Outcome.DELIVERED, "sent"));
     Response response =
         json.readValue(
             """
@@ -85,13 +85,11 @@ class CadenceGeneratedImageDeliveryTest {
     @SuppressWarnings("unchecked")
     ArgumentCaptor<List<BBHttpClientWrapper.AttachmentData>> attachments =
         ArgumentCaptor.forClass(List.class);
-    verify(transport)
-        .sendMultipartMessage(eq(message.chatGuid()), eq("Your images"), attachments.capture());
+    verify(outbound).sendImages(eq(message), eq(context), eq("Your images"), attachments.capture());
     assertEquals(2, attachments.getValue().size());
     assertArrayEquals(new byte[] {1, 2, 3}, attachments.getValue().get(0).bytes());
     assertArrayEquals(new byte[] {4, 5, 6}, attachments.getValue().get(1).bytes());
     assertNull(blobs.getBlob("different-chat", "ig-1"));
-    verify(outbound).consumeMessageResponseQuota(message, context);
     verify(transport).supportsGeneratedImages();
     verifyNoMoreInteractions(transport);
   }

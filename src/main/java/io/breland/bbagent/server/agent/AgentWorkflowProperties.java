@@ -15,4 +15,8 @@ public class AgentWorkflowProperties {
   private String cadenceTaskList = "bbagent";
   private String cadenceHost = "localhost";
   private int cadencePort = 7833;
+
+  public String getSharedCadenceTaskList() {
+    return cadenceTaskList + "-shared-v1";
+  }
 }
