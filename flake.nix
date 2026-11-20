@@ -500,6 +500,7 @@
               install -Dm755 app.py "$out/lib/lxmf-bridge/app.py"
               install -Dm755 canary.py "$out/lib/lxmf-bridge/canary.py"
               install -Dm644 lxmf_common.py "$out/lib/lxmf-bridge/lxmf_common.py"
+              install -Dm644 outbound_delivery.py "$out/lib/lxmf-bridge/outbound_delivery.py"
 
               runHook postInstall
             '';

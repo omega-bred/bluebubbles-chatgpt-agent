@@ -7,10 +7,12 @@ import io.breland.bbagent.server.agent.AgentWorkflowContext;
 import io.breland.bbagent.server.agent.ConversationState;
 import io.breland.bbagent.server.agent.ConversationStateStore;
 import io.breland.bbagent.server.agent.IncomingMessage;
+import io.breland.bbagent.server.agent.OutboundDeliveryStore;
 import io.breland.bbagent.server.agent.profile.AgentProfile;
 import io.breland.bbagent.server.agent.profile.AssistantResponsiveness;
 import io.breland.bbagent.server.agent.transport.OutgoingTextMessage;
 import java.util.Optional;
+import java.util.function.Function;
 import lombok.RequiredArgsConstructor;
 import org.springframework.lang.Nullable;
 
@@ -103,6 +105,14 @@ public class ToolContext {
 
   public boolean consumeMessageResponseQuota() {
     return outboundService.consumeMessageResponseQuota(message, workflowContext);
+  }
+
+  public boolean usesSharedDeliveryStore() {
+    return outboundService.usesSharedDeliveryStore();
+  }
+
+  public OutboundDeliveryStore.Result sendPoll(Function<String, String> send) {
+    return outboundService.sendPoll(message, workflowContext, send);
   }
 
   public @Nullable AgentWorkflowContext workflowContext() {

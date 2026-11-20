@@ -23,6 +23,7 @@ public class ConversationState {
   private final SequencedSet<String> recentIncomingMessageFingerprints = new LinkedHashSet<>();
   private final SequencedSet<String> recordedIncomingMessageGuids = new LinkedHashSet<>();
   private final SequencedSet<String> recordedIncomingMessageFingerprints = new LinkedHashSet<>();
+  private final SequencedSet<String> recordedAssistantDeliveries = new LinkedHashSet<>();
   private final Deque<PendingIncomingTurn> pendingIncomingTurns = new ArrayDeque<>();
   private final Set<String> pendingIncomingMessageGuids = new HashSet<>();
   private final Set<String> pendingIncomingMessageFingerprints = new HashSet<>();
@@ -36,6 +37,81 @@ public class ConversationState {
   @Getter @Setter private String latestWorkflowRunId;
   @Getter @Setter private String latestWorkflowMessageGuid;
   @Getter @Setter private String latestReactionMessageGuid;
+  @Getter @Setter private Long latestResponseVersion;
+  @Getter @Setter private Long latestReactionVersion;
+  @Getter @Setter private String activeTypingToken;
+
+  record Snapshot(
+      List<ConversationTurn> history,
+      List<String> recentGuids,
+      List<String> recentFingerprints,
+      List<String> recordedGuids,
+      List<String> recordedFingerprints,
+      List<String> assistantDeliveries,
+      List<PendingIncomingTurn> pending,
+      Map<String, ThreadContext> threads,
+      Map<String, PendingTermsAcceptance> terms,
+      String lastProcessedMessageGuid,
+      String lastProcessedMessageFingerprint,
+      Instant latestProcessedMessageTimestamp,
+      String latestWorkflowRunId,
+      String latestWorkflowMessageGuid,
+      String latestReactionMessageGuid,
+      Long latestResponseVersion,
+      Long latestReactionVersion,
+      String activeTypingToken) {}
+
+  synchronized Snapshot snapshot() {
+    return new Snapshot(
+        List.copyOf(history),
+        List.copyOf(recentIncomingMessageGuids),
+        List.copyOf(recentIncomingMessageFingerprints),
+        List.copyOf(recordedIncomingMessageGuids),
+        List.copyOf(recordedIncomingMessageFingerprints),
+        List.copyOf(recordedAssistantDeliveries),
+        List.copyOf(pendingIncomingTurns),
+        Map.copyOf(threadContexts),
+        Map.copyOf(pendingTermsAcceptances),
+        lastProcessedMessageGuid,
+        lastProcessedMessageFingerprint,
+        latestProcessedMessageTimestamp,
+        latestWorkflowRunId,
+        latestWorkflowMessageGuid,
+        latestReactionMessageGuid,
+        latestResponseVersion,
+        latestReactionVersion,
+        activeTypingToken);
+  }
+
+  static ConversationState fromSnapshot(Snapshot snapshot) {
+    ConversationState state = new ConversationState();
+    state.history.addAll(snapshot.history());
+    state.recentIncomingMessageGuids.addAll(snapshot.recentGuids());
+    state.recentIncomingMessageFingerprints.addAll(snapshot.recentFingerprints());
+    state.recordedIncomingMessageGuids.addAll(snapshot.recordedGuids());
+    state.recordedIncomingMessageFingerprints.addAll(snapshot.recordedFingerprints());
+    if (snapshot.assistantDeliveries() != null) {
+      state.recordedAssistantDeliveries.addAll(snapshot.assistantDeliveries());
+    }
+    for (PendingIncomingTurn turn : snapshot.pending()) {
+      state.pendingIncomingTurns.addLast(turn);
+      if (turn.messageGuid() != null) state.pendingIncomingMessageGuids.add(turn.messageGuid());
+      if (turn.fingerprint() != null)
+        state.pendingIncomingMessageFingerprints.add(turn.fingerprint());
+    }
+    state.threadContexts.putAll(snapshot.threads());
+    state.pendingTermsAcceptances.putAll(snapshot.terms());
+    state.lastProcessedMessageGuid = snapshot.lastProcessedMessageGuid();
+    state.lastProcessedMessageFingerprint = snapshot.lastProcessedMessageFingerprint();
+    state.latestProcessedMessageTimestamp = snapshot.latestProcessedMessageTimestamp();
+    state.latestWorkflowRunId = snapshot.latestWorkflowRunId();
+    state.latestWorkflowMessageGuid = snapshot.latestWorkflowMessageGuid();
+    state.latestReactionMessageGuid = snapshot.latestReactionMessageGuid();
+    state.latestResponseVersion = snapshot.latestResponseVersion();
+    state.latestReactionVersion = snapshot.latestReactionVersion();
+    state.activeTypingToken = snapshot.activeTypingToken();
+    return state;
+  }
 
   public synchronized List<ConversationTurn> history() {
     return new ArrayList<>(history);
@@ -49,6 +125,12 @@ public class ConversationState {
     while (history.size() > BBMessageAgent.MAX_HISTORY) {
       history.removeFirst();
     }
+  }
+
+  boolean rememberAssistantDelivery(String deliveryId) {
+    if (recordedAssistantDeliveries.contains(deliveryId)) return false;
+    remember(recordedAssistantDeliveries, deliveryId);
+    return true;
   }
 
   public synchronized boolean hasSeenIncomingMessage(IncomingMessage message) {

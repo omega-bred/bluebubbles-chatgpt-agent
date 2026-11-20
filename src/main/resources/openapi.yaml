@@ -12,6 +12,8 @@ tags:
     description: BlueBubbles webhook endpoints
   - name: lxmf
     description: LXMF bridge webhook endpoints
+  - name: lxmfBridge
+    description: Private HTTP endpoints served by the LXMF bridge.
   - name: gcal
     description: Google Calendar OAuth endpoints
   - name: websiteAccount
@@ -47,7 +49,7 @@ paths:
               $ref: '#/components/schemas/BlueBubblesMessageReceivedRequest'
       responses:
         '200':
-          description: Notification acknowledged
+          description: Notification acknowledged after verification and durable acceptance when applicable.
           content:
             application/json:
               schema:
@@ -55,7 +57,7 @@ paths:
         '400':
           description: Invalid message notification
         '503':
-          description: BlueBubbles verification is temporarily unavailable
+          description: BlueBubbles verification or durable acceptance is temporarily unavailable.
   /api/v1/lxmf/receive.messages:
     post:
       operationId: lxmfReceiveMessages
@@ -78,7 +80,7 @@ paths:
               $ref: '#/components/schemas/LxmfMessageReceivedRequest'
       responses:
         '200':
-          description: Message processed
+          description: Message acknowledged after durable acceptance when applicable.
           content:
             application/json:
               schema:
@@ -89,6 +91,57 @@ paths:
             application/json:
               schema:
                 type: object
+        '503':
+          description: Durable acceptance is temporarily unavailable.
+  /api/v1/messages/send:
+    post:
+      operationId: lxmfBridgeSendMessage
+      tags: [lxmfBridge]
+      servers:
+        - url: http://localhost:8091
+      summary: Queue a message on the LXMF bridge
+      security:
+        - lxmfBridgeBearer: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LxmfSendRequest'
+      responses:
+        '200':
+          description: The message was queued or the prior request is still pending.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LxmfSendReceipt'
+        '409':
+          description: The request ID is already bound to different content.
+  /api/v1/lxmfBridge/get.delivery:
+    get:
+      operationId: lxmfBridgeGetDelivery
+      tags: [lxmfBridge]
+      servers:
+        - url: http://localhost:8091
+      summary: Look up an outbound request on the LXMF bridge
+      security:
+        - lxmfBridgeBearer: []
+      parameters:
+        - name: request_id
+          in: query
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Current state of the outbound request.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LxmfSendReceipt'
+        '404':
+          description: Request ID is unknown.
   /api/v1/ping/get.ping:
     get:
       operationId: ping
@@ -1196,6 +1249,9 @@ components:
       schema:
         type: string
   securitySchemes:
+    lxmfBridgeBearer:
+      type: http
+      scheme: bearer
     bearerAuth:
       type: http
       scheme: bearer
@@ -1210,6 +1266,40 @@ components:
       in: header
       name: X-BlueChat-App-Session
   schemas:
+    LxmfSendRequest:
+      type: object
+      required: [destination_hash, content]
+      properties:
+        destination_hash:
+          type: string
+        content:
+          type: string
+        title:
+          type: string
+        request_id:
+          type: string
+          format: uuid
+          description: Stable outbound operation ID. Repeat calls with the same ID and content return the same receipt.
+    LxmfSendReceipt:
+      type: object
+      required: [status]
+      properties:
+        status:
+          type: string
+          enum: [queued, pending]
+        message_id:
+          type: string
+    CadencePayloadReference:
+      type: object
+      description: Versioned reference to serialized workflow data held in the BlueChat blob store.
+      required: [sha256, scheduled]
+      properties:
+        sha256:
+          type: string
+          pattern: '^[0-9a-f]{64}$'
+        scheduled:
+          type: boolean
+          description: Retain the payload for the lifetime of the scheduled workflow.
     WebsiteAccountProfile:
       type: object
       required:

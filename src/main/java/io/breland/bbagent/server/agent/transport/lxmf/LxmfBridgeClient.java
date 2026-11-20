@@ -1,7 +1,8 @@
 package io.breland.bbagent.server.agent.transport.lxmf;
 
-import java.util.LinkedHashMap;
-import java.util.Map;
+import io.breland.bbagent.generated.model.LxmfSendReceipt;
+import io.breland.bbagent.generated.model.LxmfSendRequest;
+import java.util.UUID;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.MediaType;
@@ -23,7 +24,10 @@ public class LxmfBridgeClient {
   }
 
   public boolean sendText(String destinationHash, String content) {
-    log.info("Sending message to Lxmf bridge {}: {}", destinationHash, content);
+    return sendText(destinationHash, content, null);
+  }
+
+  public boolean sendText(String destinationHash, String content, String deliveryId) {
     if (destinationHash == null || destinationHash.isBlank()) {
       log.warn("Cannot send LXMF message without destination hash");
       return false;
@@ -32,22 +36,46 @@ public class LxmfBridgeClient {
       log.warn("Cannot send blank LXMF message");
       return false;
     }
-    Map<String, Object> request = new LinkedHashMap<>();
-    request.put("destination_hash", destinationHash);
-    request.put("content", content);
+    var request = new LxmfSendRequest().destinationHash(destinationHash).content(content).title("");
+    if (deliveryId != null) request.setRequestId(UUID.fromString(deliveryId));
     try {
-      restClient
-          .post()
-          .uri("/api/v1/messages/send")
-          .contentType(MediaType.APPLICATION_JSON)
-          .headers(headers -> headers.setBearerAuth(bridgeSecret))
-          .body(request)
-          .retrieve()
-          .toBodilessEntity();
-      return true;
+      var receipt =
+          restClient
+              .post()
+              .uri("/api/v1/messages/send")
+              .contentType(MediaType.APPLICATION_JSON)
+              .headers(headers -> headers.setBearerAuth(bridgeSecret))
+              .body(request)
+              .retrieve()
+              .body(LxmfSendReceipt.class);
+      return queued(receipt);
     } catch (Exception e) {
       log.warn("Failed to send LXMF message to {}", destinationHash, e);
       return false;
     }
+  }
+
+  public boolean confirmText(String deliveryId) {
+    if (deliveryId == null) return false;
+    try {
+      return queued(
+          restClient
+              .get()
+              .uri(
+                  b ->
+                      b.path("/api/v1/lxmfBridge/get.delivery")
+                          .queryParam("request_id", deliveryId)
+                          .build())
+              .headers(headers -> headers.setBearerAuth(bridgeSecret))
+              .retrieve()
+              .body(LxmfSendReceipt.class));
+    } catch (RuntimeException e) {
+      log.debug("LXMF bridge receipt unavailable: {}", e.getClass().getSimpleName());
+      return false;
+    }
+  }
+
+  private static boolean queued(LxmfSendReceipt receipt) {
+    return receipt != null && receipt.getStatus() == LxmfSendReceipt.StatusEnum.QUEUED;
   }
 }

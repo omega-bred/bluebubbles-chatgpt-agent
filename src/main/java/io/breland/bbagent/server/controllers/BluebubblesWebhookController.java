@@ -74,7 +74,13 @@ public class BluebubblesWebhookController extends BluebubblesApiController {
       return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).build();
     }
     if (message != null) {
-      messageAgent.handleIncomingMessage(message);
+      try {
+        messageAgent.handleIncomingMessage(message);
+      } catch (org.springframework.dao.DataAccessException
+          | org.springframework.transaction.TransactionException e) {
+        log.warn("BlueBubbles inbox temporarily unavailable: {}", e.getClass().getSimpleName());
+        return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).build();
+      }
     }
     return ResponseEntity.ok(Map.of("status", "ok"));
   }

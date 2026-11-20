@@ -40,10 +40,16 @@ final class WorkflowResponseGate {
       return true;
     }
     ConversationState state = conversationStateStore.get(workflowContext.chatGuid());
+    if (workflowContext.responseVersion() != null) {
+      return matchesVersion(state, workflowContext);
+    }
     if (state == null) {
       return true;
     }
     synchronized (state) {
+      if (state.getLatestResponseVersion() != null || state.getLatestReactionVersion() != null) {
+        return false;
+      }
       if (workflowContext.isReactionWorkflow()) {
         return StringUtils.isNotBlank(workflowContext.messageGuid())
             && workflowContext.messageGuid().equals(state.getLatestReactionMessageGuid());
@@ -65,5 +71,21 @@ final class WorkflowResponseGate {
       // can be null until we persist state in a real db.
       return latestWorkflowRunId == null || latestWorkflowRunId.equals(currentRunId);
     }
+  }
+
+  boolean canClaimDelivery(AgentWorkflowContext context) {
+    if (context == null || context.responseVersion() == null) return canSendResponses(context);
+    ConversationState state = conversationStateStore.lockForDelivery(context.chatGuid());
+    return matchesVersion(state, context);
+  }
+
+  private static boolean matchesVersion(ConversationState state, AgentWorkflowContext context) {
+    return state != null
+        && context
+            .responseVersion()
+            .equals(
+                context.isReactionWorkflow()
+                    ? state.getLatestReactionVersion()
+                    : state.getLatestResponseVersion());
   }
 }

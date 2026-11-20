@@ -119,7 +119,8 @@ class GayodexInboundActorTest {
         new io.breland.bbagent.server.agent.cadence.CadenceWorkflowConfig()
             .cadenceWorkflowClient(
                 mock(com.uber.cadence.serviceclient.WorkflowServiceGrpc.class),
-                new io.breland.bbagent.server.agent.AgentWorkflowProperties())
+                new io.breland.bbagent.server.agent.AgentWorkflowProperties(),
+                new io.breland.bbagent.server.blobstore.InMemoryBlobStore())
             .getOptions()
             .getDataConverter();
     assertTrue(

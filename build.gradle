@@ -302,6 +302,7 @@ dependencies {
 
 tasks.named('test') {
 	useJUnitPlatform()
+	jvmArgs '--add-opens=java.base/java.lang=ALL-UNNAMED'
 }
 
 // Keep production migration checksums intact while adapting the legacy CTE/MERGE

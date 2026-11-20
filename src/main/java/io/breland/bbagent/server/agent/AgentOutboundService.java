@@ -1,14 +1,25 @@
 package io.breland.bbagent.server.agent;
 
+import com.uber.cadence.activity.Activity;
+import io.breland.bbagent.server.agent.OutboundDeliveryStore.Outcome;
+import io.breland.bbagent.server.agent.OutboundDeliveryStore.Result;
 import io.breland.bbagent.server.agent.profile.AgentProfileService;
+import io.breland.bbagent.server.agent.tools.scheduled.ScheduledEventTool;
 import io.breland.bbagent.server.agent.transport.MessageTransport;
 import io.breland.bbagent.server.agent.transport.MessageTransportRegistry;
 import io.breland.bbagent.server.agent.transport.OutgoingTextMessage;
+import io.breland.bbagent.server.agent.transport.bb.BBHttpClientWrapper.AttachmentData;
 import io.breland.bbagent.server.ratelimit.MessageResponseRateLimitService;
 import io.breland.bbagent.server.ratelimit.RateLimitDecision;
 import java.time.Instant;
+import java.util.Arrays;
+import java.util.List;
+import java.util.function.BiFunction;
+import java.util.function.Function;
+import java.util.function.Supplier;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.codec.digest.DigestUtils;
 import org.springframework.lang.Nullable;
 import org.springframework.stereotype.Service;
 
@@ -22,6 +33,11 @@ public final class AgentOutboundService {
   private final WorkflowResponseGate workflowResponseGate;
   private final MessageResponseRateLimitService messageResponseRateLimitService;
   private final MessageResponseLimitNoticeFactory messageResponseLimitNoticeFactory;
+  private final OutboundDeliveryStore deliveries;
+
+  public boolean usesSharedDeliveryStore() {
+    return deliveries != null;
+  }
 
   public boolean canSendResponses(AgentWorkflowContext workflowContext) {
     return workflowResponseGate.canSendResponses(workflowContext);
@@ -42,14 +58,17 @@ public final class AgentOutboundService {
     if (!canSendResponses(workflowContext)) {
       return;
     }
-    ConversationState state = conversationStateStore.get(chatGuid);
-    if (state == null) {
-      return;
-    }
-    synchronized (state) {
-      recordIncomingTurnsForResponse(state, message);
-      state.addTurn(ConversationTurn.assistant(content, Instant.now()));
-    }
+    String recordedContent = content;
+    conversationStateStore.updateIfPresent(
+        chatGuid,
+        state -> {
+          if (!canSendResponses(workflowContext)) return;
+          if (deliveries != null
+              && !state.rememberAssistantDelivery(
+                  deliveryId(message, workflowContext, "history", recordedContent))) return;
+          recordIncomingTurnsForResponse(state, message);
+          state.addTurn(ConversationTurn.assistant(recordedContent, Instant.now()));
+        });
   }
 
   public void recordIncomingTurnsForResponse(ConversationState state, IncomingMessage message) {
@@ -65,52 +84,70 @@ public final class AgentOutboundService {
     if (message == null || text == null || text.isBlank()) {
       return false;
     }
-    if (!consumeMessageResponseQuota(message, workflowContext)) {
-      return false;
-    }
-    return sendThreadAwareTextUnmetered(message, text);
+    return sendThreadAwareText(message, text, workflowContext, true);
   }
 
   public boolean sendThreadAwareTextUnmetered(IncomingMessage message, String text) {
+    return sendThreadAwareText(message, text, null, false);
+  }
+
+  private boolean sendThreadAwareText(
+      IncomingMessage message, String text, AgentWorkflowContext workflowContext, boolean metered) {
     if (message == null || text == null || text.isBlank()) {
       return false;
     }
     MessageTransport transport = transportRegistry.resolve(message);
     String replyTarget =
         transport.supportsThreadReplies() ? ThreadReplySupport.threadRootGuid(message) : null;
-    return sendTextUnmetered(message, new OutgoingTextMessage(text, replyTarget, null, null));
+    return sendText(
+            message,
+            new OutgoingTextMessage(text, replyTarget, null, null),
+            workflowContext,
+            metered)
+        .delivered();
   }
 
   public boolean sendTextUnmetered(IncomingMessage message, OutgoingTextMessage outgoingMessage) {
+    return sendText(message, outgoingMessage, null, false).delivered();
+  }
+
+  private Result sendText(
+      IncomingMessage message,
+      OutgoingTextMessage outgoingMessage,
+      AgentWorkflowContext workflowContext,
+      boolean metered) {
     if (message == null || outgoingMessage == null || outgoingMessage.text() == null) {
-      return false;
+      return new Result(Outcome.DECLINED, null);
     }
     String text = AssistantMessageText.stripLeadingMessageGuid(outgoingMessage.text());
     if (text.isBlank()) {
-      return false;
+      return new Result(Outcome.DECLINED, null);
     }
-    return transportRegistry
-        .resolve(message)
-        .sendText(
-            message,
-            new OutgoingTextMessage(
-                text,
-                outgoingMessage.selectedMessageGuid(),
-                outgoingMessage.effectId(),
-                outgoingMessage.partIndex()));
+    MessageTransport transport = transportRegistry.resolve(message);
+    var normalized =
+        new OutgoingTextMessage(
+            text,
+            outgoingMessage.selectedMessageGuid(),
+            outgoingMessage.effectId(),
+            outgoingMessage.partIndex());
+    return deliver(
+        message,
+        workflowContext,
+        "text",
+        normalized,
+        metered,
+        id -> transport.sendText(message, normalized.withDeliveryId(id)) ? "sent" : null,
+        (id, startedAt) ->
+            transport.confirmText(message, normalized.withDeliveryId(id), startedAt)
+                ? "sent"
+                : null);
   }
 
   public boolean sendTextFromTool(
       IncomingMessage message,
       OutgoingTextMessage outgoingMessage,
       AgentWorkflowContext workflowContext) {
-    if (message == null || outgoingMessage == null || outgoingMessage.text() == null) {
-      return false;
-    }
-    if (!consumeMessageResponseQuota(message, workflowContext)) {
-      return false;
-    }
-    return sendTextUnmetered(message, outgoingMessage);
+    return sendText(message, outgoingMessage, workflowContext, true).delivered();
   }
 
   public boolean sendReactionFromTool(
@@ -120,24 +157,115 @@ public final class AgentOutboundService {
       String reaction,
       Integer partIndex,
       AgentWorkflowContext workflowContext) {
-    MessageTransport transport = reactionTransport(message, reaction, workflowContext);
+    MessageTransport transport = reactionTransport(message, reaction);
     if (transport == null) {
       return false;
     }
-    return transport.sendReaction(
-        message, conversationId, selectedMessageGuid, reaction, partIndex);
+    return deliver(
+            message,
+            workflowContext,
+            "reaction",
+            Arrays.asList(conversationId, selectedMessageGuid, reaction, partIndex),
+            true,
+            id ->
+                transport.sendReaction(
+                        message, conversationId, selectedMessageGuid, reaction, partIndex)
+                    ? "sent"
+                    : null,
+            null)
+        .delivered();
   }
 
-  private @Nullable MessageTransport reactionTransport(
-      IncomingMessage message, String reaction, AgentWorkflowContext workflowContext) {
+  public boolean sendReaction(
+      IncomingMessage message, String reaction, AgentWorkflowContext context) {
+    MessageTransport transport = reactionTransport(message, reaction);
+    return transport != null
+        && deliver(
+                message,
+                context,
+                "reaction",
+                reaction,
+                true,
+                id -> transport.sendReaction(message, reaction) ? "sent" : null,
+                null)
+            .delivered();
+  }
+
+  public Result sendImages(
+      IncomingMessage message,
+      AgentWorkflowContext context,
+      String caption,
+      List<AttachmentData> attachments) {
+    MessageTransport transport = transportRegistry.resolve(message);
+    List<String> digests =
+        attachments.stream().map(attachment -> DigestUtils.sha256Hex(attachment.bytes())).toList();
+    return deliver(
+        message,
+        context,
+        "images",
+        Arrays.asList(caption, digests),
+        true,
+        id ->
+            transport.sendMultipartMessage(message.chatGuid(), caption, attachments)
+                ? "sent"
+                : null,
+        null);
+  }
+
+  public Result sendPoll(
+      IncomingMessage message, AgentWorkflowContext context, Function<String, String> send) {
+    return deliver(message, context, "poll", null, true, send, null);
+  }
+
+  public Result runToolOnce(
+      IncomingMessage message, AgentWorkflowContext context, String callId, Supplier<String> run) {
+    return deliver(message, context, "tool-result", callId, false, id -> run.get(), null);
+  }
+
+  private Result deliver(
+      IncomingMessage message,
+      AgentWorkflowContext context,
+      String kind,
+      Object signature,
+      boolean metered,
+      Function<String, String> send,
+      BiFunction<String, Instant, String> reconcile) {
+    if (deliveries == null) {
+      if (!canSendResponses(context)
+          || (metered && !consumeMessageResponseQuota(message, context))) {
+        return new Result(Outcome.DECLINED, null);
+      }
+      String receipt = send.apply(null);
+      return new Result(receipt == null ? Outcome.UNCERTAIN : Outcome.DELIVERED, receipt);
+    }
+    return deliveries.deliver(
+        deliveryId(message, context, kind, signature),
+        () -> workflowResponseGate.canClaimDelivery(context),
+        () ->
+            canSendResponses(context)
+                && (!metered || consumeMessageResponseQuota(message, context)),
+        send,
+        reconcile);
+  }
+
+  private String deliveryId(
+      IncomingMessage message, AgentWorkflowContext context, String kind, Object signature) {
+    String runId = null;
+    if (context != null && ScheduledEventTool.isScheduledWorkflowId(context.workflowId())) {
+      runId = Activity.getWorkflowExecution().getRunId();
+    }
+    String messageId =
+        message.messageGuid() != null ? message.messageGuid() : message.computeMessageFingerprint();
+    return deliveries.id(
+        message.transportOrDefault(), message.chatGuid(), messageId, runId, kind, signature);
+  }
+
+  private @Nullable MessageTransport reactionTransport(IncomingMessage message, String reaction) {
     if (message == null || reaction == null || reaction.isBlank()) {
       return null;
     }
     MessageTransport transport = transportRegistry.resolve(message);
     if (!transport.supportsReactions()) {
-      return null;
-    }
-    if (!consumeMessageResponseQuota(message, workflowContext)) {
       return null;
     }
     return transport;
@@ -195,7 +323,7 @@ public final class AgentOutboundService {
       return;
     }
     String text = messageResponseLimitNoticeFactory.rateLimitExceededText(message, status);
-    if (sendThreadAwareTextUnmetered(message, text)) {
+    if (sendThreadAwareText(message, text, workflowContext, false)) {
       recordAssistantTurn(message, text, workflowContext);
     }
   }

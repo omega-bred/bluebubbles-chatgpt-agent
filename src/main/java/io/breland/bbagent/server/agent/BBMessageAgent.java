@@ -5,6 +5,8 @@ import com.openai.models.responses.Response;
 import com.openai.models.responses.ResponseFunctionToolCall;
 import com.openai.models.responses.ResponseInputItem;
 import io.breland.bbagent.server.agent.cadence.CadenceIncomingMessageHandler;
+import io.breland.bbagent.server.agent.cadence.InboundMessageInbox;
+import io.breland.bbagent.server.agent.cadence.models.CadenceMessageWorkflowRequest;
 import io.breland.bbagent.server.agent.transport.OutgoingTextMessage;
 import io.breland.bbagent.server.nativeapp.NativeAppSessionService;
 import java.util.List;
@@ -32,6 +34,7 @@ public class BBMessageAgent {
   private final AgentOutboundService outboundService;
   private final AgentResponseCreator responseCreator;
   private final NativeAppSessionService nativeAppSessionService;
+  private final InboundMessageInbox inbox;
 
   public Map<String, ConversationState> getConversations() {
     return conversationStateStore.conversations();
@@ -43,7 +46,18 @@ public class BBMessageAgent {
 
   // main invocation point from webhook
   public void handleIncomingMessage(IncomingMessage message) {
-    incomingMessageHandler.handleIncomingMessage(claimNativeAppStartToken(message));
+    if (inbox == null) {
+      incomingMessageHandler.handleIncomingMessage(claimNativeAppStartToken(message));
+    } else if (incomingMessageHandler.canEnqueue(message)) {
+      inbox.accept(message);
+    }
+  }
+
+  public @Nullable CadenceMessageWorkflowRequest prepareInboxMessage(
+      IncomingMessage message, long responseVersion) {
+    IncomingMessage claimed = nativeAppSessionService.claimStartToken(message);
+    // The accepted ID and ordering belong to the verified message even if onboarding rewrites text.
+    return incomingMessageHandler.prepareForDispatch(claimed, responseVersion);
   }
 
   private IncomingMessage claimNativeAppStartToken(IncomingMessage message) {

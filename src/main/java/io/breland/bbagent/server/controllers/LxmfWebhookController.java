@@ -52,7 +52,13 @@ public class LxmfWebhookController extends LxmfApiController {
     }
     IncomingMessage message = parseWebhookMessage(requestBody);
     log.info("Incoming LXMF message {}", message);
-    messageAgent.handleIncomingMessage(message);
+    try {
+      messageAgent.handleIncomingMessage(message);
+    } catch (org.springframework.dao.DataAccessException
+        | org.springframework.transaction.TransactionException e) {
+      log.warn("LXMF inbox temporarily unavailable: {}", e.getClass().getSimpleName());
+      return ResponseEntity.status(503).build();
+    }
     return ResponseEntity.ok(Map.of("status", "ok"));
   }
 

@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.uber.cadence.activity.ActivityOptions;
+import com.uber.cadence.common.RetryOptions;
 import com.uber.cadence.workflow.Workflow;
 import io.breland.bbagent.server.agent.AgentResponseHelper;
 import io.breland.bbagent.server.agent.AgentWorkflowContext;
@@ -35,19 +36,34 @@ public class CadenceMessageWorkflowImpl implements CadenceMessageWorkflow {
   private static final ObjectMapper JSON = new ObjectMapper();
 
   private final CadenceAgentActivities activities;
+  private final CadenceAgentActivities recoverableActivities;
 
   public CadenceMessageWorkflowImpl() {
-    this(
+    this.activities =
         Workflow.newActivityStub(
             CadenceAgentActivities.class,
             new ActivityOptions.Builder()
                 .setScheduleToCloseTimeout(Duration.ofMinutes(5))
                 .setStartToCloseTimeout(Duration.ofMinutes(5))
-                .build()));
+                .build());
+    this.recoverableActivities =
+        Workflow.newActivityStub(
+            CadenceAgentActivities.class,
+            new ActivityOptions.Builder()
+                .setScheduleToCloseTimeout(Duration.ofMinutes(12))
+                .setStartToCloseTimeout(Duration.ofMinutes(5))
+                .setRetryOptions(
+                    new RetryOptions.Builder()
+                        .setInitialInterval(Duration.ofSeconds(1))
+                        .setExpiration(Duration.ofMinutes(12))
+                        .setMaximumAttempts(2)
+                        .build())
+                .build());
   }
 
   CadenceMessageWorkflowImpl(CadenceAgentActivities activities) {
     this.activities = Objects.requireNonNull(activities, "activities");
+    this.recoverableActivities = activities;
   }
 
   @Override
@@ -63,6 +79,10 @@ public class CadenceMessageWorkflowImpl implements CadenceMessageWorkflow {
       }
     }
     log.info("Handling message via cadence: {}", request.workflowContext());
+    CadenceAgentActivities activities =
+        request.workflowContext().responseVersion() == null
+            ? this.activities
+            : recoverableActivities;
     IncomingMessage message = request.message();
     if (activities.notifyIfMessageResponseLimitExceeded(message, request.workflowContext())) {
       activities.finalizeWorkflow(message, request.workflowContext(), true);

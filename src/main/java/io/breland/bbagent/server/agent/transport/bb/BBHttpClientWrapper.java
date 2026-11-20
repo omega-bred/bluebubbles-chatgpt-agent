@@ -212,6 +212,10 @@ public class BBHttpClientWrapper {
 
   public void startTyping(String chatGuid) {
     typingGenerations.put(chatGuid, typingGenerationSequence.incrementAndGet());
+    startUntrackedTyping(chatGuid);
+  }
+
+  void startUntrackedTyping(String chatGuid) {
     fireAndForgetTyping(
         "start_typing", () -> chatApi.apiV1ChatChatGuidTypingPost(chatGuid, password));
   }
@@ -227,6 +231,15 @@ public class BBHttpClientWrapper {
           Long current = typingGenerations.get(chatGuid);
           return current == null || current == expectedGeneration;
         };
+    stopTypingWhile(
+        chatGuid, stillCurrent, () -> typingGenerations.remove(chatGuid, expectedGeneration));
+  }
+
+  void stopTypingWhile(String chatGuid, BooleanSupplier stillCurrent) {
+    stopTypingWhile(chatGuid, stillCurrent, () -> {});
+  }
+
+  private void stopTypingWhile(String chatGuid, BooleanSupplier stillCurrent, Runnable onSuccess) {
     fireAndForgetTyping(
         "stop_typing",
         () ->
@@ -240,7 +253,7 @@ public class BBHttpClientWrapper {
                 .retryWhen(
                     Retry.fixedDelay(STOP_TYPING_MAX_ATTEMPTS - 1, stopTypingRetryDelay)
                         .filter(ignored -> stillCurrent.getAsBoolean()))
-                .doOnSuccess(ignored -> typingGenerations.remove(chatGuid, expectedGeneration)));
+                .doOnSuccess(ignored -> onSuccess.run()));
   }
 
   private void fireAndForgetTyping(String operation, java.util.function.Supplier<Mono<Void>> call) {
@@ -1002,6 +1015,33 @@ public class BBHttpClientWrapper {
   }
 
   public boolean sendTextDirect(ApiV1MessageTextPostRequest request) {
+    return sendTextDirect(request, DIRECT_SEND_MAX_ATTEMPTS);
+  }
+
+  public boolean sendTextDirectOnce(ApiV1MessageTextPostRequest request) {
+    return sendTextDirect(request, 1);
+  }
+
+  public boolean confirmTextDelivery(ApiV1MessageTextPostRequest request, Instant startedAt) {
+    applyTextFormatting(request);
+    try {
+      var messages = getMessagesInChat(request.getChatGuid());
+      return messages != null
+          && messages.stream()
+              .anyMatch(
+                  message ->
+                      message.getDateCreated() != null
+                          && isMatchingSentText(message, request, startedAt)
+                          && !TimeSupport.epochSecondsOrMillis(message.getDateCreated())
+                              .isAfter(startedAt.plus(apiTimeout).plusSeconds(15)));
+    } catch (RuntimeException e) {
+      log.warn(
+          "BlueBubbles text delivery could not be reconciled: {}", e.getClass().getSimpleName());
+      return false;
+    }
+  }
+
+  private boolean sendTextDirect(ApiV1MessageTextPostRequest request, int maxAttempts) {
     if (request == null) {
       return false;
     }
@@ -1025,7 +1065,7 @@ public class BBHttpClientWrapper {
     boolean success = false;
     String failureType = "not_confirmed";
     try {
-      for (int attempt = 1; attempt <= DIRECT_SEND_MAX_ATTEMPTS; attempt++) {
+      for (int attempt = 1; attempt <= maxAttempts; attempt++) {
         if (!warmUpDirectSendPath(request, attempt)) {
           failureType = "warmup_failed";
           return false;
@@ -1037,7 +1077,7 @@ public class BBHttpClientWrapper {
             confirmationChatGuid,
             request.getTempGuid(),
             attempt,
-            DIRECT_SEND_MAX_ATTEMPTS,
+            maxAttempts,
             apiTimeout,
             request);
         submitDirectTextMessage(request, attempt, overallStartedNanos);
@@ -1061,7 +1101,7 @@ public class BBHttpClientWrapper {
       }
       log.warn(
           "Failed to confirm BlueBubbles direct text send after {} attempts chatGuid={} tempGuid={} elapsedMs={}",
-          DIRECT_SEND_MAX_ATTEMPTS,
+          maxAttempts,
           request.getChatGuid(),
           request.getTempGuid(),
           elapsedMillis(overallStartedNanos));
