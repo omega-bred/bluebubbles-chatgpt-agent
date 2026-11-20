@@ -26,7 +26,7 @@ open class BluebubblesAPI {
     /**
      BlueBubbles message webhook
      - POST /api/v1/bluebubbles/messageReceived.message
-     - Receives BlueBubbles message webhook payloads
+     - Receives BlueBubbles message notifications. The backend independently fetches the authoritative message before forwarding it to the agent.
      - parameter blueBubblesMessageReceivedRequest: (body)
      - returns: RequestBuilder<AnyCodable>
      */

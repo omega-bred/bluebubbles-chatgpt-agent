@@ -1,28 +1,28 @@
 package io.breland.bbagent.server.controllers;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import io.breland.bbagent.generated.api.BluebubblesApiController;
 import io.breland.bbagent.generated.bluebubblesclient.model.ApiV1ChatChatGuidMessageGet200ResponseDataInner;
 import io.breland.bbagent.generated.bluebubblesclient.model.ApiV1ChatChatGuidMessageGet200ResponseDataInnerChatsInner;
 import io.breland.bbagent.generated.bluebubblesclient.model.Chat;
 import io.breland.bbagent.generated.bluebubblesclient.model.ChatParticipant;
+import io.breland.bbagent.generated.bluebubblesclient.model.Message;
 import io.breland.bbagent.generated.model.BlueBubblesMessageReceivedRequest;
 import io.breland.bbagent.generated.model.BlueBubblesMessageReceivedRequestData;
-import io.breland.bbagent.generated.model.BlueBubblesMessageReceivedRequestDataAttachmentsInner;
-import io.breland.bbagent.generated.model.BlueBubblesMessageReceivedRequestDataChatsInner;
 import io.breland.bbagent.server.TimeSupport;
 import io.breland.bbagent.server.agent.BBMessageAgent;
 import io.breland.bbagent.server.agent.IncomingMessage;
 import io.breland.bbagent.server.agent.cadence.models.IncomingAttachment;
-import io.breland.bbagent.server.agent.tools.gayodex.GayodexInboundActor;
 import io.breland.bbagent.server.agent.transport.bb.BBHttpClientWrapper;
 import jakarta.validation.Valid;
-import jakarta.validation.constraints.NotNull;
-import java.time.Instant;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
+import java.util.UUID;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.lang3.StringUtils;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -36,73 +36,119 @@ public class BluebubblesWebhookController extends BluebubblesApiController {
 
   private final BBMessageAgent messageAgent;
   private final BBHttpClientWrapper bbHttpClientWrapper;
-  private final GayodexInboundActor gayodexInboundActor;
+  private final ObjectMapper mapper;
 
   public BluebubblesWebhookController(
       NativeWebRequest request,
       BBMessageAgent messageAgent,
       BBHttpClientWrapper bbHttpClientWrapper,
-      GayodexInboundActor gayodexInboundActor) {
+      ObjectMapper mapper) {
     super(request);
     this.messageAgent = messageAgent;
     this.bbHttpClientWrapper = bbHttpClientWrapper;
-    this.gayodexInboundActor = gayodexInboundActor;
+    this.mapper = mapper;
   }
 
   @Override
   public ResponseEntity<Object> bluebubblesMessageReceived(
       @Valid @RequestBody BlueBubblesMessageReceivedRequest requestBody) {
-    log.info("Incoming Message {}", requestBody);
     if (requestBody == null || requestBody.getType() == null) {
       return ResponseEntity.badRequest().build();
     }
     if (!isMessageEvent(requestBody)) {
       return ResponseEntity.ok(Map.of("status", "ok"));
     }
-    IncomingMessage message = parseWebhookMessage(requestBody.getData());
+    BlueBubblesMessageReceivedRequestData notification = requestBody.getData();
+    UUID messageId = notification == null ? null : messageId(notification.getGuid());
+    if (messageId == null) {
+      return ResponseEntity.badRequest().build();
+    }
+
+    // Only the notification identifiers are used to locate the authenticated record.
+    IncomingMessage message;
+    try {
+      Message stored = bbHttpClientWrapper.getMessage(notification.getGuid());
+      message = verifiedMessage(notification, messageId, stored);
+    } catch (RuntimeException e) {
+      log.warn("Could not verify BlueBubbles inbound message: {}", e.getClass().getSimpleName());
+      return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).build();
+    }
     if (message != null) {
-      messageAgent.handleIncomingMessage(gayodexInboundActor.authenticate(message));
+      messageAgent.handleIncomingMessage(message);
     }
     return ResponseEntity.ok(Map.of("status", "ok"));
   }
 
-  private IncomingMessage parseWebhookMessage(
-      @NotNull @Valid BlueBubblesMessageReceivedRequestData data) {
-    if (data == null) {
+  private static UUID messageId(String value) {
+    if (value == null || value.length() != 36) {
       return null;
     }
-    String messageGuid = data.getGuid();
-    String threadOriginatorGuid = data.getThreadOriginatorGuid();
-    String text = data.getText();
-    Boolean fromMe = data.getIsFromMe();
-    String service = data.getHandle() == null ? null : data.getHandle().getService();
-    String sender = data.getHandle() == null ? null : data.getHandle().getAddress();
-    Instant timestamp = TimeSupport.epochSecondsOrMillisOrNow(data.getDateCreated());
-    List<IncomingAttachment> attachments = parseAttachments(data.getAttachments());
-    String chatGuid =
-        data.getChats() == null || data.getChats().isEmpty()
-            ? null
-            : data.getChats().getFirst().getGuid();
-    boolean isGroup = resolveIsGroup(data, chatGuid);
-    // BlueBubbles does not currently provide a reliable system-message signal here.
-    boolean isSystem = false;
+    try {
+      UUID parsed = UUID.fromString(value);
+      return parsed.toString().equalsIgnoreCase(value) ? parsed : null;
+    } catch (IllegalArgumentException e) {
+      return null;
+    }
+  }
 
+  private IncomingMessage verifiedMessage(
+      BlueBubblesMessageReceivedRequestData notification, UUID messageId, Message stored) {
+    if (stored == null
+        || !messageId.equals(stored.getGuid())
+        || !Boolean.FALSE.equals(stored.getIsFromMe())
+        || Boolean.TRUE.equals(stored.getIsSystemMessage())
+        || Boolean.TRUE.equals(stored.getIsServiceMessage())
+        || stored.getDateCreated() == null
+        || stored.getDateCreated() <= 0
+        || stored.getChats() == null
+        || notification.getChats() == null
+        || notification.getChats().isEmpty()
+        || notification.getChats().getFirst() == null) {
+      return null;
+    }
+    var handle = mapper.valueToTree(stored.getHandle());
+    String sender = StringUtils.trimToNull(handle.path("address").textValue());
+    String service = StringUtils.trimToNull(handle.path("service").textValue());
+    String notifiedChatGuid = notification.getChats().getFirst().getGuid();
+    if (sender == null || service == null || StringUtils.isBlank(notifiedChatGuid)) {
+      return null;
+    }
+    String normalizedChat =
+        BBHttpClientWrapper.normalizeDirectAnyChatGuid(notifiedChatGuid, service);
+    Chat chat =
+        stored.getChats().stream()
+            .filter(Objects::nonNull)
+            .filter(
+                candidate ->
+                    normalizedChat.equals(
+                        BBHttpClientWrapper.normalizeDirectAnyChatGuid(
+                            candidate.getGuid(), service)))
+            .findFirst()
+            .orElse(null);
+    if (chat == null) {
+      return null;
+    }
+    boolean group =
+        resolveIsGroup(chat)
+            .or(() -> resolveIsGroupFromConversationInfo(chat.getGuid()))
+            .orElseGet(() -> hasGroupMetadata(stored.getChats(), stored.getGroupTitle()));
     return new IncomingMessage(
         IncomingMessage.TRANSPORT_BLUEBUBBLES,
-        chatGuid,
-        messageGuid,
-        threadOriginatorGuid,
-        text,
-        fromMe,
+        chat.getGuid(),
+        notification.getGuid(),
+        stored.getThreadOriginatorGuid(),
+        stored.getText(),
+        false,
         service,
         sender,
-        isGroup,
-        timestamp,
-        attachments,
-        data.getBalloonBundleId(),
-        data.getAssociatedMessageGuid(),
-        data.getReplyToGuid(),
-        isSystem);
+        group,
+        TimeSupport.epochSecondsOrMillisOrNow(stored.getDateCreated()),
+        IncomingAttachment.fromHistory(stored.getAttachments(), mapper),
+        stored.getBalloonBundleId(),
+        stored.getAssociatedMessageGuid(),
+        stored.getReplyToGuid(),
+        false,
+        true);
   }
 
   private boolean isMessageEvent(BlueBubblesMessageReceivedRequest request) {
@@ -115,11 +161,6 @@ public class BluebubblesWebhookController extends BluebubblesApiController {
     return false;
   }
 
-  private boolean resolveIsGroup(BlueBubblesMessageReceivedRequestData data, String chatGuid) {
-    Optional<Boolean> participantResult = resolveIsGroupFromConversationInfo(chatGuid);
-    return participantResult.orElseGet(() -> resolveIsGroup(data));
-  }
-
   private Optional<Boolean> resolveIsGroupFromConversationInfo(String chatGuid) {
     if (chatGuid == null || chatGuid.isBlank()) {
       return Optional.empty();
@@ -127,7 +168,7 @@ public class BluebubblesWebhookController extends BluebubblesApiController {
     try {
       return resolveIsGroup(bbHttpClientWrapper.getConversationInfo(chatGuid));
     } catch (Exception e) {
-      log.warn("Failed to resolve BlueBubbles chat participants for {}", chatGuid, e);
+      log.warn("Could not resolve BlueBubbles chat participants: {}", e.getClass().getSimpleName());
       return Optional.empty();
     }
   }
@@ -173,33 +214,7 @@ public class BluebubblesWebhookController extends BluebubblesApiController {
         .findFirst();
   }
 
-  public static boolean resolveIsGroup(BlueBubblesMessageReceivedRequestData data) {
-    if (data == null) {
-      return false;
-    }
-    @NotNull
-    @Valid
-    List<@Valid BlueBubblesMessageReceivedRequestDataChatsInner> chats = data.getChats();
-    return hasGroupMetadata(chats, data.getGroupTitle());
-  }
-
   private static boolean hasGroupMetadata(List<?> chats, String groupTitle) {
     return (chats != null && chats.size() > 1) || (groupTitle != null && !groupTitle.isBlank());
-  }
-
-  private List<IncomingAttachment> parseAttachments(
-      @NotNull @Valid
-          List<@Valid BlueBubblesMessageReceivedRequestDataAttachmentsInner> attachmentsNode) {
-    if (attachmentsNode == null) {
-      return List.of();
-    }
-    List<IncomingAttachment> attachments = new ArrayList<>();
-    for (BlueBubblesMessageReceivedRequestDataAttachmentsInner attachmentNode : attachmentsNode) {
-      String guid = attachmentNode.getGuid();
-      String mimeType = attachmentNode.getMimeType();
-      String filename = attachmentNode.getTransferName();
-      attachments.add(new IncomingAttachment(guid, mimeType, filename, null, null, null));
-    }
-    return attachments;
   }
 }

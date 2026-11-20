@@ -38,7 +38,7 @@ paths:
       tags:
         - bluebubbles
       summary: BlueBubbles message webhook
-      description: Receives BlueBubbles message webhook payloads
+      description: Receives BlueBubbles message notifications. The backend independently fetches the authoritative message before forwarding it to the agent.
       requestBody:
         required: true
         content:
@@ -47,11 +47,15 @@ paths:
               $ref: '#/components/schemas/BlueBubblesMessageReceivedRequest'
       responses:
         '200':
-          description: Message processed
+          description: Notification acknowledged
           content:
             application/json:
               schema:
                 type: object
+        '400':
+          description: Invalid message notification
+        '503':
+          description: BlueBubbles verification is temporarily unavailable
   /api/v1/lxmf/receive.messages:
     post:
       operationId: lxmfReceiveMessages
@@ -163,6 +167,9 @@ paths:
       responses:
         '200':
           description: Current website account
+          headers:
+            X-App-Clip-Session:
+              $ref: '#/components/headers/AppClipNextSession'
           content:
             application/json:
               schema:
@@ -182,6 +189,9 @@ paths:
       responses:
         '200':
           description: Linked account integrations
+          headers:
+            X-App-Clip-Session:
+              $ref: '#/components/headers/AppClipNextSession'
           content:
             application/json:
               schema:
@@ -248,6 +258,9 @@ paths:
       responses:
         '200':
           description: Linked integration account deleted
+          headers:
+            X-App-Clip-Session:
+              $ref: '#/components/headers/AppClipNextSession'
           content:
             application/json:
               schema:
@@ -262,7 +275,7 @@ paths:
       tags:
         - appClip
       summary: Creates an App Clip session from a texted link token
-      description: Exchanges a short-lived account-link or conversation-settings token for an App Clip session token scoped to the linked BlueChat account.
+      description: Consumes a short-lived account-link or conversation-settings token and returns an initial single-use App Clip session token.
       requestBody:
         required: true
         content:
@@ -281,7 +294,7 @@ paths:
         '404':
           description: Link token not found
         '410':
-          description: Link token expired
+          description: Link token expired or already used
   /api/v1/appClip/get.appClipSession:
     get:
       operationId: appClipGetSession
@@ -294,6 +307,9 @@ paths:
       responses:
         '200':
           description: Current App Clip session
+          headers:
+            X-App-Clip-Session:
+              $ref: '#/components/headers/AppClipNextSession'
           content:
             application/json:
               schema:
@@ -318,6 +334,9 @@ paths:
       responses:
         '200':
           description: Event accepted
+          headers:
+            X-App-Clip-Session:
+              $ref: '#/components/headers/AppClipNextSession'
           content:
             application/json:
               schema:
@@ -398,6 +417,9 @@ paths:
       responses:
         '200':
           description: Conversation settings
+          headers:
+            X-App-Clip-Session:
+              $ref: '#/components/headers/AppClipNextSession'
           content:
             application/json:
               schema:
@@ -424,6 +446,9 @@ paths:
       responses:
         '200':
           description: Conversation responsiveness updated
+          headers:
+            X-App-Clip-Session:
+              $ref: '#/components/headers/AppClipNextSession'
           content:
             application/json:
               schema:
@@ -452,6 +477,9 @@ paths:
       responses:
         '200':
           description: Group memory setting updated
+          headers:
+            X-App-Clip-Session:
+              $ref: '#/components/headers/AppClipNextSession'
           content:
             application/json:
               schema:
@@ -482,6 +510,9 @@ paths:
       responses:
         '200':
           description: Personal catch-up preference updated
+          headers:
+            X-App-Clip-Session:
+              $ref: '#/components/headers/AppClipNextSession'
           content:
             application/json:
               schema:
@@ -511,6 +542,9 @@ paths:
       responses:
         '200':
           description: Assistant model preferences updated
+          headers:
+            X-App-Clip-Session:
+              $ref: '#/components/headers/AppClipNextSession'
           content:
             application/json:
               schema:
@@ -591,6 +625,9 @@ paths:
       responses:
         '200':
           description: Current subscription status
+          headers:
+            X-App-Clip-Session:
+              $ref: '#/components/headers/AppClipNextSession'
           content:
             application/json:
               schema:
@@ -616,6 +653,9 @@ paths:
       responses:
         '200':
           description: Checkout created
+          headers:
+            X-App-Clip-Session:
+              $ref: '#/components/headers/AppClipNextSession'
           content:
             application/json:
               schema:
@@ -637,6 +677,9 @@ paths:
       responses:
         '200':
           description: Portal session created
+          headers:
+            X-App-Clip-Session:
+              $ref: '#/components/headers/AppClipNextSession'
           content:
             application/json:
               schema:
@@ -1147,12 +1190,18 @@ paths:
 
 
 components:
+  headers:
+    AppClipNextSession:
+      description: Replacement single-use token when the request authenticated with an App Clip session.
+      schema:
+        type: string
   securitySchemes:
     bearerAuth:
       type: http
       scheme: bearer
       bearerFormat: JWT
     appClipSessionAuth:
+      description: Each accepted token is consumed at authentication. Save the replacement from the X-App-Clip-Session response header, including when an authenticated operation fails. The session's original expiry is retained.
       type: apiKey
       in: header
       name: X-App-Clip-Session
@@ -1721,7 +1770,7 @@ components:
       properties:
         session_token:
           type: string
-          description: Opaque App Clip session token. Send as X-App-Clip-Session.
+          description: Opaque single-use App Clip session token. Send as X-App-Clip-Session.
         purpose:
           type: string
           enum:

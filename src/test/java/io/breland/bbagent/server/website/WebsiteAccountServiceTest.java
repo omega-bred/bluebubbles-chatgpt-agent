@@ -117,9 +117,8 @@ class WebsiteAccountServiceTest {
   @Test
   void redeemLinkAttachesWebsiteAccountToTokenAccount() {
     WebsiteAccountLinkTokenEntity tokenEntity = tokenEntity(Instant.now().plusSeconds(60));
-    when(accountResolver.upsertWebsiteAccount(any(Jwt.class))).thenReturn(account());
     when(accountResolver.linkWebsiteAccount(eq("account-1"), any(Jwt.class))).thenReturn(account());
-    when(tokenRepository.findById(anyString())).thenReturn(Optional.of(tokenEntity));
+    when(tokenRepository.findForRedemption(anyString())).thenReturn(Optional.of(tokenEntity));
     when(tokenRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
     when(accountResolver.identitiesForAccount("account-1")).thenReturn(List.of(identity()));
 
@@ -133,8 +132,7 @@ class WebsiteAccountServiceTest {
 
   @Test
   void redeemLinkRejectsExpiredToken() {
-    when(accountResolver.upsertWebsiteAccount(any(Jwt.class))).thenReturn(account());
-    when(tokenRepository.findById(anyString()))
+    when(tokenRepository.findForRedemption(anyString()))
         .thenReturn(Optional.of(tokenEntity(Instant.now().minusSeconds(1))));
 
     try {

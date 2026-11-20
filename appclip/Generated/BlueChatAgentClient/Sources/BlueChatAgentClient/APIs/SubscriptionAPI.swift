@@ -33,6 +33,7 @@ open class SubscriptionAPI {
      - Bearer Token:
        - type: http
        - name: bearerAuth
+     - responseHeaders: [X-App-Clip-Session(String)]
      - parameter subscriptionCheckoutRequest: (body)  (optional)
      - returns: RequestBuilder<SubscriptionCheckoutResponse>
      */
@@ -74,6 +75,7 @@ open class SubscriptionAPI {
      - Bearer Token:
        - type: http
        - name: bearerAuth
+     - responseHeaders: [X-App-Clip-Session(String)]
      - returns: RequestBuilder<SubscriptionPortalResponse>
      */
     open class func subscriptionCreatePortalWithRequestBuilder() -> RequestBuilder<SubscriptionPortalResponse> {
@@ -112,6 +114,7 @@ open class SubscriptionAPI {
      - Bearer Token:
        - type: http
        - name: bearerAuth
+     - responseHeaders: [X-App-Clip-Session(String)]
      - returns: RequestBuilder<SubscriptionSummaryResponse>
      */
     open class func subscriptionGetWithRequestBuilder() -> RequestBuilder<SubscriptionSummaryResponse> {

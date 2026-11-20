@@ -41,6 +41,7 @@ open class WebsiteAccountAPI {
      - Bearer Token:
        - type: http
        - name: bearerAuth
+     - responseHeaders: [X-App-Clip-Session(String)]
      - parameter type: (query) Integration account type to unlink.
      - parameter accountKey: (query) Integration account key to remove.
      - returns: RequestBuilder<WebsiteAccountDeleteLinkedAccountResponse>
@@ -86,6 +87,7 @@ open class WebsiteAccountAPI {
      - Bearer Token:
        - type: http
        - name: bearerAuth
+     - responseHeaders: [X-App-Clip-Session(String)]
      - returns: RequestBuilder<WebsiteAccountResponse>
      */
     open class func websiteAccountGetWithRequestBuilder() -> RequestBuilder<WebsiteAccountResponse> {
@@ -124,6 +126,7 @@ open class WebsiteAccountAPI {
      - Bearer Token:
        - type: http
        - name: bearerAuth
+     - responseHeaders: [X-App-Clip-Session(String)]
      - returns: RequestBuilder<WebsiteLinkedAccountsResponse>
      */
     open class func websiteAccountListLinkedAccountsWithRequestBuilder() -> RequestBuilder<WebsiteLinkedAccountsResponse> {
@@ -202,6 +205,7 @@ open class WebsiteAccountAPI {
      - Bearer Token:
        - type: http
        - name: bearerAuth
+     - responseHeaders: [X-App-Clip-Session(String)]
      - parameter websiteModelSelectionRequest: (body)
      - returns: RequestBuilder<WebsiteModelSelectionResponse>
      */

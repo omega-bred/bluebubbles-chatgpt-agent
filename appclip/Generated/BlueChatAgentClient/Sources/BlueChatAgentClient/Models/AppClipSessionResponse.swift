@@ -16,7 +16,7 @@ public struct AppClipSessionResponse: Codable, JSONEncodable, Hashable {
         case accountLink = "account_link"
         case conversationSettings = "conversation_settings"
     }
-    /** Opaque App Clip session token. Send as X-App-Clip-Session. */
+    /** Opaque single-use App Clip session token. Send as X-App-Clip-Session. */
     public var sessionToken: String
     public var purpose: Purpose
     public var expiresAt: Date

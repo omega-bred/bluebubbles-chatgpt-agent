@@ -7,16 +7,20 @@ import io.breland.bbagent.generated.model.AppClipSessionResponse;
 import io.breland.bbagent.server.appclip.AppClipEventService;
 import io.breland.bbagent.server.appclip.AppClipSessionAuthenticationFilter;
 import io.breland.bbagent.server.appclip.AppClipSessionService;
+import io.breland.bbagent.server.appclip.AppClipSessionService.AuthenticatedAppClipSession;
+import org.springframework.http.CacheControl;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestAttribute;
 import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.server.ResponseStatusException;
 
 @RestController
 @RequestMapping("${openapi.blueBubblesChatGPTAgentOpenAPISpec.base-path:}")
@@ -35,18 +39,23 @@ public class AppClipController {
       produces = MediaType.APPLICATION_JSON_VALUE)
   public ResponseEntity<AppClipSessionResponse> appClipCreateSession(
       @RequestBody AppClipCreateSessionRequest request) {
-    return ResponseEntity.ok(sessionService.createSession(request.getLinkToken()));
+    return ResponseEntity.ok()
+        .cacheControl(CacheControl.noStore())
+        .body(sessionService.createSession(request.getLinkToken()));
   }
 
   @GetMapping(
       path = "/api/v1/appClip/get.appClipSession",
       produces = MediaType.APPLICATION_JSON_VALUE)
   public ResponseEntity<AppClipSessionResponse> appClipGetSession(
-      @RequestHeader(AppClipSessionAuthenticationFilter.SESSION_HEADER) String sessionToken,
-      @AuthenticationPrincipal Jwt jwt) {
-    return ResponseEntity.ok(
-        sessionService.getSession(
-            sessionToken, jwt.getClaimAsString(AppClipSessionService.APP_CLIP_ACCOUNT_ID_CLAIM)));
+      @RequestAttribute(
+              name = AppClipSessionAuthenticationFilter.SESSION_REQUEST_ATTRIBUTE,
+              required = false)
+          AuthenticatedAppClipSession session) {
+    if (session == null) {
+      throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Invalid App Clip session");
+    }
+    return ResponseEntity.ok(sessionService.getSession(session));
   }
 
   @PostMapping(

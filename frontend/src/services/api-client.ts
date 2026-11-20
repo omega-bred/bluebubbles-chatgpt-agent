@@ -1,4 +1,4 @@
-import axios from "axios";
+import axios, { type AxiosResponse } from "axios";
 
 import {
   AdminApi,
@@ -27,6 +27,46 @@ import { trackEvent } from "./analytics";
 const axiosInstance = axios.create();
 const apiBasePath = import.meta.env.VITE_API_URL || "";
 const appClipSessionHeader = "X-App-Clip-Session";
+const appClipResponseHeader = appClipSessionHeader.toLowerCase();
+const appClipSessionTokenKey = "bluechat.conversationSettings.sessionToken";
+const freshSettingsLink = "Open a fresh BlueChatAI conversation settings link from Messages.";
+let appClipRequests: Promise<unknown> = Promise.resolve();
+
+function enqueueAppClipRequest<T>(request: () => Promise<T>): Promise<T> {
+  const result = appClipRequests.then(request);
+  appClipRequests = result.catch(() => undefined);
+  return result;
+}
+
+function useAppClipSession<T>(
+  request: (token: string) => Promise<AxiosResponse<T>>,
+): Promise<T> {
+  return enqueueAppClipRequest(async () => {
+    const token = window.sessionStorage.getItem(appClipSessionTokenKey);
+    if (!token) {
+      throw new Error(freshSettingsLink);
+    }
+    let response: AxiosResponse<T> | undefined;
+    try {
+      response = await request(token);
+      return response.data;
+    } catch (error) {
+      if (axios.isAxiosError<T>(error)) {
+        response = error.response;
+        if (response?.status === 401 && !response.headers[appClipResponseHeader]) {
+          window.sessionStorage.removeItem(appClipSessionTokenKey);
+          throw new Error(freshSettingsLink);
+        }
+      }
+      throw error;
+    } finally {
+      const replacement = response?.headers[appClipResponseHeader];
+      if (typeof replacement === "string" && replacement) {
+        window.sessionStorage.setItem(appClipSessionTokenKey, replacement);
+      }
+    }
+  });
+}
 
 axiosInstance.interceptors.response.use(
   (response) => response,
@@ -147,51 +187,38 @@ export const websiteAccountApi = {
 };
 
 export const appClipApi = {
-  createSession: async (linkToken: string) => {
-    const client = appClipClient();
-    return (await client.appClipCreateSession({ link_token: linkToken })).data;
-  },
+  createSession: (linkToken: string) =>
+    enqueueAppClipRequest(async () => {
+      const response = await appClipClient().appClipCreateSession({ link_token: linkToken });
+      if (response.data.purpose !== "conversation_settings") {
+        throw new Error("This link opens account settings, not conversation settings.");
+      }
+      window.sessionStorage.setItem(appClipSessionTokenKey, response.data.session_token);
+      return response.data;
+    }),
 
-  getSession: async (sessionToken: string) => {
-    const client = appClipClient(sessionToken);
-    return (await client.appClipGetSession()).data;
-  },
+  getSession: () => useAppClipSession((token) => appClipClient(token).appClipGetSession()),
 
-  trackEvent: async (sessionToken: string, request: AppClipEventRequest) => {
-    const client = appClipClient(sessionToken);
-    return (await client.appClipCreateEvent(request)).data;
-  },
+  trackEvent: (request: AppClipEventRequest) =>
+    useAppClipSession((token) => appClipClient(token).appClipCreateEvent(request))
+      .catch(() => undefined),
 };
 
 export const conversationSettingsApi = {
-  get: async (sessionToken: string) => {
-    const client = conversationSettingsClient(sessionToken);
-    return (await client.conversationSettingsGet()).data;
-  },
+  get: () => useAppClipSession((token) => conversationSettingsClient(token).conversationSettingsGet()),
 
-  updateResponsiveness: async (
-    sessionToken: string,
-    responsiveness: ConversationSettingsUpdateRequest["responsiveness"],
-  ) => {
-    const client = conversationSettingsClient(sessionToken);
-    return (await client.conversationSettingsUpdateResponsiveness({ responsiveness })).data;
-  },
+  updateResponsiveness: (responsiveness: ConversationSettingsUpdateRequest["responsiveness"]) =>
+    useAppClipSession((token) =>
+      conversationSettingsClient(token).conversationSettingsUpdateResponsiveness({ responsiveness }),
+    ),
 
-  updateGroupMemory: async (
-    sessionToken: string,
-    enabled: ConversationGroupMemoryUpdateRequest["enabled"],
-  ) => {
-    const client = conversationSettingsClient(sessionToken);
-    return (await client.conversationSettingsUpdateGroupMemory({ enabled })).data;
-  },
+  updateGroupMemory: (enabled: ConversationGroupMemoryUpdateRequest["enabled"]) =>
+    useAppClipSession((token) =>
+      conversationSettingsClient(token).conversationSettingsUpdateGroupMemory({ enabled }),
+    ),
 
-  updateCatchups: async (
-    sessionToken: string,
-    request: ConversationCatchupPreferencesUpdateRequest,
-  ) => {
-    const client = conversationSettingsClient(sessionToken);
-    return (await client.conversationSettingsUpdateCatchups(request)).data;
-  },
+  updateCatchups: (request: ConversationCatchupPreferencesUpdateRequest) =>
+    useAppClipSession((token) => conversationSettingsClient(token).conversationSettingsUpdateCatchups(request)),
 };
 
 export const contactApi = {

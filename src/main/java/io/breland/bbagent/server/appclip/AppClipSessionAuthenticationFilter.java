@@ -9,6 +9,7 @@ import java.time.Instant;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import org.springframework.http.HttpHeaders;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.oauth2.jwt.Jwt;
@@ -17,6 +18,7 @@ import org.springframework.web.filter.OncePerRequestFilter;
 
 public class AppClipSessionAuthenticationFilter extends OncePerRequestFilter {
   public static final String SESSION_HEADER = "X-App-Clip-Session";
+  public static final String SESSION_REQUEST_ATTRIBUTE = "authenticatedAppClipSession";
 
   private final AppClipSessionService sessionService;
 
@@ -36,6 +38,9 @@ public class AppClipSessionAuthenticationFilter extends OncePerRequestFilter {
           .authenticate(sessionToken)
           .ifPresent(
               session -> {
+                request.setAttribute(SESSION_REQUEST_ATTRIBUTE, session);
+                response.setHeader(SESSION_HEADER, session.nextToken());
+                response.setHeader(HttpHeaders.CACHE_CONTROL, "no-store");
                 Instant now = Instant.now();
                 Map<String, Object> claims = new LinkedHashMap<>();
                 claims.put("sub", "appclip:" + session.accountId());

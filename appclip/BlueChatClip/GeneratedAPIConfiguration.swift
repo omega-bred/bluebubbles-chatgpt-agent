@@ -2,10 +2,26 @@ import AnyCodable
 import BlueChatAgentClient
 import Foundation
 
+@MainActor
 enum GeneratedAPIConfiguration {
     private static let basePath = "https://bluechat.bre.land"
     private static let sessionHeader = "X-App-Clip-Session"
+    private static let sessionTokenKey = "bluechat.appclip.session-token"
     private static var didConfigureCoders = false
+    private static var pendingSessionRequest: Task<Void, Never>?
+    private(set) static var sessionID = UUID()
+
+    static var hasSession: Bool {
+        UserDefaults.standard.string(forKey: sessionTokenKey) != nil
+    }
+
+    enum SessionError: LocalizedError {
+        case missing
+
+        var errorDescription: String? {
+            "Ask BlueChatAI to send a fresh link to continue."
+        }
+    }
 
     static func configure() {
         BlueChatAgentClientAPI.basePath = basePath
@@ -28,15 +44,64 @@ enum GeneratedAPIConfiguration {
         didConfigureCoders = true
     }
 
+    static func createSession(
+        linkToken: String
+    ) async throws -> (response: AppClipSessionResponse, id: UUID) {
+        try await enqueue {
+            configure()
+            let session = try await AppClipAPI.appClipCreateSession(
+                appClipCreateSessionRequest: AppClipCreateSessionRequest(linkToken: linkToken)
+            )
+            UserDefaults.standard.set(session.sessionToken, forKey: sessionTokenKey)
+            sessionID = UUID()
+            return (session, sessionID)
+        }
+    }
+
     static func executeWithSession<T>(
-        _ sessionToken: String,
-        requestBuilder: () -> RequestBuilder<T>
+        for expectedSessionID: UUID,
+        requestBuilder: @escaping @MainActor () -> RequestBuilder<T>
     ) async throws -> T {
-        configure()
-        return try await requestBuilder()
-            .addHeader(name: sessionHeader, value: sessionToken)
-            .execute()
-            .body
+        try await enqueue {
+            guard expectedSessionID == sessionID,
+                  let token = UserDefaults.standard.string(forKey: sessionTokenKey) else {
+                throw SessionError.missing
+            }
+            configure()
+            do {
+                let response = try await requestBuilder().addHeader(name: sessionHeader, value: token).execute()
+                saveReplacement(response.header.first {
+                    $0.key.caseInsensitiveCompare(sessionHeader) == .orderedSame
+                }?.value)
+                return response.body
+            } catch {
+                if case let ErrorResponse.error(status, _, response, _) = error {
+                    let replacement = (response as? HTTPURLResponse)?.value(forHTTPHeaderField: sessionHeader)
+                    if status == 401 && replacement == nil {
+                        UserDefaults.standard.removeObject(forKey: sessionTokenKey)
+                        throw SessionError.missing
+                    }
+                    saveReplacement(replacement)
+                }
+                throw error
+            }
+        }
+    }
+
+    private static func enqueue<T>(_ operation: @escaping @MainActor () async throws -> T) async throws -> T {
+        let previous = pendingSessionRequest
+        let request = Task {
+            await previous?.value
+            return try await operation()
+        }
+        pendingSessionRequest = Task { _ = await request.result }
+        return try await request.value
+    }
+
+    private static func saveReplacement(_ token: String?) {
+        if let token, !token.isEmpty {
+            UserDefaults.standard.set(token, forKey: sessionTokenKey)
+        }
     }
 
     static func appClipEventRequest(

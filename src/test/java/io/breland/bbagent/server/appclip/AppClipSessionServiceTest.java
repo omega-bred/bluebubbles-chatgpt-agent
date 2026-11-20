@@ -55,7 +55,7 @@ class AppClipSessionServiceTest {
             now.plusSeconds(300),
             now,
             now);
-    when(linkTokenRepository.findById(DigestUtils.sha256Hex(linkToken)))
+    when(linkTokenRepository.findForRedemption(DigestUtils.sha256Hex(linkToken)))
         .thenReturn(Optional.of(linkTokenEntity));
     when(accountRepository.findById(accountId))
         .thenReturn(Optional.of(new AgentAccountEntity(accountId, now, now)));
@@ -129,7 +129,7 @@ class AppClipSessionServiceTest {
             now.plusSeconds(300),
             now,
             now);
-    when(linkTokenRepository.findById(DigestUtils.sha256Hex(linkToken)))
+    when(linkTokenRepository.findForRedemption(DigestUtils.sha256Hex(linkToken)))
         .thenReturn(Optional.of(linkTokenEntity));
     when(accountRepository.findById(accountId))
         .thenReturn(Optional.of(new AgentAccountEntity(accountId, now, now)));

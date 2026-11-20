@@ -544,7 +544,8 @@ final class ClipViewModel: ObservableObject {
     @Published var errorMessage: String?
     @Published var modelErrorMessage: String?
 
-    private let sessionTokenKey = "bluechat.appclip.session-token"
+
+    private var displayedSessionID = GeneratedAPIConfiguration.sessionID
 
     private enum BootstrapSource: String {
         case link
@@ -738,10 +739,10 @@ final class ClipViewModel: ObservableObject {
     }
 
     func restoreSessionIfPossible() async {
-        guard session == nil, let token = UserDefaults.standard.string(forKey: sessionTokenKey) else {
+        guard session == nil, GeneratedAPIConfiguration.hasSession else {
             return
         }
-        await loadSession(sessionToken: token)
+        await loadSession()
     }
 
     func identityLabel(_ identity: WebsiteAccountIdentity) -> String {
@@ -815,25 +816,28 @@ final class ClipViewModel: ObservableObject {
         defer {
             modelSelectionInProgress = false
         }
+        let sessionID = displayedSessionID
         do {
             trackAppClipEvent(
                 "appclip_model_selection_started",
                 properties: eventContext(for: session).merging(["model": modelKey]) { _, new in new }
             )
-            _ = try await GeneratedAPIConfiguration.executeWithSession(session.sessionToken) {
+            _ = try await GeneratedAPIConfiguration.executeWithSession(for: sessionID) {
                 WebsiteAccountAPI.websiteAccountUpdateModelWithRequestBuilder(
                     websiteModelSelectionRequest: WebsiteModelSelectionRequest(model: generatedModel)
                 )
             }
-            let refreshed = try await GeneratedAPIConfiguration.executeWithSession(session.sessionToken) {
+            let refreshed = try await GeneratedAPIConfiguration.executeWithSession(for: sessionID) {
                 AppClipAPI.appClipGetSessionWithRequestBuilder()
             }
+            guard sessionID == displayedSessionID else { return }
             self.session = refreshed
             trackAppClipEvent(
                 "appclip_model_selection_updated",
                 properties: eventContext(for: refreshed).merging(["model": modelKey]) { _, new in new }
             )
         } catch {
+            guard sessionID == displayedSessionID else { return }
             trackAppClipEvent(
                 "appclip_model_selection_failed",
                 properties: eventContext(for: session).merging(["model": modelKey]) { _, new in new }
@@ -865,12 +869,13 @@ final class ClipViewModel: ObservableObject {
         defer {
             responsivenessSelectionInProgress = nil
         }
+        let sessionID = displayedSessionID
         do {
             trackAppClipEvent(
                 "appclip_conversation_responsiveness_started",
                 properties: eventContext(for: session).merging(["responsiveness": responsivenessKey]) { _, new in new }
             )
-            let response = try await GeneratedAPIConfiguration.executeWithSession(session.sessionToken) {
+            let response = try await GeneratedAPIConfiguration.executeWithSession(for: sessionID) {
                 ConversationSettingsAPI.conversationSettingsUpdateResponsivenessWithRequestBuilder(
                     conversationSettingsUpdateRequest: ConversationSettingsUpdateRequest(
                         responsiveness: generatedResponsiveness
@@ -878,12 +883,14 @@ final class ClipViewModel: ObservableObject {
                 )
             }
             let refreshed = session.replacing(conversationSettings: response.settings)
+            guard sessionID == displayedSessionID else { return }
             self.session = refreshed
             trackAppClipEvent(
                 "appclip_conversation_responsiveness_updated",
                 properties: eventContext(for: refreshed).merging(["responsiveness": responsivenessKey]) { _, new in new }
             )
         } catch {
+            guard sessionID == displayedSessionID else { return }
             trackAppClipEvent(
                 "appclip_conversation_responsiveness_failed",
                 properties: eventContext(for: session).merging(["responsiveness": responsivenessKey]) { _, new in new }
@@ -907,12 +914,13 @@ final class ClipViewModel: ObservableObject {
         defer {
             groupMemoryUpdateInProgress = false
         }
+        let sessionID = displayedSessionID
         do {
             trackAppClipEvent(
                 "appclip_group_memory_update_started",
                 properties: eventContext(for: session).merging(["enabled": enabled ? "true" : "false"]) { _, new in new }
             )
-            let response = try await GeneratedAPIConfiguration.executeWithSession(session.sessionToken) {
+            let response = try await GeneratedAPIConfiguration.executeWithSession(for: sessionID) {
                 ConversationSettingsAPI.conversationSettingsUpdateGroupMemoryWithRequestBuilder(
                     conversationGroupMemoryUpdateRequest: ConversationGroupMemoryUpdateRequest(
                         enabled: enabled
@@ -920,6 +928,7 @@ final class ClipViewModel: ObservableObject {
                 )
             }
             let refreshed = session.replacing(conversationSettings: response.settings)
+            guard sessionID == displayedSessionID else { return }
             self.session = refreshed
             syncCatchupDraft(from: refreshed)
             trackAppClipEvent(
@@ -927,6 +936,7 @@ final class ClipViewModel: ObservableObject {
                 properties: eventContext(for: refreshed).merging(["enabled": enabled ? "true" : "false"]) { _, new in new }
             )
         } catch {
+            guard sessionID == displayedSessionID else { return }
             trackAppClipEvent(
                 "appclip_group_memory_update_failed",
                 properties: eventContext(for: session).merging(["enabled": enabled ? "true" : "false"]) { _, new in new }
@@ -942,27 +952,30 @@ final class ClipViewModel: ObservableObject {
         guard session.purpose == .conversationSettings else {
             return
         }
+        let request = ConversationCatchupPreferencesUpdateRequest(
+            enabled: enabled,
+            timezone: catchupTimezone,
+            quietStart: catchupQuietStart,
+            quietEnd: catchupQuietEnd
+        )
         catchupUpdateInProgress = true
         modelErrorMessage = nil
         defer {
             catchupUpdateInProgress = false
         }
+        let sessionID = displayedSessionID
         do {
             trackAppClipEvent(
                 "appclip_personal_catchups_update_started",
                 properties: eventContext(for: session).merging(["enabled": enabled ? "true" : "false"]) { _, new in new }
             )
-            let response = try await GeneratedAPIConfiguration.executeWithSession(session.sessionToken) {
+            let response = try await GeneratedAPIConfiguration.executeWithSession(for: sessionID) {
                 ConversationSettingsAPI.conversationSettingsUpdateCatchupsWithRequestBuilder(
-                    conversationCatchupPreferencesUpdateRequest: ConversationCatchupPreferencesUpdateRequest(
-                        enabled: enabled,
-                        timezone: catchupTimezone,
-                        quietStart: catchupQuietStart,
-                        quietEnd: catchupQuietEnd
-                    )
+                    conversationCatchupPreferencesUpdateRequest: request
                 )
             }
             let refreshed = session.replacing(conversationSettings: response.settings)
+            guard sessionID == displayedSessionID else { return }
             self.session = refreshed
             syncCatchupDraft(from: refreshed)
             trackAppClipEvent(
@@ -970,6 +983,7 @@ final class ClipViewModel: ObservableObject {
                 properties: eventContext(for: refreshed).merging(["enabled": enabled ? "true" : "false"]) { _, new in new }
             )
         } catch {
+            guard sessionID == displayedSessionID else { return }
             trackAppClipEvent(
                 "appclip_personal_catchups_failed",
                 properties: eventContext(for: session).merging(["enabled": enabled ? "true" : "false"]) { _, new in new }
@@ -986,47 +1000,43 @@ final class ClipViewModel: ObservableObject {
             isLoading = false
         }
         do {
-            GeneratedAPIConfiguration.configure()
-            let session = try await AppClipAPI.appClipCreateSession(
-                appClipCreateSessionRequest: AppClipCreateSessionRequest(linkToken: linkToken)
-            )
-            UserDefaults.standard.set(session.sessionToken, forKey: sessionTokenKey)
+            let (session, sessionID) = try await GeneratedAPIConfiguration.createSession(linkToken: linkToken)
+            guard sessionID == GeneratedAPIConfiguration.sessionID else { return }
+            displayedSessionID = sessionID
             self.session = session
             syncCatchupDraft(from: session)
             errorMessage = nil
             trackAppClipEvent(
                 "appclip_session_created",
-                properties: eventContext(for: session).merging(["launch_source": "link"]) { _, new in new },
-                sessionToken: session.sessionToken
+                properties: eventContext(for: session).merging(["launch_source": "link"]) { _, new in new }
             )
         } catch {
             setBootstrapError(error, source: .link)
         }
     }
 
-    private func loadSession(sessionToken: String) async {
+    private func loadSession() async {
         isLoading = true
         errorMessage = nil
         modelErrorMessage = nil
         defer {
             isLoading = false
         }
+        let sessionID = GeneratedAPIConfiguration.sessionID
         do {
-            let session = try await GeneratedAPIConfiguration.executeWithSession(sessionToken) {
+            let session = try await GeneratedAPIConfiguration.executeWithSession(for: sessionID) {
                 AppClipAPI.appClipGetSessionWithRequestBuilder()
             }
+            guard sessionID == GeneratedAPIConfiguration.sessionID else { return }
+            displayedSessionID = sessionID
             self.session = session
             syncCatchupDraft(from: session)
             errorMessage = nil
             trackAppClipEvent(
                 "appclip_session_restored",
-                properties: eventContext(for: session).merging(["launch_source": "stored"]) { _, new in new },
-                sessionToken: session.sessionToken
+                properties: eventContext(for: session).merging(["launch_source": "stored"]) { _, new in new }
             )
         } catch {
-            if UserDefaults.standard.string(forKey: sessionTokenKey) == sessionToken {
-                UserDefaults.standard.removeObject(forKey: sessionTokenKey)
-            }
             setBootstrapError(error, source: .stored)
         }
     }
@@ -1051,15 +1061,14 @@ final class ClipViewModel: ObservableObject {
 
     private func trackAppClipEvent(
         _ eventName: String,
-        properties: [String: String] = [:],
-        sessionToken explicitSessionToken: String? = nil
+        properties: [String: String] = [:]
     ) {
-        let token = explicitSessionToken ?? session?.sessionToken
-        guard let token else {
+        guard GeneratedAPIConfiguration.hasSession else {
             return
         }
+        let sessionID = displayedSessionID
         Task {
-            _ = try? await GeneratedAPIConfiguration.executeWithSession(token) {
+            _ = try? await GeneratedAPIConfiguration.executeWithSession(for: sessionID) {
                 AppClipAPI.appClipCreateEventWithRequestBuilder(
                     appClipEventRequest: GeneratedAPIConfiguration.appClipEventRequest(
                         eventName: eventName,
@@ -1110,6 +1119,9 @@ final class ClipViewModel: ObservableObject {
     }
 
     private func bootstrapDiagnostic(for error: Error) -> (status: Int?, reason: String) {
+        if error is GeneratedAPIConfiguration.SessionError {
+            return (401, "invalid_session")
+        }
         guard case let ErrorResponse.error(status, _, _, underlying) = error else {
             return (nil, "local")
         }

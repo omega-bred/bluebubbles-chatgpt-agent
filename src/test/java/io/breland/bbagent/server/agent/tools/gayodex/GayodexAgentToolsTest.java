@@ -421,14 +421,24 @@ class GayodexAgentToolsTest {
       var wrapper =
           new BBHttpClientWrapper(
               "http://127.0.0.1:" + transport.getAddress().getPort(), "pw", 5, MAPPER, null);
-      var incoming =
-          incoming(PHONE)
-              .withAttachments(
-                  List.of(
-                      new IncomingAttachment(
-                          "forged", "image/png", "other.png", null, null, null)));
-      var authenticated =
-          new GayodexInboundActor(properties, wrapper, MAPPER).authenticate(incoming);
+      var agent = mock(io.breland.bbagent.server.agent.BBMessageAgent.class);
+      var controller =
+          new io.breland.bbagent.server.controllers.BluebubblesWebhookController(
+              null, agent, wrapper, MAPPER);
+      var notification =
+          MAPPER.convertValue(
+              Map.of(
+                  "type",
+                  "new-message",
+                  "data",
+                  Map.of("guid", GUID, "chats", List.of(Map.of("guid", GROUP)))),
+              io.breland.bbagent.generated.model.BlueBubblesMessageReceivedRequest.class);
+      controller.bluebubblesMessageReceived(notification);
+      var message =
+          org.mockito.ArgumentCaptor.forClass(
+              io.breland.bbagent.server.agent.IncomingMessage.class);
+      verify(agent).handleIncomingMessage(message.capture());
+      var authenticated = message.getValue();
       assertTrue(authenticated.verifiedBlueBubblesInbound());
       assertEquals("authenticated-heic", authenticated.attachments().getFirst().guid());
       var tool =

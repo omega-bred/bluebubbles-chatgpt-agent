@@ -2,7 +2,6 @@ import React from "react";
 
 import type { AuthState } from "../auth/useKeycloak";
 import type {
-  AppClipSessionResponse,
   ConversationResponsivenessOption,
   ConversationSettingsResponse,
   ConversationSettingsUpdateRequest,
@@ -13,10 +12,8 @@ import { SiteNav } from "../components/SiteNav";
 import { appClipApi, conversationSettingsApi } from "../services/api-client";
 import { trackEvent } from "../services/analytics";
 
-const SESSION_TOKEN_KEY = "bluechat.conversationSettings.sessionToken";
-
 export function ConversationSettingsPage({ auth }: { auth: AuthState }) {
-  const [session, setSession] = React.useState<AppClipSessionResponse | null>(null);
+  const started = React.useRef(false);
   const [settings, setSettings] = React.useState<ConversationSettingsResponse | null>(null);
   const [loading, setLoading] = React.useState(true);
   const [saving, setSaving] = React.useState<string | null>(null);
@@ -25,53 +22,44 @@ export function ConversationSettingsPage({ auth }: { auth: AuthState }) {
   const [catchupQuietStart, setCatchupQuietStart] = React.useState("22:00");
   const [catchupQuietEnd, setCatchupQuietEnd] = React.useState("08:00");
 
-  const rememberSession = React.useCallback((nextSession: AppClipSessionResponse) => {
-    window.sessionStorage.setItem(SESSION_TOKEN_KEY, nextSession.session_token);
-    setSession(nextSession);
-    setSettings(nextSession.conversation_settings || null);
-  }, []);
-
-  const load = React.useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const token = new URLSearchParams(window.location.search).get("token");
-      let nextSession: AppClipSessionResponse;
-      if (token) {
-        nextSession = await appClipApi.createSession(token);
-      } else {
-        const storedToken = window.sessionStorage.getItem(SESSION_TOKEN_KEY);
-        if (!storedToken) {
-          throw new Error("Open a BlueChatAI conversation settings link from Messages.");
-        }
-        nextSession = await appClipApi.getSession(storedToken);
-      }
-      if (nextSession.purpose !== "conversation_settings") {
-        throw new Error("This link opens account settings, not conversation settings.");
-      }
-      rememberSession(nextSession);
-      if (!nextSession.conversation_settings) {
-        setSettings(await conversationSettingsApi.get(nextSession.session_token));
-      }
-      trackEvent("web_conversation_settings_loaded", {
-        launch_source: token ? "link" : "stored",
-      });
-      void appClipApi.trackEvent(nextSession.session_token, {
-        event_name: "web_conversation_settings_loaded",
-        properties: { launch_source: token ? "link" : "stored" },
-      });
-    } catch (err) {
-      window.sessionStorage.removeItem(SESSION_TOKEN_KEY);
-      trackEvent("web_conversation_settings_load_failed");
-      setError(err instanceof Error ? err.message : "Unable to load conversation settings.");
-    } finally {
-      setLoading(false);
-    }
-  }, [rememberSession]);
-
   React.useEffect(() => {
+    if (started.current) {
+      return;
+    }
+    started.current = true;
+
+    async function load() {
+      try {
+        const url = new URL(window.location.href);
+        const token = url.searchParams.get("token");
+        if (token) {
+          url.searchParams.delete("token");
+          window.history.replaceState(window.history.state, "", url);
+        }
+        const session = token
+          ? await appClipApi.createSession(token)
+          : await appClipApi.getSession();
+        if (session.purpose !== "conversation_settings") {
+          throw new Error("This link opens account settings, not conversation settings.");
+        }
+        setSettings(session.conversation_settings || await conversationSettingsApi.get());
+        trackEvent("web_conversation_settings_loaded", {
+          launch_source: token ? "link" : "stored",
+        });
+        void appClipApi.trackEvent({
+          event_name: "web_conversation_settings_loaded",
+          properties: { launch_source: token ? "link" : "stored" },
+        });
+      } catch (err) {
+        trackEvent("web_conversation_settings_load_failed");
+        setError(err instanceof Error ? err.message : "Unable to load conversation settings.");
+      } finally {
+        setLoading(false);
+      }
+    }
+
     void load();
-  }, [load]);
+  }, []);
 
   React.useEffect(() => {
     if (!settings) {
@@ -83,7 +71,7 @@ export function ConversationSettingsPage({ auth }: { auth: AuthState }) {
   }, [settings]);
 
   const updateResponsiveness = async (responsiveness: string) => {
-    if (!session) {
+    if (!settings) {
       return;
     }
     setSaving(responsiveness);
@@ -91,13 +79,11 @@ export function ConversationSettingsPage({ auth }: { auth: AuthState }) {
     trackEvent("web_conversation_responsiveness_start", { responsiveness });
     try {
       const response = await conversationSettingsApi.updateResponsiveness(
-        session.session_token,
         responsiveness as ConversationSettingsUpdateRequest["responsiveness"],
       );
       setSettings(response.settings);
-      setSession({ ...session, conversation_settings: response.settings });
       trackEvent("web_conversation_responsiveness_updated", { responsiveness });
-      void appClipApi.trackEvent(session.session_token, {
+      void appClipApi.trackEvent({
         event_name: "web_conversation_responsiveness_updated",
         properties: { responsiveness },
       });
@@ -110,7 +96,7 @@ export function ConversationSettingsPage({ auth }: { auth: AuthState }) {
   };
 
   const updateGroupMemory = async (enabled: boolean) => {
-    if (!session) {
+    if (!settings) {
       return;
     }
     setSaving("group-memory");
@@ -118,13 +104,11 @@ export function ConversationSettingsPage({ auth }: { auth: AuthState }) {
     trackEvent("web_group_memory_update_start", { enabled });
     try {
       const response = await conversationSettingsApi.updateGroupMemory(
-        session.session_token,
         enabled,
       );
       setSettings(response.settings);
-      setSession({ ...session, conversation_settings: response.settings });
       trackEvent("web_group_memory_updated", { enabled });
-      void appClipApi.trackEvent(session.session_token, {
+      void appClipApi.trackEvent({
         event_name: "web_group_memory_updated",
         properties: { enabled: String(enabled) },
       });
@@ -137,7 +121,7 @@ export function ConversationSettingsPage({ auth }: { auth: AuthState }) {
   };
 
   const updateCatchups = async (enabled: boolean) => {
-    if (!session) {
+    if (!settings) {
       return;
     }
     const request: ConversationCatchupPreferencesUpdateRequest = {
@@ -151,13 +135,11 @@ export function ConversationSettingsPage({ auth }: { auth: AuthState }) {
     trackEvent("web_personal_catchups_update_start", { enabled });
     try {
       const response = await conversationSettingsApi.updateCatchups(
-        session.session_token,
         request,
       );
       setSettings(response.settings);
-      setSession({ ...session, conversation_settings: response.settings });
       trackEvent("web_personal_catchups_updated", { enabled });
-      void appClipApi.trackEvent(session.session_token, {
+      void appClipApi.trackEvent({
         event_name: "web_personal_catchups_updated",
         properties: { enabled: String(enabled) },
       });
