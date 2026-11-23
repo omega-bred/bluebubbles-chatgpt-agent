@@ -10,7 +10,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "axios": "^1.21.0",
+    "axios": "^1.21.1",
     "cap-widget": "^0.1.63",
     "keycloak-js": "^26.2.5",
     "react": "^19.3.1",
