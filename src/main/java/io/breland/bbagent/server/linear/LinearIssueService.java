@@ -188,23 +188,20 @@ public class LinearIssueService {
     if (explicitTeamId != null) {
       return explicitTeamId;
     }
-    List<JsonNode> teamNodes = new ArrayList<>();
     if (teams.isArray()) {
-      teams.forEach(teamNodes::add);
-    }
-    String teamKey = normalize(properties.getTeamKey());
-    String teamName = normalize(properties.getTeamName());
-    for (JsonNode team : teamNodes) {
-      if (StringUtils.isNotBlank(teamKey) && teamKey.equals(normalize(team.path("key").asText()))) {
-        return team.path("id").asText();
+      String teamKey = normalize(properties.getTeamKey());
+      String teamName = normalize(properties.getTeamName());
+      for (JsonNode team : teams) {
+        if ((StringUtils.isNotBlank(teamKey)
+                && teamKey.equals(normalize(team.path("key").asText())))
+            || (StringUtils.isNotBlank(teamName)
+                && teamName.equals(normalize(team.path("name").asText())))) {
+          return team.path("id").asText();
+        }
       }
-      if (StringUtils.isNotBlank(teamName)
-          && teamName.equals(normalize(team.path("name").asText()))) {
-        return team.path("id").asText();
+      if (teams.size() == 1) {
+        return teams.get(0).path("id").asText();
       }
-    }
-    if (teamNodes.size() == 1) {
-      return teamNodes.get(0).path("id").asText();
     }
     throw new LinearIssueException("Could not resolve Linear team for BlueChat");
   }
