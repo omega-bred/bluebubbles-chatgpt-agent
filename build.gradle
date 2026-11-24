@@ -8,8 +8,8 @@ plugins {
 	id 'org.springframework.boot' version '4.1.2'
 	id 'io.spring.dependency-management' version '1.1.7'
 	id 'org.openapi.generator' version '7.27.0'
-	id 'com.diffplug.spotless' version '8.10.4'
-    id "org.flywaydb.flyway" version "13.12.2"
+	id 'com.diffplug.spotless' version '8.11.0'
+    id "org.flywaydb.flyway" version "13.13.0"
 }
 
 var grp = 'io.breland.bbagent'
@@ -240,10 +240,10 @@ dependencies {
 
 
     // lombok
-	compileOnly 'org.projectlombok:lombok:1.18.46'
-	annotationProcessor 'org.projectlombok:lombok:1.18.46'
+	compileOnly 'org.projectlombok:lombok:1.18.48'
+	annotationProcessor 'org.projectlombok:lombok:1.18.48'
     implementation platform('org.apache.logging.log4j:log4j-bom:2.26.1')
-    implementation platform("org.springframework.ai:spring-ai-bom:2.0.2")
+    implementation platform("org.springframework.ai:spring-ai-bom:2.1.0")
     implementation("org.springframework.ai:spring-ai-tool-search-tool")
     implementation("org.apache.lucene:lucene-core:10.6.0")
 
@@ -724,7 +724,8 @@ spotless {
     java {
         // Only format source files to avoid scanning build outputs and generated code
         target 'src/**/*.java'
-        googleJavaFormat()
+        // Preserve the established formatter version when upgrading the Spotless plugin.
+        googleJavaFormat('1.36.1')
     }
 }
 
