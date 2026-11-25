@@ -36,12 +36,27 @@
           config.allowUnfree = true;
         };
 
+      # Keep the shell and offline image builder on the same security-patched release
+      # as the wrapper. The checksum is published at gradle.org/release-checksums/.
+      gradleFor =
+        pkgs: jdk:
+        (pkgs.gradle-packages.mkGradle {
+          version = "9.9.2";
+          hash = "sha256-lx/NcVDKS6BIUsCyyg0tCrlGjhSwNHPqsZUogJkUx2s=";
+          defaultJava = jdk;
+        }).wrapped.override
+          {
+            java = jdk;
+            javaToolchains = [ jdk ];
+          };
+
       devToolsFor =
         system: pkgs:
         let
           inherit (pkgs) lib stdenv;
 
           jdk = pkgs.jdk25;
+          gradle = gradleFor pkgs jdk;
           postgresql = pkgs.postgresql;
           stripeCli = pkgs.stripe-cli;
           ascCli =
@@ -190,6 +205,7 @@
           inherit
             ascCli
             darwinAppleTools
+            gradle
             jdk
             linuxNativeLibs
             python
@@ -215,7 +231,7 @@
             pkgs.fluxcd
             pkgs.git
             pkgs.gnused
-            pkgs.gradle_9
+            gradle
             pkgs.jq
             pkgs.keycloak
             pkgs.kubectl
@@ -319,10 +335,7 @@
           devTools = devToolsFor system pkgs;
           jdk = devTools.jdk;
           nodejs = pkgs.nodejs_24;
-          gradle = pkgs.gradle_9.override {
-            java = jdk;
-            javaToolchains = [ jdk ];
-          };
+          gradle = devTools.gradle;
 
           # Keep the existing runtime packages and remove only the compromised CA.
           runtimeCacert = pkgs.cacert.override {
@@ -356,6 +369,8 @@
             rm "$out/lib/security/cacerts"
             cp ${runtimeJavaCacerts}/share/java/cacerts "$out/lib/security/cacerts"
             "$out/bin/java" -XshowSettings:properties -version 2>&1 | grep -F "java.home = $out"
+            "$out/bin/java" -XX:-UseBASE64Intrinsics -XX:+PrintFlagsFinal -version > base64-flags.txt 2>&1
+            grep -E 'UseBASE64Intrinsics[[:space:]]*=[[:space:]]*false' base64-flags.txt
             "$out/bin/keytool" -list -v -cacerts -storepass changeit > java-ca-public.txt
             ! grep -E 'emSign ECC Root CA - G3|AAA Certificate Services' java-ca-public.txt
           '';
@@ -469,6 +484,8 @@
             config = {
               Cmd = [
                 "${runtimeJdk}/bin/java"
+                # CVE-2026-114938: retain until the pinned JDK includes the vendor fix.
+                "-XX:-UseBASE64Intrinsics"
                 "--add-opens=java.base/java.lang=ALL-UNNAMED"
                 "--add-opens=java.base/java.nio.charset=ALL-UNNAMED"
                 "-jar"
