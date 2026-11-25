@@ -437,20 +437,13 @@ public class CadenceAgentActivitiesImpl implements CadenceAgentActivities {
   private String toJsonWithoutImageResults(
       com.openai.models.responses.Response response, Set<String> imageCallIds) throws Exception {
     JsonNode node = JsonValue.from(response).convert(JsonNode.class);
-    if (imageCallIds == null || imageCallIds.isEmpty()) {
-      return objectMapper.writeValueAsString(node);
-    }
-    if (node instanceof ObjectNode objectNode) {
-      JsonNode outputNode = objectNode.get("output");
-      if (outputNode != null && outputNode.isArray()) {
-        for (JsonNode itemNode : outputNode) {
-          if (!(itemNode instanceof ObjectNode itemObject)) {
-            continue;
-          }
-          String id = textValue(itemObject.get("id"));
-          if (id == null || !imageCallIds.contains(id)) {
-            continue;
-          }
+    if (imageCallIds != null && !imageCallIds.isEmpty() && node instanceof ObjectNode objectNode) {
+      for (JsonNode itemNode : responseOutputItems(objectNode)) {
+        if (!(itemNode instanceof ObjectNode itemObject)) {
+          continue;
+        }
+        String id = textValue(itemObject.get("id"));
+        if (id != null && imageCallIds.contains(id)) {
           itemObject.remove("result");
         }
       }
@@ -466,31 +459,33 @@ public class CadenceAgentActivitiesImpl implements CadenceAgentActivities {
     if (!(node instanceof ObjectNode objectNode)) {
       return responseJson;
     }
-    JsonNode outputNode = objectNode.get("output");
-    if (outputNode != null && outputNode.isArray()) {
-      for (JsonNode itemNode : outputNode) {
-        if (!(itemNode instanceof ObjectNode itemObject)) {
-          continue;
-        }
-        String id = textValue(itemObject.get("id"));
-        if (id == null || id.isBlank()) {
-          continue;
-        }
-        JsonNode resultNode = itemObject.get("result");
-        if (resultNode != null && !resultNode.isNull()) {
-          String existing = resultNode.asText();
-          if (existing != null && !existing.isBlank()) {
-            continue;
-          }
-        }
-        String blob = blobStore.getBlob(conversationId, id);
-        if (blob == null || blob.isBlank()) {
-          continue;
-        }
-        itemObject.put("result", blob);
+    for (JsonNode itemNode : responseOutputItems(objectNode)) {
+      if (!(itemNode instanceof ObjectNode itemObject)) {
+        continue;
       }
+      String id = textValue(itemObject.get("id"));
+      if (id == null || id.isBlank()) {
+        continue;
+      }
+      JsonNode resultNode = itemObject.get("result");
+      if (resultNode != null && !resultNode.isNull()) {
+        String existing = resultNode.asText();
+        if (existing != null && !existing.isBlank()) {
+          continue;
+        }
+      }
+      String blob = blobStore.getBlob(conversationId, id);
+      if (blob == null || blob.isBlank()) {
+        continue;
+      }
+      itemObject.put("result", blob);
     }
     return objectMapper.writeValueAsString(node);
+  }
+
+  private static Iterable<JsonNode> responseOutputItems(ObjectNode response) {
+    JsonNode output = response.get("output");
+    return output != null && output.isArray() ? output : List.of();
   }
 
   private static String textValue(JsonNode node) {
