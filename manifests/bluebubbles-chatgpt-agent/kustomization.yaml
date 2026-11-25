@@ -10,10 +10,10 @@ transformers:
 images:
 - name: ghcr.io/omega-bred/bluebubbles-chatgpt-agent
   newName: ghcr.io/omega-bred/bluebubbles-chatgpt-agent
-  newTag: d5935920fb99d4f2bc7a66e911fe4f42258b03b4-1047
+  newTag: 0505f02ccbe90887e1b6e6ecd6d5e6f3c1dd2ff3-1049
 - name: ghcr.io/omega-bred/bluebubbles-chatgpt-agent-lxmf-bridge
   newName: ghcr.io/omega-bred/bluebubbles-chatgpt-agent-lxmf-bridge
-  newTag: d5935920fb99d4f2bc7a66e911fe4f42258b03b4-1047
+  newTag: 0505f02ccbe90887e1b6e6ecd6d5e6f3c1dd2ff3-1049
 - name: lxmf-free-tier-canary
   newName: ghcr.io/omega-bred/bluebubbles-chatgpt-agent-lxmf-bridge
-  newTag: d5935920fb99d4f2bc7a66e911fe4f42258b03b4-1047
+  newTag: 0505f02ccbe90887e1b6e6ecd6d5e6f3c1dd2ff3-1049
