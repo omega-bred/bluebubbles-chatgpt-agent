@@ -18,6 +18,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.core.RowMapper;
 import org.springframework.lang.Nullable;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.stereotype.Service;
@@ -27,6 +28,15 @@ import org.springframework.transaction.annotation.Transactional;
 @Slf4j
 @RequiredArgsConstructor
 public class AgentAccountResolver {
+  private static final RowMapper<CatchupPreferenceMergeRow> CATCHUP_PREFERENCE_ROW_MAPPER =
+      (resultSet, rowNumber) ->
+          new CatchupPreferenceMergeRow(
+              resultSet.getString("conversation_id"),
+              resultSet.getBoolean("proactive_enabled"),
+              resultSet.getTimestamp("next_delivery_at") == null
+                  ? null
+                  : resultSet.getTimestamp("next_delivery_at").toInstant());
+
   private final AgentAccountRepository accountRepository;
   private final AgentAccountIdentityRepository identityRepository;
   private final JdbcTemplate jdbcTemplate;
@@ -442,13 +452,7 @@ public class AgentAccountResolver {
             select conversation_id, proactive_enabled, next_delivery_at
               from group_catchup_preferences where account_id = ?
             """,
-            (resultSet, rowNumber) ->
-                new CatchupPreferenceMergeRow(
-                    resultSet.getString("conversation_id"),
-                    resultSet.getBoolean("proactive_enabled"),
-                    resultSet.getTimestamp("next_delivery_at") == null
-                        ? null
-                        : resultSet.getTimestamp("next_delivery_at").toInstant()),
+            CATCHUP_PREFERENCE_ROW_MAPPER,
             sourceAccountId);
     for (CatchupPreferenceMergeRow source : sourceRows) {
       List<CatchupPreferenceMergeRow> targets =
@@ -458,13 +462,7 @@ public class AgentAccountResolver {
                 from group_catchup_preferences
                where account_id = ? and conversation_id = ?
               """,
-              (resultSet, rowNumber) ->
-                  new CatchupPreferenceMergeRow(
-                      resultSet.getString("conversation_id"),
-                      resultSet.getBoolean("proactive_enabled"),
-                      resultSet.getTimestamp("next_delivery_at") == null
-                          ? null
-                          : resultSet.getTimestamp("next_delivery_at").toInstant()),
+              CATCHUP_PREFERENCE_ROW_MAPPER,
               targetAccountId,
               source.conversationId());
       if (targets.isEmpty()) {
