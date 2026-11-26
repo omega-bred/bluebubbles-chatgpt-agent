@@ -32,7 +32,7 @@ public class ListColorsAgentTool extends GcalToolSupport implements ToolProvider
           return withCalendar(
               context,
               request.accountKey(),
-              (client, accountKey) -> {
+              client -> {
                 Colors colors = client.colors().get().execute();
                 return toJson(colors);
               });
