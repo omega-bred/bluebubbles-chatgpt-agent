@@ -8,8 +8,6 @@ import io.breland.bbagent.server.agent.tools.AgentTool;
 import io.breland.bbagent.server.agent.tools.ToolProvider;
 import io.breland.bbagent.server.agent.transport.OutgoingTextMessage;
 import io.swagger.v3.oas.annotations.media.Schema;
-import java.util.Locale;
-import java.util.Optional;
 
 public class SendTextAgentTool implements ToolProvider {
 
@@ -93,8 +91,7 @@ public class SendTextAgentTool implements ToolProvider {
           if (!context.canSendResponses()) {
             return "skipped: outdated workflow";
           }
-          String effectId =
-              Optional.ofNullable(toolRequest.effect()).map(this::effectId).orElse(null);
+          String effectId = effectId(toolRequest.effect());
           boolean sent =
               context.sendText(
                   new OutgoingTextMessage(
@@ -111,27 +108,22 @@ public class SendTextAgentTool implements ToolProvider {
   }
 
   private String effectId(Effect effect) {
-    if (effect == null) {
-      return null;
-    }
     // https://docs.rs/imessage-database/latest/imessage_database/message_types/expressives/enum.Expressive.html
-    String normalized =
-        effect.name().trim().toLowerCase(Locale.ROOT).replace("-", "_").replace(" ", "_");
-    return switch (normalized) {
-      case "slam", "impact" -> "com.apple.MobileSMS.expressivesend.impact";
-      case "gentle" -> "com.apple.MobileSMS.expressivesend.gentle";
-      case "invisible", "invisible_ink" -> "com.apple.MobileSMS.expressivesend.invisibleink";
-      case "loud" -> "com.apple.MobileSMS.expressivesend.loud";
-      case "confetti" -> "com.apple.messages.effect.CKConfettiEffect";
-      case "echo" -> "com.apple.messages.effect.CKEchoEffect";
-      case "fireworks" -> "com.apple.messages.effect.CKFireworksEffect";
-      case "happy_birthday" -> "com.apple.messages.effect.CKHappyBirthdayEffect";
-      case "heart", "love" -> "com.apple.messages.effect.CKHeartEffect";
-      case "lasers" -> "com.apple.messages.effect.CKLasersEffect";
-      case "shooting_star" -> "com.apple.messages.effect.CKShootingStarEffect";
-      case "sparkles" -> "com.apple.messages.effect.CKSparklesEffect";
-      case "spotlight" -> "com.apple.messages.effect.CKSpotlightEffect";
-      default -> null;
+    return switch (effect) {
+      case null -> null;
+      case SLAM -> "com.apple.MobileSMS.expressivesend.impact";
+      case GENTLE -> "com.apple.MobileSMS.expressivesend.gentle";
+      case INVISIBLE -> "com.apple.MobileSMS.expressivesend.invisibleink";
+      case LOUD -> "com.apple.MobileSMS.expressivesend.loud";
+      case CONFETTI -> "com.apple.messages.effect.CKConfettiEffect";
+      case ECHO -> "com.apple.messages.effect.CKEchoEffect";
+      case FIREWORKS -> "com.apple.messages.effect.CKFireworksEffect";
+      case HAPPY_BIRTHDAY -> "com.apple.messages.effect.CKHappyBirthdayEffect";
+      case HEART, LOVE -> "com.apple.messages.effect.CKHeartEffect";
+      case LASERS -> "com.apple.messages.effect.CKLasersEffect";
+      case SHOOTING_STAR -> "com.apple.messages.effect.CKShootingStarEffect";
+      case SPARKLES -> "com.apple.messages.effect.CKSparklesEffect";
+      case SPOTLIGHT -> "com.apple.messages.effect.CKSpotlightEffect";
     };
   }
 }
