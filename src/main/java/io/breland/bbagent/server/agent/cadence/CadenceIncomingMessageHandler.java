@@ -70,10 +70,8 @@ public final class CadenceIncomingMessageHandler {
   public @Nullable CadenceMessageWorkflowRequest prepareForDispatch(
       IncomingMessage rawMessage, @Nullable Long responseVersion) {
     if (!isEligibleTransportMessage(rawMessage)) {
-      log.debug("Dropping message {}", rawMessage);
       return null;
     }
-    log.info("Processing Message {}", rawMessage);
     profileService.recordMessageIdentities(rawMessage);
     if (profileService.isProcessingBlocked(rawMessage)) {
       return null;
@@ -175,7 +173,7 @@ public final class CadenceIncomingMessageHandler {
     try {
       agentMetricsService.recordAcceptedMessage(message);
     } catch (RuntimeException e) {
-      log.warn("Failed to record message metric for {}", message, e);
+      log.warn("Failed to record message metric failure_type={}", e.getClass().getSimpleName());
     }
   }
 
